@@ -12,18 +12,44 @@ import pytest
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryComplexity, QueryIntent
 from pubmed_search.application.search.result_aggregator import RankingConfig
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
+from pubmed_search.application.unified.clinical_trials import ClinicalTrialsCoverage
+from pubmed_search.application.unified.execution import execute_unified_search
+from pubmed_search.application.unified.planning import UnifiedSearchPlan, _build_deep_strategies
+from pubmed_search.application.unified.request import normalize_unified_search_request
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.sources.registry import get_source_registry
-from pubmed_search.presentation.mcp_server.tools.unified_execution import execute_unified_search
-from pubmed_search.presentation.mcp_server.tools.unified_planning import UnifiedSearchPlan, _build_deep_strategies
-from pubmed_search.presentation.mcp_server.tools.unified_request import normalize_unified_search_request
+from pubmed_search.infrastructure.sources.unified_broker import UnifiedSourceBroker, _execute_deep_search
 from pubmed_search.presentation.mcp_server.tools.unified_runner import persist_unified_search_artifact
-from pubmed_search.presentation.mcp_server.tools.unified_source_search import _execute_deep_search
 from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 
 
 async def _ignore_progress(_current: float, _total: float, _message: str) -> None:
     return None
+
+
+class _NoopEnrichmentReport:
+    def to_diagnostic(self) -> dict[str, str]:
+        return {"status": "not_requested"}
+
+
+class _NoopEnrichment:
+    async def enrich(self, *_args, **_kwargs) -> _NoopEnrichmentReport:
+        return _NoopEnrichmentReport()
+
+
+async def _execute_plan(
+    plan: UnifiedSearchPlan,
+    *,
+    search_functions,
+    source_registry=None,
+):
+    return await execute_unified_search(
+        plan,
+        progress=_ignore_progress,
+        source_broker=UnifiedSourceBroker(AsyncMock(), search_functions_override=search_functions),
+        enrichment=_NoopEnrichment(),
+        source_registry=source_registry or get_source_registry(),
+    )
 
 
 def _strategy(name: str, source: str, priority: int) -> SearchPlan:
@@ -183,10 +209,8 @@ async def test_deep_source_status_is_partial_for_empty_success_plus_failed_attem
             metadata=metadata,
         )
 
-    execution = await execute_unified_search(
+    execution = await _execute_plan(
         plan,
-        AsyncMock(),
-        progress=_ignore_progress,
         search_functions={"pubmed": run},
     )
 
@@ -229,6 +253,41 @@ async def test_deep_search_uses_typed_total_count_without_metadata_duplication()
     assert metrics.strategy_results[0].total_available == 37
     assert metrics.strategy_results[0].metadata["total_available"] == 37
     assert errors == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "operation"),
+    [
+        pytest.param("semantic_scholar", "search", id="wrong-source"),
+        pytest.param("openalex", "fetch", id="wrong-operation"),
+    ],
+)
+async def test_deep_search_fails_closed_on_adapter_provenance_mismatch(source: str, operation: str) -> None:
+    strategy = _strategy("strict-provenance", "openalex", 1)
+
+    async def run(*_args, **_kwargs) -> SourceAdapterResult[UnifiedArticle]:
+        return SourceAdapterResult.empty(source=source, operation=operation)
+
+    results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
+        AsyncMock(),
+        EnhancedQuery(original_query="topic", strategies=[strategy]),
+        limit=5,
+        min_year=None,
+        max_year=None,
+        advanced_filters={},
+        strategies=[strategy],
+        search_functions={"openalex": run},
+    )
+
+    assert results == []
+    assert counts == {"openalex": (0, None)}
+    assert metrics.strategy_results[0].status == "error"
+    assert len(errors) == 1
+    assert errors[0].source == "openalex"
+    assert errors[0].operation == "deep_search"
+    assert errors[0].kind == "unexpected"
+    assert errors[0].message == "Source adapter failed"
 
 
 def _simple_plan(*, explicit_sources: bool, limit: int = 10) -> UnifiedSearchPlan:
@@ -289,13 +348,11 @@ async def test_auto_simple_all_error_runs_one_bounded_fallback_without_relaxing(
     openalex = AsyncMock()
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_execution._auto_relax_search",
+        "pubmed_search.infrastructure.sources.unified_broker._auto_relax_search",
         new_callable=AsyncMock,
     ) as auto_relax:
-        execution = await execute_unified_search(
+        execution = await _execute_plan(
             _simple_plan(explicit_sources=False, limit=100),
-            AsyncMock(),
-            progress=_ignore_progress,
             search_functions={
                 "pubmed": AsyncMock(return_value=pubmed_error),
                 "europe_pmc": europe_pmc,
@@ -310,6 +367,54 @@ async def test_auto_simple_all_error_runs_one_bounded_fallback_without_relaxing(
     assert execution.source_statuses == {"pubmed": "error", "europe_pmc": "empty"}
     assert execution.source_metadata["europe_pmc"]["fallback_reason"] == "all_auto_primary_sources_failed"
     assert execution.source_metadata["europe_pmc"]["fallback_from"] == ["pubmed"]
+
+
+@pytest.mark.asyncio
+async def test_auto_fallback_respects_the_injected_source_registry() -> None:
+    from pubmed_search.infrastructure.sources.registry import (
+        SourceCapabilities,
+        SourceDefinition,
+        SourceRegistry,
+    )
+
+    pubmed_error = SourceAdapterResult.failure(
+        source="pubmed",
+        operation="search",
+        error=SourceAdapterError(
+            source="pubmed",
+            operation="search",
+            message="Request timed out",
+            kind="timeout",
+            retryable=True,
+        ),
+    )
+    registry = SourceRegistry(
+        (
+            SourceDefinition(
+                key="pubmed",
+                label="PubMed",
+                category="search",
+                selectable_in_unified=True,
+                supports_primary_search=True,
+                capabilities=SourceCapabilities(search_modes=("keyword",)),
+            ),
+        )
+    )
+    europe_pmc = AsyncMock()
+    openalex = AsyncMock()
+
+    await _execute_plan(
+        _simple_plan(explicit_sources=False),
+        search_functions={
+            "pubmed": AsyncMock(return_value=pubmed_error),
+            "europe_pmc": europe_pmc,
+            "openalex": openalex,
+        },
+        source_registry=registry,
+    )
+
+    europe_pmc.assert_not_awaited()
+    openalex.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -328,13 +433,11 @@ async def test_explicit_failed_source_does_not_fallback_or_auto_relax() -> None:
     europe_pmc = AsyncMock()
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_execution._auto_relax_search",
+        "pubmed_search.infrastructure.sources.unified_broker._auto_relax_search",
         new_callable=AsyncMock,
     ) as auto_relax:
-        execution = await execute_unified_search(
+        execution = await _execute_plan(
             _simple_plan(explicit_sources=True),
-            AsyncMock(),
-            progress=_ignore_progress,
             search_functions={"pubmed": AsyncMock(return_value=pubmed_error), "europe_pmc": europe_pmc},
         )
 
@@ -428,7 +531,7 @@ def test_deep_planner_keeps_pubmed_field_syntax_out_of_other_sources() -> None:
     assert queries["openalex"] == neutral_query
 
 
-def test_persisted_results_receive_the_same_source_metadata_as_live_json() -> None:
+async def test_persisted_results_receive_the_same_source_metadata_as_live_json() -> None:
     source_metadata = {
         "pubmed": {
             "provider_mode": "deep_strategy",
@@ -443,9 +546,10 @@ def test_persisted_results_receive_the_same_source_metadata_as_live_json() -> No
         source_api_counts={"pubmed": (0, 0)},
         source_disagreement=None,
         reproducibility_score=None,
-        research_context_data=None,
         source_errors=[],
         source_metadata=source_metadata,
+        clinical_trials_coverage=ClinicalTrialsCoverage(),
+        prefetched_trials=[],
     )
     envelope = SimpleNamespace(files={"results.json": {}}, summary={}, metadata={})
 
@@ -464,10 +568,10 @@ def test_persisted_results_receive_the_same_source_metadata_as_live_json() -> No
         ),
         patch(
             "pubmed_search.presentation.mcp_server.tools.unified_runner.persist_tool_artifact",
-            return_value={"artifact_id": "artifact-1"},
+            new=AsyncMock(return_value={"artifact_id": "artifact-1"}),
         ),
     ):
-        manifest = persist_unified_search_artifact(
+        manifest = await persist_unified_search_artifact(
             request=SimpleNamespace(),
             plan=SimpleNamespace(analysis=SimpleNamespace()),
             execution=execution,

@@ -1,9 +1,7 @@
-"""Reusable runtime runner for the MCP unified_search implementation.
+"""MCP adapter for the application-owned unified-search use case.
 
-This module is still in presentation because it formats MCP-compatible strings,
-persists MCP session artifacts, and can report MCPServer progress. The stable
-Python SDK imports it lazily only when a caller actually runs unified search
-without injecting a custom runner.
+This module owns only tool-boundary validation, progress adaptation, durable
+session state, response formatting, and artifact persistence.
 """
 
 from __future__ import annotations
@@ -12,15 +10,23 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Literal, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pubmed_search.application.search.query_analyzer import QueryAnalyzer
-from pubmed_search.application.search.semantic_enhancer import get_semantic_enhancer
 from pubmed_search.application.session.artifact_envelope import build_unified_search_artifact_envelope
-from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
-from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
+from pubmed_search.application.unified.execution import execute_unified_search
+from pubmed_search.application.unified.planning import build_unified_search_plan
+from pubmed_search.application.unified.request import (
+    normalize_unified_search_request,
+    validate_unified_search_input_envelope,
+)
+from pubmed_search.application.unified.use_case import SourceSelectionError, UnifiedSearchUseCase
+from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+from pubmed_search.infrastructure.sources.registry import get_source_registry
+from pubmed_search.infrastructure.sources.unified_broker import UnifiedSourceBroker
+from pubmed_search.infrastructure.sources.unified_enrichment import UnifiedEnrichmentAdapter
 from pubmed_search.presentation.mcp_server.session_tools import notify_session_resources_updated
-from pubmed_search.shared.credential_sanitizer import contains_credential_material
+from pubmed_search.shared.credential_sanitizer import redact_credential_assignments
 
 from .agent_output import is_structured_output_format, serialize_structured_payload
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
@@ -32,23 +38,8 @@ from .search_run_journal import (
 )
 from .tool_response import ResponseFormatter
 from .tool_runtime import safe_report_progress
-from .unified_execution import execute_unified_search
 from .unified_formatting import _format_as_json, _format_unified_results
 from .unified_pipeline import _execute_pipeline_mode_outcome
-from .unified_planning import build_unified_search_plan
-from .unified_request import normalize_unified_search_request
-from .unified_source_search import (
-    _search_arxiv_adapter,
-    _search_biorxiv_adapter,
-    _search_core_adapter,
-    _search_europe_pmc_adapter,
-    _search_medrxiv_adapter,
-    _search_openalex_adapter,
-    _search_pubmed_adapter,
-    _search_scopus_adapter,
-    _search_semantic_scholar_adapter,
-    _search_web_of_science_adapter,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,7 +48,31 @@ if TYPE_CHECKING:
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
+    from .pipeline_tools import PipelineToolRuntime
+
 logger = logging.getLogger(__name__)
+_REJECTED_INPUT_PREVIEW_CHARS = 256
+
+
+def _bounded_rejected_input(field_name: str, value: Any) -> Any:
+    """Return a credential-free, bounded value for a rejected run journal."""
+    if not isinstance(value, str):
+        if isinstance(value, bool | float) or value is None:
+            return value
+        if isinstance(value, int):
+            bit_length = value.bit_length()
+            return value if bit_length <= 64 else f"[rejected {field_name}: integer_bits={bit_length}]"
+        return f"[rejected {field_name}: type={type(value).__name__}]"
+    redacted = redact_credential_assignments(value)
+    if len(redacted) <= _REJECTED_INPUT_PREVIEW_CHARS:
+        return redacted
+    digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:12]
+    return f"[rejected {field_name}: length={len(value)}, sha256={digest}]"
+
+
+def _rejected_request_snapshot(**values: Any) -> dict[str, Any]:
+    """Build a bounded replay snapshot without retaining rejected raw input."""
+    return {name: _bounded_rejected_input(name, value) for name, value in values.items() if value is not None}
 
 
 def _search_run_hint(run: dict[str, Any] | None) -> str:
@@ -68,7 +83,7 @@ def _search_run_hint(run: dict[str, Any] | None) -> str:
     if handoff.get("history_available") is False:
         return " Durable search history was unavailable; recovery is not guaranteed."
     run_id = str(handoff["run_id"])
-    return f' Inspect with read_session(action="search_run", run_id="{run_id}").'
+    return f' Inspect with read_session(request={{"action":"search_run","run_id":"{run_id}"}}).'
 
 
 def _attach_search_run_to_error(
@@ -98,7 +113,7 @@ def _attach_search_run_to_error(
     return serialize_structured_payload(payload, output_format)
 
 
-def persist_unified_search_artifact(
+async def persist_unified_search_artifact(
     *,
     request: Any,
     plan: Any,
@@ -122,19 +137,22 @@ def persist_unified_search_artifact(
             source_api_counts=execution.source_api_counts or None,
             source_disagreement=execution.source_disagreement,
             reproducibility_score=execution.reproducibility_score,
-            research_context=execution.research_context_data,
             source_errors=execution.source_errors,
             source_metadata=dict(getattr(execution, "source_metadata", {}) or {}),
+            enrichment_metadata=dict(getattr(execution, "enrichment_metadata", {}) or {}),
             source_statuses=dict(getattr(execution, "source_statuses", {}) or {}),
             counts_first=False,
             compact_output=False,
             include_analysis=True,
-            include_similarity_scores=True,
+            include_rank_scores=True,
             include_next_tools=True,
             include_section_provenance=True,
             max_response_chars=None,
             output_format=primary_format,
             search_run_handoff=search_run_handoff,
+            result_filter_counts=dict(getattr(execution, "result_filter_counts", {}) or {}),
+            clinical_trials_coverage=execution.clinical_trials_coverage,
+            prefetched_trials=execution.prefetched_trials,
         )
     except Exception as exc:
         logger.warning("Failed to prepare unified_search artifact payload (%s)", type(exc).__name__)
@@ -151,7 +169,7 @@ def persist_unified_search_artifact(
     if search_run_id:
         envelope.metadata["search_run_id"] = search_run_id
         envelope.summary["search_run_id"] = search_run_id
-    return persist_tool_artifact(
+    return await persist_tool_artifact(
         tool="unified_search",
         kind="search_results",
         files=envelope.files,
@@ -165,39 +183,81 @@ async def run_unified_search(
     *,
     searcher: LiteratureSearcher,
     query: str,
-    limit: Union[int, str] = 10,
-    sources: Union[str, None] = None,
+    limit: int = 10,
+    sources: str | None = None,
     ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
     output_format: Literal["markdown", "json", "toon"] = "markdown",
-    filters: Union[str, None] = None,
-    options: Union[str, None] = None,
-    pipeline: Union[str, None] = None,
+    filters: str | None = None,
+    options: str | None = None,
+    pipeline: str | None = None,
     dry_run: bool = False,
     stop_at: str = "",
     ctx: Context | None = None,
     analyzer_factory: Callable[[], Any] = QueryAnalyzer,
     enhancer_factory: Callable[[], Any] = get_semantic_enhancer,
     source_registry_factory: Callable[[], Any] = get_source_registry,
-    timeline_builder_cls: Any = TimelineBuilder,
-    research_tree_builder: Callable[[Any], Any] = build_research_tree,
     search_functions: Any | None = None,
+    pipeline_runtime: PipelineToolRuntime | None = None,
 ) -> str:
     """Run unified_search with the same behavior as the MCP tool."""
-    query_fingerprint = hashlib.sha256(query.encode("utf-8", errors="replace")).hexdigest()[:12]
-    logger.info(
-        "Unified search: query_sha256=%s, query_length=%s, limit=%s, ranking='%s'",
-        query_fingerprint,
-        len(query),
-        limit,
-        ranking,
-    )
 
     async def _progress(progress: float, total: float, message: str) -> None:
         await safe_report_progress(ctx, progress, total, message)
 
     journal: SearchRunJournal | None = None
     try:
+        try:
+            validate_unified_search_input_envelope(
+                query=query,
+                limit=limit,
+                sources=sources,
+                ranking=ranking,
+                output_format=output_format,
+                filters=filters,
+                options=options,
+                pipeline=pipeline,
+                stop_at=stop_at,
+            )
+        except ValueError as exc:
+            safe_request = _rejected_request_snapshot(
+                query=query,
+                limit=limit,
+                sources=sources,
+                ranking=ranking,
+                output_format=output_format,
+                filters=filters,
+                options=options,
+                pipeline=pipeline,
+                dry_run=dry_run,
+                stop_at=stop_at,
+            )
+            safe_query = str(safe_request.get("query") or "[rejected query]")
+            journal = await SearchRunJournal.start(query=safe_query, request=safe_request)
+            failed_run = await journal.fail(exc, stage="validation", retryable=False)
+            await notify_session_resources_updated(ctx)
+            response_format = output_format if output_format in {"markdown", "json", "toon"} else "markdown"
+            response = ResponseFormatter.error(
+                str(exc),
+                suggestion=(
+                    "Remove credential material, reduce oversized inputs, or correct the requested output/ranking mode."
+                    f"{_search_run_hint(failed_run)}"
+                ),
+                tool_name="unified_search",
+                output_format=response_format,
+            )
+            return _attach_search_run_to_error(response, output_format=response_format, run=failed_run)
+
+        query_fingerprint = hashlib.sha256(query.encode("utf-8", errors="replace")).hexdigest()[:12]
+        logger.info(
+            "Unified search: query_sha256=%s, query_length=%s, limit=%s, ranking='%s'",
+            query_fingerprint,
+            len(query),
+            limit,
+            ranking,
+        )
+
         if pipeline:
+            pipeline_store = pipeline_runtime.store_for_current_tenant() if pipeline_runtime is not None else None
             journal = await SearchRunJournal.start(
                 query=query,
                 request={
@@ -213,25 +273,12 @@ async def run_unified_search(
                     "stop_at": stop_at,
                 },
             )
-            if contains_credential_material(pipeline):
-                validation_error = (
-                    "pipeline appears to contain credential material; remove secrets and use server environment "
-                    "configuration"
-                )
-                failed_run = await journal.fail(validation_error, stage="validation", retryable=False)
-                await notify_session_resources_updated(ctx)
-                response = ResponseFormatter.error(
-                    validation_error,
-                    suggestion=f"Use provider credentials from server settings, then retry.{_search_run_hint(failed_run)}",
-                    tool_name="unified_search",
-                    output_format=output_format,
-                )
-                return _attach_search_run_to_error(response, output_format=output_format, run=failed_run)
             await journal.plan_pipeline(pipeline, dry_run=dry_run, stop_at=stop_at)
             pipeline_outcome = await _execute_pipeline_mode_outcome(
                 pipeline,
                 output_format,
                 searcher,
+                pipeline_store=pipeline_store,
                 dry_run=dry_run,
                 stop_at=stop_at,
             )
@@ -316,18 +363,37 @@ async def run_unified_search(
             },
         )
 
+        registry = source_registry_factory()
+        source_broker = UnifiedSourceBroker(
+            searcher=searcher,
+            search_functions_override=search_functions,
+        )
+        use_case = UnifiedSearchUseCase(
+            planner=build_unified_search_plan,
+            executor=execute_unified_search,
+            source_broker=source_broker,
+            enrichment=UnifiedEnrichmentAdapter(),
+            analyzer_factory=analyzer_factory,
+            enhancer_factory=enhancer_factory,
+            source_registry_factory=lambda: registry,
+        )
+        plan_recorded = False
+
+        async def _record_plan(plan: Any) -> None:
+            nonlocal plan_recorded
+            await journal.plan(plan)
+            plan_recorded = True
+
         try:
-            plan = await build_unified_search_plan(
+            outcome = await use_case.execute(
                 request,
                 progress=_progress,
-                analyzer_factory=analyzer_factory,
-                enhancer_factory=enhancer_factory,
-                source_registry_factory=source_registry_factory,
+                plan_observer=_record_plan,
             )
         except SourceSelectionError as selection_error:
             failed_run = await journal.fail(selection_error, stage="planning", retryable=False)
             await notify_session_resources_updated(ctx)
-            available_sources = source_registry_factory().list_unified_sources()
+            available_sources = registry.list_unified_sources()
             run_hint = _search_run_hint(failed_run)
             response = ResponseFormatter.error(
                 str(selection_error),
@@ -342,6 +408,8 @@ async def run_unified_search(
             )
             return _attach_search_run_to_error(response, output_format=output_format, run=failed_run)
         except ValueError as exc:
+            if plan_recorded:
+                raise
             failed_run = await journal.fail(exc, stage="planning", retryable=False)
             await notify_session_resources_updated(ctx)
             run_hint = _search_run_hint(failed_run)
@@ -354,122 +422,8 @@ async def run_unified_search(
             )
             return _attach_search_run_to_error(response, output_format=output_format, run=failed_run)
 
-        await journal.plan(plan)
-
-        execution = await execute_unified_search(
-            plan,
-            searcher,
-            progress=_progress,
-            ctx=ctx,
-            search_functions=search_functions
-            or {
-                "pubmed": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_pubmed_adapter(
-                    searcher,
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "openalex": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_openalex_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "europe_pmc": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_europe_pmc_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "semantic_scholar": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_semantic_scholar_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "core": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_core_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "scopus": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_scopus_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "web_of_science": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_web_of_science_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "arxiv": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_arxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "medrxiv": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_medrxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "biorxiv": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_biorxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-            },
-            timeline_builder_cls=timeline_builder_cls,
-            research_tree_builder=research_tree_builder,
-        )
+        plan = outcome.plan
+        execution = outcome.execution
         await journal.record_execution(execution, plan)
 
         expected_status = classify_search_run_status(execution)
@@ -479,7 +433,7 @@ async def run_unified_search(
         await _progress(9, 10, "Formatting output...")
         if is_structured_output_format(request.output_format):
             primary_format = cast("Literal['json', 'toon']", request.output_format)
-            artifact = persist_unified_search_artifact(
+            artifact = await persist_unified_search_artifact(
                 request=request,
                 plan=plan,
                 execution=execution,
@@ -501,19 +455,22 @@ async def run_unified_search(
                 source_api_counts=execution.source_api_counts or None,
                 source_disagreement=execution.source_disagreement,
                 reproducibility_score=execution.reproducibility_score,
-                research_context=execution.research_context_data,
                 source_errors=execution.source_errors,
                 source_metadata=execution.source_metadata,
+                enrichment_metadata=execution.enrichment_metadata,
                 source_statuses=execution.source_statuses,
                 counts_first=request.counts_first,
                 compact_output=request.compact_output,
                 include_analysis=request.show_analysis,
-                include_similarity_scores=request.include_similarity_scores,
+                include_rank_scores=request.include_rank_scores,
                 include_next_tools=request.include_next_tools,
                 include_section_provenance=request.include_section_provenance,
                 output_format=request.output_format,
                 artifact_manifest=artifact,
                 search_run_handoff=search_run_handoff,
+                result_filter_counts=execution.result_filter_counts,
+                clinical_trials_coverage=execution.clinical_trials_coverage,
+                prefetched_trials=execution.prefetched_trials,
             )
 
         markdown_response = await _format_unified_results(
@@ -524,21 +481,28 @@ async def run_unified_search(
             execution.pubmed_total_count,
             plan.icd_matches,
             include_trials=request.include_clinical_trials,
-            include_similarity_scores=request.include_similarity_scores,
+            include_rank_scores=request.include_rank_scores,
             original_query=plan.analysis.original_query,
             enhanced_entities=plan.matched_entity_names or None,
             relaxation_result=execution.relaxation_result,
             deep_search_metrics=execution.deep_search_metrics,
             prefetched_trials=execution.prefetched_trials,
+            clinical_trials_coverage=execution.clinical_trials_coverage,
             source_api_counts=execution.source_api_counts or None,
             source_disagreement=execution.source_disagreement,
             reproducibility_score=execution.reproducibility_score,
             source_errors=execution.source_errors,
             source_metadata=execution.source_metadata,
-            research_context_preview=execution.research_context_preview,
+            enrichment_metadata=execution.enrichment_metadata,
             counts_first=request.counts_first,
+            result_filter_counts=execution.result_filter_counts,
         )
-        artifact = persist_unified_search_artifact(
+        # Markdown rendering can add a typed adjunct-format failure. Refresh
+        # the provisional terminal state before embedding it in the artifact.
+        expected_status = classify_search_run_status(execution)
+        provisional_run = journal.provisional_run(expected_status)
+        provisional_handoff = compact_search_run_handoff(provisional_run)
+        artifact = await persist_unified_search_artifact(
             request=request,
             plan=plan,
             execution=execution,
@@ -576,17 +540,4 @@ async def run_unified_search(
         return _attach_search_run_to_error(response, output_format=output_format, run=failed_run)
 
 
-def make_mcp_unified_search_runner(
-    searcher: LiteratureSearcher,
-    *,
-    ctx: Context | None = None,
-) -> Callable[..., Any]:
-    """Return a runner compatible with `UnifiedSearchService`."""
-
-    async def _runner(**kwargs: Any) -> str:
-        return await run_unified_search(searcher=searcher, ctx=ctx, **kwargs)
-
-    return _runner
-
-
-__all__ = ["make_mcp_unified_search_runner", "persist_unified_search_artifact", "run_unified_search"]
+__all__ = ["persist_unified_search_artifact", "run_unified_search"]
