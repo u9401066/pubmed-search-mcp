@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from Bio import Entrez
 
+from .base import raise_ncbi_infrastructure_error
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
@@ -72,8 +74,8 @@ class CitationMixin:
             if related_ids:
                 return await self.fetch_details(related_ids)
             return []
-        except Exception as e:
-            return [{"error": str(e)}]
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("related_articles", exc)
 
     async def get_citing_articles(self, pmid: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -107,8 +109,8 @@ class CitationMixin:
             if citing_ids:
                 return await self.fetch_details(citing_ids)
             return []
-        except Exception as e:
-            return [{"error": str(e)}]
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("citing_articles", exc)
 
     async def get_article_references(self, pmid: str, limit: int = 20) -> list[dict[str, Any]]:
         """
@@ -142,14 +144,5 @@ class CitationMixin:
             if ref_ids:
                 return await self.fetch_details(ref_ids)
             return []
-        except Exception as e:
-            return [{"error": str(e)}]
-
-    # Aliases for backward compatibility
-    async def find_related_articles(self, pmid: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Alias for get_related_articles."""
-        return await self.get_related_articles(pmid, limit)
-
-    async def find_citing_articles(self, pmid: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Alias for get_citing_articles."""
-        return await self.get_citing_articles(pmid, limit)
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("article_references", exc)

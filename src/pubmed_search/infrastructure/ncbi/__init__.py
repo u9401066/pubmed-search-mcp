@@ -16,12 +16,13 @@ Usage:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
     searcher = LiteratureSearcher(email="your@email.com")
-    results = searcher.search("diabetes treatment", limit=10)
+    page = await searcher.search_page("diabetes treatment", limit=10)
+    results = page.items
 """
 
 from __future__ import annotations
 
-from .base import EntrezBase, SearchStrategy
+from .base import EntrezBase, NCBIInfrastructureError, NCBIProviderSchemaError, SearchStrategy
 from .batch import BatchMixin
 from .citation import CitationMixin
 from .icite import ICiteMixin
@@ -34,13 +35,13 @@ class LiteratureSearcher(SearchMixin, PDFMixin, CitationMixin, BatchMixin, Utils
     """
     Complete literature search interface combining all Entrez functionality.
 
-    This class uses mixins to provide a clean, modular API while maintaining
-    backward compatibility with the original LiteratureSearcher interface.
+    This class composes the canonical Entrez operations into one infrastructure
+    dependency for the application layer.
 
     Example:
         >>> searcher = LiteratureSearcher(email="researcher@example.com")
-        >>> results = searcher.search("machine learning diagnosis", limit=5)
-        >>> for paper in results:
+        >>> page = await searcher.search_page("machine learning diagnosis", limit=5)
+        >>> for paper in page.items:
         ...     print(paper['title'])
     """
 
@@ -50,6 +51,8 @@ __all__ = [
     "CitationMixin",
     "EntrezBase",
     "LiteratureSearcher",
+    "NCBIInfrastructureError",
+    "NCBIProviderSchemaError",
     "PDFMixin",
     "SearchMixin",
     "SearchStrategy",

@@ -34,10 +34,12 @@ class TestSearchModule:
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
 
-            await search_mixin.search("test query", limit=10)
+            page = await search_mixin.search_page("test query", limit=10)
 
             # Should call esearch
             mock_esearch.assert_called_once()
+            assert page.items == []
+            assert page.total == 2
 
     async def test_search_with_date_filters(self, search_mixin):
         """Test search with date filters."""
@@ -49,13 +51,14 @@ class TestSearchModule:
             mock_read.return_value = {"IdList": [], "Count": "0"}
             mock_esearch.return_value = MagicMock()
 
-            await search_mixin.search(
+            page = await search_mixin.search_page(
                 "test",
                 limit=10,
-                date_from="2024/01/01",
-                date_to="2024/12/31",
-                date_type="edat",
+                min_year=2024,
+                max_year=2024,
             )
+            assert page.metadata["date_contract"] == "publication_year"
+            assert "2024/01/01:2024/12/31[dp]" in str(page.query)
 
     async def test_fetch_details_basic(self, search_mixin):
         """Test fetching article details."""
@@ -118,22 +121,6 @@ class TestDiscoveryToolsComplete:
 
         return tools, searcher
 
-    # v0.1.21: search_literature has been integrated into unified_search
-    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
-    async def test_search_literature_tool(self, registered_tools):
-        """Test search_literature tool function."""
-        # This tool has been integrated into unified_search
-
-    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
-    async def test_search_literature_empty_query(self, registered_tools):
-        """Test search_literature with empty query."""
-        # This tool has been integrated into unified_search
-
-    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
-    async def test_search_literature_with_ambiguous_term(self, registered_tools):
-        """Test search_literature with ambiguous journal name."""
-        # This tool has been integrated into unified_search
-
     async def test_find_related_articles_tool(self, registered_tools):
         """Test find_related_articles tool."""
         tools, searcher = registered_tools
@@ -161,7 +148,7 @@ class TestDiscoveryToolsComplete:
         """Test find_related_articles with error."""
         tools, searcher = registered_tools
 
-        searcher.get_related_articles.return_value = [{"error": "API Error"}]
+        searcher.get_related_articles.side_effect = RuntimeError("API unavailable")
 
         result = await tools["find_related_articles"](pmid="123", limit=5)
 

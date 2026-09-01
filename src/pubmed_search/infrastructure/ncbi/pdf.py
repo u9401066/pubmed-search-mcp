@@ -102,8 +102,8 @@ class PDFMixin:
             if pmc_id:
                 return f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
             return None
-        except Exception as e:
-            logger.exception(f"Error getting PMC URL: {e}")
+        except Exception as exc:
+            logger.warning("PMC URL lookup failed (%s)", type(exc).__name__)
             return None
 
     async def download_pmc_pdf(self, pmid: str, output_path: str) -> bool:
@@ -122,10 +122,10 @@ class PDFMixin:
             pmc_id = await self._get_pmc_id(pmid)
 
             if not pmc_id:
-                logger.info(f"PMID {pmid}: No PMC ID found - article not in PubMed Central Open Access")
+                logger.info("No PMC identifier found for requested article")
                 return False
 
-            logger.info(f"PMID {pmid}: Found PMC ID {pmc_id}, attempting PDF download...")
+            logger.info("PMC identifier found; attempting PDF download")
 
             # Try to get the PDF from PMC
             oa_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
@@ -142,15 +142,16 @@ class PDFMixin:
 
             if response.status_code == 200 and "application/pdf" in content_type:
                 await asyncio.to_thread(Path(output_path).write_bytes, response.content)
-                logger.info(f"PMID {pmid}: PDF downloaded successfully ({len(response.content)} bytes)")
+                logger.info("PMC PDF downloaded successfully (%s bytes)", len(response.content))
                 return True
 
             logger.warning(
-                f"PMID {pmid}: PDF download failed - status={response.status_code}, content_type={content_type}"
+                "PMC PDF download returned an unusable response (status=%s)",
+                response.status_code,
             )
             return False
-        except Exception as e:
-            logger.exception(f"PMID {pmid}: Error downloading PDF - {e}")
+        except Exception as exc:
+            logger.warning("PMC PDF download failed (%s)", type(exc).__name__)
             return False
 
     async def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
@@ -188,8 +189,8 @@ class PDFMixin:
                 return response.content
 
             return None
-        except Exception as e:
-            logger.exception(f"PMID {pmid}: Error downloading PDF - {e}")
+        except Exception as exc:
+            logger.warning("PMC PDF download failed (%s)", type(exc).__name__)
             return None
 
     async def _get_pmc_id(self, pmid: str) -> str | None:
@@ -206,10 +207,10 @@ class PDFMixin:
             record = await self._lookup_pmc_link_record(pmid)
             pmc_id = self._extract_pmc_id_from_record(record)
             if pmc_id:
-                logger.debug(f"PMID {pmid} -> PMC{pmc_id}")
+                logger.debug("Resolved one PMID to a PMC identifier")
                 return pmc_id
-            logger.debug(f"PMID {pmid}: No PMC link found")
+            logger.debug("No PMC link found for one requested article")
             return None
-        except Exception as e:
-            logger.exception(f"PMID {pmid}: Error looking up PMC ID - {e}")
+        except Exception as exc:
+            logger.warning("PMC identifier lookup failed (%s)", type(exc).__name__)
             return None
