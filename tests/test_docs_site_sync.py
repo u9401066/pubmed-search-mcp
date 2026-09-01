@@ -150,6 +150,7 @@ def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
 def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None:
     index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
     site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    site_css = (DOCS_ROOT / "site.css").read_text(encoding="utf-8")
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
@@ -160,6 +161,11 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
     assert "runtime contracts" in index_html
     assert "function wrapLocalImages()" in site_js
     assert "sidebarBackdrop.addEventListener" in site_js
+    assert "grid-template-columns: minmax(0, 1fr) auto" in site_css
+    assert "grid-column: 1 / -1" in site_css
+    assert "overflow-wrap: anywhere" in site_css
+    assert "word-break: break-word" in site_css
+    assert site_css.count(".doc-content img {") == 1
 
 
 def test_docs_site_quick_paths_follow_the_active_language() -> None:
