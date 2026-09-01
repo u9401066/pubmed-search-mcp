@@ -14,7 +14,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "LiteratureSearcher": ("pubmed_search.infrastructure.ncbi", "LiteratureSearcher"),
     "SearchStrategy": ("pubmed_search.infrastructure.ncbi", "SearchStrategy"),
     "NCBICitationExporter": ("pubmed_search.infrastructure.ncbi.citation_exporter", "NCBICitationExporter"),
-    "export_citations_official": ("pubmed_search.infrastructure.ncbi.citation_exporter", "export_citations_official"),
 }
 
 __all__ = list(_LAZY_EXPORTS)

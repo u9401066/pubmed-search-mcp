@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pubmed_search.application.image_search import ImageSearchService
 
 _RUN_LIVE_TESTS = os.environ.get("PUBMED_RUN_LIVE_TESTS", "").strip().lower() in {"1", "true", "yes"}
 _SKIP_INTEGRATION = os.environ.get("SKIP_INTEGRATION", "").strip().lower() == "true"
@@ -35,6 +39,17 @@ def real_email():
     return email
 
 
+def _real_image_search_service() -> ImageSearchService:
+    """Compose the live image service without an application-layer provider import."""
+    from pubmed_search.application.image_search import ImageSearchService
+    from pubmed_search.application.image_search.source_adapters import build_image_source_registry
+    from pubmed_search.infrastructure.sources.openi import OpenIClient
+
+    return ImageSearchService(
+        adapters=build_image_source_registry(openi_client_factory=OpenIClient),
+    )
+
+
 class TestRealPubMedSearch:
     """Integration tests with real PubMed API."""
 
@@ -44,21 +59,21 @@ class TestRealPubMedSearch:
     )
     async def test_real_search(self, real_email):
         """Test real PubMed search."""
-        from pubmed_search.infrastructure.http import PubMedClient
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
         # Longer delay to avoid NCBI rate limiting when running with other tests
         await asyncio.sleep(2)
 
-        client = PubMedClient(email=real_email)
+        client = LiteratureSearcher(email=real_email)
 
         # Retry up to 3 times for network flakiness
         last_error = None
         for attempt in range(3):
             try:
-                results = await client.search("diabetes mellitus", limit=5)
-                if len(results) > 0:
-                    assert results[0].pmid is not None
-                    assert results[0].title is not None
+                page = await client.search_page("diabetes mellitus", limit=5)
+                if page.items:
+                    assert page.items[0].get("pmid")
+                    assert page.items[0].get("title")
                     return  # Success
                 # Empty results, retry after delay
                 last_error = "Empty results returned"
@@ -151,11 +166,9 @@ class TestRealImageSearch:
     )
     async def test_real_image_search_xray(self):
         """Test real Open-i search for X-ray images."""
-        from pubmed_search.application.image_search import ImageSearchService
-
         await asyncio.sleep(2)  # Respect API rate limits
 
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result, success = await self._search_with_retry(service, "chest pneumonia", "xg")
 
         if not success:
@@ -172,11 +185,9 @@ class TestRealImageSearch:
     )
     async def test_real_image_search_microscopy(self):
         """Test real Open-i search for microscopy images."""
-        from pubmed_search.application.image_search import ImageSearchService
-
         await asyncio.sleep(2)
 
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result, success = await self._search_with_retry(service, "liver histology", "mc")
 
         if not success:
@@ -191,10 +202,7 @@ class TestRealImageSearch:
     )
     async def test_advisor_integration_suitable_query(self):
         """Test ImageQueryAdvisor → ImageSearchService full pipeline."""
-        from pubmed_search.application.image_search import (
-            ImageQueryAdvisor,
-            ImageSearchService,
-        )
+        from pubmed_search.application.image_search import ImageQueryAdvisor
 
         await asyncio.sleep(2)
 
@@ -206,7 +214,7 @@ class TestRealImageSearch:
         assert advice.recommended_image_type == "x"  # x = X-ray (not xg which is Exclude Graphics)
 
         # Step 2: Service executes search with advisor guidance
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result, success = await self._search_with_retry(
             service,
             "chest X-ray pneumonia",
@@ -226,12 +234,10 @@ class TestRealImageSearch:
     )
     async def test_advisor_temporal_warning_live(self):
         """Test that temporal warnings are accurate with real API."""
-        from pubmed_search.application.image_search import ImageSearchService
-
         await asyncio.sleep(2)
 
         # covid-19 should trigger temporal warning (Open-i frozen ~2020)
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result = await service.search(
             query="covid-19 lung CT",
             image_type="xg",
@@ -251,10 +257,7 @@ class TestRealImageSearch:
     )
     async def test_advisor_unsuitable_query_suggestion(self):
         """Test that unsuitable queries get proper suggestions."""
-        from pubmed_search.application.image_search import (
-            ImageQueryAdvisor,
-            ImageSearchService,
-        )
+        from pubmed_search.application.image_search import ImageQueryAdvisor
 
         await asyncio.sleep(2)
 
@@ -264,10 +267,10 @@ class TestRealImageSearch:
 
         assert advice.is_suitable is False
         assert len(advice.suggestions) > 0
-        assert any("search_literature" in s or "unified_search" in s for s in advice.suggestions)
+        assert any("unified_search" in s for s in advice.suggestions)
 
         # Service should still work but include suggestions
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result = await service.search(
             query="propofol pharmacokinetics",
             limit=3,
@@ -281,12 +284,10 @@ class TestRealImageSearch:
     )
     async def test_image_type_mismatch_warning_live(self):
         """Test image_type mismatch warning with real API."""
-        from pubmed_search.application.image_search import ImageSearchService
-
         await asyncio.sleep(2)
 
         # histology query with xg (X-ray) type should warn
-        service = ImageSearchService()
+        service = _real_image_search_service()
         result = await service.search(
             query="histology liver pathology",
             image_type="xg",  # Should recommend mc
