@@ -144,7 +144,7 @@ class FigureClient(BaseAPIClient):
                     )
                     return result
         except Exception as e:
-            logger.warning("Europe PMC figure extraction failed for %s: %s", pmcid, e)
+            logger.warning("Europe PMC figure extraction failed (%s)", type(e).__name__)
 
         # === Source 2: PMC efetch XML (NCBI) ===
         try:
@@ -166,7 +166,7 @@ class FigureClient(BaseAPIClient):
                     )
                     return result
         except Exception as e:
-            logger.warning("PMC efetch figure extraction failed for %s: %s", pmcid, e)
+            logger.warning("PMC efetch figure extraction failed (%s)", type(e).__name__)
 
         # === Source 3: PMC BioC JSON (captions only) ===
         try:
@@ -177,7 +177,7 @@ class FigureClient(BaseAPIClient):
                 result.source = "bioc"
                 return result
         except Exception as e:
-            logger.warning("BioC figure extraction failed for %s: %s", pmcid, e)
+            logger.warning("BioC figure extraction failed (%s)", type(e).__name__)
 
         # All sources failed
         result.error = "source_unavailable"
@@ -247,7 +247,7 @@ class FigureClient(BaseAPIClient):
             xml_content = re.sub(r"<!DOCTYPE[^>]*>", "", xml_content)
             root = ElementTree.fromstring(xml_content)
         except Exception as e:
-            logger.warning("Failed to parse JATS XML: %s", e)
+            logger.warning("JATS figure XML parsing failed (%s)", type(e).__name__)
             return None, None
 
         title_elem = root.find(".//article-title")
@@ -426,7 +426,7 @@ class FigureClient(BaseAPIClient):
 
             return figures
         except Exception as e:
-            logger.warning("HTML scraping fallback failed for %s: %s", pmcid, e)
+            logger.warning("PMC HTML figure fallback failed (%s)", type(e).__name__)
             return figures
 
     async def _resolve_exact_image_urls_if_needed(
@@ -510,13 +510,8 @@ def _normalize_pmcid(pmcid: str) -> str:
     return pmcid.upper()
 
 
-# Singleton management
-_figure_client: FigureClient | None = None
-
-
 def get_figure_client() -> FigureClient:
-    """Get or create FigureClient singleton."""
-    global _figure_client
-    if _figure_client is None:
-        _figure_client = FigureClient()
-    return _figure_client
+    """Get the figure client owned by the current source runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
+
+    return get_source_runtime().get_or_create_client(("figure",), FigureClient)

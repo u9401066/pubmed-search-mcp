@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -245,6 +246,17 @@ class TestFigureClient:
         result = client._parse_jats_figures("not valid xml <><>", "PMC123")
         assert result == (None, None)
 
+    def test_parse_failure_log_exposes_only_exception_type(self, client, caplog):
+        malicious = "<article><secret>token=super-secret&query=private"
+
+        with caplog.at_level(logging.WARNING):
+            result = client._parse_jats_figures(malicious, "PMC123")
+
+        assert result == (None, None)
+        assert "token=super-secret" not in caplog.text
+        assert "query=private" not in caplog.text
+        assert "ParseError" in caplog.text
+
     def test_parse_jats_empty_article(self, client):
         xml = "<article><body></body></article>"
         figures, title = client._parse_jats_figures(xml, "PMC123")
@@ -365,6 +377,26 @@ class TestFigureClient:
             assert result.error == "source_unavailable"
             assert result.error_detail is not None
 
+    async def test_source_exception_log_does_not_expose_upstream_details(self, client, caplog):
+        with (
+            patch.object(
+                client,
+                "_fetch_epmc_xml",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("https://upstream.example/path?api_key=super-secret body=private"),
+            ),
+            patch.object(client, "_fetch_pmc_efetch_xml", new_callable=AsyncMock, return_value=None),
+            patch.object(client, "_fetch_bioc_figures", new_callable=AsyncMock, return_value=[]),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = await client.get_article_figures("PMC123")
+
+        assert result.error == "source_unavailable"
+        assert "super-secret" not in caplog.text
+        assert "upstream.example" not in caplog.text
+        assert "body=private" not in caplog.text
+        assert "RuntimeError" in caplog.text
+
     async def test_get_article_figures_normalizes_pmcid(self, client):
         """Test that numeric PMCIDs are normalized."""
         with patch.object(client, "_make_request", new_callable=AsyncMock) as mock:
@@ -395,7 +427,7 @@ class TestFigureClient:
             assert "cdn.ncbi.nlm.nih.gov" in updated[0].image_url
             assert updated[1].image_url is not None
 
-    async def test_resolve_image_urls_from_html_failure(self, client):
+    async def test_resolve_image_urls_from_html_failure(self, client, caplog):
         """Test HTML scraping gracefully handles failure."""
         figures = [ArticleFigure(figure_id="f1", label="Fig 1", graphic_href="x")]
 
@@ -403,11 +435,15 @@ class TestFigureClient:
             client,
             "_make_request",
             new_callable=AsyncMock,
-            side_effect=ConnectionError("Failed"),
+            side_effect=ConnectionError("password=super-secret https://private.example/path"),
         ):
-            result = await client.resolve_image_urls_from_html("PMC123", figures)
+            with caplog.at_level(logging.WARNING):
+                result = await client.resolve_image_urls_from_html("PMC123", figures)
             # Should return original figures, not raise
             assert len(result) == 1
+            assert "super-secret" not in caplog.text
+            assert "private.example" not in caplog.text
+            assert "ConnectionError" in caplog.text
 
     # ----- Singleton -----
 

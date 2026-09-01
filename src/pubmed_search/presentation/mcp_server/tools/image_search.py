@@ -1,5 +1,5 @@
 """
-Image Search Tool - Search biomedical images across Open-i and Europe PMC.
+Image Search Tool - Search biomedical images through the Open-i adapter.
 
 Tools:
 - search_biomedical_images: Unified biomedical image search with full API support
@@ -20,47 +20,146 @@ Full API Parameters (Open-i):
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Annotated, Literal
 
-from pubmed_search.application.image_search import ImageSearchResult, ImageSearchService
+from pydantic import Field
+
+from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text, safe_markdown_url
 
 from ._common import InputNormalizer, ResponseFormatter
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
-logger = logging.getLogger(__name__)
+    from pubmed_search.application.image_search import ImageSearchResult, ImageSearchService
+
+ImageQuery = Annotated[str, Field(min_length=1, max_length=500)]
+ImageLimit = Annotated[int, Field(ge=1, le=50)]
+ImageType = Literal["xg", "xm", "x", "u", "ph", "p", "mc", "m", "g", "c"]
+ImageCollection = Literal["pmc", "cxr", "usc", "hmd", "mpx"]
+ImageSort = Literal["r", "o", "d", "e", "g", "oc", "pr", "pg", "t"]
+ImageArticleType = Literal[
+    "ab",
+    "bk",
+    "bf",
+    "cr",
+    "dp",
+    "di",
+    "ed",
+    "ib",
+    "in",
+    "lt",
+    "mr",
+    "ma",
+    "ne",
+    "ob",
+    "pr",
+    "or",
+    "re",
+    "ra",
+    "rw",
+    "sr",
+    "rr",
+    "os",
+    "hs",
+    "ot",
+]
+ImageSpecialty = Literal[
+    "b",
+    "bc",
+    "c",
+    "ca",
+    "cc",
+    "d",
+    "de",
+    "dt",
+    "e",
+    "en",
+    "f",
+    "eh",
+    "g",
+    "ge",
+    "gr",
+    "gy",
+    "h",
+    "i",
+    "id",
+    "im",
+    "n",
+    "ne",
+    "nu",
+    "o",
+    "or",
+    "ot",
+    "p",
+    "py",
+    "pu",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "vi",
+]
+ImageLicense = Literal["by", "bync", "byncnd", "byncsa"]
+ImageSubset = Literal["b", "c", "e", "s", "x"]
+ImageSearchField = Literal["t", "m", "ab", "msh", "c", "a"]
+ImageHmpType = Literal[
+    "ad",
+    "ar",
+    "at",
+    "bi",
+    "br",
+    "cr",
+    "ca",
+    "ch",
+    "cg",
+    "cd",
+    "dr",
+    "ep",
+    "ex",
+    "hr",
+    "hu",
+    "lt",
+    "mp",
+    "nw",
+    "pn",
+    "ph",
+    "pi",
+    "po",
+    "pt",
+    "pc",
+    "ps",
+]
 
 
-def register_image_search_tools(mcp: MCPServer):
-    """Register biomedical image search MCP tools.
-
-    Note: Does not need searcher parameter. ImageSearchService
-    manages its own infrastructure clients.
-    Consistent with register_vision_tools(mcp) pattern.
-    """
+def register_image_search_tools(
+    mcp: MCPServer,
+    service: ImageSearchService,
+) -> None:
+    """Register biomedical image search tools with an injected service."""
 
     @mcp.tool()
     async def search_biomedical_images(
-        query: str,
-        sources: str = "auto",
-        image_type: Union[str, None] = None,
-        collection: Union[str, None] = None,
-        open_access_only: Union[bool, str] = True,
-        limit: Union[int, str] = 10,
-        # New parameters (v0.3.4)
-        sort_by: Union[str, None] = None,
-        article_type: Union[str, None] = None,
-        specialty: Union[str, None] = None,
-        license_type: Union[str, None] = None,
-        subset: Union[str, None] = None,
-        search_fields: Union[str, None] = None,
-        video_only: Union[bool, str] = False,
+        query: ImageQuery,
+        image_type: ImageType | None = None,
+        collection: ImageCollection | None = None,
+        limit: ImageLimit = 10,
+        sort_by: ImageSort | None = None,
+        article_type: ImageArticleType | None = None,
+        specialty: ImageSpecialty | None = None,
+        license_type: ImageLicense | None = None,
+        subset: ImageSubset | None = None,
+        search_fields: ImageSearchField | None = None,
+        video_only: bool = False,
+        hmp_type: ImageHmpType | None = None,
     ) -> str:
         """
-        🖼️ Search biomedical images across Open-i and Europe PMC.
+        🖼️ Search biomedical images from NLM Open-i.
 
-        Searches medical/scientific images from multiple sources and returns
+        Searches medical/scientific images from Open-i and returns
         image URLs with metadata (caption, article info, MeSH terms).
 
         ═══════════════════════════════════════════════════════════════        ⚠️ CRITICAL - LANGUAGE REQUIREMENT:
@@ -77,7 +176,6 @@ def register_image_search_tools(mcp: MCPServer):
         ═══════════════════════════════════════════════════════════        SOURCES:
         ═══════════════════════════════════════════════════════════════
         - Open-i (NLM): X-ray, microscopy, clinical images (~133K)
-        - Europe PMC: Figure captions from 33M+ articles (future)
 
         ═══════════════════════════════════════════════════════════════
         EXAMPLES:
@@ -113,11 +211,6 @@ def register_image_search_tools(mcp: MCPServer):
 
         Args:
             query: Search query (e.g., "chest X-ray pneumonia")
-            sources: Image sources to search:
-                - "auto": Select best sources (default)
-                - "openi": Open-i only (best for medical images)
-                - "europe_pmc": Europe PMC only (future)
-                - "all": Search all sources
             image_type: Filter by image type (Open-i only):
                 Positive filters:
                 - "c": CT scan images
@@ -139,7 +232,6 @@ def register_image_search_tools(mcp: MCPServer):
                 - "hmd": History of Medicine
                 - "usc": USC collection
                 - None: All collections (default)
-            open_access_only: Only return open access images (default True)
             limit: Maximum number of images to return (default 10, max 50)
             sort_by: Sort results by (Open-i only):
                 - "r": Relevance (default)
@@ -191,6 +283,7 @@ def register_image_search_tools(mcp: MCPServer):
                 - "c": Caption only
                 - "a": Author only
             video_only: If True, only return video content (default False)
+            hmp_type: History of Medicine publication type. Requires collection="hmd".
 
         Returns:
             Formatted image results with URLs, captions, and article metadata
@@ -204,32 +297,26 @@ def register_image_search_tools(mcp: MCPServer):
                 example='search_biomedical_images("chest X-ray pneumonia")',
                 tool_name="search_biomedical_images",
             )
+        if len(query) > 500:
+            return ResponseFormatter.error(
+                "Search query exceeds 500 characters",
+                suggestion="Provide one concise English biomedical image query",
+                tool_name="search_biomedical_images",
+            )
 
-        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
-        open_access_only = InputNormalizer.normalize_bool(open_access_only, default=True)
-        video_only = InputNormalizer.normalize_bool(video_only, default=False)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+            return ResponseFormatter.error(
+                "limit must be an integer from 1 to 50",
+                tool_name="search_biomedical_images",
+            )
 
-        # 2. Map sources string to list
-        source_map = {
-            "auto": None,
-            "openi": ["openi"],
-            "europe_pmc": ["europe_pmc"],
-            "all": ["openi", "europe_pmc"],
-        }
-        source_list = source_map.get(sources)
-        if sources not in source_map:
-            logger.warning(f"Unknown sources value '{sources}', using auto")
-            source_list = None
-
-        # 3. Call application service
+        # 2. Call the registry-backed application service. The public schema
+        # exposes only capabilities that have a live default adapter.
         try:
-            service = ImageSearchService()
             result = await service.search(
                 query=query,
-                sources=source_list,
                 image_type=image_type,
                 collection=collection,
-                open_access_only=open_access_only,
                 limit=limit,
                 sort_by=sort_by,
                 article_type=article_type,
@@ -238,15 +325,17 @@ def register_image_search_tools(mcp: MCPServer):
                 subset=subset,
                 search_fields=search_fields,
                 video_only=video_only,
+                hmp_type=hmp_type,
             )
-        except Exception as e:
+        except Exception as exc:
+            logger.warning("Biomedical image search failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                e,
-                suggestion="Check your query and try again",
+                "Biomedical image search could not be completed",
+                suggestion="Check the bounded query and retry unavailable sources later",
                 tool_name="search_biomedical_images",
             )
 
-        # 4. Format output
+        # 3. Format output
         return _format_image_results(result)
 
 
@@ -256,86 +345,121 @@ def _format_image_results(result: ImageSearchResult) -> str:
 
     # Header
     parts.append("## 🖼️ Image Search Results")
-    parts.append(f"**Query**: {result.query}")
+    parts.append(f"**Query**: {escape_markdown_text(result.query)}")
+    parts.append(f"**Search status**: `{escape_markdown_code(result.search_status)}`")
     parts.append(f"**Found**: {len(result.images)} images (total available: {result.total_count})")
-    parts.append(f"**Sources**: {', '.join(result.sources_used)}")
+    rendered_sources = ", ".join(escape_markdown_text(source) for source in result.sources_used) or "none"
+    parts.append(f"**Responding sources**: {rendered_sources}")
+    if result.source_coverage:
+        parts.append("**Source coverage**:")
+        for coverage in result.source_coverage:
+            total = "unknown" if coverage.total_available is None else str(coverage.total_available)
+            coverage_details = [
+                f"status={coverage.status}",
+                f"returned={coverage.returned}",
+                f"total_available={total}",
+                f"rows_rejected={coverage.rows_rejected}",
+            ]
+            if coverage.has_more is not None:
+                coverage_details.append(f"has_more={str(coverage.has_more).lower()}")
+            parts.append(
+                f"- {escape_markdown_text(coverage.source)}: `{escape_markdown_code(', '.join(coverage_details))}`"
+            )
 
     # Show applied filters
     if result.applied_filters:
-        filter_strs = [f"{k}={v}" for k, v in result.applied_filters.items()]
+        filter_strs = [
+            f"{escape_markdown_text(k)}={escape_markdown_text(v)}" for k, v in result.applied_filters.items()
+        ]
         parts.append(f"**Filters**: {', '.join(filter_strs)}")
 
     if result.errors:
-        parts.append(f"\n⚠️ Errors: {'; '.join(result.errors)}")
+        parts.append(f"\n⚠️ Errors: {'; '.join(escape_markdown_text(error) for error in result.errors)}")
 
     # Advisor warnings (intelligent guidance)
     if result.advisor_warnings:
         parts.append("")
         parts.append("### ⚠️ 智慧建議")
         for w in result.advisor_warnings:
-            parts.append(f"- {w}")
+            parts.append(f"- {escape_markdown_text(w)}")
 
     if result.advisor_suggestions:
         for s in result.advisor_suggestions:
-            parts.append(f"- 💡 {s}")
+            parts.append(f"- 💡 {escape_markdown_text(s)}")
 
     if result.recommended_image_type:
-        parts.append(f"- 🎯 建議 image_type: `{result.recommended_image_type}`")
+        parts.append(f"- 🎯 建議 image_type: `{escape_markdown_code(result.recommended_image_type)}`")
 
     if result.coarse_category:
-        parts.append(f"- 📂 粗分類: {result.coarse_category}")
+        parts.append(f"- 📂 粗分類: {escape_markdown_text(result.coarse_category)}")
 
     if result.recommended_collection:
-        parts.append(f"- 📦 建議 collection: `{result.recommended_collection}` ({result.collection_reason})")
+        parts.append(
+            f"- 📦 建議 collection: `{escape_markdown_code(result.recommended_collection)}` "
+            f"({escape_markdown_text(result.collection_reason)})"
+        )
 
     feature_hits = result.advisor_diagnostics.get("feature_hits", []) if result.advisor_diagnostics else []
     if feature_hits:
         parts.append("")
         parts.append("### 🔎 Query Diagnostics")
         for hit in feature_hits[:6]:
-            matched_terms = ", ".join(hit.get("matched_terms", []))
+            matched_terms = ", ".join(escape_markdown_text(term) for term in hit.get("matched_terms", []))
             score_delta = hit.get("score_delta")
-            details = hit["reason"]
+            details = escape_markdown_text(hit["reason"])
             if matched_terms:
                 details = f"{details}: {matched_terms}"
             if score_delta is not None:
                 details = f"{details} ({score_delta:+.2f})"
-            parts.append(f"- {hit['category']}/{hit['rule']}: {details}")
+            category = escape_markdown_text(hit["category"])
+            rule = escape_markdown_text(hit["rule"])
+            parts.append(f"- {category}/{rule}: {details}")
 
     if not result.images:
-        parts.append("\nNo images found. Try broader search terms.")
+        if result.search_status == "partial":
+            parts.append(
+                "\nNo images were returned by the responding source subset, but coverage is partial; "
+                "do not interpret this as a verified zero-result search."
+            )
+        elif result.search_status == "empty":
+            parts.append("\nNo images found in the bounded, successfully queried source set. Try broader search terms.")
+        else:
+            parts.append(
+                "\nBiomedical image search could not be completed because all requested sources were unavailable. "
+                "Retry later; do not interpret this outage as evidence that no images exist."
+            )
         return "\n".join(parts)
 
     parts.append("")
 
     # Image results
     for i, img in enumerate(result.images, 1):
-        parts.append(f"### {i}. {img.article_title or 'Untitled'}")
+        parts.append(f"### {i}. {escape_markdown_text(img.article_title or 'Untitled')}")
 
         # Image info
         if img.image_url:
-            parts.append(f"🖼️ **Image**: {img.image_url}")
+            parts.append(f"🖼️ **Image**: {safe_markdown_url(img.image_url) or 'unsafe URL omitted'}")
         if img.thumbnail_url:
-            parts.append(f"🔍 **Thumbnail**: {img.thumbnail_url}")
+            parts.append(f"🔍 **Thumbnail**: {safe_markdown_url(img.thumbnail_url) or 'unsafe URL omitted'}")
         if img.caption:
             # Truncate very long captions
             caption = img.caption
             if len(caption) > 300:
                 caption = caption[:297] + "..."
-            parts.append(f"📝 **Caption**: {caption}")
+            parts.append(f"📝 **Caption**: {escape_markdown_text(caption)}")
         if img.label:
-            parts.append(f"🏷️ **Label**: {img.label}")
+            parts.append(f"🏷️ **Label**: {escape_markdown_text(img.label)}")
 
         # Article info
         article_parts: list[str] = []
         if img.pmid:
-            article_parts.append(f"PMID: {img.pmid}")
+            article_parts.append(f"PMID: {escape_markdown_text(img.pmid)}")
         if img.pmcid:
-            article_parts.append(f"PMC: {img.pmcid}")
+            article_parts.append(f"PMC: {escape_markdown_text(img.pmcid)}")
         if img.journal:
-            article_parts.append(img.journal)
+            article_parts.append(escape_markdown_text(img.journal))
         if img.pub_year:
-            article_parts.append(str(img.pub_year))
+            article_parts.append(escape_markdown_text(img.pub_year))
         if article_parts:
             parts.append(f"📄 {' | '.join(article_parts)}")
 
@@ -344,11 +468,11 @@ def _format_image_results(result: ImageSearchResult) -> str:
             authors = img.authors
             if len(authors) > 100:
                 authors = authors[:97] + "..."
-            parts.append(f"👤 {authors}")
+            parts.append(f"👤 {escape_markdown_text(authors)}")
 
         # MeSH terms
         if img.mesh_terms:
-            terms = ", ".join(img.mesh_terms[:5])
+            terms = ", ".join(escape_markdown_text(term) for term in img.mesh_terms[:5])
             if len(img.mesh_terms) > 5:
                 terms += f" (+{len(img.mesh_terms) - 5} more)"
             parts.append(f"🏥 **MeSH**: {terms}")
@@ -356,11 +480,11 @@ def _format_image_results(result: ImageSearchResult) -> str:
         # Image type / collection
         meta_parts: list[str] = []
         if img.image_type:
-            meta_parts.append(f"Type: {img.image_type}")
+            meta_parts.append(f"Type: {escape_markdown_text(img.image_type)}")
         if img.collection:
-            meta_parts.append(f"Collection: {img.collection}")
+            meta_parts.append(f"Collection: {escape_markdown_text(img.collection)}")
         if img.source:
-            meta_parts.append(f"Source: {img.source}")
+            meta_parts.append(f"Source: {escape_markdown_text(img.source)}")
         if meta_parts:
             parts.append(f"ℹ️ {' | '.join(meta_parts)}")
 
@@ -374,6 +498,6 @@ def _format_image_results(result: ImageSearchResult) -> str:
     parts.append('- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports')
     parts.append('- Use `specialty="r"` for radiology, `"c"` for cardiology')
     parts.append('- Use `license_type="by"` for CC-BY licensed images')
-    parts.append("- Use `fetch_article_details(pmid=...)` to get full article info")
+    parts.append("- Use `fetch_article_details(pmids=...)` to get full article info")
 
     return "\n".join(parts)

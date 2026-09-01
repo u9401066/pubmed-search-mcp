@@ -327,19 +327,3 @@ class ImageQueryAdvisor:
     def _type_label(image_type: str) -> str:
         """Human-readable label for image type codes."""
         return TYPE_LABELS.get(image_type, image_type)
-
-
-# Convenience function
-def advise_image_search(query: str, image_type: str | None = None) -> ImageSearchAdvice:
-    """
-    Analyze a query for image search suitability (convenience function).
-
-    Args:
-        query: User's search query
-        image_type: Explicitly specified image type (if any)
-
-    Returns:
-        ImageSearchAdvice with recommendations and warnings
-    """
-    advisor = ImageQueryAdvisor()
-    return advisor.advise(query, image_type)

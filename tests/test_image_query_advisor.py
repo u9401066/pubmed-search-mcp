@@ -10,16 +10,48 @@ Tests:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from pubmed_search.application.image_search import ImageSearchService
 from pubmed_search.application.image_search.advisor import (
     ImageQueryAdvisor,
     ImageSearchAdvice,
-    advise_image_search,
+)
+from pubmed_search.application.image_search.source_adapters import (
+    ImageProviderSearchResult,
+    build_image_source_registry,
 )
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
+
+
+def _image_search_service(client: Any | None = None) -> ImageSearchService:
+    """Compose image search with an explicit test provider factory."""
+    resolved_client = client if client is not None else AsyncMock()
+    if client is None:
+        resolved_client.search.return_value = _provider_result([], 0)
+    return ImageSearchService(
+        adapters=build_image_source_registry(
+            openi_client_factory=lambda: resolved_client,
+        )
+    )
+
+
+def _provider_result(images: list[Any], total: int) -> ImageProviderSearchResult:
+    """Build a strict provider outcome for advisor integration tests."""
+
+    return ImageProviderSearchResult(
+        images=images,
+        total_count=total,
+        status="ok" if images else "empty",
+        rows_received=len(images),
+        pages_fetched=1,
+    )
+
 
 # ============================================================================
 # ImageQueryAdvisor Tests
@@ -91,7 +123,7 @@ class TestImageQueryAdvisorSuitability:
         advice = self.advisor.advise("propofol mechanism of action pharmacodynamics")
         assert advice.is_suitable is False
         assert len(advice.suggestions) > 0
-        assert any("unified_search" in s or "search_literature" in s for s in advice.suggestions)
+        assert any("unified_search" in s for s in advice.suggestions)
 
 
 class TestImageQueryAdvisorImageType:
@@ -309,10 +341,10 @@ class TestImageSearchAdviceDataclass:
         advice = ImageSearchAdvice(
             is_suitable=False,
             confidence=0.2,
-            suggestions=["Use search_literature()"],
+            suggestions=["Use unified_search()"],
         )
         formatted = advice.format_suggestions()
-        assert "💡 Use search_literature()" in formatted
+        assert "💡 Use unified_search()" in formatted
 
     async def test_format_empty(self):
         advice = ImageSearchAdvice(is_suitable=True, confidence=0.5)
@@ -322,21 +354,6 @@ class TestImageSearchAdviceDataclass:
     async def test_diagnostics_default_empty(self):
         advice = ImageSearchAdvice(is_suitable=True, confidence=0.5)
         assert advice.diagnostics == {}
-
-
-class TestAdviseImageSearchConvenience:
-    """Tests for the convenience function."""
-
-    async def test_convenience_function(self):
-        advice = advise_image_search("chest X-ray pneumonia")
-        assert isinstance(advice, ImageSearchAdvice)
-        assert advice.is_suitable is True
-
-    async def test_convenience_with_image_type(self):
-        advice = advise_image_search("histology", image_type="xg")
-        assert isinstance(advice, ImageSearchAdvice)
-        # Should warn about mismatch
-        assert advice.has_warnings
 
 
 # ============================================================================
@@ -514,14 +531,8 @@ class TestAdvisorIntegration:
 
     async def test_service_includes_advisor_warnings(self):
         """ImageSearchService should include advisor warnings in result."""
-        from unittest.mock import MagicMock, patch
-
-        from pubmed_search.application.image_search import (
-            ImageSearchService,
-        )
         from pubmed_search.domain.entities.image import ImageResult
 
-        service = ImageSearchService()
         mock_client = MagicMock()
         mock_images = [
             ImageResult(
@@ -529,92 +540,54 @@ class TestAdvisorIntegration:
                 pmid="123",
             ),
         ]
-        mock_client.search = AsyncMock(return_value=(mock_images, 1))
+        mock_client.search = AsyncMock(return_value=_provider_result(mock_images, 1))
+        service = _image_search_service(mock_client)
 
-        with patch(
-            "pubmed_search.infrastructure.sources.get_openi_client",
-            return_value=mock_client,
-        ):
-            # Query with post-2020 keyword → should have temporal warning
-            result = await service.search("covid-19 chest CT")
+        # Query with post-2020 keyword → should have temporal warning
+        result = await service.search("covid-19 chest CT")
 
         assert len(result.advisor_warnings) > 0
         assert any("2020" in w for w in result.advisor_warnings)
 
     async def test_service_includes_suggestions_for_bad_query(self):
         """Non-image queries should get suggestions."""
-        from unittest.mock import MagicMock, patch
-
-        from pubmed_search.application.image_search import (
-            ImageSearchService,
-        )
-
-        service = ImageSearchService()
         mock_client = MagicMock()
-        mock_client.search = AsyncMock(return_value=([], 0))
+        mock_client.search = AsyncMock(return_value=_provider_result([], 0))
+        service = _image_search_service(mock_client)
 
-        with patch(
-            "pubmed_search.infrastructure.sources.get_openi_client",
-            return_value=mock_client,
-        ):
-            result = await service.search("pharmacokinetics dosing protocol")
+        result = await service.search("pharmacokinetics dosing protocol")
 
         assert len(result.advisor_suggestions) > 0
 
     async def test_service_passes_recommended_image_type(self):
         """Service should pass through recommended image type."""
-        from unittest.mock import MagicMock, patch
-
-        from pubmed_search.application.image_search import (
-            ImageSearchService,
-        )
-
-        service = ImageSearchService()
         mock_client = MagicMock()
-        mock_client.search = AsyncMock(return_value=([], 0))
+        mock_client.search = AsyncMock(return_value=_provider_result([], 0))
+        service = _image_search_service(mock_client)
 
-        with patch(
-            "pubmed_search.infrastructure.sources.get_openi_client",
-            return_value=mock_client,
-        ):
-            result = await service.search("histology liver pathology")
+        result = await service.search("histology liver pathology")
 
         assert result.recommended_image_type == "mc"
 
     async def test_service_includes_advisor_diagnostics(self):
         """Service should pass through advisor diagnostics."""
-        from unittest.mock import MagicMock, patch
-
-        from pubmed_search.application.image_search import (
-            ImageSearchService,
-        )
-
-        service = ImageSearchService()
         mock_client = MagicMock()
-        mock_client.search = AsyncMock(return_value=([], 0))
+        mock_client.search = AsyncMock(return_value=_provider_result([], 0))
+        service = _image_search_service(mock_client)
 
-        with patch(
-            "pubmed_search.infrastructure.sources.get_openi_client",
-            return_value=mock_client,
-        ):
-            result = await service.search("chest x-ray pneumonia systematic review")
+        result = await service.search("chest x-ray pneumonia systematic review")
 
         assert result.advisor_diagnostics
         assert any(hit["rule"] == "explicit_image_terms" for hit in result.advisor_diagnostics["feature_hits"])
 
     async def test_empty_query_no_advisor(self):
-        """Empty query should skip advisor entirely."""
-        from pubmed_search.application.image_search import ImageSearchService
-
-        service = ImageSearchService()
-        result = await service.search("")
-        assert result.advisor_warnings == []
-        assert result.advisor_suggestions == []
+        """Empty query should fail before advisor execution."""
+        service = _image_search_service()
+        with pytest.raises(ValueError, match="must not be empty"):
+            await service.search("")
 
     async def test_presentation_formats_warnings(self):
         """Presentation layer should format advisor warnings in output."""
-        from unittest.mock import patch
-
         from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.application.image_search import ImageSearchResult
@@ -624,7 +597,8 @@ class TestAdvisorIntegration:
         )
 
         mcp = MCPServer("test")
-        register_image_search_tools(mcp)
+        service = MagicMock(spec=ImageSearchService)
+        register_image_search_tools(mcp, service)
         tools = mcp._tool_manager._tools
         tool_fn = tools["search_biomedical_images"].fn
 
@@ -641,22 +615,23 @@ class TestAdvisorIntegration:
             total_count=1,
             sources_used=["openi"],
             query="covid-19 chest",
+            search_status="completed",
+            source_counts={"openi": 1},
+            source_coverage=[],
+            duplicates_removed=0,
             advisor_warnings=["Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"],
             advisor_suggestions=[],
             recommended_image_type="x",  # x = X-ray (not xg)
         )
+        service.search = AsyncMock(return_value=mock_result)
 
-        with patch("pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService") as MockService:
-            MockService.return_value.search = AsyncMock(return_value=mock_result)
-            result = await tool_fn(query="covid-19 chest")
+        result = await tool_fn(query="covid-19 chest")
 
         assert "智慧建議" in result
         assert "2020" in result
 
     async def test_presentation_formats_diagnostics(self):
         """Presentation layer should show query diagnostics when available."""
-        from unittest.mock import patch
-
         from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.application.image_search import ImageSearchResult
@@ -666,7 +641,8 @@ class TestAdvisorIntegration:
         )
 
         mcp = MCPServer("test")
-        register_image_search_tools(mcp)
+        service = MagicMock(spec=ImageSearchService)
+        register_image_search_tools(mcp, service)
         tools = mcp._tool_manager._tools
         tool_fn = tools["search_biomedical_images"].fn
 
@@ -683,6 +659,10 @@ class TestAdvisorIntegration:
             total_count=1,
             sources_used=["openi"],
             query="chest x-ray pneumonia",
+            search_status="completed",
+            source_counts={"openi": 1},
+            source_coverage=[],
+            duplicates_removed=0,
             advisor_diagnostics={
                 "feature_hits": [
                     {
@@ -695,10 +675,9 @@ class TestAdvisorIntegration:
                 ]
             },
         )
+        service.search = AsyncMock(return_value=mock_result)
 
-        with patch("pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService") as MockService:
-            MockService.return_value.search = AsyncMock(return_value=mock_result)
-            result = await tool_fn(query="chest x-ray pneumonia")
+        result = await tool_fn(query="chest x-ray pneumonia")
 
         assert "Query Diagnostics" in result
-        assert "explicit_image_terms" in result
+        assert "explicit\\_image\\_terms" in result
