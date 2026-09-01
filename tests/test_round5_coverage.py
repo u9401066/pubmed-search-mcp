@@ -9,158 +9,15 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
 
 from __future__ import annotations
 
-import asyncio
-import io
-import json
-import threading
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# ============================================================
-# MCP server.py — start_http_api_background
-# ============================================================
-
-
-class TestMCPAPIHandler:
-    """Test the HTTP API handler that runs alongside MCP server."""
-
-    async def test_start_http_api_returns_thread(self):
-        from pubmed_search.presentation.mcp_server.server import (
-            start_http_api_background,
-        )
-
-        mock_sm = MagicMock()
-        mock_searcher = MagicMock()
-
-        with patch(
-            "pubmed_search.presentation.mcp_server.server.HTTPServer",
-            create=True,
-        ) as mock_hs:
-            mock_server = MagicMock()
-            mock_hs.return_value = mock_server
-            thread = start_http_api_background(mock_sm, mock_searcher, port=19999)
-            assert thread.daemon is True
-            time.sleep(0.15)
-
-    async def test_start_http_api_port_in_use(self):
-        from pubmed_search.presentation.mcp_server.server import (
-            start_http_api_background,
-        )
-
-        mock_sm = MagicMock()
-        mock_searcher = MagicMock()
-
-        with patch(
-            "pubmed_search.presentation.mcp_server.server.HTTPServer",
-            create=True,
-        ) as mock_hs:
-            err = OSError("Address already in use")
-            err.errno = 10048
-            mock_hs.side_effect = err
-            thread = start_http_api_background(mock_sm, mock_searcher, port=8765)
-            assert thread.daemon is True
-            time.sleep(0.2)
-
-    async def test_background_api_reuses_installed_session_manager(self, tmp_path):
-        from pubmed_search.presentation.mcp_server.server import start_http_api_background
-
-        original_session_manager = MagicMock()
-        original_session_manager.data_dir = str(tmp_path)
-        original_session_manager.get_cached_article.return_value = {"pmid": "123", "title": "Shared Cached"}
-
-        ready = threading.Event()
-        captured: dict[str, object] = {}
-
-        class FakeHTTPServer:
-            def __init__(self, _addr, handler_cls):
-                captured["handler_cls"] = handler_cls
-                ready.set()
-
-            def serve_forever(self):
-                return None
-
-        with (
-            patch(
-                "http.server.HTTPServer",
-                FakeHTTPServer,
-            ),
-            patch(
-                "pubmed_search.application.session.manager.SessionManager",
-            ) as session_manager_constructor,
-        ):
-            start_http_api_background(original_session_manager, None, port=19998)
-            assert ready.wait(1.0) is True
-            handler_cls = captured["handler_cls"]
-            handler = handler_cls.__new__(handler_cls)
-            handler.path = "/api/cached_article/123"
-            handler.headers = {"Host": "localhost:19998"}
-            handler.wfile = io.BytesIO()
-            handler.send_response = MagicMock()
-            handler.send_header = MagicMock()
-            handler.end_headers = MagicMock()
-
-            handler_cls.do_GET(handler)
-
-            payload = json.loads(handler.wfile.getvalue().decode())
-            assert payload["data"]["title"] == "Shared Cached"
-            original_session_manager.get_cached_article.assert_called_once_with("123")
-            session_manager_constructor.assert_not_called()
-
-    async def test_background_api_fetch_path_does_not_mutate_shared_session_cache(self, tmp_path):
-        from pubmed_search.presentation.mcp_server.server import start_http_api_background
-
-        original_session_manager = MagicMock()
-        original_session_manager.data_dir = str(tmp_path)
-        original_session_manager.warm_article_cache = MagicMock()
-        original_session_manager.get_cached_article.return_value = None
-
-        searcher = MagicMock()
-        searcher.fetch_details = AsyncMock(return_value=[{"pmid": "999", "title": "Fetched Live"}])
-
-        ready = threading.Event()
-        captured: dict[str, object] = {}
-
-        class FakeHTTPServer:
-            def __init__(self, _addr, handler_cls):
-                captured["handler_cls"] = handler_cls
-                ready.set()
-
-            def serve_forever(self):
-                return None
-
-        with (
-            patch(
-                "http.server.HTTPServer",
-                FakeHTTPServer,
-            ),
-            patch(
-                "pubmed_search.application.session.manager.SessionManager",
-            ) as session_manager_constructor,
-        ):
-            start_http_api_background(original_session_manager, searcher, port=19997)
-            assert ready.wait(1.0) is True
-            handler_cls = captured["handler_cls"]
-            handler = handler_cls.__new__(handler_cls)
-            handler.path = "/api/cached_article/999"
-            handler.headers = {"Host": "localhost:19997"}
-            handler.wfile = io.BytesIO()
-            handler.send_response = MagicMock()
-            handler.send_header = MagicMock()
-            handler.end_headers = MagicMock()
-
-            await asyncio.to_thread(handler_cls.do_GET, handler)
-
-            payload = json.loads(handler.wfile.getvalue().decode())
-            assert payload["data"]["title"] == "Fetched Live"
-            original_session_manager.warm_article_cache.assert_not_called()
-            session_manager_constructor.assert_not_called()
+import pytest
 
 
 class TestServerModule:
     async def test_import(self):
         import pubmed_search.presentation.mcp_server.server as mod
 
-        assert hasattr(mod, "start_http_api_background")
         assert hasattr(mod, "main")
 
     async def test_create_server(self):
@@ -192,87 +49,75 @@ class TestCOREClient:
         assert c._api_key == "test-key"
         assert c._min_interval == 2.5  # Faster with key
 
-    async def test_rate_limit_delay(self):
-        from pubmed_search.infrastructure.sources.core import COREClient
-
-        c = COREClient()
-        c._min_interval = 0.01
-        c._last_request_time = time.time()
-        await c._rate_limit()  # Should wait briefly
-
     async def test_make_request_success(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        c._last_request_time = 0
-
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = MagicMock()
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-        c._client = mock_client
+        c._execute_request = AsyncMock(return_value=mock_response)
 
         result = await c._make_request("https://example.com/api")
         assert result == {"ok": True}
 
     async def test_make_request_http_error_401(self):
+        import httpx
+
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        c._last_request_time = 0
 
         mock_response = MagicMock()
         mock_response.status_code = 401
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-        c._client = mock_client
+        mock_response.headers = {}
+        mock_response.reason_phrase = "Unauthorized"
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Unauthorized",
+            request=MagicMock(),
+            response=mock_response,
+        )
+        c._execute_request = AsyncMock(return_value=mock_response)
 
-        result = await c._make_request("https://example.com/api")
-        assert result is None
+        with pytest.raises(APIRequestError, match="CORE API request failed with HTTP 401"):
+            await c._make_request("https://example.com/api")
 
     async def test_make_request_http_error_429(self):
         from pubmed_search.infrastructure.sources.core import COREClient
+        from pubmed_search.shared.async_utils import RetryableOperationError
 
         c = COREClient()
-        c._last_request_time = 0
         c._min_interval = 0  # Disable rate limiting in test
+        c._MAX_RETRIES = 0
 
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.headers = {}
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-        c._client = mock_client
+        c._execute_request = AsyncMock(return_value=mock_response)
 
-        with patch(
-            "pubmed_search.infrastructure.sources.base_client.asyncio.sleep",
-            new_callable=AsyncMock,
-        ):
-            result = await c._make_request("https://example.com/api")
-        assert result is None
+        with pytest.raises(RetryableOperationError, match="CORE API request failed"):
+            await c._make_request("https://example.com/api")
 
     async def test_make_request_url_error(self):
         import httpx
 
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        c._last_request_time = 0
 
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = httpx.RequestError("Connection refused")
-        c._client = mock_client
+        c._execute_request = AsyncMock(side_effect=httpx.RequestError("Connection refused"))
 
-        result = await c._make_request("https://example.com/api")
-        assert result is None
+        with pytest.raises(APIRequestError, match="CORE API request failed"):
+            await c._make_request("https://example.com/api")
 
     async def test_search_success(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        c._last_request_time = 0
 
         mock_response_data = {
             "totalHits": 50,
@@ -303,7 +148,12 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            c,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value={"totalHits": 0, "results": []},
+        ):
             result = await c.search("xyz_no_match")
         assert result["total_hits"] == 0
         assert result["results"] == []
@@ -490,46 +340,6 @@ class TestCOREClient:
         assert result["repository"] == "Repo1"
 
 
-class TestCOREConvenience:
-    """Test convenience functions."""
-
-    async def test_get_core_client_singleton(self):
-        import pubmed_search.infrastructure.sources.core as mod
-        from pubmed_search.infrastructure.sources.core import get_core_client
-
-        mod._core_client = None
-        c1 = get_core_client()
-        c2 = get_core_client()
-        assert c1 is c2
-        mod._core_client = None
-
-    async def test_search_core(self):
-        from pubmed_search.infrastructure.sources.core import search_core
-
-        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_gc:
-            mock_client = AsyncMock()
-            mock_client.search.return_value = {
-                "total_hits": 1,
-                "results": [{"title": "Test"}],
-            }
-            mock_gc.return_value = mock_client
-            result = await search_core("test", limit=5)
-        assert len(result) == 1
-
-    async def test_search_core_fulltext(self):
-        from pubmed_search.infrastructure.sources.core import search_core_fulltext
-
-        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_gc:
-            mock_client = AsyncMock()
-            mock_client.search_fulltext.return_value = {
-                "total_hits": 0,
-                "results": [],
-            }
-            mock_gc.return_value = mock_client
-            result = await search_core_fulltext("test")
-        assert result == []
-
-
 # ============================================================
 # ClinicalTrialsClient
 # ============================================================
@@ -655,9 +465,8 @@ class TestClinicalTrialsClient:
     async def test_search_timeout(self):
         import httpx
 
-        from pubmed_search.infrastructure.sources.clinical_trials import (
-            ClinicalTrialsClient,
-        )
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
+        from pubmed_search.infrastructure.sources.clinical_trials import ClinicalTrialsClient
 
         c = ClinicalTrialsClient()
         mock_client = AsyncMock()
@@ -665,16 +474,15 @@ class TestClinicalTrialsClient:
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
         c._client = mock_client
 
-        result = await c.search("test")
-        assert result == []
+        with pytest.raises(APIRequestError, match=r"ClinicalTrials\.gov request failed"):
+            await c.search("test")
         c._client = None
 
     async def test_search_http_error(self):
         import httpx
 
-        from pubmed_search.infrastructure.sources.clinical_trials import (
-            ClinicalTrialsClient,
-        )
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
+        from pubmed_search.infrastructure.sources.clinical_trials import ClinicalTrialsClient
 
         c = ClinicalTrialsClient()
         mock_resp = MagicMock()
@@ -684,8 +492,8 @@ class TestClinicalTrialsClient:
         mock_client.get.side_effect = httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
         c._client = mock_client
 
-        result = await c.search("test")
-        assert result == []
+        with pytest.raises(APIRequestError, match=r"ClinicalTrials\.gov request failed with HTTP 500"):
+            await c.search("test")
         c._client = None
 
     async def test_normalize_study_minimal(self):
@@ -734,8 +542,6 @@ class TestClinicalTrialsGetStudy:
         c._client = None
 
     async def test_get_study_not_found(self):
-        import httpx
-
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -745,7 +551,7 @@ class TestClinicalTrialsGetStudy:
         mock_resp.status_code = 404
         mock_client = AsyncMock()
         mock_client.is_closed = False
-        mock_client.get.side_effect = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
+        mock_client.get.return_value = mock_resp
         c._client = mock_client
 
         result = await c.get_study("NCT00000")
@@ -873,7 +679,7 @@ class TestNCBICitationExporter:
 
         result = await e.export_citations(["12345"], format="ris")
         assert result.success is False
-        assert "Invalid format" in result.error
+        assert result.error == "Citation API rejected the requested format"
         e._client = None
 
     async def test_export_http_error(self):
@@ -1093,10 +899,19 @@ class TestNCBIStrategy:
             "IdList": ["68003920"],
             "TranslationStack": [],
         }
+        mock_fetch_handle = MagicMock()
+        mock_fetch_handle.read.return_value = """1: Diabetes Mellitus
+Entry Terms:
+    Diabetes
+Tree Number(s): C18.452.394.750"""
         with (
             patch(
                 "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch",
                 return_value=MagicMock(),
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch",
+                return_value=mock_fetch_handle,
             ),
             patch(
                 "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
@@ -1104,5 +919,5 @@ class TestNCBIStrategy:
             ),
         ):
             info = await sg.get_mesh_info("diabetes")
-        # May return None or dict depending on mock
-        assert info is None or isinstance(info, dict)
+        assert info is not None
+        assert info["preferred_term"] == "Diabetes Mellitus"

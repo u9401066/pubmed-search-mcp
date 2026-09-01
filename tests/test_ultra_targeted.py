@@ -103,6 +103,7 @@ class TestServerRegisterTools:
         """Test registering all tools."""
         from pubmed_search import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -110,7 +111,12 @@ class TestServerRegisterTools:
         searcher = LiteratureSearcher(email="test@example.com")
 
         # Should not raise
-        register_all_tools(mock_mcp, searcher)
+        register_all_tools(
+            mock_mcp,
+            searcher,
+            image_search_service=MagicMock(),
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
 
 class TestCommonCheckCache:
@@ -140,7 +146,7 @@ class TestSearchFilterLogic:
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -149,19 +155,19 @@ class TestSearchFilterLogic:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await searcher.search("test", min_year=2020)
+            page = await searcher.search_page("test", min_year=2020)
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
 
     async def test_search_with_date_filter_only_max(self):
         """Test search with only max_year."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -170,12 +176,12 @@ class TestSearchFilterLogic:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await searcher.search("test", max_year=2024)
+            page = await searcher.search_page("test", max_year=2024)
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
 
 
 class TestStrategyCornerCases:
@@ -210,7 +216,7 @@ class TestExportWithLargeFile:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", Path(tmpdir)):
                 content = "test content"
-                file_path = _save_export_file(content, "ris", 10)
+                file_path = _save_export_file(content, "ris")
 
                 assert os.path.exists(file_path)
 
@@ -268,7 +274,7 @@ class TestClientFindMethods:
             mock_read.return_value = [{"LinkSetDb": [{"Link": [{"Id": "999"}]}]}]
             mock_elink.return_value = MagicMock()
 
-            results = await searcher.find_related_articles("12345", limit=5)
+            results = await searcher.get_related_articles("12345", limit=5)
 
             assert isinstance(results, list)
 

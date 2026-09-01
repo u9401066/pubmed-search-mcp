@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 
-class TestSearchFetchWithRetry:
-    """Test _fetch_with_retry error paths."""
+class TestSearchFetchPolicy:
+    """Test canonical article-fetch error paths."""
 
-    async def test_fetch_with_retry_transient_errors(self):
+    async def test_fetch_transient_errors(self):
         """Test fetch retry on transient errors."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -27,21 +27,17 @@ class TestSearchFetchWithRetry:
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "pubmed_search.infrastructure.ncbi.search._rate_limit",
-                new_callable=AsyncMock,
-            ),
         ):
             # All calls fail with transient error
             mock_efetch.side_effect = Exception("Backend failed")
 
             try:
-                await searcher._fetch_with_retry(["12345"])
+                await searcher._fetch_articles(["12345"])
             except Exception as e:
                 # Should eventually fail after retries
                 assert "failed" in str(e).lower() or "Backend" in str(e)
 
-    async def test_fetch_with_retry_non_transient(self):
+    async def test_fetch_non_transient_error(self):
         """Test fetch doesn't retry on non-transient errors."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -52,15 +48,11 @@ class TestSearchFetchWithRetry:
 
         with (
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.efetch") as mock_efetch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.search._rate_limit",
-                new_callable=AsyncMock,
-            ),
         ):
             mock_efetch.side_effect = ValueError("Invalid input")
 
             with pytest.raises(ValueError):
-                await searcher._fetch_with_retry(["12345"])
+                await searcher._fetch_articles(["12345"])
 
 
 class TestSessionCachePaths:
@@ -120,48 +112,6 @@ class TestStrategyExpandSearch:
 
             assert isinstance(result, dict)
             assert result["topic"] == "cancer treatment"
-
-
-class TestClientSearchResult:
-    """Test client SearchResult dataclass."""
-
-    async def test_search_result_creation(self):
-        """Test SearchResult instantiation."""
-        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
-
-        result = SearchResult(
-            pmid="12345",
-            title="Test Title",
-            authors=["Author A", "Author B"],
-            authors_full=[{"last_name": "A", "first_name": "Author"}],
-            abstract="Test abstract",
-            journal="Test Journal",
-            journal_abbrev="Test J",
-            year="2024",
-        )
-
-        assert result.pmid == "12345"
-        assert result.title == "Test Title"
-
-    async def test_search_result_from_dict(self):
-        """Test SearchResult.from_dict method."""
-        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
-
-        data = {
-            "pmid": "67890",
-            "title": "From Dict Title",
-            "authors": ["B Author"],
-            "authors_full": [],
-            "abstract": "Abstract text",
-            "journal": "Dict Journal",
-            "journal_abbrev": "Dict J",
-            "year": "2023",
-        }
-
-        result = SearchResult.from_dict(data)
-
-        assert result.pmid == "67890"
-        assert result.journal == "Dict Journal"
 
 
 class TestServerMainPath:
@@ -302,18 +252,6 @@ class TestSessionToolsRegister:
 
             # Should not raise
             register_session_resources(mock_mcp, manager)
-
-
-class TestMergeModulePaths:
-    """Test merge module paths."""
-
-    async def test_merge_tool_register(self):
-        """Test merge tools registration."""
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        assert callable(register_merge_tools)
 
 
 class TestPicoModulePaths:

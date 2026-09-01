@@ -17,6 +17,7 @@ def test_cache_entry_from_dict_accepts_utc_z_designator() -> None:
             "value": "cached",
             "cached_at": UTC_TIMESTAMP,
             "expires_at": UTC_TIMESTAMP,
+            "metadata": {},
         }
     )
 

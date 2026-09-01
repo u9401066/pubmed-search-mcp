@@ -75,17 +75,18 @@ class TestFulltextDownloaderDownloadPdf:
         """Test download_pdf with no links found."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
+            PDFLinkDiscoveryResult,
         )
 
         downloader = FulltextDownloader()
 
         with patch.object(downloader, "get_pdf_links", new_callable=AsyncMock) as mock_links:
-            mock_links.return_value = []
+            mock_links.return_value = PDFLinkDiscoveryResult()
 
             result = await downloader.download_pdf(pmid="12345678")
 
             assert result.success is False
-            assert "No PDF links found" in result.error
+            assert "No PDF links were discovered" in result.error
 
     @pytest.mark.asyncio
     async def test_download_pdf_preferred_source(self):
@@ -93,6 +94,7 @@ class TestFulltextDownloaderDownloadPdf:
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
             PDFLink,
+            PDFLinkDiscoveryResult,
             PDFSource,
         )
 
@@ -104,9 +106,17 @@ class TestFulltextDownloaderDownloadPdf:
         ]
 
         with patch.object(downloader, "get_pdf_links", new_callable=AsyncMock) as mock_links:
-            mock_links.return_value = links
+            mock_links.return_value = PDFLinkDiscoveryResult(
+                links=tuple(links),
+                attempted_sources=("test-source",),
+                completed_sources=("test-source",),
+            )
 
-            with patch.object(downloader, "_download_from_url", new_callable=AsyncMock) as mock_download:
+            with patch.object(
+                downloader._fetch_phase,
+                "download_with_retry",
+                new_callable=AsyncMock,
+            ) as mock_download:
                 from pubmed_search.infrastructure.sources.fulltext_download import (
                     DownloadResult,
                 )
@@ -129,17 +139,22 @@ class TestFulltextDownloaderGetFulltext:
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
             PDFLink,
+            PDFLinkDiscoveryResult,
             PDFSource,
         )
 
         downloader = FulltextDownloader()
 
         with patch.object(downloader, "get_pdf_links", new_callable=AsyncMock) as mock_links:
-            mock_links.return_value = [PDFLink(url="http://example.com/1.pdf", source=PDFSource.CORE)]
+            mock_links.return_value = PDFLinkDiscoveryResult(
+                links=(PDFLink(url="http://example.com/1.pdf", source=PDFSource.CORE),),
+                attempted_sources=("test-source",),
+                completed_sources=("test-source",),
+            )
 
             result = await downloader.get_fulltext(pmid="12345678", strategy="links_only")
 
-            assert len(result.pdf_links) == 1
+            assert len(result.require_link_discovery().links) == 1
             assert result.text_content is None
 
     @pytest.mark.asyncio
@@ -151,7 +166,11 @@ class TestFulltextDownloaderGetFulltext:
 
         downloader = FulltextDownloader()
 
-        with patch.object(downloader, "_get_structured_fulltext", new_callable=AsyncMock) as mock_xml:
+        with patch.object(
+            downloader._extract_phase,
+            "get_structured_fulltext",
+            new_callable=AsyncMock,
+        ) as mock_xml:
             mock_xml.return_value = {
                 "text": "Full text content here",
                 "sections": {"intro": "Introduction text"},
@@ -170,12 +189,13 @@ class TestFulltextDownloaderGetFulltext:
         """Test get_fulltext when no links found."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
+            PDFLinkDiscoveryResult,
         )
 
         downloader = FulltextDownloader()
 
         with patch.object(downloader, "get_pdf_links", new_callable=AsyncMock) as mock_links:
-            mock_links.return_value = []
+            mock_links.return_value = PDFLinkDiscoveryResult()
 
             result = await downloader.get_fulltext(doi="10.1234/test", strategy="download_best")
 
@@ -195,7 +215,7 @@ class TestGetPMCLinks:
 
         downloader = FulltextDownloader()
 
-        links = await downloader._get_pmc_links(None, "PMC1234567")
+        links = await downloader._discovery_phase.get_pmc_links(None, "PMC1234567")
 
         assert len(links) == 2
         assert any(lnk.source == PDFSource.EUROPE_PMC for lnk in links)
@@ -214,7 +234,7 @@ class TestGetUnpaywallLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.unpaywall.get_unpaywall_client") as mock_get:
+        with patch("pubmed_search.infrastructure.sources.get_unpaywall_client") as mock_get:
             mock_client = AsyncMock()
             mock_client.get_oa_status.return_value = {
                 "is_oa": True,
@@ -229,7 +249,7 @@ class TestGetUnpaywallLinks:
             }
             mock_get.return_value = mock_client
 
-            links = await downloader._get_unpaywall_links("10.1234/test")
+            links = await downloader._discovery_phase.get_unpaywall_links("10.1234/test")
 
             assert len(links) >= 1
             assert links[0].url == "https://example.com/paper.pdf"
@@ -243,12 +263,12 @@ class TestGetUnpaywallLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.unpaywall.get_unpaywall_client") as mock_get:
+        with patch("pubmed_search.infrastructure.sources.get_unpaywall_client") as mock_get:
             mock_client = AsyncMock()
             mock_client.get_oa_status.return_value = {"is_oa": False}
             mock_get.return_value = mock_client
 
-            links = await downloader._get_unpaywall_links("10.1234/test")
+            links = await downloader._discovery_phase.get_unpaywall_links("10.1234/test")
 
             assert len(links) == 0
 
@@ -266,12 +286,12 @@ class TestGetCoreLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_get:
+        with patch("pubmed_search.infrastructure.sources.get_core_client") as mock_get:
             mock_client = AsyncMock()
-            mock_client.search.return_value = {"results": [{"downloadUrl": "https://core.ac.uk/download/12345.pdf"}]}
+            mock_client.search.return_value = {"results": [{"download_url": "https://core.ac.uk/download/12345.pdf"}]}
             mock_get.return_value = mock_client
 
-            links = await downloader._get_core_links("10.1234/test")
+            links = await downloader._discovery_phase.get_core_links("10.1234/test")
 
             assert len(links) == 1
             assert links[0].source == PDFSource.CORE
@@ -285,12 +305,12 @@ class TestGetCoreLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_get:
+        with patch("pubmed_search.infrastructure.sources.get_core_client") as mock_get:
             mock_client = AsyncMock()
             mock_client.search.return_value = {"results": []}
             mock_get.return_value = mock_client
 
-            links = await downloader._get_core_links("10.1234/test")
+            links = await downloader._discovery_phase.get_core_links("10.1234/test")
 
             assert len(links) == 0
 
@@ -308,7 +328,7 @@ class TestGetArxivLink:
 
         downloader = FulltextDownloader()
 
-        link = await downloader._get_arxiv_link("10.48550/arxiv.2301.12345")
+        link = await downloader._discovery_phase.get_arxiv_link("10.48550/arxiv.2301.12345")
 
         assert link is not None
         assert link.source == PDFSource.ARXIV
@@ -323,7 +343,7 @@ class TestGetArxivLink:
 
         downloader = FulltextDownloader()
 
-        link = await downloader._get_arxiv_link("10.1234/regular")
+        link = await downloader._discovery_phase.get_arxiv_link("10.1234/regular")
 
         assert link is None
 
@@ -341,7 +361,7 @@ class TestGetPreprintLink:
 
         downloader = FulltextDownloader()
 
-        link = await downloader._get_preprint_link("10.1101/2024.01.01.123456")
+        link = await downloader._discovery_phase.get_preprint_link("10.1101/2024.01.01.123456")
 
         assert link is not None
         assert link.source in [PDFSource.BIORXIV, PDFSource.MEDRXIV]
@@ -355,7 +375,7 @@ class TestGetPreprintLink:
 
         downloader = FulltextDownloader()
 
-        _link = await downloader._get_preprint_link("https://doi.org/10.1101/medrxiv.2024.01.01")
+        _link = await downloader._discovery_phase.get_preprint_link("https://doi.org/10.1101/medrxiv.2024.01.01")
 
         # May or may not match depending on pattern
         # This tests the branching logic
@@ -373,7 +393,11 @@ class TestGetCrossRefLinks:
 
         downloader = FulltextDownloader()
 
-        with patch.object(downloader, "_get_client", new_callable=AsyncMock) as mock_get_client:
+        with patch.object(
+            downloader._discovery_phase,
+            "_get_client",
+            new_callable=AsyncMock,
+        ) as mock_get_client:
             mock_client = AsyncMock()
             mock_response = Mock()
             mock_response.status_code = 200
@@ -394,7 +418,7 @@ class TestGetCrossRefLinks:
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
-            links = await downloader._get_crossref_links("10.1234/test")
+            links = await downloader._discovery_phase.get_crossref_links("10.1234/test")
 
             assert len(links) >= 1
 
@@ -407,14 +431,18 @@ class TestGetCrossRefLinks:
 
         downloader = FulltextDownloader()
 
-        with patch.object(downloader, "_get_client", new_callable=AsyncMock) as mock_get_client:
+        with patch.object(
+            downloader._discovery_phase,
+            "_get_client",
+            new_callable=AsyncMock,
+        ) as mock_get_client:
             mock_client = AsyncMock()
             mock_response = Mock()
             mock_response.status_code = 404
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_get_client.return_value = mock_client
 
-            links = await downloader._get_crossref_links("10.1234/notfound")
+            links = await downloader._discovery_phase.get_crossref_links("10.1234/notfound")
 
             assert len(links) == 0
 
@@ -527,42 +555,12 @@ class TestOpenURLConfigExtended:
         config = OpenURLConfig(preset="invalid_preset", resolver_base="https://fallback.edu", enabled=True)
 
         builder = config.get_builder()
-        # Should fall back to resolver_base
-        assert builder is not None
+        # A misspelled explicit preset is a configuration error; fail closed.
+        assert builder is None
 
 
-class TestOpenURLConvenienceFunctions:
-    """Test OpenURL convenience functions."""
-
-    async def test_get_openurl_from_pmid(self):
-        """Test get_openurl_from_pmid function."""
-        from pubmed_search.infrastructure.sources.openurl import (
-            configure_openurl,
-            get_openurl_from_pmid,
-        )
-
-        configure_openurl(resolver_base="https://test.edu/openurl")
-        url = get_openurl_from_pmid("12345678")
-
-        assert url is not None
-        assert "12345678" in url
-
-        configure_openurl(enabled=False)
-
-    async def test_get_openurl_from_doi(self):
-        """Test get_openurl_from_doi function."""
-        from pubmed_search.infrastructure.sources.openurl import (
-            configure_openurl,
-            get_openurl_from_doi,
-        )
-
-        configure_openurl(resolver_base="https://test.edu/openurl")
-        url = get_openurl_from_doi("10.1234/test")
-
-        assert url is not None
-        assert "10.1234" in url
-
-        configure_openurl(enabled=False)
+class TestOpenURLPresets:
+    """Test the preset catalog consumed by the OpenURL MCP tool."""
 
     async def test_list_presets(self):
         """Test list_presets function."""
@@ -684,7 +682,7 @@ class TestVisionToolsRegistrationExtended:
     """Extended tests for vision tools registration."""
 
     async def test_register_analyze_figure(self):
-        """Test analyze_figure_for_search tool registration."""
+        """Test prepare_figure_search tool registration."""
         from pubmed_search.presentation.mcp_server.tools.vision_search import (
             register_vision_tools,
         )
@@ -700,7 +698,7 @@ class TestVisionToolsRegistrationExtended:
 
         register_vision_tools(mock_mcp)
 
-        assert "analyze_figure_for_search" in tools or len(tools) > 0
+        assert "prepare_figure_search" in tools or len(tools) > 0
 
     async def test_register_reverse_image_search(self):
         """Test reverse_image_search_pubmed tool registration."""
@@ -741,15 +739,15 @@ class TestGetOpenAlexLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.openalex.OpenAlexClient") as mock_class:
+        with patch("pubmed_search.infrastructure.sources.get_openalex_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.get_work.return_value = {
                 "pdf_url": "https://openalex.org/paper.pdf",
                 "oa_status": "gold",
             }
-            mock_class.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
-            links = await downloader._get_openalex_links("10.1234/test")
+            links = await downloader._discovery_phase.get_openalex_links("10.1234/test")
 
             assert len(links) == 1
             assert links[0].source == PDFSource.OPENALEX
@@ -763,12 +761,12 @@ class TestGetOpenAlexLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.openalex.OpenAlexClient") as mock_class:
+        with patch("pubmed_search.infrastructure.sources.get_openalex_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.get_work.return_value = {"title": "No PDF"}
-            mock_class.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
-            links = await downloader._get_openalex_links("10.1234/test")
+            links = await downloader._discovery_phase.get_openalex_links("10.1234/test")
 
             assert len(links) == 0
 
@@ -786,34 +784,36 @@ class TestGetSemanticScholarLinks:
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient") as mock_class:
+        with patch("pubmed_search.infrastructure.sources.get_semantic_scholar_client") as mock_get_client:
             mock_client = AsyncMock()
             mock_client.get_paper.return_value = {
                 "pdf_url": "https://s2.org/paper.pdf",
                 "is_open_access": True,
             }
-            mock_class.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
-            links = await downloader._get_semantic_scholar_links("10.1234/test")
+            links = await downloader._discovery_phase.get_semantic_scholar_links("10.1234/test")
 
             assert len(links) == 1
             assert links[0].source == PDFSource.SEMANTIC_SCHOLAR
 
     @pytest.mark.asyncio
     async def test_s2_exception(self):
-        """Test S2 with exception."""
+        """Test S2 provider failures remain distinguishable from no PDF."""
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
         )
 
         downloader = FulltextDownloader()
 
-        with patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient") as mock_class:
-            mock_class.side_effect = Exception("API error")
+        with patch("pubmed_search.infrastructure.sources.get_semantic_scholar_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get_paper.side_effect = APIRequestError("Semantic Scholar")
+            mock_get_client.return_value = mock_client
 
-            links = await downloader._get_semantic_scholar_links("10.1234/test")
-
-            assert len(links) == 0
+            with pytest.raises(APIRequestError, match="Semantic Scholar request failed"):
+                await downloader._discovery_phase.get_semantic_scholar_links("10.1234/test")
 
 
 class TestGetDoajLinks:

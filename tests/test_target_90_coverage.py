@@ -29,10 +29,6 @@ class TestSearchRetryAndErrorPaths:
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "pubmed_search.infrastructure.ncbi.search._rate_limit",
-                new_callable=AsyncMock,
-            ),
         ):
             # First two calls fail, third succeeds
             call_count = [0]
@@ -47,7 +43,7 @@ class TestSearchRetryAndErrorPaths:
             mock_read.return_value = {"IdList": ["123"]}
 
             try:
-                await searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids("test", 10, "relevance")
             except Exception:
                 pass  # May still fail after max retries
 
@@ -67,15 +63,11 @@ class TestSearchRetryAndErrorPaths:
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "pubmed_search.infrastructure.ncbi.search._rate_limit",
-                new_callable=AsyncMock,
-            ),
         ):
             mock_esearch.side_effect = Exception("Backend failed")
 
             try:
-                await searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids("test", 10, "relevance")
             except Exception:
                 pass  # Expected to fail after max retries
 
@@ -90,10 +82,10 @@ class TestClientEdgeCases:
         searcher = LiteratureSearcher(email="test@example.com")
 
         # Test that all expected methods exist
-        assert hasattr(searcher, "search")
+        assert hasattr(searcher, "search_page")
         assert hasattr(searcher, "fetch_details")
-        assert hasattr(searcher, "find_related_articles")
-        assert hasattr(searcher, "find_citing_articles")
+        assert hasattr(searcher, "get_related_articles")
+        assert hasattr(searcher, "get_citing_articles")
 
 
 class TestSessionFindCachedSearch:
@@ -191,16 +183,16 @@ class TestSessionToolsPaths:
 class TestCommonModuleEdgeCases:
     """Cover edge cases in _common.py."""
 
-    async def test_format_search_results_with_error(self):
-        """Test formatting results containing an error."""
+    async def test_format_search_results_does_not_surface_unknown_mapping_values(self):
+        """Malformed mappings are rejected before the formatter boundary."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
         )
 
-        results = [{"error": "API failure"}]
+        results = [{"unexpected_payload": "API failure"}]
         formatted = format_search_results(results)
 
-        assert "Error" in formatted or "error" in formatted.lower()
+        assert "API failure" not in formatted
 
     async def test_format_search_results_normal(self):
         """Test formatting normal results."""
@@ -370,17 +362,6 @@ class TestBaseModuleEdgeCases:
         # Globals are NOT set in constructor (per-call isolation via run_entrez_callable).
         assert base._email == "test@example.com"
         assert base._api_key == "test_key"
-
-    async def test_rate_limit_function(self):
-        """Test rate limiting function."""
-        from pubmed_search.infrastructure.ncbi.base import _rate_limit
-
-        # Call twice in quick succession to trigger rate limiting
-        await _rate_limit()
-        await _rate_limit()
-
-        # Should not raise
-        assert True
 
     async def test_search_strategy_enum(self):
         """Test SearchStrategy enum."""
