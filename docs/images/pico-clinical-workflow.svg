@@ -11,6 +11,7 @@
       .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
       .box { stroke-width: 2; rx: 18; }
       .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .tool { font: 700 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
       .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
       .small { font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #435159; }
       .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
@@ -27,7 +28,7 @@
   <text class="body" x="80" y="252">or outcome prompt</text>
 
   <rect class="box" x="292" y="160" width="178" height="118" fill="#eaf4f0" stroke="#3a7c69"/>
-  <text class="label" x="318" y="200">parse_pico</text>
+  <text class="tool" x="306" y="200">validate_pico_plan</text>
   <text class="body" x="318" y="230">validate P/I/C/O</text>
   <text class="body" x="318" y="252">return pipeline</text>
 

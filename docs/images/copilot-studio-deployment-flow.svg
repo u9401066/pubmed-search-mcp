@@ -52,5 +52,5 @@
   <path class="soft" d="M 725 344 V 238"/>
 
   <rect x="174" y="500" width="852" height="58" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
-  <text class="small" x="200" y="534">Security rule: inspect the smaller schema locally, but publish only the 45-tool fail-closed service with bearer identity.</text>
+  <text class="small" x="200" y="534">Security rule: inspect the smaller schema locally, but publish only the 41-tool fail-closed service with bearer identity.</text>
 </svg>

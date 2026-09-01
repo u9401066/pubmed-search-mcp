@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import ast
+import asyncio
 import json
 import re
 from urllib.parse import unquote
 
 import pytest
+from jsonschema import Draft202012Validator
 from scripts.build_docs_site import (
     DOCS_ROOT,
     EMBEDDED_CONTENT_FILE,
@@ -32,6 +35,14 @@ DOC_PAGE_ENTRY_PATTERN = re.compile(
     r'slug:\s*"([^"]+)"[\s\S]*?file:\s*"site-content/([^"]+)"',
     re.MULTILINE,
 )
+TOOL_DATA_ENTRY_PATTERN = re.compile(r'\{\s+name:\s*"([^"]+)",\s+cat:\s*"([^"]+)"', re.MULTILINE)
+TOOL_EXAMPLE_ENTRY_PATTERN = re.compile(
+    r"""\{\s+name:\s*"([^"]+)",[\s\S]*?\n\s+example:\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"),\n\s+docLink:""",
+    re.MULTILINE,
+)
+TOOL_CATEGORY_CHIP_PATTERN = re.compile(
+    r'\{ key:\s*"([^"]+)",\s*labelZh:\s*"[^"]*\((\d+)\)",\s*labelEn:',
+)
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -48,6 +59,22 @@ def _load_embedded_pages() -> dict[str, str]:
 def _site_nav_entries() -> list[tuple[str, str]]:
     site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
     return DOC_PAGE_ENTRY_PATTERN.findall(site_js)
+
+
+def _example_call(example: str) -> tuple[str, dict[str, object]]:
+    """Safely parse one displayed Python-like call into literal keyword arguments."""
+    normalized = example.replace(r"\'", "'").replace(r"\"", '"')
+    parsed = ast.parse(normalized, mode="eval").body
+    assert isinstance(parsed, ast.Call) and isinstance(parsed.func, ast.Name), (
+        f"Invalid Tool Explorer call syntax: {example!r}"
+    )
+    assert parsed.args == [], f"Tool Explorer examples must use named parameters: {example!r}"
+
+    parameters: dict[str, object] = {}
+    for keyword in parsed.keywords:
+        assert keyword.arg is not None, f"Tool Explorer examples cannot use **kwargs: {example!r}"
+        parameters[keyword.arg] = ast.literal_eval(keyword.value)
+    return parsed.func.id, parameters
 
 
 def test_docs_site_pages_match_generated_sources() -> None:
@@ -92,8 +119,8 @@ def test_docs_site_filter_indexes_keywords_and_page_body() -> None:
     assert "page.keywords" in haystack_body
     assert "embeddedContent[page.slug]" in haystack_body
     assert "searchHaystack(page).includes(normalized)" in site_js
-    assert "context_graph" in embedded_pages["advanced-workflows"]
-    assert "context_graph" in site_js
+    assert "only research-lineage capability" in embedded_pages["advanced-workflows"]
+    assert "research lineage" in site_js
 
 
 def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
@@ -109,9 +136,9 @@ def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
         "persistent query memory",
         "build_research_chronicle",
         "read_research_chronicle",
-        "context_graph",
+        "research lineage",
         "search_biomedical_images",
-        "analyze_figure_for_search",
+        "prepare_figure_search",
         "read_session artifact",
         "研究脈絡時間軸",
         "上傳圖片",
@@ -126,10 +153,10 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260814-provider-broker"}
+    assert cache_keys == {"20260901-v07"}
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
-    assert "45</strong>" in index_html
+    assert "41</strong>" in index_html
     assert "runtime contracts" in index_html
     assert "function wrapLocalImages()" in site_js
     assert "sidebarBackdrop.addEventListener" in site_js
@@ -149,6 +176,26 @@ def test_docs_site_quick_paths_follow_the_active_language() -> None:
     assert 'journeyLabel: "文件快速路徑"' in site_js
 
 
+def test_unified_search_architecture_pages_are_language_aware_and_discoverable() -> None:
+    index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    for slug in ("unified-search-architecture", "unified-search-architecture-zh"):
+        assert f'slug: "{slug}"' in site_js
+        assert f'file: "site-content/{slug}.md"' in site_js
+
+    assert site_js.count('group: "unified-search-architecture"') == 2
+    assert 'docLink: "unified-search-architecture"' in site_js
+    assert "across 6 academic sources" not in site_js
+    assert "跨 6 大學術來源" not in site_js
+    assert 'data-hub="unified-search"' in index_html
+    assert 'id="hub-unified-search-text"' in index_html
+    assert 'hubUnifiedSearch: "Unified Search"' in site_js
+    assert 'hubUnifiedSearch: "Unified Search 架構"' in site_js
+    assert 'hub === "unified-search"' in site_js
+    assert '"unified-search-architecture-zh" : "unified-search-architecture"' in site_js
+
+
 def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
     site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
     embedded_pages = _load_embedded_pages()
@@ -159,7 +206,7 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "整合與維運",
         "Multi-source broker stages",
         "authenticated multi-user contracts",
-        "45 MCP tools across 16 registry categories",
+        "41 MCP tools across 16 registry categories",
         "Semantic Scholar Data Plane",
         "OpenAlex Search And Data Plane",
         "ClinicalKey AI Boundary",
@@ -174,17 +221,16 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "Authenticated service callers cannot read `file:` paths",
         "service Compose profile forces it off",
         "Running the local browser broker",
-        "same unified runner",
+        "same strict registry",
         "Verification & Troubleshooting",
     ]:
         assert term in integrations
 
-    assert "12-tool primitive-schema smoke tests" in embedded_pages["overview"]
-    assert "primitive-schema `read_session`" in embedded_pages["overview"]
-    assert "12-tool schema" in embedded_pages["user-guide"]
-    assert "search-run, replay-argument" in embedded_pages["user-guide"]
-    assert "12-tool primitive-schema smoke" in embedded_pages["troubleshooting"]
-    assert "generic literature search 名稱為 `unified_search`" in embedded_pages["deployment"]
+    assert "same canonical 41-tool strict registry" in embedded_pages["overview"]
+    assert "same 41 strict" in embedded_pages["user-guide"]
+    assert "canonical `read_session(request={...})`" in embedded_pages["user-guide"]
+    assert "canonical 41-tool Copilot Studio smoke" in embedded_pages["troubleshooting"]
+    assert "唯一 generic literature search 為 `unified_search`" in embedded_pages["deployment"]
 
     source_contracts = embedded_pages["source-contracts"]
     for term in ["Unified Search Broker", "Scopus", "Web of Science", "process-wide conservative rate budget"]:
@@ -208,7 +254,7 @@ def test_docs_site_exposes_recoverable_bounded_unified_search_contract() -> None
         "exactly one MCP",
         "divided across that source's query strategies",
         "search-run/v1",
-        'read_session(action="replay_search"',
+        'read_session(request={"action":"replay_search"',
         "no public cursor-resume parameter yet",
         "inline, `saved:<name>`, or `dry_run=true` pipeline execution",
         'search_run.status="history_unavailable"',
@@ -439,3 +485,91 @@ def test_primary_tool_count_mentions_match_runtime_surface() -> None:
         content = path.read_text(encoding="utf-8")
         for snippet in snippets:
             assert snippet in content, f"{path} is missing {snippet!r}"
+
+
+def test_tool_explorer_categories_match_the_canonical_registry() -> None:
+    from pubmed_search.presentation.mcp_server.tool_registry import TOOL_CATEGORIES
+
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    expected_tool_categories = {
+        tool_name: category_id for category_id, category in TOOL_CATEGORIES.items() for tool_name in category["tools"]
+    }
+    documented_tool_categories = dict(TOOL_DATA_ENTRY_PATTERN.findall(site_js))
+    assert documented_tool_categories == expected_tool_categories
+
+    documented_chip_counts = {
+        category_id: int(count) for category_id, count in TOOL_CATEGORY_CHIP_PATTERN.findall(site_js)
+    }
+    assert documented_chip_counts.pop("all") == len(expected_tool_categories)
+    assert documented_chip_counts == {
+        category_id: len(category["tools"]) for category_id, category in TOOL_CATEGORIES.items()
+    }
+    assert "template_params:" in site_js
+    assert 'config="template: comprehensive\\\\nparams:' not in site_js
+
+
+def test_all_tool_explorer_examples_use_runtime_parameter_names() -> None:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    stats, mcp = count_tools(include_details=False)
+    runtime_schemas = {tool.name: tool.input_schema for tool in asyncio.run(mcp.list_tools())}
+    documented_examples = {
+        tool_name: single_quoted or double_quoted
+        for tool_name, single_quoted, double_quoted in TOOL_EXAMPLE_ENTRY_PATTERN.findall(site_js)
+    }
+
+    assert len(documented_examples) == stats["total_tools"] == 41
+    assert set(documented_examples) == set(runtime_schemas)
+    for documented_name, example in documented_examples.items():
+        called_name, documented_parameters = _example_call(example)
+        assert called_name == documented_name
+        validator = Draft202012Validator(runtime_schemas[documented_name])
+        schema_errors = sorted(validator.iter_errors(documented_parameters), key=lambda error: list(error.path))
+        assert schema_errors == [], f"{documented_name} example violates its runtime schema: " + "; ".join(
+            error.message for error in schema_errors
+        )
+
+    for canonical_example in [
+        'read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"artifact-123"}})',
+        'get_institutional_link(source={"kind":"pmid","value":"32417976"})',
+        'diagnose_institutional_access(source={"kind":"doi","value":"10.1097/ALN.0000000000003599"})',
+        'prepare_figure_search(source={"kind":"url","url":"https://example.org/figure.png"}, search_type="medical")',
+        'convert_icd_mesh(direction="icd_to_mesh", value="E11")',
+        'read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-ab12cd34","from_revision":1})',
+    ]:
+        assert canonical_example in documented_examples.values()
+
+
+def test_runtime_tool_hints_use_concrete_schema_valid_examples() -> None:
+    mcp_root = REPO_ROOT / "src/pubmed_search/presentation/mcp_server"
+    hint_paths = [
+        mcp_root / "instructions.py",
+        mcp_root / "prompts.py",
+        mcp_root / "session_tools.py",
+        mcp_root / "tools/europe_pmc.py",
+        mcp_root / "tools/openurl.py",
+    ]
+    runtime_hints = "\n".join(path.read_text(encoding="utf-8") for path in hint_paths)
+
+    assert '"value":"..."' not in runtime_hints
+    assert '"value": "..."' not in runtime_hints
+    assert '"value":"artifact://..."' not in runtime_hints
+    assert "get_institutional_link(pmid=" not in runtime_hints
+    for canonical_hint in [
+        '"kind":"artifact_id","value":"artifact-123"',
+        '"kind":"artifact_uri","value":"artifact://session-123/artifact-123"',
+        'get_institutional_link(source={"kind":"pmid","value":"12345678"})',
+        '"kind": "doi", "value": "10.1097/ALN.0000000000003599"',
+    ]:
+        assert canonical_hint in runtime_hints
+
+
+def test_generated_tool_index_tree_matches_current_tool_modules() -> None:
+    index_path = REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
+    index_text = index_path.read_text(encoding="utf-8")
+    _prefix, separator, tools_tree = index_text.partition("└── tools/")
+    assert separator
+    tools_tree = tools_tree.partition("```")[0]
+    documented_modules = set(re.findall(r"[\u251c\u2514]── ([A-Za-z0-9_]+\.py)", tools_tree))
+    tools_dir = REPO_ROOT / "src/pubmed_search/presentation/mcp_server/tools"
+    expected_modules = {path.name for path in tools_dir.glob("*.py")}
+    assert documented_modules == expected_modules

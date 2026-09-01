@@ -6,7 +6,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "Overview",
     blurb: "Quick install, MCP SDK v2 runtime choice, supported clients, and the complete product map.",
-    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 45 tools broker security",
+    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 41 tools broker security",
     file: "site-content/overview.md",
   },
   {
@@ -16,7 +16,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "總覽",
     blurb: "快速安裝、MCP SDK v2 runtime 選擇、支援 client 與完整產品地圖。",
-    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 45 工具 broker 安全",
+    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 41 工具 broker 安全",
     file: "site-content/overview-zh.md",
   },
   {
@@ -48,7 +48,7 @@ const DOC_PAGES = [
     blurb:
       "Research chronicle/lineage tree, Open-i image search, uploaded-image handoff, and persistent query memory.",
     keywords:
-      "build_research_chronicle read_research_chronicle context_graph search_biomedical_images Open-i analyze_figure_for_search uploaded image persistent query memory read_session artifact",
+      "build_research_chronicle read_research_chronicle research lineage search_biomedical_images Open-i prepare_figure_search uploaded image persistent query memory read_session artifact",
     file: "site-content/advanced-workflows.md",
   },
   {
@@ -59,7 +59,7 @@ const DOC_PAGES = [
     title: "進階研究工作流",
     blurb: "研究脈絡時間軸、Open-i 圖片搜尋、上傳圖片 handoff、持久化 query memory。",
     keywords:
-      "研究編年史 研究脈絡 build_research_chronicle read_research_chronicle context_graph Open-i 圖片搜尋 search_biomedical_images 上傳圖片 analyze_figure_for_search 持久化 query memory read_session artifact",
+      "研究編年史 研究脈絡 build_research_chronicle read_research_chronicle research lineage Open-i 圖片搜尋 search_biomedical_images 上傳圖片 prepare_figure_search 持久化 query memory read_session artifact",
     file: "site-content/advanced-workflows-zh.md",
   },
   {
@@ -144,6 +144,49 @@ const DOC_PAGES = [
     file: "site-content/python-sdk-http-cli-design.md",
   },
   {
+    slug: "unified-search-architecture",
+    group: "unified-search-architecture",
+    lang: "en",
+    audience: "developer",
+    title: "Unified Search Architecture",
+    blurb:
+      "Complete class/function map, execution and recovery flows, security findings, and optimization roadmap for unified_search.",
+    keywords:
+      "unified_search architecture class function call graph planner execution provider broker dedup ranking artifact journal replay partial error security",
+    file: "site-content/unified-search-architecture.md",
+  },
+  {
+    slug: "unified-search-architecture-zh",
+    group: "unified-search-architecture",
+    lang: "zh",
+    audience: "developer",
+    title: "Unified Search 架構",
+    blurb: "完整列舉 unified_search 的 class/function、執行與復原流程、安全發現及優化路線圖。",
+    keywords:
+      "unified_search 架構 class function 呼叫圖 planner execution provider broker 去重 排序 artifact journal replay partial error security",
+    file: "site-content/unified-search-architecture-zh.md",
+  },
+  {
+    slug: "tool-quality-audit",
+    group: "tool-quality-audit",
+    lang: "en",
+    audience: "developer",
+    title: "Tool Quality Audit",
+    blurb: "Registry-backed audit of all 41 tools, their dependencies, side effects, duplication decisions, and hardening status.",
+    keywords: "41 tools quality audit registry DDD dependency side effect idempotent security Mermaid contract",
+    file: "site-content/tool-quality-audit.md",
+  },
+  {
+    slug: "tool-quality-audit-zh",
+    group: "tool-quality-audit",
+    lang: "zh",
+    audience: "developer",
+    title: "工具品質稽核",
+    blurb: "由 registry 驗證的 41 工具完整稽核：依賴、side effect、去重決策、契約與強化狀態。",
+    keywords: "41 工具 品質 稽核 registry DDD 依賴 side effect idempotent 安全 Mermaid 契約",
+    file: "site-content/tool-quality-audit-zh.md",
+  },
+  {
     slug: "architecture",
     group: "architecture",
     lang: "all",
@@ -162,9 +205,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for all 45 MCP tools across 16 registry categories.",
-    blurbByLang: { zh: "45 個 MCP tools 與 16 個 registry categories 的快速查找。" },
-    keywords: "45 tools 16 categories tool index parameters",
+    blurb: "Fast lookup for all 41 MCP tools across 16 registry categories.",
+    blurbByLang: { zh: "41 個 MCP tools 與 16 個 registry categories 的快速查找。" },
+    keywords: "41 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
   },
   {
@@ -253,7 +296,7 @@ const DOC_PAGES = [
   },
 ];
 
-// Complete 45 Tools Rich Database for Interactive Tool Explorer
+// Complete 41 Tools Rich Database for Interactive Tool Explorer
 const MCP_TOOLS_DATA = [
   {
     name: "unified_search",
@@ -261,27 +304,27 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "核心搜尋", en: "Search" },
     icon: "🔍",
     summary: {
-      zh: "單一入口跨 6 大學術來源（PubMed、Europe PMC、OpenAlex、Semantic Scholar、CrossRef、CORE）綜合檢索，支援 ICD 自動轉換、預印本搜尋與輕量脈絡圖。",
-      en: "Single gateway across 6 academic sources with automatic ICD translation, preprints, and context graph preview.",
+      zh: "單一 capability-aware 文獻搜尋入口，依查詢與來源能力規劃公開、預印本及可選 licensed sources，並支援 Crossref enrichment、ICD 轉換與可稽核 recovery。",
+      en: "Capability-aware literature search across public, preprint, and optional licensed sources, with Crossref enrichment, ICD translation, and auditable recovery.",
     },
     example: 'unified_search(query="remimazolam ICU sedation", limit=10)',
-    docLink: "user-guide",
+    docLink: "unified-search-architecture",
   },
   {
-    name: "parse_pico",
-    cat: "query",
+    name: "validate_pico_plan",
+    cat: "query_intelligence",
     catName: { zh: "查詢智能", en: "Query Intel" },
     icon: "🧠",
     summary: {
       zh: "驗證與解析 PICO（Population, Intervention, Comparator, Outcome）結構化臨床問題，產出可執行的搜尋 pipeline。",
       en: "Validate agent-provided PICO elements and structure them into runnable search pipelines.",
     },
-    example: 'parse_pico(description="sedation in ICU", p="ICU patients", i="remimazolam", c="propofol", o="delirium")',
+    example: 'validate_pico_plan(description="sedation in ICU", p="ICU patients", i="remimazolam", c="propofol", o="delirium")',
     docLink: "tools-usage-guide",
   },
   {
     name: "generate_search_queries",
-    cat: "query",
+    cat: "query_intelligence",
     catName: { zh: "查詢智能", en: "Query Intel" },
     icon: "🧠",
     summary: {
@@ -293,7 +336,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "analyze_search_query",
-    cat: "query",
+    cat: "query_intelligence",
     catName: { zh: "查詢智能", en: "Query Intel" },
     icon: "🧠",
     summary: {
@@ -360,19 +403,19 @@ const MCP_TOOLS_DATA = [
       zh: "從 NIH iCite 取得論文客觀引用影響力指標（如 RCR 相對引用比率、NIH 百分位數、每年引用增速）。",
       en: "Retrieve citation metrics from NIH iCite (RCR, NIH percentile, citation count).",
     },
-    example: 'get_citation_metrics(pmids="32417976,34999964", sort_by="rcr")',
+    example: 'get_citation_metrics(pmids="32417976,34999964", sort_by="relative_citation_ratio")',
     docLink: "tools-usage-guide",
   },
   {
     name: "verify_reference_list",
-    cat: "discovery",
+    cat: "reference_verification",
     catName: { zh: "引用驗證", en: "Reference Check" },
     icon: "🔬",
     summary: {
       zh: "比對純文字參考文獻清單與 PubMed 實證資料庫，驗證真實性、標題匹配度與識別碼。",
       en: "Verify plain-text reference list against PubMed evidence for title match and identifiers.",
     },
-    example: 'verify_reference_list(references="Doi M, et al. BJA 2020...")',
+    example: 'verify_reference_list(reference_text="Doi M, et al. BJA 2020...")',
     docLink: "tools-usage-guide",
   },
   {
@@ -384,7 +427,7 @@ const MCP_TOOLS_DATA = [
       zh: "多來源全文擷取與結構化解析（Europe PMC XML、Unpaywall OA、機構 EZproxy/Direct、CORE、PDF 直連）。",
       en: "Enhanced multi-source fulltext retrieval with section parsing and PDF fallback.",
     },
-    example: 'get_fulltext(pmid="32417976", sections="introduction,results")',
+    example: 'get_fulltext(source={"kind":"pmid","value":"32417976"}, sections="introduction,results")',
     docLink: "user-guide",
   },
   {
@@ -396,7 +439,7 @@ const MCP_TOOLS_DATA = [
       zh: "從 Europe PMC 取得文章全文的生物醫學文本挖掘標註（基因、疾病、化合物、生物體等實體）。",
       en: "Extract text-mined biomedical entities (genes, diseases, chemicals, organisms) from Europe PMC.",
     },
-    example: 'get_text_mined_terms(pmid="32417976", semantic_type="CHEMICAL")',
+    example: 'get_text_mined_terms(source={"kind":"pmid","value":"32417976"}, semantic_type="CHEMICAL")',
     docLink: "user-guide",
   },
   {
@@ -408,12 +451,12 @@ const MCP_TOOLS_DATA = [
       zh: "從 PMC Open Access 文章抽取結構化圖表清單、標題說明（Caption）、高解析度圖片 URL 與 PDF 連結。",
       en: "Extract structured figure metadata, captions, image URLs, and PDF links from PMC Open Access articles.",
     },
-    example: 'get_article_figures(pmcid="PMC11728358")',
+    example: 'get_article_figures(source={"kind":"pmcid","value":"PMC11728358"})',
     docLink: "user-guide",
   },
   {
     name: "search_gene",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -425,7 +468,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "get_gene_details",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -437,7 +480,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "get_gene_literature",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -449,7 +492,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "search_compound",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -461,7 +504,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "get_compound_details",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -473,7 +516,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "get_compound_literature",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -485,7 +528,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "search_clinvar",
-    cat: "ncbi",
+    cat: "ncbi_extended",
     catName: { zh: "NCBI 延伸", en: "NCBI Data" },
     icon: "🧬",
     summary: {
@@ -497,7 +540,7 @@ const MCP_TOOLS_DATA = [
   },
   {
     name: "build_citation_tree",
-    cat: "citation",
+    cat: "citation_network",
     catName: { zh: "引用網絡", en: "Citations" },
     icon: "🌳",
     summary: {
@@ -540,55 +583,7 @@ const MCP_TOOLS_DATA = [
       zh: "統一門面讀取 Session 暫存、搜尋歷史、Search Runs、重放參數（Replay）及持久化 Artifact。",
       en: "Unified facade to inspect session cache, search history, search runs, replay args, and artifacts.",
     },
-    example: 'read_session(action="artifact", artifact_id="...")',
-    docLink: "user-guide",
-  },
-  {
-    name: "get_session_pmids",
-    cat: "session",
-    catName: { zh: "Session 管理", en: "Session" },
-    icon: "💾",
-    summary: {
-      zh: "取得 Session 暫存之最近一次（或指定歷史次數）搜尋的 PMID 列表。",
-      en: "Get list of PMIDs cached from recent searches in current session.",
-    },
-    example: "get_session_pmids()",
-    docLink: "user-guide",
-  },
-  {
-    name: "get_cached_article",
-    cat: "session",
-    catName: { zh: "Session 管理", en: "Session" },
-    icon: "💾",
-    summary: {
-      zh: "從 Session 快取快速讀取文章詳情，不消耗外部 API 額度與時間。",
-      en: "Read cached article details from session without consuming NCBI API quota.",
-    },
-    example: 'get_cached_article(pmid="32417976")',
-    docLink: "user-guide",
-  },
-  {
-    name: "get_session_summary",
-    cat: "session",
-    catName: { zh: "Session 管理", en: "Session" },
-    icon: "💾",
-    summary: {
-      zh: "取得目前 Session 快取狀態、搜尋次數與可用資料概覽。",
-      en: "Get summary of current session cache status and search history.",
-    },
-    example: "get_session_summary(include_history=True)",
-    docLink: "user-guide",
-  },
-  {
-    name: "get_session_log",
-    cat: "session",
-    catName: { zh: "Session 管理", en: "Session" },
-    icon: "💾",
-    summary: {
-      zh: "檢視當前 Session 的活動日誌與事件軌跡。",
-      en: "Inspect session activity log and event history.",
-    },
-    example: "get_session_log(event_limit=50)",
+    example: 'read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"artifact-123"}})',
     docLink: "user-guide",
   },
   {
@@ -612,7 +607,7 @@ const MCP_TOOLS_DATA = [
       zh: "為指定論文生成透過機構圖書館訂閱存取全文的 OpenURL 專屬連結。",
       en: "Generate institutional access OpenURL link for paywalled article full text.",
     },
-    example: 'get_institutional_link(pmid="32417976")',
+    example: 'get_institutional_link(source={"kind":"pmid","value":"32417976"})',
     docLink: "user-guide",
   },
   {
@@ -648,11 +643,11 @@ const MCP_TOOLS_DATA = [
       zh: "三階段診斷機構全文取用路徑（Direct DOI, EZproxy cookie, OpenURL handoff）。",
       en: "Diagnose full-text access across direct DOI, EZproxy, and OpenURL paths.",
     },
-    example: 'diagnose_institutional_access(doi="10.1097/...")',
+    example: 'diagnose_institutional_access(source={"kind":"doi","value":"10.1097/ALN.0000000000003599"})',
     docLink: "user-guide",
   },
   {
-    name: "analyze_figure_for_search",
+    name: "prepare_figure_search",
     cat: "vision",
     catName: { zh: "視覺搜索", en: "Vision" },
     icon: "👁️",
@@ -660,7 +655,7 @@ const MCP_TOOLS_DATA = [
       zh: "接收上傳圖片或圖片 URL，交由 Agent Vision 能力判讀並自動抽取英文生醫關鍵詞執行文獻檢索。",
       en: "Analyze figure/image via Agent vision and extract English biomedical terms for literature search.",
     },
-    example: 'analyze_figure_for_search(url="https://.../figure.png", search_type="medical")',
+    example: 'prepare_figure_search(source={"kind":"url","url":"https://example.org/figure.png"}, search_type="medical")',
     docLink: "advanced-workflows",
   },
   {
@@ -672,7 +667,7 @@ const MCP_TOOLS_DATA = [
       zh: "ICD-9 / ICD-10 診斷代碼與 MeSH 標準醫學詞彙雙向對照轉換。",
       en: "Bidirectional conversion between ICD-9/ICD-10 codes and MeSH terms.",
     },
-    example: 'convert_icd_mesh(code="E11")',
+    example: 'convert_icd_mesh(direction="icd_to_mesh", value="E11")',
     docLink: "user-guide",
   },
   {
@@ -696,12 +691,12 @@ const MCP_TOOLS_DATA = [
       zh: "讀取已保存之編年史快照（支援 load, list, diff 版本比對, milestones 里程碑分析, compare 主題比較, narrate 敘事）。",
       en: "Read stored chronicles: load, list, diff revisions, milestones analysis, multi-topic compare, narrate.",
     },
-    example: 'read_research_chronicle(action="diff", chronicle_id="...", from_revision=1)',
+    example: 'read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-ab12cd34","from_revision":1})',
     docLink: "advanced-workflows",
   },
   {
     name: "search_biomedical_images",
-    cat: "vision",
+    cat: "image_search",
     catName: { zh: "圖片搜尋", en: "Image Search" },
     icon: "🖼️",
     summary: {
@@ -712,18 +707,6 @@ const MCP_TOOLS_DATA = [
     docLink: "advanced-workflows",
   },
   {
-    name: "manage_pipeline",
-    cat: "pipeline",
-    catName: { zh: "Pipeline 管理", en: "Pipeline" },
-    icon: "🔁",
-    summary: {
-      zh: "Pipeline 的統一管理門面，負責搜尋工作流之 save, list, load, delete, history, schedule 操作。",
-      en: "Unified facade for pipeline management: save, list, load, delete, history, schedule.",
-    },
-    example: 'manage_pipeline(action="list")',
-    docLink: "pipeline-tutorial",
-  },
-  {
     name: "save_pipeline",
     cat: "pipeline",
     catName: { zh: "Pipeline 管理", en: "Pipeline" },
@@ -732,7 +715,7 @@ const MCP_TOOLS_DATA = [
       zh: "將搜尋工作流配置保存為命名 Pipeline 供後續重複執行（支援 YAML/JSON 與結構驗證）。",
       en: "Save structured search pipeline for later reuse with validation.",
     },
-    example: 'save_pipeline(name="daily_sedation", pipeline=...)',
+    example: 'save_pipeline(name="daily_sedation", config="template: comprehensive\\ntemplate_params:\\n  query: ICU sedation")',
     docLink: "pipeline-tutorial",
   },
   {
@@ -756,7 +739,7 @@ const MCP_TOOLS_DATA = [
       zh: "載入指定名稱的已保存 Pipeline 設定以供審閱或執行。",
       en: "Load saved pipeline configuration by name.",
     },
-    example: 'load_pipeline(name="daily_sedation")',
+    example: 'load_pipeline(source="daily_sedation")',
     docLink: "pipeline-tutorial",
   },
   {
@@ -795,6 +778,18 @@ const MCP_TOOLS_DATA = [
     example: 'schedule_pipeline(name="daily_sedation", cron="0 8 * * 1")',
     docLink: "pipeline-tutorial",
   },
+  {
+    name: "unschedule_pipeline",
+    cat: "pipeline",
+    catName: { zh: "Pipeline 管理", en: "Pipeline" },
+    icon: "🔁",
+    summary: {
+      zh: "移除已保存 Pipeline 的定期背景執行排程。",
+      en: "Remove the recurring schedule for a saved pipeline.",
+    },
+    example: 'unschedule_pipeline(name="daily_sedation")',
+    docLink: "pipeline-tutorial",
+  },
 ];
 
 const LANGUAGE_STORAGE_KEY = "pubmed-docs-language";
@@ -813,7 +808,7 @@ const UI_COPY = {
     sidebarNote: "Use the language switch for translated pages. Reference pages without a separate translation stay visible in both modes.",
     heroKicker: "Current MCP SDK v2 handbook",
     heroCopy:
-      "Start with a working local search, then move through all 45 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
+      "Start with a working local search, then move through all 41 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
     menu: "Menu",
     outlineTitle: "On This Page",
     noPages: "No pages match this filter.",
@@ -831,22 +826,23 @@ const UI_COPY = {
     journeyLocalTitle: "Run locally",
     journeyLocalCopy: "Install with uvx, connect an AI client, and make the first search.",
     journeyResearchKicker: "Research handbook",
-    journeyResearchTitle: "Use the 45 tools",
+    journeyResearchTitle: "Use the 41 tools",
     journeyResearchCopy: "Choose a capability, search multiple sources, read full text, and preserve evidence.",
     journeyServiceKicker: "Operator runbook",
     journeyServiceTitle: "Deploy safely",
     journeyServiceCopy: "Keep local and authenticated multi-user service contracts separate.",
     journeyLabel: "Documentation quick paths",
-    globalSearchPlaceholder: "Search docs & 45 tools... (Ctrl+K)",
+    globalSearchPlaceholder: "Search docs & 41 tools... (Ctrl+K)",
     topbarSearchLabel: "Search Docs & Tools",
-    toolExplorerTitle: "🛠️ 45 MCP Tools Interactive Explorer",
+    toolExplorerTitle: "🛠️ 41 MCP Tools Interactive Explorer",
     toolExplorerSubtitle: "Filter tools by capability, search keywords in English or Chinese, and copy execution examples with one click.",
     toolSearchPlaceholder: "Search tool name, keyword (e.g. pmid, fulltext, pico, figure, 基因, rct, export)...",
-    allToolsCategory: "All (45)",
+    allToolsCategory: "All (41)",
     copyToolCode: "Copy",
     copiedToolCode: "Copied!",
     hubAll: "All Sections",
-    hubTools: "45 Tools Explorer",
+    hubTools: "41 Tools Explorer",
+    hubUnifiedSearch: "Unified Search",
     hubUser: "User Guides",
     hubChronicle: "Research Chronicle",
     hubPipeline: "Pipelines",
@@ -867,7 +863,7 @@ const UI_COPY = {
     sidebarNote: "使用語言切換查看翻譯頁；沒有獨立翻譯的 reference 頁會在兩種語言模式都顯示。",
     heroKicker: "當前 MCP SDK v2 完整手冊",
     heroCopy:
-      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 45 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
+      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 41 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
     menu: "選單",
     outlineTitle: "本頁目錄",
     noPages: "沒有符合篩選條件的頁面。",
@@ -885,22 +881,23 @@ const UI_COPY = {
     journeyLocalTitle: "本機執行",
     journeyLocalCopy: "用 uvx 安裝、接上 AI client，並完成第一次搜尋。",
     journeyResearchKicker: "研究操作手冊",
-    journeyResearchTitle: "使用 45 個工具",
+    journeyResearchTitle: "使用 41 個工具",
     journeyResearchCopy: "依能力選工具、平行查多來源、取得全文並保存證據。",
     journeyServiceKicker: "維運手冊",
     journeyServiceTitle: "安全部署",
     journeyServiceCopy: "完整分開本機與認證多人 service 的信任合約。",
     journeyLabel: "文件快速路徑",
-    globalSearchPlaceholder: "搜尋文檔與 45 個工具... (Ctrl+K)",
+    globalSearchPlaceholder: "搜尋文檔與 41 個工具... (Ctrl+K)",
     topbarSearchLabel: "搜尋文檔與工具",
-    toolExplorerTitle: "🛠️ 45 個 MCP 工具互動索引庫",
+    toolExplorerTitle: "🛠️ 41 個 MCP 工具互動索引庫",
     toolExplorerSubtitle: "依能力分類篩選、支援中英文關鍵字即時搜尋，一鍵複製呼叫範例與工具名稱。",
     toolSearchPlaceholder: "搜尋工具名稱、關鍵字（如 pmid, 全文, pico, 圖表, 基因, rct, export）...",
-    allToolsCategory: "全部 (45)",
+    allToolsCategory: "全部 (41)",
     copyToolCode: "複製",
     copiedToolCode: "已複製！",
     hubAll: "全部章節",
-    hubTools: "45 工具庫",
+    hubTools: "41 工具庫",
+    hubUnifiedSearch: "Unified Search 架構",
     hubUser: "使用手冊",
     hubChronicle: "研究編年史",
     hubPipeline: "Pipeline 流程",
@@ -1110,6 +1107,8 @@ function localizeStaticText() {
   if (hubAll) hubAll.textContent = uiText("hubAll");
   const hubTools = document.getElementById("hub-tools-text");
   if (hubTools) hubTools.textContent = uiText("hubTools");
+  const hubUnifiedSearch = document.getElementById("hub-unified-search-text");
+  if (hubUnifiedSearch) hubUnifiedSearch.textContent = uiText("hubUnifiedSearch");
   const hubUser = document.getElementById("hub-user-text");
   if (hubUser) hubUser.textContent = uiText("hubUser");
   const hubChronicle = document.getElementById("hub-chronicle-text");
@@ -1601,23 +1600,26 @@ function renderNav(filter = "") {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Interactive 45-Tool Explorer
+// Interactive 41-Tool Explorer
 // ──────────────────────────────────────────────────────────────────────────
 
 const TOOL_CATEGORIES_LIST = [
-  { key: "all", labelZh: "全部 (45)", labelEn: "All (45)" },
+  { key: "all", labelZh: "全部 (41)", labelEn: "All (41)" },
   { key: "search", labelZh: "🔍 核心搜尋 (1)", labelEn: "🔍 Search (1)" },
-  { key: "query", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
+  { key: "query_intelligence", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
   { key: "discovery", labelZh: "📑 文章探索 (5)", labelEn: "📑 Discovery (5)" },
+  { key: "reference_verification", labelZh: "🔬 引用驗證 (1)", labelEn: "🔬 Reference Check (1)" },
   { key: "fulltext", labelZh: "📄 全文工具 (2)", labelEn: "📄 Full Text (2)" },
   { key: "figure", labelZh: "🖼️ 圖表擷取 (1)", labelEn: "🖼️ Figures (1)" },
-  { key: "ncbi", labelZh: "🧬 基因與化合物 (7)", labelEn: "🧬 Genes & Drugs (7)" },
-  { key: "citation", labelZh: "🌳 引用網絡 (1)", labelEn: "🌳 Citations (1)" },
+  { key: "ncbi_extended", labelZh: "🧬 基因與化合物 (7)", labelEn: "🧬 Genes & Drugs (7)" },
+  { key: "citation_network", labelZh: "🌳 引用網絡 (1)", labelEn: "🌳 Citations (1)" },
   { key: "export", labelZh: "📤 匯出與筆記 (2)", labelEn: "📤 Export (2)" },
-  { key: "session", labelZh: "💾 Session 管理 (5)", labelEn: "💾 Session (5)" },
+  { key: "session", labelZh: "💾 Session 管理 (1)", labelEn: "💾 Session (1)" },
   { key: "institutional", labelZh: "🏥 機構訂閱 (5)", labelEn: "🏥 Library OpenURL (5)" },
-  { key: "vision", labelZh: "👁️ 視覺搜尋 (2)", labelEn: "👁️ Vision (2)" },
+  { key: "vision", labelZh: "👁️ 視覺搜尋 (1)", labelEn: "👁️ Vision (1)" },
+  { key: "icd", labelZh: "🔄 ICD 轉換 (1)", labelEn: "🔄 ICD-MeSH (1)" },
   { key: "chronicle", labelZh: "🕰️ 研究編年史 (2)", labelEn: "🕰️ Chronicle (2)" },
+  { key: "image_search", labelZh: "🖼️ 圖片搜尋 (1)", labelEn: "🖼️ Image Search (1)" },
   { key: "pipeline", labelZh: "🔁 Pipeline 工作流 (7)", labelEn: "🔁 Pipelines (7)" },
 ];
 
@@ -1739,7 +1741,7 @@ function renderSearchResults(query) {
   if (!q) {
     modalSearchResults.innerHTML = `
       <p class="modal-search-hint">
-        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 45 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 45 tools..."}
+        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 41 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 41 tools..."}
       </p>
     `;
     return;
@@ -2002,6 +2004,8 @@ if (topicHubNav) {
           toolExplorerWidget.scrollIntoView({ behavior: "smooth" });
           toolSearchInput?.focus();
         }
+      } else if (hub === "unified-search") {
+        window.location.hash = `#/${activeLang === "zh" ? "unified-search-architecture-zh" : "unified-search-architecture"}`;
       } else if (hub === "user") {
         window.location.hash = `#/${activeLang === "zh" ? "user-guide-zh" : "user-guide"}`;
       } else if (hub === "chronicle") {
