@@ -72,6 +72,9 @@
 - Open-i image aggregation consumes only strict provider results and exposes
   `completed`/`empty`/`partial`/`failed` source coverage; failed sources have
   unknown totals and never appear in `sources_used` or as false no-results.
+- The local browser broker requires an explicitly provisioned bearer token of
+  at least 32 characters. It never generates or logs a secret; invalid token
+  configuration aborts before the HTTP server starts.
 
 ## Unified Search Application Boundary
 

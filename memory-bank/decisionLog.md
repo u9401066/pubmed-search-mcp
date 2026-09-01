@@ -1,5 +1,24 @@
 # Decision Log
 
+## [2026-09-01] Require Explicit Browser-Broker Secrets
+
+### Decision
+
+Require the local browser fetch broker to receive a caller-provisioned bearer
+token through `--token`, `BROWSER_FETCH_BROKER_TOKEN`, or
+`BROWSER_FETCH_TOKEN`. Reject missing, whitespace-bearing, or shorter-than-32-
+character values before Uvicorn starts. Never generate or log a broker secret.
+
+### Consequences
+
+- Process logs cannot become a bearer-token disclosure channel.
+- Broker and MCP configuration share one deliberate secret instead of relying
+  on an unusable server-only runtime token.
+- Existing broker launchers without an explicit strong token fail closed and
+  must adopt the documented token-generation command.
+
+---
+
 ## [2026-09-01] Fail Closed at Note, Pipeline-History, and OpenURL Boundaries
 
 ### Decision

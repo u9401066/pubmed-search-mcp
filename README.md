@@ -167,8 +167,9 @@ uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
 Copy the generated value into both commands/configurations; never reuse a
-published example token. If `--token` is omitted, the broker generates and
-prints a high-entropy runtime token. The broker launches a persistent browser
+published example token. `--token`, `BROWSER_FETCH_BROKER_TOKEN`, or the
+shared `BROWSER_FETCH_TOKEN` is required; the broker fails closed instead of
+generating or logging a secret. The broker launches a persistent browser
 profile with download interception enabled. Log in once inside that
 broker-controlled browser window, and subsequent PDF downloads will be captured
 automatically without a native "Save As" dialog.

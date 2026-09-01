@@ -162,8 +162,9 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
-請把產生的值填入命令與 MCP 設定，絕不要重用文件裡的公開範例 token。若省略
-`--token`，broker 會產生並顯示一組高熵 runtime token。這個 broker 會啟動一個
+請把產生的值填入命令與 MCP 設定，絕不要重用文件裡的公開範例 token。
+`--token`、`BROWSER_FETCH_BROKER_TOKEN` 或共用的 `BROWSER_FETCH_TOKEN` 必須明確
+提供；broker 不會自行產生或記錄 secret，而是 fail closed。這個 broker 會啟動一個
 可重複使用的瀏覽器 profile，並攔截下載事件。你只要在 broker 控制的瀏覽器裡
 登入一次，之後 PDF 下載就會直接落到暫存目錄並回傳給 MCP，不會再跳出手動另存
 對話框。

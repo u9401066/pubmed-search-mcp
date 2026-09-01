@@ -59,6 +59,8 @@
   query credentials and non-resolver search presets, PMID-to-DOI diagnosis
   separates missing metadata from outage, and corrupt pipeline history fails
   closed instead of becoming a partial or empty report.
+- The browser broker now requires an explicitly provisioned bearer token of at
+  least 32 characters and never generates or logs authentication secrets.
 - Made PubMed EFetch and all seven NCBI Extended provider paths validate exact
   envelopes and row identity. Added `clinical-trials-adjunct/v1` so explicit
   Markdown/JSON/TOON adjunct requests preserve retrieval/format coverage and

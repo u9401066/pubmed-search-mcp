@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The local browser broker now requires an explicitly provisioned bearer token
+  of at least 32 characters and never generates or logs authentication secrets.
+  Missing, weak, or whitespace-bearing tokens fail before Uvicorn starts.
 - Auto-relaxation no longer rewrites a typed PubMed timeout/failure as a valid
   zero-result response; incomplete coverage remains machine-readable through
   source errors, metadata, artifacts, and output status.

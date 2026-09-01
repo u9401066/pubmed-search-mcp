@@ -15,7 +15,7 @@ from pubmed_search.presentation import browser_fetch_broker as broker
 if TYPE_CHECKING:
     from pathlib import Path
 
-_EXPLICIT_TEST_TOKEN = "explicit-test-token"
+_EXPLICIT_TEST_TOKEN = "explicit-test-token-0123456789abcdef"
 
 
 def _config(tmp_path: Path, *, host: str = "127.0.0.1", token: str | None = None) -> broker.BrokerConfig:
@@ -47,27 +47,16 @@ def test_loopback_authority_rejects_remote_or_malformed_names(authority: str | N
     assert broker._is_loopback_authority(authority) is False
 
 
-def test_missing_token_is_generated_with_high_entropy(monkeypatch: pytest.MonkeyPatch) -> None:
-    generated_value = "g" * 43
-    requested_sizes: list[int] = []
-    monkeypatch.setattr(
-        broker.secrets,
-        "token_urlsafe",
-        lambda size: requested_sizes.append(size) or generated_value,
-    )
-
-    token, generated = broker._resolve_broker_token(None)
-
-    assert token == generated_value
-    assert generated is True
-    assert requested_sizes == [broker.GENERATED_TOKEN_BYTES]
+@pytest.mark.parametrize("token", [None, "", "short-token", "x" * 31, "x" * 31 + " ", "x" * 16 + " " + "x" * 16])
+def test_missing_weak_or_whitespace_token_is_rejected(token: str | None) -> None:
+    with pytest.raises(ValueError, match="token"):
+        broker._require_broker_token(token)
 
 
 def test_explicit_shared_token_is_preserved_exactly() -> None:
-    token, generated = broker._resolve_broker_token("local-dev-token")
+    token = "local-dev-token-0123456789abcdefgh"
 
-    assert token == "local-dev-token"
-    assert generated is False
+    assert broker._require_broker_token(token) == token
 
 
 def test_parser_has_no_public_fixed_token_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,22 +66,33 @@ def test_parser_has_no_public_fixed_token_default(monkeypatch: pytest.MonkeyPatc
     assert broker._build_parser().parse_args([]).token is None
 
 
-def test_generated_runtime_token_is_shown_and_used(
+def test_missing_runtime_token_aborts_before_uvicorn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = MagicMock()
+    monkeypatch.setattr(sys, "argv", ["pubmed-browser-fetch-broker"])
+    monkeypatch.setattr("uvicorn.run", run)
+
+    with pytest.raises(SystemExit, match="2"):
+        broker.main()
+
+    run.assert_not_called()
+
+
+def test_explicit_runtime_token_is_used_without_logging_secret(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    generated_token = "generated-high-entropy-runtime-token"
     run = MagicMock()
-    monkeypatch.setattr(sys, "argv", ["pubmed-browser-fetch-broker"])
-    monkeypatch.setattr(broker, "_resolve_broker_token", lambda _value: (generated_token, True))
+    monkeypatch.setattr(sys, "argv", ["pubmed-browser-fetch-broker", "--token", _EXPLICIT_TEST_TOKEN])
     monkeypatch.setattr("uvicorn.run", run)
 
     with caplog.at_level(logging.WARNING, logger=broker.__name__):
         broker.main()
 
     app = run.call_args.args[0]
-    assert app.state.config.token == generated_token
-    assert generated_token in caplog.text
+    assert app.state.config.token == _EXPLICIT_TEST_TOKEN
+    assert _EXPLICIT_TEST_TOKEN not in caplog.text
 
 
 def test_remote_bind_is_rejected_by_app_factory(tmp_path: Path) -> None:
@@ -122,7 +122,7 @@ async def test_global_guard_rejects_dns_rebinding_host_before_browser_fetch(
     ) as client:
         response = await client.post(
             "/fetch",
-            headers={"Authorization": "Bearer explicit-test-token"},
+            headers={"Authorization": f"Bearer {_EXPLICIT_TEST_TOKEN}"},
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},
         )
 
@@ -146,7 +146,7 @@ async def test_global_guard_rejects_remote_origin_on_loopback_host(
         response = await client.post(
             "/fetch",
             headers={
-                "Authorization": "Bearer explicit-test-token",
+                "Authorization": f"Bearer {_EXPLICIT_TEST_TOKEN}",
                 "Origin": "https://attacker.example",
             },
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},
@@ -172,7 +172,7 @@ async def test_loopback_origin_and_explicit_token_reach_browser_fetch(
         response = await client.post(
             "/fetch",
             headers={
-                "Authorization": "Bearer explicit-test-token",
+                "Authorization": f"Bearer {_EXPLICIT_TEST_TOKEN}",
                 "Origin": "http://localhost:8766",
             },
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},

@@ -350,7 +350,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `BROWSER_FETCH_REQUIRE_LOCAL` | No | Require the configured broker URL to be localhost | `true` |
 | `BROWSER_FETCH_VERIFY_TLS` | No | Verify TLS when calling an HTTPS broker URL | `true` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
-| `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN`; otherwise a high-entropy runtime token is generated and printed |
+| `BROWSER_FETCH_BROKER_TOKEN` | Required to start broker | Bearer token expected by the local broker server (minimum 32 characters) | Falls back to `BROWSER_FETCH_TOKEN`; missing/weak values fail closed |
 | `BROWSER_FETCH_BROKER_HOST` | No | Broker bind host | `127.0.0.1` |
 | `BROWSER_FETCH_BROKER_PORT` | No | Broker bind port | `8766` |
 | `BROWSER_FETCH_BROKER_HEADLESS` | No | Run broker browser headless | `false` |
@@ -485,9 +485,10 @@ uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
 Use the generated value in both the broker command and MCP client config; do
-not reuse a published example token. When `--token` is omitted, the broker
-generates and prints a high-entropy runtime token. It always rejects non-loopback
-binds, Host headers, and browser Origins.
+not reuse a published example token. `--token`, `BROWSER_FETCH_BROKER_TOKEN`,
+or the shared `BROWSER_FETCH_TOKEN` is required; the broker never generates or
+logs a bearer secret. It always rejects missing/weak tokens, non-loopback binds,
+Host headers, and browser Origins.
 
 Recommended first run:
 
