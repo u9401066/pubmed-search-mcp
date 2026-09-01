@@ -154,7 +154,7 @@ async def _execute_pipeline_mode_outcome(
             )
 
     try:
-        config = materialize_pipeline_config(config)
+        config = materialize_pipeline_config(config, default_name=pipeline_name_override or "")
     except ValueError as exc:
         return _pipeline_failure(
             f"Template error: {exc}",
