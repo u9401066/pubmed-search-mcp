@@ -6,13 +6,33 @@ plain-text reference list -> parser -> PubMed evidence -> MCP JSON report.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from pubmed_search.application.reference_verification import ReferenceVerificationService
+from pubmed_search.application.reference_verification.service import (
+    MAX_REFERENCE_CHARS,
+    MAX_REFERENCE_TEXT_BYTES,
+    MAX_REFERENCES,
+    MAX_SOURCE_NAME_CHARS,
+    ReferenceVerificationInputError,
+)
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.presentation.mcp_server.tools.reference_verification import register_reference_verification_tools
+
+
+def _pubmed_page(items: list[dict[str, Any]], *, total: int | None = None) -> SourceSearchPage[dict[str, Any]]:
+    return SourceSearchPage(
+        source="pubmed",
+        items=items,
+        total=len(items) if total is None else total,
+        query="reference lookup",
+        metadata={"physical_query": "reference lookup", "query_executed": True},
+    )
 
 
 def _capture_tools(register_fn, *args):
@@ -39,7 +59,7 @@ class TestReferenceVerificationService:
         self.searcher.find_by_citation = AsyncMock(return_value=None)
         self.searcher.verify_references = AsyncMock(return_value=[])
         self.searcher.fetch_details = AsyncMock(return_value=[])
-        self.searcher.search = AsyncMock(return_value=[])
+        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
         self.service = ReferenceVerificationService(self.searcher)
 
     def test_extract_references_from_numbered_block(self):
@@ -70,6 +90,40 @@ class TestReferenceVerificationService:
         assert parsed.first_page == "12"
         assert parsed.doi == "10.1056/nejmoa2400001"
         assert parsed.pmid == "12345678"
+
+    @pytest.mark.parametrize("limit", [0, -1, MAX_REFERENCES + 1, True])
+    def test_rejects_invalid_reference_limit(self, limit):
+        with pytest.raises(ReferenceVerificationInputError, match="max_references"):
+            self.service.extract_references("Example reference", limit=limit)
+
+    @pytest.mark.asyncio
+    async def test_rejects_more_entries_than_requested_without_truncation(self):
+        references = "\n".join(f"Reference {index}" for index in range(MAX_REFERENCES + 1))
+
+        with pytest.raises(ReferenceVerificationInputError, match="more than max_references"):
+            await self.service.verify_reference_list(references, limit=MAX_REFERENCES)
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_reference_entry(self):
+        with pytest.raises(ReferenceVerificationInputError, match="reference entry 1"):
+            await self.service.verify_reference_list("x" * (MAX_REFERENCE_CHARS + 1))
+
+    @pytest.mark.asyncio
+    async def test_rejects_reference_text_over_utf8_byte_budget(self):
+        reference_text = "文" * (MAX_REFERENCE_TEXT_BYTES // 3 + 1)
+
+        with pytest.raises(ReferenceVerificationInputError, match="UTF-8 bytes"):
+            await self.service.verify_reference_list(reference_text)
+
+    @pytest.mark.asyncio
+    async def test_rejects_unsafe_or_oversized_source_name(self):
+        with pytest.raises(ReferenceVerificationInputError, match="single-line"):
+            await self.service.verify_reference_list("Reference", source_name="file\nname")
+        with pytest.raises(ReferenceVerificationInputError, match="characters"):
+            await self.service.verify_reference_list(
+                "Reference",
+                source_name="x" * (MAX_SOURCE_NAME_CHARS + 1),
+            )
 
     @pytest.mark.asyncio
     async def test_verify_reference_prefers_explicit_pmid(self):
@@ -173,7 +227,7 @@ class TestReferenceVerificationService:
 
     @pytest.mark.asyncio
     async def test_verify_reference_is_unresolved_when_no_candidate_found(self):
-        self.searcher.search = AsyncMock(return_value=[])
+        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
 
         result = await self.service.verify_reference(
             "Unstructured reference with no matchable metadata",
@@ -201,23 +255,101 @@ class TestReferenceVerificationService:
         assert workflow["review_queue"][0]["review_checklist"]
 
     @pytest.mark.asyncio
+    async def test_upstream_failure_is_not_reported_as_unresolved(self):
+        self.searcher.fetch_details = AsyncMock(side_effect=RuntimeError("upstream failed"))
+
+        report = await self.service.verify_reference_list("PMID:12345")
+
+        assert report["success"] is False
+        assert report["status"] == "source_unavailable"
+        assert report["summary"]["source_unavailable"] == 1
+        assert report["summary"]["unresolved"] == 0
+        assert report["results"][0]["status"] == "source_unavailable"
+        assert report["results"][0]["source_errors"] == [
+            {"source": "PubMed article details", "error": "upstream source unavailable"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_mixed_upstream_outcome_returns_explicit_partial_report(self):
+        async def fetch_details(pmids):
+            if len(pmids) > 1:
+                return []
+            if pmids == ["12345"]:
+                return [{"pmid": "12345", "authors": ["PMID"]}]
+            raise RuntimeError("upstream failed")
+
+        self.searcher.fetch_details = AsyncMock(side_effect=fetch_details)
+
+        report = await self.service.verify_reference_list("PMID:12345\nPMID:67890")
+
+        assert report["success"] is True
+        assert report["status"] == "partial"
+        assert report["partial"] is True
+        assert report["assessed_count"] == 1
+        assert report["not_assessed_count"] == 1
+        assert [row["status"] for row in report["results"]] == ["verified", "source_unavailable"]
+
+    @pytest.mark.asyncio
+    async def test_total_timeout_marks_unfinished_rows_not_checked(self):
+        async def slow_fetch(_pmids):
+            await asyncio.sleep(1)
+            return []
+
+        self.searcher.fetch_details = AsyncMock(side_effect=slow_fetch)
+        service = ReferenceVerificationService(self.searcher, total_timeout_seconds=0.01)
+
+        report = await service.verify_reference_list("PMID:12345")
+
+        assert report["success"] is False
+        assert report["status"] == "timeout"
+        assert report["timed_out"] is True
+        assert report["summary"]["not_checked"] == 1
+        assert report["summary"]["unresolved"] == 0
+
+    @pytest.mark.asyncio
+    async def test_reference_workers_respect_concurrency_cap(self):
+        active = 0
+        max_active = 0
+
+        async def fetch_details(pmids):
+            nonlocal active, max_active
+            if len(pmids) > 1:
+                return []
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.005)
+            active -= 1
+            return [{"pmid": pmids[0], "authors": ["PMID"]}]
+
+        self.searcher.fetch_details = AsyncMock(side_effect=fetch_details)
+        service = ReferenceVerificationService(self.searcher, max_concurrency=3)
+        references = "\n".join(f"PMID:{10000 + index}" for index in range(10))
+
+        report = await service.verify_reference_list(references, limit=10)
+
+        assert report["summary"]["verified"] == 10
+        assert max_active == 3
+
+    @pytest.mark.asyncio
     async def test_partial_match_row_exposes_review_strategy(self):
         self.searcher.find_by_citation = AsyncMock(return_value=None)
-        self.searcher.search = AsyncMock(
-            return_value=[
-                {
-                    "pmid": "45678901",
-                    "doi": "10.1000/example-doi",
-                    "title": "Close but not exact title",
-                    "journal": "N Engl J Med",
-                    "journal_abbrev": "N Engl J Med",
-                    "year": "2022",
-                    "volume": "390",
-                    "pages": "100-110",
-                    "authors": ["Smith John"],
-                    "authors_full": [{"last_name": "Smith", "fore_name": "John"}],
-                }
-            ]
+        self.searcher.search_page = AsyncMock(
+            return_value=_pubmed_page(
+                [
+                    {
+                        "pmid": "45678901",
+                        "doi": "10.1000/example-doi",
+                        "title": "Close but not exact title",
+                        "journal": "N Engl J Med",
+                        "journal_abbrev": "N Engl J Med",
+                        "year": "2022",
+                        "volume": "390",
+                        "pages": "100-110",
+                        "authors": ["Smith John"],
+                        "authors_full": [{"last_name": "Smith", "fore_name": "John"}],
+                    }
+                ]
+            )
         )
 
         result = await self.service.verify_reference(
@@ -237,11 +369,11 @@ class TestReferenceVerificationService:
             'Smith J. Alpha "beta" gamma trial results. N Engl J Med. 2024;390(1):12-18.',
             index=1,
         )
-        self.searcher.search = AsyncMock(return_value=[])
+        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
 
         await self.service._resolve_by_title(parsed)
 
-        called_query = self.searcher.search.await_args.args[0]
+        called_query = self.searcher.search_page.await_args.args[0]
         assert called_query == '"Alpha beta gamma trial results"[Title]'
 
 
@@ -285,3 +417,32 @@ class TestReferenceVerificationTool:
         assert result["summary"]["verified"] == 1
         assert result["results"][0]["status"] == "verified"
         assert "review_workflow" in result
+
+    @pytest.mark.asyncio
+    async def test_verify_reference_list_tool_uses_safe_structured_errors(self):
+        tools = _capture_tools(register_reference_verification_tools, MagicMock())
+
+        result = json.loads(
+            await tools["verify_reference_list"](
+                reference_text="Reference",
+                source_name="unsafe\nname",
+            )
+        )
+
+        assert result["success"] is False
+        assert result["tool"] == "verify_reference_list"
+        assert "single-line" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_verify_reference_list_tool_sanitizes_generic_failures(self, monkeypatch):
+        async def fail_verify(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise RuntimeError("api_key=private-reference")
+
+        monkeypatch.setattr(ReferenceVerificationService, "verify_reference_list", fail_verify)
+        tools = _capture_tools(register_reference_verification_tools, MagicMock())
+
+        result = json.loads(await tools["verify_reference_list"](reference_text="Reference"))
+
+        assert result["success"] is False
+        assert result["error"] == "Reference verification could not be completed"
+        assert "private-reference" not in json.dumps(result)

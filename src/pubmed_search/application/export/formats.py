@@ -18,10 +18,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-# Updated when LaTeX conversion is first requested. Kept for compatibility with
-# callers that introspect the module attribute.
-HAS_PYLATEXENC = False
-
 logger = logging.getLogger(__name__)
 
 SUPPORTED_FORMATS = ["ris", "bibtex", "csv", "medline", "json"]
@@ -90,13 +86,11 @@ def _convert_to_latex(text: str) -> str:
     if not text:
         return text
 
-    global HAS_PYLATEXENC
     try:
         from pylatexenc.latexencode import unicode_to_latex
     except ImportError:
-        HAS_PYLATEXENC = False
+        pass
     else:
-        HAS_PYLATEXENC = True
         return str(unicode_to_latex(text))
 
     # Fallback: basic character mapping

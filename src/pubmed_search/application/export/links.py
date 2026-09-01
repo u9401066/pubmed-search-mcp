@@ -96,8 +96,8 @@ async def get_fulltext_links_with_lookup(pmid: str, searcher: LiteratureSearcher
             links["pmc_pdf_url"] = pmc_url.rstrip("/") + "/pdf/"
             links["has_free_fulltext"] = True
             links["access_type"] = "open_access"
-    except Exception as e:
-        logger.warning(f"Error looking up PMC for {pmid}: {e}")
+    except Exception as exc:
+        logger.warning("PMC link lookup failed (%s)", type(exc).__name__)
 
     return links
 

@@ -1,14 +1,7 @@
 """
 Export Tools - MCP tools for citation export and fulltext access.
 
-Provides:
-- prepare_export: Export search results to various formats
-- get_fulltext_links: Get fulltext URLs for an article
-- summarize_fulltext_access: Analyze fulltext availability
-
-Phase 2.1 Updates:
-- InputNormalizer for flexible PMID input
-- ResponseFormatter for consistent error messages
+Provides citation exports and local literature-note persistence.
 
 v0.1.30 Updates:
 - Official NCBI Citation API as default source
@@ -21,40 +14,98 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+
+from pydantic import Field
 
 from pubmed_search.application.export import (
     SUPPORTED_FORMATS,
     export_articles,
-    get_fulltext_links_with_lookup,
     resolve_note_export_dir,
-    summarize_access,
     tenant_export_root,
     write_export_artifact,
     write_literature_notes,
 )
+from pubmed_search.domain.value_objects import (
+    MAX_IDENTIFIER_CHARS,
+    MAX_PMID_BATCH_CHARS,
+    MAX_PMIDS_PER_REQUEST,
+    IdentifierValidationError,
+    normalize_pmid_batch,
+)
 from pubmed_search.shared.tenancy import current_tenant
 
-from ._common import InputNormalizer, ResponseFormatter, get_session_manager, get_session_registry
+from ._common import ResponseFormatter, get_session_manager, get_session_registry
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-    from pubmed_search.infrastructure.ncbi.citation_exporter import CitationResult
 
 logger = logging.getLogger(__name__)
 
 # Export directory for prepared files
 EXPORT_DIR = Path(tempfile.gettempdir()) / "pubmed_exports"
 OFFICIAL_FORMATS = ("ris", "medline", "csl")
+OfficialCitationFormat = Literal["ris", "medline", "csl"]
+NoteFormat = Literal["wiki", "foam", "markdown", "medpaper"]
+NotePath = Annotated[str, Field(min_length=1, max_length=4_096)]
+CollectionName = Annotated[str, Field(min_length=1, max_length=200)]
+NotePmidText = Annotated[str, Field(min_length=1, max_length=MAX_PMID_BATCH_CHARS)]
+NotePmidToken = Annotated[str, Field(min_length=1, max_length=MAX_IDENTIFIER_CHARS)]
+NotePmidList = Annotated[
+    list[NotePmidToken],
+    Field(min_length=1, max_length=MAX_PMIDS_PER_REQUEST),
+]
+NotePmidInput = NotePmidText | NotePmidList
 
 
-async def export_citations_official(pmids: list[str], format: str = "ris"):
-    """Lazy wrapper around the official NCBI citation exporter."""
-    from pubmed_search.infrastructure.ncbi.citation_exporter import export_citations_official as official_export
+def _tenant_reference_locator(path_value: object, root: Path) -> dict[str, str]:
+    """Convert one server-local note path into a tenant-safe logical locator."""
+    if not isinstance(path_value, str) or not path_value:
+        raise ValueError("Literature-note result contained an invalid filesystem path")
+    canonical_root = root.expanduser().resolve()
+    candidate = Path(path_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = canonical_root / candidate
+    try:
+        relative = candidate.resolve().relative_to(canonical_root)
+    except ValueError:
+        raise ValueError("Literature-note result escaped the tenant references directory") from None
+    return {
+        "kind": "tenant_reference",
+        "value": f"references/{relative.as_posix()}",
+    }
 
-    return await official_export(pmids, format=format)  # type: ignore[arg-type]
+
+def _redact_tenant_note_paths(result: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Remove host filesystem paths from an authenticated note-export result."""
+
+    def sanitize(value: object) -> Any:
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "output_dir":
+                continue
+            if key == "path" or key.endswith("_path"):
+                locator_key = "locator" if key == "path" else f"{key[:-5]}_locator"
+                cleaned[locator_key] = None if item is None else _tenant_reference_locator(item, root)
+                continue
+            cleaned[key] = sanitize(item)
+        return cleaned
+
+    redacted = sanitize(result)
+    if not isinstance(redacted, dict):  # pragma: no cover - guarded by the public signature
+        raise TypeError("Literature-note result must be an object")
+    redacted["storage_locator"] = {"kind": "tenant_references", "value": "references"}
+    redacted["path_visibility"] = "redacted"
+    if str(root.expanduser().resolve()) in json.dumps(redacted, ensure_ascii=False):
+        raise ValueError("Literature-note response still contains a server filesystem path")
+    return redacted
 
 
 def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
@@ -62,10 +113,10 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def prepare_export(
-        pmids: Union[str, list, int],
-        format: str = "ris",
+        pmids: NotePmidInput,
+        format: Literal["ris", "medline", "csl", "bibtex", "csv", "json"] = "ris",
         include_abstract: bool = True,
-        source: str = "official",
+        source: Literal["official", "local"] = "official",
     ) -> str:
         """
         Export citations to reference manager formats.
@@ -119,9 +170,23 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             # Get CSL-JSON for programmatic use
             prepare_export(pmids="last", format="csl", source="official")
         """
-        # Phase 2.1: Input normalization
-        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-        normalized_abstract = InputNormalizer.normalize_bool(include_abstract, default=True)
+        try:
+            normalized_pmids = normalize_pmid_batch(pmids)
+        except IdentifierValidationError as exc:
+            return ResponseFormatter.error(
+                error=exc,
+                suggestion="Provide 'last', a PMID string, or a bounded JSON array of PMID strings",
+                example='prepare_export(pmids=["12345678", "87654321"], format="ris")',
+                tool_name="prepare_export",
+                output_format="json",
+            )
+        if not isinstance(include_abstract, bool):
+            return ResponseFormatter.error(
+                error="include_abstract must be a boolean",
+                tool_name="prepare_export",
+                output_format="json",
+            )
+        normalized_abstract = include_abstract
 
         # Handle "last" keyword
         pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
@@ -132,44 +197,42 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 suggestion="Use 'last' for last search results or provide PMIDs",
                 example='prepare_export(pmids="12345678,87654321", format="ris")',
                 tool_name="prepare_export",
+                output_format="json",
             )
 
-        format_lower = format.lower()
-        source_lower = source.lower()
+        format_lower = format
+        source_lower = source
 
-        # Determine which source to use
-        use_official = source_lower == "official" and format_lower in OFFICIAL_FORMATS
-
-        # If user requested official but format not supported, suggest alternative
         if source_lower == "official" and format_lower not in OFFICIAL_FORMATS:
-            if format_lower in SUPPORTED_FORMATS:
-                # Use local fallback for unsupported official formats
-                use_official = False
-                logger.info(f"Format '{format_lower}' not available via official API, using local")
-            else:
-                return ResponseFormatter.error(
-                    error=f"Unsupported format: {format}",
-                    suggestion=f"Official API formats: {', '.join(OFFICIAL_FORMATS)}. "
-                    f"Local formats: {', '.join(SUPPORTED_FORMATS)}",
-                    example='prepare_export(pmids="last", format="ris")',
-                    tool_name="prepare_export",
-                )
+            return ResponseFormatter.error(
+                error=f"Format '{format_lower}' is not supported by the official NCBI exporter",
+                suggestion=(
+                    f"Use one of {', '.join(OFFICIAL_FORMATS)}, or explicitly set source='local' "
+                    f"for {', '.join(SUPPORTED_FORMATS)}"
+                ),
+                example='prepare_export(pmids="last", format="bibtex", source="local")',
+                tool_name="prepare_export",
+                output_format="json",
+            )
 
         # Validate format for local source
-        if not use_official and format_lower not in SUPPORTED_FORMATS:
+        if source_lower == "local" and format_lower not in SUPPORTED_FORMATS:
             return ResponseFormatter.error(
                 error=f"Unsupported format: {format}",
                 suggestion=f"Use one of: {', '.join(SUPPORTED_FORMATS)}",
                 example='prepare_export(pmids="last", format="ris")',
                 tool_name="prepare_export",
+                output_format="json",
             )
 
         try:
-            if use_official:
-                # Use official NCBI Citation API
-                result: CitationResult = await export_citations_official(
+            if source_lower == "official":
+                # Resolve the exporter from the active server-scoped SourceRuntime.
+                from pubmed_search.infrastructure.ncbi.citation_exporter import get_exporter
+
+                result = await get_exporter().export_citations(
                     pmid_list,
-                    format=format_lower,  # type: ignore[arg-type]
+                    format=cast("OfficialCitationFormat", format_lower),
                 )
 
                 if result.success:
@@ -179,30 +242,37 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                         result.pmid_count,
                         source="official",
                     )
-                # Fallback to local on API failure
-                logger.warning(f"Official API failed ({result.error}), falling back to local")
-                return await _export_local(pmid_list, format_lower, normalized_abstract, searcher)
+                return ResponseFormatter.error(
+                    error="Official NCBI citation export failed",
+                    suggestion=(
+                        "Retry the official export, or explicitly choose source='local' "
+                        "if locally generated citation metadata is acceptable"
+                    ),
+                    tool_name="prepare_export",
+                    output_format="json",
+                )
             # Use local formatting
             return await _export_local(pmid_list, format_lower, normalized_abstract, searcher)
 
-        except Exception as e:
-            logger.exception("Error preparing export")
+        except Exception as exc:
+            logger.warning("Citation export failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=e,
+                error="Citation export could not be completed",
                 suggestion="Check PMIDs and format, then try again",
                 tool_name="prepare_export",
+                output_format="json",
             )
 
     @mcp.tool()
     async def save_literature_notes(
-        pmids: Union[str, list, int] = "last",
-        output_dir: str | None = None,
-        note_format: str = "wiki",
+        pmids: NotePmidInput = "last",
+        output_dir: NotePath | None = None,
+        note_format: NoteFormat = "wiki",
         include_abstract: bool = True,
         overwrite: bool = False,
         create_index: bool = True,
-        collection_name: str | None = None,
-        template_file: str | None = None,
+        collection_name: CollectionName | None = None,
+        template_file: NotePath | None = None,
         include_csl_json: bool = True,
     ) -> str:
         """
@@ -227,7 +297,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         are intentionally ignored.
 
         Args:
-            pmids: Articles to save. Accepts "last", comma-separated PMIDs, list, or int.
+            pmids: Articles to save. Accepts "last", a PMID string, or a JSON array of PMID strings.
             output_dir: Optional target folder for notes.
             note_format: "wiki" (default, Foam-compatible), "foam", "markdown", or "medpaper".
             include_abstract: Include abstracts in article notes.
@@ -238,18 +308,51 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             include_csl_json: Write references.csl.json beside notes for citation-manager handoff.
 
         Returns:
-            JSON with output_dir, written files, skipped files, index path, and wiki_validation.
+            JSON with written/skipped files, index information, and wiki_validation.
+            Local callers receive filesystem paths. Authenticated callers receive
+            tenant-relative logical locators and never receive server host paths.
 
         Examples:
             save_literature_notes(pmids="last")
             save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
             save_literature_notes(pmids="12345678,87654321", template_file="./ref-template.md")
         """
-        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-        normalized_abstract = InputNormalizer.normalize_bool(include_abstract, default=True)
-        normalized_overwrite = InputNormalizer.normalize_bool(overwrite, default=False)
-        normalized_create_index = InputNormalizer.normalize_bool(create_index, default=True)
-        normalized_csl = InputNormalizer.normalize_bool(include_csl_json, default=True)
+        try:
+            normalized_pmids = normalize_pmid_batch(pmids)
+        except IdentifierValidationError as exc:
+            return ResponseFormatter.error(
+                error=exc,
+                suggestion="Use 'last' or provide only complete positive PMID values",
+                tool_name="save_literature_notes",
+            )
+        for name, flag_value in (
+            ("include_abstract", include_abstract),
+            ("overwrite", overwrite),
+            ("create_index", create_index),
+            ("include_csl_json", include_csl_json),
+        ):
+            if not isinstance(flag_value, bool):
+                return ResponseFormatter.error(
+                    error=f"{name} must be a boolean",
+                    tool_name="save_literature_notes",
+                )
+
+        if note_format not in {"wiki", "foam", "markdown", "medpaper"}:
+            return ResponseFormatter.error(
+                error=f"Unsupported note format: {note_format}",
+                suggestion="Use wiki, foam, markdown, or medpaper",
+                tool_name="save_literature_notes",
+            )
+        for name, value, max_chars in (
+            ("output_dir", output_dir, 4_096),
+            ("template_file", template_file, 4_096),
+            ("collection_name", collection_name, 200),
+        ):
+            if value is not None and (not value.strip() or len(value) > max_chars):
+                return ResponseFormatter.error(
+                    error=f"{name} must contain 1-{max_chars} characters",
+                    tool_name="save_literature_notes",
+                )
 
         pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         if not pmid_list:
@@ -332,17 +435,23 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 articles,
                 target_dir,
                 note_format=note_format,
-                include_abstract=normalized_abstract,
-                overwrite=normalized_overwrite,
-                create_index=normalized_create_index,
+                include_abstract=include_abstract,
+                overwrite=overwrite,
+                create_index=create_index,
                 collection_name=collection_name,
                 search_context=_get_last_search_context() if normalized_pmids == ["last"] else None,
                 template_file=resolved_template_file,
-                include_csl_json=normalized_csl,
+                include_csl_json=include_csl_json,
             )
             result["instructions"] = (
                 "Notes were written locally using a guided template; agents can now edit those files directly."
             )
+            if identity.is_authenticated:
+                result = _redact_tenant_note_paths(result, target_dir)
+                result["instructions"] = (
+                    "Notes were written to isolated tenant storage. Use the returned logical locators; "
+                    "server filesystem paths are intentionally hidden."
+                )
             return json.dumps(result, ensure_ascii=False, indent=2)
 
         except ValueError as e:
@@ -352,123 +461,12 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 example='save_literature_notes(pmids="last", note_format="wiki")',
                 tool_name="save_literature_notes",
             )
-        except Exception as e:
-            logger.exception("Error saving literature notes")
+        except Exception as exc:
+            logger.warning("Literature-note export failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=e,
+                error="Literature notes could not be saved",
                 suggestion="Check PMIDs and output directory permissions, then try again",
                 tool_name="save_literature_notes",
-            )
-
-    # ❌ REMOVED v0.1.20: Merged into unified get_fulltext tool
-    # @mcp.tool()
-    async def get_article_fulltext_links(pmid: Union[str, int]) -> str:
-        """
-        Get fulltext links for a single article.
-
-        Returns URLs to access the full text:
-        - PubMed page
-        - PMC (if available - free full text)
-        - PMC PDF direct link
-        - DOI (publisher page)
-
-        Args:
-            pmid: PubMed ID (accepts: "12345678", "PMID:12345678", 12345678)
-
-        Returns:
-            JSON with available links and access type.
-        """
-        # Phase 2.1: Input normalization
-        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
-
-        if not normalized_pmid:
-            return ResponseFormatter.error(
-                error="Invalid PMID format",
-                suggestion="Provide a valid PMID number",
-                example='get_article_fulltext_links(pmid="12345678")',
-                tool_name="get_article_fulltext_links",
-            )
-
-        try:
-            # Use API lookup to get PMC status
-            links = await get_fulltext_links_with_lookup(normalized_pmid, searcher)
-
-            # Add article title if available
-            articles = await searcher.fetch_details([normalized_pmid])
-            if articles:
-                links["title"] = articles[0].get("title", "")[:100]
-                links["doi_url"] = f"https://doi.org/{articles[0].get('doi')}" if articles[0].get("doi") else None
-
-            return json.dumps({"status": "success", "links": links})
-
-        except Exception as e:
-            logger.exception(f"Error getting fulltext links for {normalized_pmid}")
-            return ResponseFormatter.error(
-                error=e,
-                suggestion="Check if the PMID is correct",
-                tool_name="get_article_fulltext_links",
-            )
-
-    # ❌ REMOVED v0.1.20: Auto-handled by unified get_fulltext
-    # @mcp.tool()
-    async def analyze_fulltext_access(pmids: Union[str, list, int]) -> str:
-        """
-        Analyze fulltext availability for multiple articles.
-
-        Useful for planning literature review - shows which articles
-        have free full text available via PMC.
-
-        Args:
-            pmids: PubMed IDs - accepts multiple formats:
-                   - "12345678,87654321" (comma-separated)
-                   - ["12345678", "87654321"] (list)
-                   - "PMID:12345678" (with prefix)
-                   - "last" to use results from last search
-
-        Returns:
-            Summary statistics with lists of:
-            - Open access articles (PMC available)
-            - Subscription-required articles
-            - Abstract-only articles
-        """
-        # Phase 2.1: Input normalization
-        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-
-        # Handle "last" keyword
-        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
-
-        if not pmid_list:
-            return ResponseFormatter.error(
-                error="No valid PMIDs provided",
-                suggestion="Use 'last' for last search results or provide PMIDs",
-                example='analyze_fulltext_access(pmids="12345678,87654321")',
-                tool_name="analyze_fulltext_access",
-            )
-
-        try:
-            # Fetch article details to get PMC info
-            articles = await searcher.fetch_details(pmid_list)
-
-            if not articles:
-                return ResponseFormatter.no_results(
-                    query=f"PMIDs: {', '.join(pmid_list[:5])}",
-                    suggestions=[
-                        "Check if the PMIDs are correct",
-                        "Use unified_search to find valid PMIDs",
-                    ],
-                )
-
-            # Analyze access
-            summary = summarize_access(articles)
-
-            return json.dumps({"status": "success", "summary": summary})
-
-        except Exception as e:
-            logger.exception("Error analyzing fulltext access")
-            return ResponseFormatter.error(
-                error=e,
-                suggestion="Check PMIDs and try again",
-                tool_name="analyze_fulltext_access",
             )
 
 
@@ -493,9 +491,8 @@ def _resolve_pmids(pmids: str) -> list:
     return [p.strip() for p in pmids.split(",") if p.strip()]
 
 
-def _save_export_file(content: str, format: str, count: int) -> str:
-    """Save a local stdio export to the legacy temporary directory."""
-    del count  # Kept in the private compatibility signature used by older tests.
+def _save_export_file(content: str, format: str) -> str:
+    """Save a local stdio export to the temporary export directory."""
     _export_id, file_path = write_export_artifact(
         content,
         extension=_get_file_extension(format),
@@ -661,7 +658,7 @@ def _format_export_response(
                 }
             )
 
-        file_path = _save_export_file(content, format_str, count)
+        file_path = _save_export_file(content, format_str)
         return json.dumps(
             {
                 "status": "success",

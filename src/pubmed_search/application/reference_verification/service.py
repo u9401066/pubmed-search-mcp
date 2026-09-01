@@ -18,13 +18,31 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.shared.article_identity import normalize_article_doi, normalize_article_title
 
 if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
-ReferenceStatus = Literal["verified", "partial_match", "unresolved", "invalid_input"]
+ReferenceStatus = Literal[
+    "verified",
+    "partial_match",
+    "unresolved",
+    "invalid_input",
+    "source_unavailable",
+    "not_checked",
+]
 ResolutionMethod = Literal["pmid", "doi_search", "ecitmatch", "title_search"]
+
+MAX_REFERENCE_TEXT_CHARS = 200_000
+MAX_REFERENCE_TEXT_BYTES = 400_000
+MAX_REFERENCE_CHARS = 4_000
+MAX_REFERENCE_BYTES = 8_000
+MAX_SOURCE_NAME_CHARS = 255
+MAX_SOURCE_NAME_BYTES = 512
+MAX_REFERENCES = 200
+DEFAULT_MAX_CONCURRENCY = 8
+DEFAULT_TOTAL_TIMEOUT_SECONDS = 60.0
 
 _REFERENCE_MARKER_RE = re.compile(r"^\s*(?:\[\d+\]|\d+[.)])\s*")
 _DOI_RE = re.compile(r"\b(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.\d{4,9}/[-._;()/:A-Z0-9]+)\b", re.IGNORECASE)
@@ -32,6 +50,21 @@ _PMID_RE = re.compile(r"\bPMID\s*:?\s*(\d{5,9})\b", re.IGNORECASE)
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _FIRST_PAGE_RE = re.compile(r":\s*([A-Za-z]?\d+)")
 _VOLUME_RE = re.compile(r";\s*([A-Za-z0-9][A-Za-z0-9 .-]{0,20}?)(?:\(|:|;)")
+_UNSAFE_SOURCE_NAME_RE = re.compile(r"[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
+_UNSAFE_REFERENCE_TEXT_RE = re.compile(r"[\x00\u202a-\u202e\u2066-\u2069]")
+
+
+class ReferenceVerificationInputError(ValueError):
+    """Raised when a reference-verification request exceeds a hard boundary."""
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolutionOutcome:
+    """Internal resolution result that preserves upstream availability."""
+
+    article: dict[str, Any] | None
+    method: ResolutionMethod | None
+    unavailable_sources: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -93,8 +126,20 @@ class ReferenceVerificationService:
         searcher: Existing LiteratureSearcher instance.
     """
 
-    def __init__(self, searcher: LiteratureSearcher):
+    def __init__(
+        self,
+        searcher: LiteratureSearcher,
+        *,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        total_timeout_seconds: float = DEFAULT_TOTAL_TIMEOUT_SECONDS,
+    ):
+        if not 1 <= max_concurrency <= MAX_REFERENCES:
+            raise ReferenceVerificationInputError(f"max_concurrency must be between 1 and {MAX_REFERENCES}")
+        if total_timeout_seconds <= 0:
+            raise ReferenceVerificationInputError("total_timeout_seconds must be greater than zero")
         self._searcher = searcher
+        self._max_concurrency = max_concurrency
+        self._total_timeout_seconds = total_timeout_seconds
 
     def extract_references(self, reference_text: str, *, limit: int = 100) -> list[str]:
         """Split a plain-text reference block into individual entries.
@@ -106,16 +151,17 @@ class ReferenceVerificationService:
         Returns:
             List of reference entry strings, preserving original order.
         """
-        if limit <= 0:
-            return []
-
+        self._validate_limit(limit)
+        self._validate_reference_text(reference_text)
         normalized_lines = [line.strip() for line in reference_text.splitlines() if line.strip()]
         if not normalized_lines:
             return []
 
         has_numbered_entries = any(_REFERENCE_MARKER_RE.match(line) for line in normalized_lines)
         if not has_numbered_entries:
-            return normalized_lines[:limit]
+            limited_entries = normalized_lines[:limit]
+            self._validate_entries(limited_entries)
+            return limited_entries
 
         entries: list[str] = []
         current: list[str] = []
@@ -124,6 +170,7 @@ class ReferenceVerificationService:
                 if current:
                     entries.append(" ".join(current).strip())
                     if len(entries) >= limit:
+                        self._validate_entries(entries)
                         return entries
                 current = [_REFERENCE_MARKER_RE.sub("", line, count=1).strip()]
                 continue
@@ -132,7 +179,9 @@ class ReferenceVerificationService:
         if current and len(entries) < limit:
             entries.append(" ".join(current).strip())
 
-        return entries[:limit]
+        entries = entries[:limit]
+        self._validate_entries(entries)
+        return entries
 
     def parse_reference(self, reference_text: str, *, index: int) -> ParsedReference:
         """Extract minimal verification fields from one reference entry.
@@ -144,6 +193,7 @@ class ReferenceVerificationService:
         Returns:
             ParsedReference containing heuristically extracted fields.
         """
+        self._validate_reference_entry(reference_text, index=index)
         cleaned = self._clean_reference_text(reference_text)
         doi_match = _DOI_RE.search(cleaned)
         pmid_match = _PMID_RE.search(cleaned)
@@ -195,53 +245,156 @@ class ReferenceVerificationService:
         Returns:
             Structured verification report with per-reference evidence.
         """
-        entries = self.extract_references(reference_text, limit=limit)
+        self._validate_request(reference_text, source_name=source_name, limit=limit)
+        entries = self._split_references(reference_text)
         if not entries:
             return {
                 "success": False,
-                "source_name": source_name,
+                "status": "invalid_input",
+                "partial": False,
+                "mode": "reference_list_verification",
+                "source_name": source_name.strip(),
                 "reference_count": 0,
+                "assessed_count": 0,
+                "not_assessed_count": 0,
+                "timed_out": False,
+                "degraded_sources": [],
+                "summary": {
+                    "verified": 0,
+                    "partial_match": 0,
+                    "unresolved": 0,
+                    "invalid_input": 0,
+                    "source_unavailable": 0,
+                    "not_checked": 0,
+                },
+                "results": [],
                 "error": "No reference entries found",
                 "hint": "Provide one reference per line or a numbered reference list",
             }
 
+        if len(entries) > limit:
+            raise ReferenceVerificationInputError(f"reference_text contains more than max_references ({limit}) entries")
+        self._validate_entries(entries)
+
         parsed_entries = [self.parse_reference(entry, index=i) for i, entry in enumerate(entries, start=1)]
-        prefetched_citation_pmids = await self._prefetch_citation_matches(parsed_entries)
-        prefetched_articles = await self._prefetch_articles(
-            {
-                *{parsed.pmid for parsed in parsed_entries if parsed.pmid},
-                *{pmid for pmid in prefetched_citation_pmids.values() if pmid},
-            }
-        )
-        results = list(
-            await asyncio.gather(
-                *[
-                    self._verify_parsed_reference(
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._total_timeout_seconds
+        timed_out = False
+
+        try:
+            prefetched_citation_pmids = await asyncio.wait_for(
+                self._prefetch_citation_matches(parsed_entries),
+                timeout=self._remaining_seconds(deadline),
+            )
+            prefetched_articles = await asyncio.wait_for(
+                self._prefetch_articles(
+                    {
+                        *{parsed.pmid for parsed in parsed_entries if parsed.pmid},
+                        *{pmid for pmid in prefetched_citation_pmids.values() if pmid},
+                    }
+                ),
+                timeout=self._remaining_seconds(deadline),
+            )
+        except TimeoutError:
+            prefetched_citation_pmids = {}
+            prefetched_articles = {}
+            timed_out = True
+
+        results_by_index: dict[int, dict[str, Any]] = {}
+        tasks: dict[asyncio.Task[dict[str, Any]], ParsedReference] = {}
+        if not timed_out:
+            semaphore = asyncio.Semaphore(self._max_concurrency)
+            for parsed in parsed_entries:
+                task = asyncio.create_task(
+                    self._verify_with_semaphore(
                         parsed,
+                        semaphore=semaphore,
                         prefetched_citation_pmid=prefetched_citation_pmids.get(parsed.index),
                         article_cache=prefetched_articles,
                     )
-                    for parsed in parsed_entries
-                ]
-            )
-        )
+                )
+                tasks[task] = parsed
+
+            try:
+                done, pending = await asyncio.wait(
+                    tasks,
+                    timeout=max(0.0, deadline - loop.time()),
+                )
+            except asyncio.CancelledError:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
+            timed_out = bool(pending)
+            for task in done:
+                parsed = tasks[task]
+                try:
+                    results_by_index[parsed.index] = task.result()
+                except Exception:
+                    results_by_index[parsed.index] = self._source_unavailable_row(
+                        parsed,
+                        ("PubMed verification",),
+                    )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        for parsed in parsed_entries:
+            if parsed.index not in results_by_index:
+                results_by_index[parsed.index] = self._not_checked_row(
+                    parsed,
+                    reason="The reference-list verification time budget was exhausted",
+                )
+
+        results = [results_by_index[index] for index in sorted(results_by_index)]
         summary = {
-            "verified": sum(1 for row in results if row["status"] == "verified"),
-            "partial_match": sum(1 for row in results if row["status"] == "partial_match"),
-            "unresolved": sum(1 for row in results if row["status"] == "unresolved"),
-            "invalid_input": sum(1 for row in results if row["status"] == "invalid_input"),
+            status: sum(1 for row in results if row["status"] == status)
+            for status in (
+                "verified",
+                "partial_match",
+                "unresolved",
+                "invalid_input",
+                "source_unavailable",
+                "not_checked",
+            )
         }
+        degraded_sources = sorted(
+            {
+                source
+                for row in results
+                for item in [*(row.get("source_errors") or []), *(row.get("source_warnings") or [])]
+                if isinstance(item, dict)
+                for source in [str(item.get("source", ""))]
+                if source
+            }
+        )
+        unavailable_count = summary["source_unavailable"] + summary["not_checked"]
+        assessed_count = len(results) - unavailable_count
+        is_partial = bool(unavailable_count or degraded_sources)
+        report_status = "ok"
+        if assessed_count == 0:
+            report_status = "timeout" if summary["not_checked"] else "source_unavailable"
+        elif is_partial:
+            report_status = "partial"
         review_workflow = self._build_review_workflow(results)
         return {
-            "success": True,
+            "success": assessed_count > 0,
+            "status": report_status,
+            "partial": is_partial,
             "mode": "reference_list_verification",
-            "source_name": source_name,
+            "source_name": source_name.strip(),
             "reference_count": len(results),
+            "assessed_count": assessed_count,
+            "not_assessed_count": unavailable_count,
+            "timed_out": timed_out,
+            "degraded_sources": degraded_sources,
             "summary": summary,
             "results": results,
             "review_workflow": review_workflow,
             "next_steps": [
                 "Review partial_match rows for field-level mismatches",
+                "Retry source_unavailable and not_checked rows before treating them as unresolved",
                 "Review unresolved rows for non-PubMed citations or parser misses",
                 "Use PMID/DOI evidence before title-only matches when making editorial decisions",
             ],
@@ -257,8 +410,18 @@ class ReferenceVerificationService:
         Returns:
             Structured row describing parsed fields, evidence, and match status.
         """
+        self._validate_reference_entry(reference_text, index=index)
         parsed = self.parse_reference(reference_text, index=index)
-        return await self._verify_parsed_reference(parsed)
+        try:
+            return await asyncio.wait_for(
+                self._verify_parsed_reference(parsed),
+                timeout=self._total_timeout_seconds,
+            )
+        except TimeoutError:
+            return self._not_checked_row(
+                parsed,
+                reason="The reference verification time budget was exhausted",
+            )
 
     async def _verify_parsed_reference(
         self,
@@ -280,13 +443,20 @@ class ReferenceVerificationService:
                 "matched_fields": [],
                 "mismatched_fields": [],
                 "notes": ["Reference entry is empty after normalization"],
+                "review_required": False,
+                "review_strategy": {"retry_queries": [], "review_checklist": []},
             }
 
-        article, method = await self._resolve_reference(
+        outcome = await self._resolve_reference(
             parsed,
             prefetched_citation_pmid=prefetched_citation_pmid,
             article_cache=article_cache,
         )
+        if outcome.article is None and outcome.unavailable_sources:
+            return self._source_unavailable_row(parsed, outcome.unavailable_sources)
+
+        article = outcome.article
+        method = outcome.method
         comparison = self._build_comparison(parsed, article)
         matched_fields = [field for field, matched in comparison.items() if matched is True]
         mismatched_fields = [field for field, matched in comparison.items() if matched is False]
@@ -295,7 +465,7 @@ class ReferenceVerificationService:
         notes = self._build_notes(parsed, article, method, status, matched_fields, mismatched_fields)
         review_required = status in {"partial_match", "unresolved"}
         review_strategy = self._build_retry_strategy(parsed, method=method, status=status)
-        return {
+        result: dict[str, Any] = {
             "index": parsed.index,
             "status": status,
             "resolution_method": method,
@@ -309,6 +479,179 @@ class ReferenceVerificationService:
             "review_required": review_required,
             "review_strategy": review_strategy,
         }
+        if outcome.unavailable_sources:
+            result["source_warnings"] = [
+                {"source": source, "error": "upstream source unavailable"} for source in outcome.unavailable_sources
+            ]
+        return result
+
+    async def _verify_with_semaphore(
+        self,
+        parsed: ParsedReference,
+        *,
+        semaphore: asyncio.Semaphore,
+        prefetched_citation_pmid: str | None,
+        article_cache: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Run one reference under the list-level concurrency cap."""
+        async with semaphore:
+            return await self._verify_parsed_reference(
+                parsed,
+                prefetched_citation_pmid=prefetched_citation_pmid,
+                article_cache=article_cache,
+            )
+
+    def _source_unavailable_row(
+        self,
+        parsed: ParsedReference,
+        sources: tuple[str, ...],
+    ) -> dict[str, Any]:
+        """Build a row that cannot be adjudicated because evidence sources failed."""
+        unique_sources = tuple(dict.fromkeys(source for source in sources if source))
+        return {
+            "index": parsed.index,
+            "status": "source_unavailable",
+            "resolution_method": None,
+            "input_reference": parsed.raw_text,
+            "parsed_reference": parsed.to_dict(),
+            "matched_article": None,
+            "comparison": {},
+            "matched_fields": [],
+            "mismatched_fields": [],
+            "notes": [
+                "Verification could not be completed because an upstream evidence source was unavailable",
+                "Retry this row before classifying it as unresolved",
+            ],
+            "source_errors": [{"source": source, "error": "upstream source unavailable"} for source in unique_sources],
+            "review_required": True,
+            "review_strategy": self._build_retry_strategy(
+                parsed,
+                method=None,
+                status="source_unavailable",
+            ),
+        }
+
+    def _not_checked_row(self, parsed: ParsedReference, *, reason: str) -> dict[str, Any]:
+        """Build a deterministic row for work cancelled by the total time budget."""
+        return {
+            "index": parsed.index,
+            "status": "not_checked",
+            "resolution_method": None,
+            "input_reference": parsed.raw_text,
+            "parsed_reference": parsed.to_dict(),
+            "matched_article": None,
+            "comparison": {},
+            "matched_fields": [],
+            "mismatched_fields": [],
+            "notes": [reason, "Retry this row before classifying it as unresolved"],
+            "review_required": True,
+            "review_strategy": self._build_retry_strategy(
+                parsed,
+                method=None,
+                status="not_checked",
+            ),
+        }
+
+    @staticmethod
+    def _remaining_seconds(deadline: float) -> float:
+        """Return the remaining positive operation budget for ``asyncio.wait_for``."""
+        return max(0.0, deadline - asyncio.get_running_loop().time())
+
+    def _validate_request(self, reference_text: str, *, source_name: str, limit: int) -> None:
+        """Validate all list-level boundaries before parsing or network access."""
+        self._validate_limit(limit)
+        self._validate_reference_text(reference_text)
+        if not isinstance(source_name, str):
+            raise ReferenceVerificationInputError("source_name must be a string")
+        if len(source_name) > MAX_SOURCE_NAME_CHARS:
+            raise ReferenceVerificationInputError(f"source_name must not exceed {MAX_SOURCE_NAME_CHARS} characters")
+        if len(source_name.encode("utf-8")) > MAX_SOURCE_NAME_BYTES:
+            raise ReferenceVerificationInputError(f"source_name must not exceed {MAX_SOURCE_NAME_BYTES} UTF-8 bytes")
+        if _UNSAFE_SOURCE_NAME_RE.search(source_name):
+            raise ReferenceVerificationInputError(
+                "source_name must be a single-line label without control or bidi override characters"
+            )
+
+    @staticmethod
+    def _validate_limit(limit: int) -> None:
+        """Reject invalid or over-large reference-count limits."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_REFERENCES:
+            raise ReferenceVerificationInputError(f"max_references must be an integer between 1 and {MAX_REFERENCES}")
+
+    @staticmethod
+    def _validate_reference_text(reference_text: str) -> None:
+        """Enforce bounded, unambiguous text input before splitting."""
+        if not isinstance(reference_text, str):
+            raise ReferenceVerificationInputError("reference_text must be a string")
+        if len(reference_text) > MAX_REFERENCE_TEXT_CHARS:
+            raise ReferenceVerificationInputError(
+                f"reference_text must not exceed {MAX_REFERENCE_TEXT_CHARS} characters"
+            )
+        if len(reference_text.encode("utf-8")) > MAX_REFERENCE_TEXT_BYTES:
+            raise ReferenceVerificationInputError(
+                f"reference_text must not exceed {MAX_REFERENCE_TEXT_BYTES} UTF-8 bytes"
+            )
+        if _UNSAFE_REFERENCE_TEXT_RE.search(reference_text):
+            raise ReferenceVerificationInputError("reference_text contains forbidden NUL or bidi override characters")
+
+    def _validate_entries(self, entries: list[str]) -> None:
+        """Validate each extracted reference before parsing or upstream calls."""
+        for index, entry in enumerate(entries, start=1):
+            self._validate_reference_entry(entry, index=index)
+
+    @staticmethod
+    def _validate_reference_entry(reference_text: str, *, index: int) -> None:
+        """Enforce per-reference size and index boundaries."""
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index <= MAX_REFERENCES:
+            raise ReferenceVerificationInputError(f"reference index must be an integer between 1 and {MAX_REFERENCES}")
+        if not isinstance(reference_text, str):
+            raise ReferenceVerificationInputError(f"reference entry {index} must be a string")
+        if len(reference_text) > MAX_REFERENCE_CHARS:
+            raise ReferenceVerificationInputError(
+                f"reference entry {index} must not exceed {MAX_REFERENCE_CHARS} characters"
+            )
+        if len(reference_text.encode("utf-8")) > MAX_REFERENCE_BYTES:
+            raise ReferenceVerificationInputError(
+                f"reference entry {index} must not exceed {MAX_REFERENCE_BYTES} UTF-8 bytes"
+            )
+
+    @staticmethod
+    def _split_references(reference_text: str) -> list[str]:
+        """Split every entry without silently truncating the caller's input."""
+        normalized_lines = [line.strip() for line in reference_text.splitlines() if line.strip()]
+        if not normalized_lines:
+            return []
+        if not any(_REFERENCE_MARKER_RE.match(line) for line in normalized_lines):
+            return normalized_lines
+
+        entries: list[str] = []
+        current: list[str] = []
+        for line in normalized_lines:
+            if _REFERENCE_MARKER_RE.match(line):
+                if current:
+                    entries.append(" ".join(current).strip())
+                current = [_REFERENCE_MARKER_RE.sub("", line, count=1).strip()]
+            else:
+                current.append(line)
+        if current:
+            entries.append(" ".join(current).strip())
+        return entries
+
+    @staticmethod
+    def _validated_search_items(page: object) -> list[dict[str, Any]]:
+        """Return article items from the sole typed PubMed page contract."""
+        if not isinstance(page, SourceSearchPage) or page.source != "pubmed":
+            raise TypeError("PubMed search returned an invalid page")
+        if page.total is not None and (
+            not isinstance(page.total, int) or isinstance(page.total, bool) or page.total < len(page.items)
+        ):
+            raise RuntimeError("PubMed search returned an invalid total")
+        if any(not isinstance(item, dict) for item in page.items):
+            raise RuntimeError("PubMed search returned an invalid article collection")
+        results = [dict(item) for item in page.items]
+        if any(not str(item.get("pmid") or "").strip() for item in results):
+            raise RuntimeError("PubMed search returned an invalid article row")
+        return results
 
     def _build_review_workflow(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         """Build a manual-review queue for partial and unresolved references."""
@@ -357,6 +700,8 @@ class ReferenceVerificationService:
         parsed = row.get("parsed_reference", {}) or {}
         comparison = row.get("comparison", {}) or {}
 
+        if status in {"source_unavailable", "not_checked"}:
+            return "high"
         if status == "unresolved" and (parsed.get("doi") or parsed.get("pmid")):
             return "high"
         if status == "unresolved" and parsed.get("title"):
@@ -375,6 +720,10 @@ class ReferenceVerificationService:
         parsed = row.get("parsed_reference", {}) or {}
         mismatched_fields = row.get("mismatched_fields", []) or []
 
+        if status == "source_unavailable":
+            return "An upstream PubMed evidence source was unavailable; retry before adjudication"
+        if status == "not_checked":
+            return "This reference was not checked before the operation time budget expired"
         if status == "unresolved":
             if parsed.get("doi"):
                 return "DOI present but unresolved; verify DOI transcription and index coverage"
@@ -393,7 +742,7 @@ class ReferenceVerificationService:
         status: ReferenceStatus,
     ) -> dict[str, Any]:
         """Build deterministic re-search guidance for manual review workflows."""
-        if status not in {"partial_match", "unresolved"}:
+        if status not in {"partial_match", "unresolved", "source_unavailable", "not_checked"}:
             return {"retry_queries": [], "review_checklist": []}
 
         retry_queries: list[dict[str, str]] = []
@@ -480,40 +829,55 @@ class ReferenceVerificationService:
         *,
         prefetched_citation_pmid: str | None = None,
         article_cache: dict[str, dict[str, Any]] | None = None,
-    ) -> tuple[dict[str, Any] | None, ResolutionMethod | None]:
+    ) -> _ResolutionOutcome:
         """Resolve one parsed reference to the best PubMed article candidate."""
+        unavailable_sources: list[str] = []
         if parsed.pmid:
-            article = await self._fetch_article_by_pmid(parsed.pmid, article_cache=article_cache)
+            try:
+                article = await self._fetch_article_by_pmid(parsed.pmid, article_cache=article_cache)
+            except Exception:
+                unavailable_sources.append("PubMed article details")
+                article = None
             if article:
-                return article, "pmid"
+                return _ResolutionOutcome(article, "pmid", tuple(unavailable_sources))
 
         if parsed.doi:
-            article = await self._resolve_by_doi(parsed)
+            try:
+                article = await self._resolve_by_doi(parsed)
+            except Exception:
+                unavailable_sources.append("PubMed DOI search")
+                article = None
             if article:
-                return article, "doi_search"
+                return _ResolutionOutcome(article, "doi_search", tuple(unavailable_sources))
 
         if parsed.journal and parsed.year:
-            article = await self._resolve_by_citation(
-                parsed,
-                prefetched_pmid=prefetched_citation_pmid,
-                article_cache=article_cache,
-            )
+            try:
+                article = await self._resolve_by_citation(
+                    parsed,
+                    prefetched_pmid=prefetched_citation_pmid,
+                    article_cache=article_cache,
+                )
+            except Exception:
+                unavailable_sources.append("NCBI ECitMatch")
+                article = None
             if article:
-                return article, "ecitmatch"
+                return _ResolutionOutcome(article, "ecitmatch", tuple(unavailable_sources))
 
         if parsed.title:
-            article = await self._resolve_by_title(parsed)
+            try:
+                article = await self._resolve_by_title(parsed)
+            except Exception:
+                unavailable_sources.append("PubMed title search")
+                article = None
             if article:
-                return article, "title_search"
+                return _ResolutionOutcome(article, "title_search", tuple(unavailable_sources))
 
-        return None, None
+        return _ResolutionOutcome(None, None, tuple(unavailable_sources))
 
     async def _resolve_by_doi(self, parsed: ParsedReference) -> dict[str, Any] | None:
         """Resolve by DOI using PubMed search results and exact DOI filtering."""
-        try:
-            results = await self._searcher.search(f'"{parsed.doi}"[AID]', limit=3)
-        except Exception:
-            return None
+        page = await self._searcher.search_page(f'"{parsed.doi}"[AID]', limit=3)
+        results = self._validated_search_items(page)
         return self._choose_best_candidate(parsed, results)
 
     async def _resolve_by_citation(
@@ -547,15 +911,13 @@ class ReferenceVerificationService:
 
         min_year = int(parsed.year) if parsed.year.isdigit() else None
         max_year = int(parsed.year) if parsed.year.isdigit() else None
-        try:
-            results = await self._searcher.search(
-                f'"{safe_title}"[Title]',
-                limit=5,
-                min_year=min_year,
-                max_year=max_year,
-            )
-        except Exception:
-            return None
+        page = await self._searcher.search_page(
+            f'"{safe_title}"[Title]',
+            limit=5,
+            min_year=min_year,
+            max_year=max_year,
+        )
+        results = self._validated_search_items(page)
         return self._choose_best_candidate(parsed, results)
 
     async def _fetch_article_by_pmid(
@@ -564,16 +926,20 @@ class ReferenceVerificationService:
         *,
         article_cache: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
-        """Fetch one PubMed article and discard malformed or error payloads."""
+        """Fetch one PubMed article and reject malformed source payloads."""
         if article_cache and pmid in article_cache:
             return article_cache[pmid]
 
         details = await self._searcher.fetch_details([pmid])
+        if not isinstance(details, list):
+            raise TypeError("PubMed article details returned an invalid response")
         if not details:
             return None
         article = details[0]
-        if not isinstance(article, dict) or article.get("error"):
-            return None
+        if not isinstance(article, dict):
+            raise TypeError("PubMed article details returned an invalid response")
+        if str(article.get("pmid") or "").strip() != pmid:
+            raise RuntimeError("PubMed article details returned an invalid article row")
         return article
 
     async def _prefetch_citation_matches(self, parsed_entries: list[ParsedReference]) -> dict[int, str]:
@@ -626,7 +992,7 @@ class ReferenceVerificationService:
 
         cache: dict[str, dict[str, Any]] = {}
         for article in details:
-            if not isinstance(article, dict) or article.get("error"):
+            if not isinstance(article, dict):
                 continue
             pmid = str(article.get("pmid", "") or "")
             if pmid:
@@ -639,7 +1005,7 @@ class ReferenceVerificationService:
         """Choose the highest-scoring candidate from a small PubMed result set."""
         scored: list[tuple[int, dict[str, Any]]] = []
         for article in candidates:
-            if not isinstance(article, dict) or article.get("error"):
+            if not isinstance(article, dict) or not str(article.get("pmid") or "").strip():
                 continue
             score = self._score_candidate(parsed, article)
             if score > 0:
