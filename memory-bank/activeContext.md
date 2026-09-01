@@ -6,11 +6,11 @@
   surface is **41 tools in 16 registry categories**; removed public aliases,
   legacy wrappers, and alternate Copilot tool registries are not compatibility
   surfaces.
-- The definitive local release gate is complete: 4,463 tests passed with 53
+- The definitive local release gate is complete: 4,470 tests passed with 53
   intentional skips; Ruff, mypy (411 files), DDD/async/security/dependency
   checks, 102 real Mermaid SVG renders, Playwright docs QA, and an isolated
-  Python 3.10 wheel install passed. Segmented commits, remote CI, tag, and
-  publishing remain before v0.7.0 can be recorded as published.
+  Python 3.10 wheel install passed. The segmented release branch and duplicate
+  push/PR GitHub Actions matrices also passed before the v0.7.0 merge gate.
 - Preserve DDD boundaries: MCP tools adapt strict requests and delegate to
   application/domain services; source clients and outbound transport remain
   infrastructure concerns.

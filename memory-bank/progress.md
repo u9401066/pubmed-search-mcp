@@ -124,12 +124,12 @@
   all-tool quality audit pages, including Mermaid architecture, relationship,
   request-flow, and improvement diagrams; synchronized README and generated
   website sources with the strict registry.
-- The definitive local gate passed: **4,463 tests / 53 intentional skips**,
+- The definitive local gate passed: **4,470 tests / 53 intentional skips**,
   Ruff, mypy across 411 files, DDD/async/security/dependency checks, all changed
   pre-commit policies, **102 Mermaid diagrams rendered to SVG**, Playwright
   desktop/mobile docs QA, sdist/wheel metadata checks, and an isolated Python
-  3.10 wheel install. Segmented commits, remote CI, annotated tag, and
-  publication verification remain pending.
+  3.10 wheel install. The segmented release branch and duplicate push/PR CI
+  matrices passed before the annotated v0.7.0 release gate.
 
 ## Done
 
