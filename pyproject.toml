@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.6.5"
+version = "0.7.0"
 description = "MCP SDK v2 server for PubMed and multi-source biomedical literature research"
 readme = "README.md"
 license = "Apache-2.0"
@@ -408,7 +408,6 @@ disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]
 module = [
     "pubmed_search.presentation",
     "pubmed_search.presentation.*",
-    "pubmed_search.presentation.api.*",
     "pubmed_search.presentation.mcp_server",
     "pubmed_search.presentation.mcp_server.*",
     "pubmed_search.presentation.mcp_server.tools.*",
