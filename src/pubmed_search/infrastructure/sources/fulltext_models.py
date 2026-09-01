@@ -1,10 +1,9 @@
 """Shared value objects for the staged fulltext retrieval pipeline.
 
 Design:
-    These types are consumed by the discovery, fetch, and extract helpers as
-    well as the backward-compatible downloader facade. They provide the common
-    language for source ranking, download outcomes, and normalized fulltext
-    payloads.
+    These types are consumed by the discovery, fetch, and extract helpers and
+    their current downloader coordinator. They provide the common language for
+    source ranking, download outcomes, and normalized fulltext payloads.
 
 Maintenance:
     Keep this module free of network or parser logic. When the pipeline gains
@@ -28,6 +27,8 @@ AccessType = Literal[
     "institutional",
     "unknown",
 ]
+LinkDiscoveryCoverage = Literal["complete", "partial", "unavailable"]
+LinkDiscoveryErrorKind = Literal["http", "timeout", "transport", "retryable", "validation", "unexpected"]
 
 
 class PDFSource(Enum):
@@ -65,7 +66,7 @@ class PDFSource(Enum):
         return self.value[2]
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class PDFLink:
     """A candidate PDF/fulltext link with source metadata."""
 
@@ -83,6 +84,98 @@ class PDFLink:
         return self.confidence > other.confidence
 
 
+@dataclass(frozen=True, slots=True)
+class LinkDiscoverySourceError:
+    """Sanitized failure reported by one fulltext link source.
+
+    Raw provider exception text is deliberately absent from this contract: it
+    can contain request URLs, credentials, response bodies, or local paths.
+    """
+
+    source: str
+    kind: LinkDiscoveryErrorKind
+    retryable: bool = False
+    status_code: int | None = None
+    code: Literal["source_unavailable"] = field(default="source_unavailable", init=False)
+    message: str = field(
+        default="The upstream link source was unavailable during this request.",
+        init=False,
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) or not self.source.strip():
+            msg = "Link discovery error source must be non-empty"
+            raise TypeError(msg)
+        if self.kind not in {"http", "timeout", "transport", "retryable", "validation", "unexpected"}:
+            msg = "Link discovery error kind is invalid"
+            raise ValueError(msg)
+        if not isinstance(self.retryable, bool):
+            msg = "Link discovery retryable must be a boolean"
+            raise TypeError(msg)
+        if self.status_code is not None and (
+            isinstance(self.status_code, bool) or not isinstance(self.status_code, int)
+        ):
+            msg = "Link discovery status code must be an integer or None"
+            raise TypeError(msg)
+
+
+@dataclass(frozen=True, slots=True)
+class PDFLinkDiscoveryResult:
+    """Immutable link-discovery outcome with explicit source coverage."""
+
+    links: tuple[PDFLink, ...] = ()
+    attempted_sources: tuple[str, ...] = ()
+    completed_sources: tuple[str, ...] = ()
+    source_errors: tuple[LinkDiscoverySourceError, ...] = ()
+
+    def __post_init__(self) -> None:
+        tuple_fields = {
+            "links": self.links,
+            "attempted_sources": self.attempted_sources,
+            "completed_sources": self.completed_sources,
+            "source_errors": self.source_errors,
+        }
+        for name, value in tuple_fields.items():
+            if not isinstance(value, tuple):
+                msg = f"PDFLinkDiscoveryResult.{name} must be a tuple"
+                raise TypeError(msg)
+        if any(not isinstance(link, PDFLink) for link in self.links):
+            msg = "PDFLinkDiscoveryResult.links must contain only PDFLink values"
+            raise TypeError(msg)
+        if any(not isinstance(error, LinkDiscoverySourceError) for error in self.source_errors):
+            msg = "PDFLinkDiscoveryResult.source_errors must contain only LinkDiscoverySourceError values"
+            raise TypeError(msg)
+        for name, sources in (
+            ("attempted_sources", self.attempted_sources),
+            ("completed_sources", self.completed_sources),
+        ):
+            if any(not isinstance(source, str) or not source.strip() for source in sources):
+                msg = f"PDFLinkDiscoveryResult.{name} must contain non-empty source keys"
+                raise TypeError(msg)
+            if len(sources) != len(set(sources)):
+                msg = f"PDFLinkDiscoveryResult.{name} must not contain duplicate source keys"
+                raise ValueError(msg)
+        attempted = set(self.attempted_sources)
+        if not set(self.completed_sources).issubset(attempted):
+            msg = "Completed link sources must be a subset of attempted sources"
+            raise ValueError(msg)
+        if any(error.source not in attempted for error in self.source_errors):
+            msg = "Link source errors must belong to attempted sources"
+            raise ValueError(msg)
+        if self.links and not attempted:
+            msg = "Discovered links require at least one attempted source"
+            raise ValueError(msg)
+
+    @property
+    def coverage_status(self) -> LinkDiscoveryCoverage:
+        """Describe whether every attempted link source completed."""
+        if not self.source_errors:
+            return "complete"
+        if self.completed_sources or self.links:
+            return "partial"
+        return "unavailable"
+
+
 @dataclass
 class DownloadResult:
     """Result of attempting to retrieve a PDF payload."""
@@ -95,6 +188,7 @@ class DownloadResult:
     error: str | None = None
     file_size: int = 0
     retry_after: float | None = None
+    link_discovery: PDFLinkDiscoveryResult | None = None
 
     @property
     def is_pdf(self) -> bool:
@@ -117,7 +211,7 @@ class FulltextResult:
     resolved_pdf_url: str | None = None
     retrieved_url: str | None = None
     structured_sections: dict[str, str] | None = None
-    pdf_links: list[PDFLink] = field(default_factory=list)
+    link_discovery: PDFLinkDiscoveryResult | None = None
     source_used: PDFSource | None = None
     content_type: Literal["xml", "pdf", "text", "none"] = "none"
     extraction_method: str | None = None
@@ -128,11 +222,22 @@ class FulltextResult:
     file_size: int = 0
     error: str | None = None
 
+    def require_link_discovery(self) -> PDFLinkDiscoveryResult:
+        """Return the discovery envelope or reject a malformed retrieval result."""
+        if self.link_discovery is None:
+            msg = "Fulltext result has no link-discovery outcome"
+            raise TypeError(msg)
+        return self.link_discovery
+
 
 __all__ = [
     "AccessType",
     "DownloadResult",
     "FulltextResult",
+    "LinkDiscoveryCoverage",
+    "LinkDiscoveryErrorKind",
+    "LinkDiscoverySourceError",
     "PDFLink",
+    "PDFLinkDiscoveryResult",
     "PDFSource",
 ]

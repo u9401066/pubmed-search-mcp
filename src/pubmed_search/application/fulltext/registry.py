@@ -3,7 +3,7 @@
 Design:
     This registry is the application-layer source of truth for fulltext source
     metadata and policy ordering. It converts identifier availability and
-    compatibility flags into a stable retrieval plan.
+    requested discovery breadth into a stable retrieval plan.
 
 Maintenance:
     Update policy precedence and source metadata here when retrieval behavior
@@ -126,7 +126,7 @@ class FulltextRegistry:
         doi: str | None,
         extended_sources: bool,
     ) -> FulltextPolicyDefinition:
-        """Resolve a retrieval policy from normalized identifiers and compatibility hints."""
+        """Resolve a retrieval policy from identifiers and requested discovery breadth."""
         if not any((pmcid, pmid, doi)):
             msg = "At least one identifier is required to resolve a fulltext policy"
             raise ValueError(msg)

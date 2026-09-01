@@ -14,7 +14,6 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import re
 import urllib.parse
@@ -23,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from defusedxml import ElementTree
 
-from .contact import first_contact_email, get_configured_source_contact_email
+from .contact import first_contact_email, get_source_contact_email
 from .fulltext_models import PDFLink, PDFSource
 
 if TYPE_CHECKING:
@@ -31,10 +30,10 @@ if TYPE_CHECKING:
 
     import httpx
 
-logger = logging.getLogger(__name__)
 PMC_LINK_LOOKUP_TIMEOUT_SECONDS = 15.0
 NCBI_ELINK_ENDPOINT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
 DEFAULT_CROSSREF_MAILTO = "pubmed-search@example.com"
+EXPECTED_ABSENCE_STATUS_CODES = frozenset({204, 404})
 
 
 def _normalize_crossref_doi(doi: str) -> str:
@@ -44,6 +43,21 @@ def _normalize_crossref_doi(doi: str) -> str:
             normalized = normalized[len(prefix) :]
             break
     return normalized.strip()
+
+
+def _response_is_expected_absence(response: httpx.Response) -> bool:
+    """Return whether a provider explicitly reported that no record exists.
+
+    Every other non-success response is raised to the source-adapter boundary,
+    which owns sanitized failure reporting and partial-coverage accounting.
+    """
+    if response.status_code in EXPECTED_ABSENCE_STATUS_CODES:
+        return True
+    response.raise_for_status()
+    if response.status_code != 200:
+        msg = "Fulltext discovery provider returned an unsupported success status"
+        raise RuntimeError(msg)
+    return False
 
 
 def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
@@ -125,167 +139,146 @@ class FulltextDiscoveryPhase:
         if not pmid:
             return links
 
-        try:
-            links.extend(
-                await asyncio.wait_for(
-                    asyncio.to_thread(_lookup_pmc_links_from_entrez, pmid),
-                    timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS,
-                )
+        links.extend(
+            await asyncio.wait_for(
+                asyncio.to_thread(_lookup_pmc_links_from_entrez, pmid),
+                timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS,
             )
-        except Exception as exc:
-            logger.debug("PMC lookup failed: %s", exc)
+        )
 
         return links
 
     async def get_unpaywall_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
+        from pubmed_search.infrastructure.sources import get_unpaywall_client
 
-            client = get_unpaywall_client()
-            oa_info = await client.get_oa_status(doi)
+        client = get_unpaywall_client()
+        oa_info = await client.get_oa_status(doi)
 
-            if oa_info and oa_info.get("is_oa"):
-                best = oa_info.get("best_oa_location", {})
-                if best.get("url_for_pdf"):
-                    host_type = best.get("host_type", "unknown")
-                    source = (
-                        PDFSource.UNPAYWALL_PUBLISHER if host_type == "publisher" else PDFSource.UNPAYWALL_REPOSITORY
+        if oa_info and oa_info.get("is_oa"):
+            best = oa_info.get("best_oa_location", {})
+            if best.get("url_for_pdf"):
+                host_type = best.get("host_type", "unknown")
+                source = PDFSource.UNPAYWALL_PUBLISHER if host_type == "publisher" else PDFSource.UNPAYWALL_REPOSITORY
+                links.append(
+                    PDFLink(
+                        url=best["url_for_pdf"],
+                        source=source,
+                        access_type=oa_info.get("oa_status", "open_access"),
+                        version=best.get("version"),
+                        license=best.get("license"),
+                        is_direct_pdf=True,
+                        confidence=0.9,
                     )
+                )
+
+            for loc in oa_info.get("oa_locations", [])[:3]:
+                if loc != best and loc.get("url_for_pdf"):
                     links.append(
                         PDFLink(
-                            url=best["url_for_pdf"],
-                            source=source,
-                            access_type=oa_info.get("oa_status", "open_access"),
-                            version=best.get("version"),
-                            license=best.get("license"),
+                            url=loc["url_for_pdf"],
+                            source=PDFSource.UNPAYWALL_REPOSITORY,
+                            access_type="green_oa",
+                            version=loc.get("version"),
                             is_direct_pdf=True,
-                            confidence=0.9,
+                            confidence=0.8,
                         )
                     )
-
-                for loc in oa_info.get("oa_locations", [])[:3]:
-                    if loc != best and loc.get("url_for_pdf"):
-                        links.append(
-                            PDFLink(
-                                url=loc["url_for_pdf"],
-                                source=PDFSource.UNPAYWALL_REPOSITORY,
-                                access_type="green_oa",
-                                version=loc.get("version"),
-                                is_direct_pdf=True,
-                                confidence=0.8,
-                            )
-                        )
-        except Exception as exc:
-            logger.debug("Unpaywall lookup failed: %s", exc)
 
         return links
 
     async def get_core_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            from pubmed_search.infrastructure.sources.core import get_core_client
+        from pubmed_search.infrastructure.sources import get_core_client
 
-            client = get_core_client()
-            results = await client.search(f'doi:"{doi}"', limit=1)
+        client = get_core_client()
+        results = await client.search(f'doi:"{doi}"', limit=1)
 
-            if results and results.get("results"):
-                work = results["results"][0]
-                if work.get("downloadUrl"):
-                    links.append(
-                        PDFLink(
-                            url=work["downloadUrl"],
-                            source=PDFSource.CORE,
-                            access_type="open_access",
-                            is_direct_pdf=True,
-                            confidence=0.85,
-                        )
+        if results.get("results"):
+            work = results["results"][0]
+            if work.get("download_url"):
+                links.append(
+                    PDFLink(
+                        url=work["download_url"],
+                        source=PDFSource.CORE,
+                        access_type="open_access",
+                        is_direct_pdf=True,
+                        confidence=0.85,
                     )
-        except Exception as exc:
-            logger.debug("CORE lookup failed: %s", exc)
+                )
 
         return links
 
     async def get_semantic_scholar_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            from pubmed_search.infrastructure.sources.semantic_scholar import SemanticScholarClient
+        from pubmed_search.infrastructure.sources import get_semantic_scholar_client
 
-            client = SemanticScholarClient()
-            paper = await client.get_paper(f"DOI:{doi}")
+        client = get_semantic_scholar_client()
+        paper = await client.get_paper(f"DOI:{doi}")
 
-            if paper and paper.get("pdf_url"):
-                links.append(
-                    PDFLink(
-                        url=paper["pdf_url"],
-                        source=PDFSource.SEMANTIC_SCHOLAR,
-                        access_type="open_access" if paper.get("is_open_access") else "unknown",
-                        is_direct_pdf=True,
-                        confidence=0.8,
-                    )
+        if paper and paper.get("pdf_url"):
+            links.append(
+                PDFLink(
+                    url=paper["pdf_url"],
+                    source=PDFSource.SEMANTIC_SCHOLAR,
+                    access_type="open_access" if paper.get("is_open_access") else "unknown",
+                    is_direct_pdf=True,
+                    confidence=0.8,
                 )
-        except Exception as exc:
-            logger.debug("Semantic Scholar lookup failed: %s", exc)
+            )
 
         return links
 
     async def get_openalex_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
+        from pubmed_search.infrastructure.sources import get_openalex_client
 
-            client = OpenAlexClient()
-            work = await client.get_work(f"doi:{doi}")
+        client = get_openalex_client()
+        work = await client.get_work(f"doi:{doi}")
 
-            if work:
-                pdf_url = work.get("pdf_url")
-                if pdf_url:
-                    links.append(
-                        PDFLink(
-                            url=pdf_url,
-                            source=PDFSource.OPENALEX,
-                            access_type=work.get("oa_status", "open_access"),
-                            is_direct_pdf=True,
-                            confidence=0.85,
-                        )
+        if work:
+            pdf_url = work.get("pdf_url")
+            if pdf_url:
+                links.append(
+                    PDFLink(
+                        url=pdf_url,
+                        source=PDFSource.OPENALEX,
+                        access_type=work.get("oa_status", "open_access"),
+                        is_direct_pdf=True,
+                        confidence=0.85,
                     )
-        except Exception as exc:
-            logger.debug("OpenAlex lookup failed: %s", exc)
+                )
 
         return links
 
     async def get_openurl_links(self, pmid: str | None, doi: str | None) -> list[PDFLink]:
-        try:
-            from pubmed_search.infrastructure.sources.openurl import get_openurl_link
+        from pubmed_search.infrastructure.sources.openurl import get_openurl_link
 
-            article: dict[str, str] = {}
-            if pmid:
-                article["pmid"] = pmid
-            if doi:
-                article["doi"] = doi
-            if not article:
-                return []
-
-            resolver_url = get_openurl_link(article)
-            if not resolver_url:
-                return []
-
-            return [
-                PDFLink(
-                    url=resolver_url,
-                    source=PDFSource.INSTITUTIONAL_RESOLVER,
-                    access_type="subscription",
-                    is_direct_pdf=False,
-                    confidence=0.8,
-                )
-            ]
-        except Exception as exc:
-            logger.debug("OpenURL resolver lookup failed: %s", exc)
+        article: dict[str, str] = {}
+        if pmid:
+            article["pmid"] = pmid
+        if doi:
+            article["doi"] = doi
+        if not article:
             return []
+
+        resolver_url = get_openurl_link(article)
+        if not resolver_url:
+            return []
+
+        return [
+            PDFLink(
+                url=resolver_url,
+                source=PDFSource.INSTITUTIONAL_RESOLVER,
+                access_type="subscription",
+                is_direct_pdf=False,
+                confidence=0.8,
+            )
+        ]
 
     async def get_doi_redirect_link(self, doi: str) -> list[PDFLink]:
         doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
@@ -361,162 +354,147 @@ class FulltextDiscoveryPhase:
     async def get_crossref_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            client = await self._get_client()
-            encoded_doi = urllib.parse.quote(_normalize_crossref_doi(doi), safe="")
-            mailto = first_contact_email(
-                os.environ.get("CROSSREF_EMAIL"),
-                get_configured_source_contact_email(),
-                os.environ.get("NCBI_EMAIL"),
-                DEFAULT_CROSSREF_MAILTO,
+        client = await self._get_client()
+        encoded_doi = urllib.parse.quote(_normalize_crossref_doi(doi), safe="")
+        mailto = first_contact_email(
+            os.environ.get("CROSSREF_EMAIL"),
+            get_source_contact_email(),
+            os.environ.get("NCBI_EMAIL"),
+            DEFAULT_CROSSREF_MAILTO,
+        )
+        url = f"https://api.crossref.org/works/{encoded_doi}?mailto={urllib.parse.quote(mailto or DEFAULT_CROSSREF_MAILTO)}"
+        resp = await client.get(url)
+        if _response_is_expected_absence(resp):
+            return links
+
+        message = resp.json().get("message", {})
+        for link in message.get("link", []):
+            content_type = link.get("content-type", "")
+            link_url = link.get("URL", "")
+            if not link_url:
+                continue
+
+            looks_like_pdf_url = (
+                link_url.lower().endswith(".pdf")
+                or "articlepdf" in link_url.lower()
+                or "/pdf/" in link_url.lower()
+                or "content/pdf/" in link_url.lower()
             )
-            url = f"https://api.crossref.org/works/{encoded_doi}?mailto={urllib.parse.quote(mailto or DEFAULT_CROSSREF_MAILTO)}"
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return links
 
-            message = resp.json().get("message", {})
-            for link in message.get("link", []):
-                content_type = link.get("content-type", "")
-                link_url = link.get("URL", "")
-                if not link_url:
-                    continue
-
-                looks_like_pdf_url = (
-                    link_url.lower().endswith(".pdf")
-                    or "articlepdf" in link_url.lower()
-                    or "/pdf/" in link_url.lower()
-                    or "content/pdf/" in link_url.lower()
+            if "pdf" in content_type.lower() or (content_type.lower() == "unspecified" and looks_like_pdf_url):
+                links.append(
+                    PDFLink(
+                        url=link_url,
+                        source=PDFSource.CROSSREF,
+                        access_type="unknown",
+                        is_direct_pdf=True,
+                        confidence=0.85,
+                    )
                 )
-
-                if "pdf" in content_type.lower() or (content_type.lower() == "unspecified" and looks_like_pdf_url):
-                    links.append(
-                        PDFLink(
-                            url=link_url,
-                            source=PDFSource.CROSSREF,
-                            access_type="unknown",
-                            is_direct_pdf=True,
-                            confidence=0.85,
-                        )
+            elif "xml" in content_type.lower() or "html" in content_type.lower():
+                links.append(
+                    PDFLink(
+                        url=link_url,
+                        source=PDFSource.CROSSREF,
+                        access_type="unknown",
+                        is_direct_pdf=False,
+                        confidence=0.6,
                     )
-                elif "xml" in content_type.lower() or "html" in content_type.lower():
-                    links.append(
-                        PDFLink(
-                            url=link_url,
-                            source=PDFSource.CROSSREF,
-                            access_type="unknown",
-                            is_direct_pdf=False,
-                            confidence=0.6,
-                        )
-                    )
-        except Exception as exc:
-            logger.debug("CrossRef lookup failed: %s", exc)
+                )
 
         return links
 
     async def get_pubmed_linkout(self, pmid: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            client = await self._get_client()
-            url = (
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
-                f"?dbfrom=pubmed&id={pmid}&cmd=llinks&retmode=json"
-            )
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return links
+        client = await self._get_client()
+        url = (
+            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&id={pmid}&cmd=llinks&retmode=json"
+        )
+        resp = await client.get(url)
+        if _response_is_expected_absence(resp):
+            return links
 
-            data = resp.json()
-            for linkset in data.get("linksets", []):
-                for urllist in linkset.get("idurllist", []):
-                    for objurl in urllist.get("objurls", []):
-                        link_url = objurl.get("url", {}).get("value", "")
-                        provider = objurl.get("provider", {}).get("name", "")
-                        if not link_url or "ncbi.nlm.nih.gov" in link_url:
-                            continue
+        data = resp.json()
+        for linkset in data.get("linksets", []):
+            for urllist in linkset.get("idurllist", []):
+                for objurl in urllist.get("objurls", []):
+                    link_url = objurl.get("url", {}).get("value", "")
+                    provider = objurl.get("provider", {}).get("name", "")
+                    if not link_url or "ncbi.nlm.nih.gov" in link_url:
+                        continue
 
-                        is_pdf = (
-                            link_url.endswith(".pdf") or "pdf" in link_url.lower() or "fulltext" in provider.lower()
+                    is_pdf = link_url.endswith(".pdf") or "pdf" in link_url.lower() or "fulltext" in provider.lower()
+                    links.append(
+                        PDFLink(
+                            url=link_url,
+                            source=PDFSource.DOI_REDIRECT,
+                            access_type="unknown",
+                            is_direct_pdf=is_pdf,
+                            confidence=0.7 if is_pdf else 0.5,
                         )
-                        links.append(
-                            PDFLink(
-                                url=link_url,
-                                source=PDFSource.DOI_REDIRECT,
-                                access_type="unknown",
-                                is_direct_pdf=is_pdf,
-                                confidence=0.7 if is_pdf else 0.5,
-                            )
-                        )
-        except Exception as exc:
-            logger.debug("PubMed LinkOut failed: %s", exc)
+                    )
 
         return links
 
     async def get_doaj_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            client = await self._get_client()
-            url = f"https://doaj.org/api/search/articles/doi:{doi}"
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return links
+        client = await self._get_client()
+        url = f"https://doaj.org/api/search/articles/doi:{doi}"
+        resp = await client.get(url)
+        if _response_is_expected_absence(resp):
+            return links
 
-            for result in resp.json().get("results", []):
-                bibjson = result.get("bibjson", {})
-                for link in bibjson.get("link", []):
-                    link_url = link.get("url", "")
-                    link_type = link.get("type", "")
-                    if not link_url:
-                        continue
-                    links.append(
-                        PDFLink(
-                            url=link_url,
-                            source=PDFSource.DOAJ,
-                            access_type="gold",
-                            is_direct_pdf="fulltext" in link_type.lower(),
-                            confidence=0.9 if "fulltext" in link_type.lower() else 0.7,
-                        )
+        for result in resp.json().get("results", []):
+            bibjson = result.get("bibjson", {})
+            for link in bibjson.get("link", []):
+                link_url = link.get("url", "")
+                link_type = link.get("type", "")
+                if not link_url:
+                    continue
+                links.append(
+                    PDFLink(
+                        url=link_url,
+                        source=PDFSource.DOAJ,
+                        access_type="gold",
+                        is_direct_pdf="fulltext" in link_type.lower(),
+                        confidence=0.9 if "fulltext" in link_type.lower() else 0.7,
                     )
-        except Exception as exc:
-            logger.debug("DOAJ lookup failed: %s", exc)
+                )
 
         return links
 
     async def get_zenodo_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        try:
-            client = await self._get_client()
-            if "10.5281/zenodo" in doi:
-                record_id = doi.rsplit(".", maxsplit=1)[-1]
-                url = f"https://zenodo.org/api/records/{record_id}"
-            else:
-                url = f"https://zenodo.org/api/records?q=doi:{doi}&size=1"
+        client = await self._get_client()
+        if "10.5281/zenodo" in doi:
+            record_id = doi.rsplit(".", maxsplit=1)[-1]
+            url = f"https://zenodo.org/api/records/{record_id}"
+        else:
+            url = f"https://zenodo.org/api/records?q=doi:{doi}&size=1"
 
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return links
+        resp = await client.get(url)
+        if _response_is_expected_absence(resp):
+            return links
 
-            data = resp.json()
-            records = [data] if "id" in data else data.get("hits", {}).get("hits", [])
-            for record in records:
-                for file_info in record.get("files", []):
-                    file_url = file_info.get("links", {}).get("self", "")
-                    filename = file_info.get("key", "")
-                    if file_url and filename.lower().endswith(".pdf"):
-                        links.append(
-                            PDFLink(
-                                url=file_url,
-                                source=PDFSource.ZENODO,
-                                access_type="open_access",
-                                is_direct_pdf=True,
-                                confidence=0.9,
-                            )
+        data = resp.json()
+        records = [data] if "id" in data else data.get("hits", {}).get("hits", [])
+        for record in records:
+            for file_info in record.get("files", []):
+                file_url = file_info.get("links", {}).get("self", "")
+                filename = file_info.get("key", "")
+                if file_url and filename.lower().endswith(".pdf"):
+                    links.append(
+                        PDFLink(
+                            url=file_url,
+                            source=PDFSource.ZENODO,
+                            access_type="open_access",
+                            is_direct_pdf=True,
+                            confidence=0.9,
                         )
-        except Exception as exc:
-            logger.debug("Zenodo lookup failed: %s", exc)
+                    )
 
         return links
 

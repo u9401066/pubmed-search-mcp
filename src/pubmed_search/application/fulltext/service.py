@@ -14,15 +14,23 @@ Maintenance:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
-from pubmed_search.shared.article_identity import normalize_article_doi
+from pubmed_search.domain.value_objects.article_identifiers import (
+    IdentifierValidationError,
+    normalize_doi,
+    normalize_pmcid,
+    normalize_pmid,
+    parse_article_identifier,
+)
 
 from .registry import FulltextRegistry, get_fulltext_registry
 
 logger = logging.getLogger(__name__)
+_SOURCE_KEY_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 
 LogLevel = Literal["debug", "info", "warning", "error"]
 ProgressCallback = Callable[[float, float, str], Awaitable[None]]
@@ -42,6 +50,60 @@ class FulltextRequest:
     extended_sources: bool = False
     allow_browser_session: bool | None = None
 
+    def normalized(self) -> FulltextRequest:
+        """Return a strict, canonical request with exactly one public identifier.
+
+        A bare numeric ``identifier`` is always a PMID.  PMCID auto-detection
+        therefore requires an explicit ``PMC`` prefix; this prevents long
+        PMIDs from silently being reinterpreted as PMC identifiers.
+        """
+        supplied = [
+            name
+            for name, value in (
+                ("identifier", self.identifier),
+                ("pmcid", self.pmcid),
+                ("pmid", self.pmid),
+                ("doi", self.doi),
+            )
+            if value is not None
+        ]
+        if len(supplied) != 1:
+            raise IdentifierValidationError("provide exactly one of identifier, pmcid, pmid, or doi")
+        if not isinstance(getattr(self, supplied[0]), str):
+            raise IdentifierValidationError("article identifiers must be strings")
+
+        if self.identifier is not None:
+            parsed = parse_article_identifier(self.identifier)
+            return replace(
+                self,
+                identifier=None,
+                pmcid=parsed.value if parsed.kind == "pmcid" else None,
+                pmid=parsed.value if parsed.kind == "pmid" else None,
+                doi=parsed.value if parsed.kind == "doi" else None,
+            )
+        if self.pmcid is not None:
+            return replace(self, pmcid=normalize_pmcid(self.pmcid))
+        if self.pmid is not None:
+            return replace(self, pmid=normalize_pmid(self.pmid))
+        if self.doi is not None:
+            return replace(self, doi=normalize_doi(self.doi))
+        raise AssertionError("identifier one-of validation is exhaustive")
+
+
+@dataclass(frozen=True, slots=True)
+class FulltextSourceError:
+    """Sanitized source failure safe to expose in an MCP response."""
+
+    source: str
+    code: Literal["source_unavailable"] = "source_unavailable"
+    message: str = "The upstream source was unavailable during this request."
+
+    def __post_init__(self) -> None:
+        _require_source_key(self.source)
+
+    def to_dict(self) -> dict[str, str]:
+        return {"source": self.source, "code": self.code, "message": self.message}
+
 
 @dataclass
 class FulltextServiceResult:
@@ -58,11 +120,69 @@ class FulltextServiceResult:
     content_sections: list[dict[str, Any]] = field(default_factory=list)
     pdf_links: list[dict[str, Any]] = field(default_factory=list)
     sources_tried: list[str] = field(default_factory=list)
+    sources_completed: list[str] = field(default_factory=list)
+    source_errors: list[FulltextSourceError] = field(default_factory=list)
     figures: list[dict[str, Any]] = field(default_factory=list)
     fulltext_source_name: str | None = None
     fulltext_canonical_host: str | None = None
     fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
     extended_sources_attempted: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name, sources in (
+            ("sources_tried", self.sources_tried),
+            ("sources_completed", self.sources_completed),
+        ):
+            for source in sources:
+                _require_source_key(source)
+            if len(sources) != len(set(sources)):
+                msg = f"FulltextServiceResult.{field_name} must not contain duplicate source keys"
+                raise ValueError(msg)
+        attempted = set(self.sources_tried)
+        if not set(self.sources_completed).issubset(attempted):
+            msg = "Completed fulltext sources must be a subset of attempted sources"
+            raise ValueError(msg)
+        if any(error.source not in attempted for error in self.source_errors):
+            msg = "Fulltext source errors must belong to attempted sources"
+            raise ValueError(msg)
+
+    @property
+    def coverage_status(self) -> Literal["complete", "partial", "unavailable"]:
+        """Describe whether every attempted upstream source completed."""
+        if not self.source_errors:
+            return "complete"
+        if self.sources_completed or self.fulltext_content or self.pdf_links or self.figures:
+            return "partial"
+        return "unavailable"
+
+    def record_source_attempted(self, source: str) -> None:
+        source = _require_source_key(source)
+        if source not in self.sources_tried:
+            self.sources_tried.append(source)
+
+    def record_source_completed(self, source: str) -> None:
+        source = _require_source_key(source)
+        if source not in self.sources_tried:
+            msg = "A fulltext source must be attempted before it can complete"
+            raise ValueError(msg)
+        if source not in self.sources_completed:
+            self.sources_completed.append(source)
+
+    def record_source_error(self, source: str) -> None:
+        source = _require_source_key(source)
+        if source not in self.sources_tried:
+            msg = "A fulltext source must be attempted before it can fail"
+            raise ValueError(msg)
+        if all(issue.source != source for issue in self.source_errors):
+            self.source_errors.append(FulltextSourceError(source=source))
+
+
+def _require_source_key(source: str) -> str:
+    """Reject display labels and unstable aliases in coverage fields."""
+    if not isinstance(source, str) or _SOURCE_KEY_RE.fullmatch(source) is None:
+        msg = "Fulltext coverage sources must use stable lowercase underscore keys"
+        raise ValueError(msg)
+    return source
 
 
 class FulltextService:
@@ -95,7 +215,8 @@ class FulltextService:
         log: LogCallback | None = None,
     ) -> FulltextServiceResult:
         """Execute fulltext retrieval according to registry policy."""
-        request = await self._resolve_identifiers(request, log)
+        request = request.normalized()
+        request, metadata_status = await self._resolve_identifiers(request, log)
         policy = self._registry.resolve_policy(
             pmcid=request.pmcid,
             pmid=request.pmid,
@@ -109,15 +230,22 @@ class FulltextService:
             doi=request.doi,
             policy_key=policy.key,
         )
+        if metadata_status != "not_attempted":
+            source = "europe_pmc_metadata"
+            result.record_source_attempted(source)
+            if metadata_status == "failed":
+                result.record_source_error(source)
+            else:
+                result.record_source_completed(source)
 
         if request.pmcid and "europe_pmc" in policy.sources:
             await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
-            result.sources_tried.append(self._registry.label_for("europe_pmc"))
+            result.record_source_attempted("europe_pmc")
             await self._collect_europe_pmc(request, result, log)
 
         if request.doi and "unpaywall" in policy.sources:
             await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
-            result.sources_tried.append(self._registry.label_for("unpaywall"))
+            result.record_source_attempted("unpaywall")
             await self._collect_unpaywall(request, result, log)
 
         if (
@@ -127,17 +255,17 @@ class FulltextService:
             and self._institutional_client_factory is not None
         ):
             await self._report_progress(progress, 3, 6, "Trying institutional direct/EZproxy fetch...")
-            result.sources_tried.append(self._registry.label_for("institutional"))
+            result.record_source_attempted("institutional")
             await self._collect_institutional(request, result, log)
 
         if request.doi and not result.fulltext_content and "core" in policy.sources:
             await self._report_progress(progress, 4, 6, "Trying CORE fallback...")
-            result.sources_tried.append(self._registry.label_for("core"))
+            result.record_source_attempted("core")
             await self._collect_core(request, result, log)
 
         if request.extended_sources and "extended" in policy.sources:
             await self._report_progress(progress, 5, 6, "Checking extended fulltext sources...")
-            result.sources_tried.append(self._registry.label_for("extended"))
+            result.record_source_attempted("extended")
             await self._collect_extended_sources(request, result, log)
 
         if request.include_figures and request.pmcid:
@@ -150,30 +278,24 @@ class FulltextService:
         self,
         request: FulltextRequest,
         log: LogCallback | None,
-    ) -> FulltextRequest:
+    ) -> tuple[FulltextRequest, Literal["not_attempted", "completed", "failed"]]:
         """Resolve PMID metadata before policy selection so DOI-only sources can run."""
-        normalized_doi = normalize_article_doi(request.doi) or None
+        normalized_doi = request.doi
         if not request.pmid or (request.pmcid and normalized_doi):
             if normalized_doi == request.doi:
-                return request
-            return FulltextRequest(
-                identifier=request.identifier,
-                pmcid=request.pmcid,
-                pmid=request.pmid,
-                doi=normalized_doi,
-                sections=request.sections,
-                include_figures=request.include_figures,
-                extended_sources=request.extended_sources,
-                allow_browser_session=request.allow_browser_session,
-            )
+                return request, "not_attempted"
+            return replace(request, doi=normalized_doi), "not_attempted"
 
         try:
             client = self._europe_pmc_client_factory()
             article = await client.get_article("MED", str(request.pmid), result_type="core")
         except Exception as exc:
-            logger.warning("PMID metadata resolution failed: %s", exc)
-            await self._report_log(log, "warning", f"PMID metadata resolution failed: {exc!s}")
+            logger.warning("PMID metadata resolution failed (%s)", type(exc).__name__)
+            await self._report_log(log, "warning", "PMID metadata source unavailable")
             article = None
+            source_status: Literal["completed", "failed"] = "failed"
+        else:
+            source_status = "completed"
 
         resolved_pmcid = request.pmcid
         resolved_doi = normalized_doi
@@ -183,22 +305,19 @@ class FulltextService:
         if article:
             raw_pmcid = article.get("pmc_id") or article.get("pmcid")
             if not resolved_pmcid and raw_pmcid:
-                resolved_pmcid = str(raw_pmcid)
-                if resolved_pmcid and not resolved_pmcid.upper().startswith("PMC"):
-                    resolved_pmcid = f"PMC{resolved_pmcid}"
+                try:
+                    resolved_pmcid = normalize_pmcid(str(raw_pmcid))
+                except IdentifierValidationError:
+                    logger.info("Europe PMC returned a malformed PMCID; ignoring it")
             if not resolved_doi:
-                resolved_doi = normalize_article_doi(str(article.get("doi") or "")) or None
+                raw_doi = article.get("doi")
+                if raw_doi:
+                    try:
+                        resolved_doi = normalize_doi(str(raw_doi))
+                    except IdentifierValidationError:
+                        logger.info("Europe PMC returned a malformed DOI; ignoring it")
 
-        return FulltextRequest(
-            identifier=request.identifier,
-            pmcid=resolved_pmcid,
-            pmid=request.pmid,
-            doi=resolved_doi,
-            sections=request.sections,
-            include_figures=request.include_figures,
-            extended_sources=request.extended_sources,
-            allow_browser_session=request.allow_browser_session,
-        )
+        return replace(request, pmcid=resolved_pmcid, doi=resolved_doi), source_status
 
     async def _collect_europe_pmc(
         self,
@@ -206,14 +325,17 @@ class FulltextService:
         result: FulltextServiceResult,
         log: LogCallback | None,
     ) -> None:
+        source = "europe_pmc"
         try:
             client = self._europe_pmc_client_factory()
             xml = await client.get_fulltext_xml(request.pmcid)
             if not xml:
+                result.record_source_completed(source)
                 return
 
             parsed = client.parse_fulltext_xml(xml)
             if not parsed:
+                result.record_source_completed(source)
                 return
 
             result.content_sections = self._select_sections(parsed, request.sections)
@@ -223,6 +345,7 @@ class FulltextService:
             result.fulltext_source_name = self._registry.label_for("europe_pmc")
             result.fulltext_canonical_host = "PubMed Central"
             result.fulltext_provenance = "indirect"
+            result.record_source_completed(source)
 
             pmc_num = str(request.pmcid).replace("PMC", "")
             result.pdf_links.append(
@@ -234,8 +357,9 @@ class FulltextService:
                 }
             )
         except Exception as exc:
-            logger.warning("Europe PMC failed: %s", exc)
-            await self._report_log(log, "warning", f"Europe PMC fulltext failed: {exc!s}")
+            logger.warning("Europe PMC fulltext failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "Europe PMC fulltext source unavailable")
 
     async def _collect_unpaywall(
         self,
@@ -243,10 +367,12 @@ class FulltextService:
         result: FulltextServiceResult,
         log: LogCallback | None,
     ) -> None:
+        source = "unpaywall"
         try:
             unpaywall = self._unpaywall_client_factory()
             oa_info = await unpaywall.get_oa_status(request.doi)
             if not oa_info or not oa_info.get("is_oa"):
+                result.record_source_completed(source)
                 return
 
             if not result.title:
@@ -286,9 +412,11 @@ class FulltextService:
                             "version": loc.get("version"),
                         }
                     )
+            result.record_source_completed(source)
         except Exception as exc:
-            logger.warning("Unpaywall failed: %s", exc)
-            await self._report_log(log, "warning", f"Unpaywall lookup failed: {exc!s}")
+            logger.warning("Unpaywall lookup failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "Unpaywall source unavailable")
 
     async def _collect_institutional(
         self,
@@ -298,14 +426,17 @@ class FulltextService:
     ) -> None:
         if self._institutional_client_factory is None or not request.doi:
             return
+        source = "institutional"
         try:
             client = self._institutional_client_factory()
             outcome = await client.get_fulltext_by_doi(request.doi)
         except Exception as exc:
-            logger.warning("Institutional fetch failed: %s", exc)
-            await self._report_log(log, "warning", f"Institutional fulltext failed: {exc!s}")
+            logger.warning("Institutional fetch failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "Institutional fulltext source unavailable")
             return
 
+        result.record_source_completed(source)
         if not getattr(outcome, "success", False):
             return
         text = getattr(outcome, "text", None)
@@ -340,34 +471,36 @@ class FulltextService:
         result: FulltextServiceResult,
         log: LogCallback | None,
     ) -> None:
+        source = "core"
         try:
             core = self._core_client_factory()
             matches = await core.search(f'doi:"{request.doi}"', limit=1)
             if not matches or not matches.get("results"):
+                result.record_source_completed(source)
                 return
 
             work = matches["results"][0]
             if not result.title:
                 result.title = work.get("title")
 
-            if work.get("fullText") and not result.fulltext_content:
-                result.raw_fulltext_content = str(work.get("fullText", ""))
+            if work.get("full_text") and not result.fulltext_content:
+                result.raw_fulltext_content = str(work.get("full_text", ""))
                 result.fulltext_content = self._format_core_fulltext(work, request.sections)
                 result.fulltext_source_name = self._registry.label_for("core")
                 result.fulltext_canonical_host = "Repository / OA host"
                 result.fulltext_provenance = "indirect"
 
-            if work.get("downloadUrl"):
+            if work.get("download_url"):
                 result.pdf_links.append(
                     {
                         "source": "CORE",
-                        "url": work["downloadUrl"],
+                        "url": work["download_url"],
                         "type": "pdf",
                         "access": "open_access",
                     }
                 )
-            if work.get("sourceFulltextUrls"):
-                for url in work["sourceFulltextUrls"][:2]:
+            if work.get("source_fulltext_urls"):
+                for url in work["source_fulltext_urls"][:2]:
                     result.pdf_links.append(
                         {
                             "source": "CORE (source)",
@@ -376,9 +509,11 @@ class FulltextService:
                             "access": "open_access",
                         }
                     )
+            result.record_source_completed(source)
         except Exception as exc:
-            logger.warning("CORE failed: %s", exc)
-            await self._report_log(log, "warning", f"CORE fulltext lookup failed: {exc!s}")
+            logger.warning("CORE fulltext lookup failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "CORE fulltext source unavailable")
 
     async def _collect_extended_sources(
         self,
@@ -387,8 +522,10 @@ class FulltextService:
         log: LogCallback | None,
     ) -> None:
         result.extended_sources_attempted = True
-        downloader = self._downloader_factory()
+        source = "extended"
+        downloader: Any | None = None
         try:
+            downloader = self._downloader_factory()
             extended_result = await downloader.get_fulltext(
                 pmid=request.pmid,
                 pmcid=request.pmcid,
@@ -396,6 +533,14 @@ class FulltextService:
                 strategy="links_only" if result.fulltext_content else "extract_text",
                 allow_browser_session=request.allow_browser_session,
             )
+            link_discovery = extended_result.require_link_discovery()
+
+            for attempted_source in link_discovery.attempted_sources:
+                result.record_source_attempted(attempted_source)
+            for completed_source in link_discovery.completed_sources:
+                result.record_source_completed(completed_source)
+            for source_error in link_discovery.source_errors:
+                result.record_source_error(source_error.source)
 
             if not result.fulltext_content and extended_result.text_content:
                 result.raw_fulltext_content = extended_result.text_content
@@ -413,7 +558,7 @@ class FulltextService:
                 result.fulltext_provenance = "derived"
 
             seen_urls = {link["url"] for link in result.pdf_links}
-            for ext_link in extended_result.pdf_links:
+            for ext_link in link_discovery.links:
                 if ext_link.url in seen_urls:
                     continue
                 seen_urls.add(ext_link.url)
@@ -427,12 +572,18 @@ class FulltextService:
                         "license": ext_link.license,
                     }
                 )
+            if link_discovery.coverage_status != "unavailable" or extended_result.text_content:
+                result.record_source_completed(source)
         except Exception as exc:
-            logger.warning("Extended sources failed: %s", exc)
-            await self._report_log(log, "warning", f"Extended fulltext sources failed: {exc!s}")
+            logger.warning("Extended fulltext sources failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "Extended fulltext sources unavailable")
         finally:
-            if hasattr(downloader, "close"):
-                await downloader.close()
+            if downloader is not None and hasattr(downloader, "close"):
+                try:
+                    await downloader.close()
+                except Exception as exc:
+                    logger.warning("Extended source cleanup failed (%s)", type(exc).__name__)
 
     async def _collect_figures(
         self,
@@ -442,6 +593,8 @@ class FulltextService:
     ) -> None:
         if self._figure_client_factory is None:
             return
+        source = "pmc_figures"
+        result.record_source_attempted(source)
         try:
             figure_client = self._figure_client_factory()
             figure_result = await figure_client.get_article_figures(
@@ -450,9 +603,11 @@ class FulltextService:
             )
             if figure_result.figures:
                 result.figures = [figure.to_dict() for figure in figure_result.figures]
+            result.record_source_completed(source)
         except Exception as exc:
-            logger.warning("Figure extraction in fulltext service failed: %s", exc)
-            await self._report_log(log, "warning", f"Figure extraction skipped: {exc!s}")
+            logger.warning("Figure extraction in fulltext service failed (%s)", type(exc).__name__)
+            result.record_source_error(source)
+            await self._report_log(log, "warning", "Figure extraction source unavailable")
 
     @staticmethod
     async def _report_progress(
@@ -531,7 +686,7 @@ class FulltextService:
 
     @staticmethod
     def _format_core_fulltext(work: dict[str, Any], sections_filter: str | None) -> str:
-        fulltext = str(work.get("fullText", ""))
+        fulltext = str(work.get("full_text", ""))
         if not fulltext:
             return ""
 

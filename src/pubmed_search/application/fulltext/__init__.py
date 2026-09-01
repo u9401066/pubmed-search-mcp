@@ -7,7 +7,7 @@ from .registry import (
     FulltextSourceDefinition,
     get_fulltext_registry,
 )
-from .service import FulltextRequest, FulltextService, FulltextServiceResult
+from .service import FulltextRequest, FulltextService, FulltextServiceResult, FulltextSourceError
 
 __all__ = [
     "FulltextPolicyDefinition",
@@ -16,6 +16,7 @@ __all__ = [
     "FulltextRequest",
     "FulltextService",
     "FulltextServiceResult",
+    "FulltextSourceError",
     "FulltextSourceDefinition",
     "get_fulltext_registry",
 ]
