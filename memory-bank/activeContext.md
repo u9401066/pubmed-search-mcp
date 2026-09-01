@@ -2,15 +2,15 @@
 
 ## Current Focus
 
-- The worktree is adding a post-release protocol regression gate on top of the
-  published v0.7.0 boundary. The canonical MCP surface is **41 tools in 16
-  registry categories**; removed public aliases, legacy wrappers, and alternate
-  Copilot tool registries are not compatibility surfaces.
-- The current post-v0.7.0 worktree passes 4,475 tests with 53 intentional
-  skips, Ruff, format checking, mypy across 413 source files, the async-test
-  audit, and all three complete MCP acceptance paths. The published v0.7.0
-  release had separately passed its release, Mermaid-rendering, browser, and
-  isolated-wheel gates.
+- v0.7.1 is the published boundary. It adds a complete MCP protocol regression
+  gate for the canonical **41 tools in 16 registry categories**; removed public
+  aliases, legacy wrappers, and alternate Copilot tool registries are not
+  compatibility surfaces.
+- The v0.7.1 source passes 4,475 tests with 53 intentional skips, Ruff, format
+  checking, mypy across 413 source files, the async-test audit, and all three
+  complete MCP acceptance paths. Hosted CI repeated the cross-platform,
+  container, wheel, documentation, and actual MCP-returned Mermaid render gates
+  before the tagged artifacts were published.
 - Preserve DDD boundaries: MCP tools adapt strict requests and delegate to
   application/domain services; source clients and outbound transport remain
   infrastructure concerns.
@@ -253,11 +253,18 @@
 
 - v0.7.0 is merged at `459eb28`, tagged, and published from the canonical
   `origin/master` history.
-- The post-release MCP acceptance branch has passed local transport, package,
-  static, documentation, and repository-wide gates. Segmented commits, remote
-  push, and hosted CI results remain pending until those actions actually
-  complete.
+- v0.7.1 was merged by PR #11 at `4237ed0`, tagged at that commit, and published
+  by GitHub Actions run `33483446706`. The GitHub Release is public and contains
+  the wheel plus source distribution; PyPI's version-specific JSON endpoint
+  returns `0.7.1` with both files.
+- The release contains segmented production-fix, real-MCP acceptance, docs/MEM,
+  and release-metadata commits. PR push and pull-request check suites were both
+  green across Linux Python 3.10-3.13, macOS Python 3.13, Windows Python 3.13,
+  container smoke, package smoke, and pinned Mermaid rendering.
+- Deterministic provider seams prove repository integration without credentials.
+  Opt-in external API probes were intentionally skipped in ordinary CI, so the
+  release does not claim that every third-party provider was live-tested.
 
 ---
 
-*Last updated: 2026-09-01 — complete MCP protocol acceptance hardening*
+*Last updated: 2026-09-01 — v0.7.1 protocol gate published and verified*
