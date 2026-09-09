@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import json
 import socket
 from pathlib import Path
@@ -42,8 +43,27 @@ async def build_server(corpus: FrozenCorpus, arm: str, state_dir: Path) -> MCPSe
         from pubmed_search.presentation.mcp_server.server import create_server, get_container
 
         server = create_server(email="benchmark@example.invalid", data_dir=str(state_dir), mode="local")
-        searcher = get_container().searcher()
-        searcher.search = corpus.search
+        # Evaluation deliberately supports the archived pre-0.7 baseline as
+        # well as the current server-scoped, typed provider boundary.
+        if "server" in inspect.signature(get_container).parameters:
+            from pubmed_search.application.search.source_models import SourceSearchPage
+
+            searcher = get_container(server).searcher()
+
+            async def search_page(query: str, limit: int = 10, **kwargs: Any) -> SourceSearchPage[dict[str, Any]]:
+                items = await corpus.search(query, limit, **kwargs)
+                return SourceSearchPage(
+                    source="pubmed",
+                    items=items,
+                    query=query,
+                    total=None,
+                    metadata={"physical_query": query, "query_executed": True},
+                )
+
+            searcher.search_page = search_page
+        else:
+            searcher = get_container().searcher()  # type: ignore[call-arg] - historical evaluation revision
+            searcher.search = corpus.search
         searcher.fetch_details = corpus.fetch_details
         allowed = {
             "unified_search",
@@ -57,7 +77,7 @@ async def build_server(corpus: FrozenCorpus, arm: str, state_dir: Path) -> MCPSe
             if tool.name not in allowed:
                 server.remove_tool(tool.name)
 
-    @server.tool()
+    @MCPServer.tool(server)
     def budget_status() -> dict[str, int]:
         """Read remaining shared backend search and document-exposure budgets."""
         return {
