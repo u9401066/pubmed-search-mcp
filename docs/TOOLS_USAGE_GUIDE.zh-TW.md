@@ -108,11 +108,20 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 
 當 manuscript、bibliography 或 agent 產生的回答需要 PubMed-backed citation checking 時，使用 `verify_reference_list`。match / mismatch 應視為 audit trail，而不是只看生成摘要。
 
+`verified` 代表書目資料與解析出的 PubMed 紀錄一致。即使 DOI 或 PMID 相符，
+只要其他提供的欄位衝突或無法確認，仍回報 `partial_match` 並加入人工複核佇列。
+DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的識別碼。
+單篇查詢失敗會保留其他結果並回報 `source_unavailable`，不當成文獻不存在。
+這項驗證沒有判定文獻是否支持某個論述，需要讀取相關原文段落後才能判斷引用語境。
+
 ### 全文、圖表與圖片證據
 
 ![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
 
 這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`prepare_figure_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
+
+指定結構化章節時，逗號分隔清單中的空白項目會被忽略，無標題章節也不會誤中具名篩選。
+延伸來源的初始化或關閉失敗，會保留先前已成功取得的全文。
 
 當使用者提供 image URL 或上傳圖片 payload，且需要 agent 從視覺內容推論搜尋詞時，使用 `prepare_figure_search`。這個 tool 會回傳 MCP `ImageContent`；實際圖片語意解讀由 LLM agent 完成，agent 應接續呼叫 `search_biomedical_images` 或 `unified_search`。
 

@@ -33,6 +33,8 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "Tool-Quality-Audit.md",
         "Tool-Quality-Audit.zh-TW.md",
         "Architecture.md",
+        "Academic-Retrieval-Benchmarks.md",
+        "Repository-Reliability-Audit.md",
         "Quick-Reference.md",
         "Source-Contracts.md",
         "Semantic-Scholar-Data-Plane.md",

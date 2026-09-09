@@ -28,6 +28,19 @@
 
 ---
 
+## 研究品質與量化評測 — v0.7.2
+
+這次改進查詢相關性排序與融合、跨來源文獻去重、書目驗證、章節篩選與快取並行抓取，
+維持既有 41 個 MCP 工具介面。
+
+[Benchmark 報告](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md) 分開量測元件品質與完整
+Agent 套件效果。先前公開 BEIR NFCorpus 的 BM25 元件實驗，test nDCG@10 從
+**0.293357 提高至 0.297831**；這不是本版完整 Agent 的成績。原生 Codex／套件的
+三題 pilot 不足以證明整體增益，完整 5,000 題評測已設定，尚未啟動長跑。
+
+[可靠性稽核](docs/REPOSITORY_RELIABILITY_AUDIT.md) 提供缺陷重現、驗證範圍與版本
+fingerprints。引用驗證確認書目一致性，論文是否支持某項論述仍需閱讀相關原文。
+
 ## 🚀 快速安裝
 
 ### 前置需求

@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "evaluation": "native_codex_vs_complete_package_online_pilot",
+  "created_at": "2026-09-09T05:51:14.116187+00:00",
+  "dataset": "jmhb/PaperSearchQA test",
+  "dataset_sha256": "fd27a97fdea9e3e7710aeac3096a1f2d7b0759ffd9399423d26f57f8dc1c4010",
+  "dataset_size": 5000,
+  "query_count": 3,
+  "repeats": 1,
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "repo_revision_label": "dbcf0c88c76e6fac30877ff16a9850232e89bd4e",
+  "repo_source_sha256": "f3df081c1a71a579d0e1d06046a1426be38c1d487190b2fc19e7be9d3ef623f4",
+  "runner_sha256": "c191ad0674d8ec87c86e3f6476a003019102c170ea16a396db478de6e02c2a75",
+  "codex_version": "codex-cli 0.153.0",
+  "native_web_search": "live_in_both_arms",
+  "timeout_seconds": 300,
+  "token_budget_enforced": false,
+  "backend_call_budget_enforced": false,
+  "frozen_corpus": false,
+  "official_leaderboard_score": false,
+  "status_counts": {
+    "native": {
+      "completed": 3
+    },
+    "package": {
+      "completed": 3
+    }
+  },
+  "comparison": {
+    "answer_exact_match": {
+      "query_count": 3,
+      "baseline_mean": 0.6666666666666666,
+      "treatment_mean": 0.6666666666666666,
+      "delta": 0.0,
+      "paired_bootstrap_95_interval": [
+        0.0,
+        0.0
+      ]
+    },
+    "source_pmid_hit": {
+      "query_count": 3,
+      "baseline_mean": 0.3333333333333333,
+      "treatment_mean": 0.3333333333333333,
+      "delta": 0.0,
+      "paired_bootstrap_95_interval": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "results": {
+    "00062d56dfa567dcf4adfb68e7618d4a2519131310e0eb4e01af98912fb9b6a8": {
+      "native": {
+        "arm": "native",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 0.0,
+          "source_pmid_hit": 0.0
+        },
+        "answer": {
+          "answer": "[Serum thyroglobulin (Tg)](https://pubmed.ncbi.nlm.nih.gov/24728426/)",
+          "cited_pmids": [
+            "24728426",
+            "27488338"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/24728426/",
+            "https://pubmed.ncbi.nlm.nih.gov/27488338/",
+            "https://www.scielo.cl/scielo.php?pid=S0034-98872013001200002&script=sci_arttext"
+          ]
+        },
+        "usage": {
+          "input_tokens": 92966,
+          "cached_input_tokens": 60544,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 459,
+          "reasoning_output_tokens": 140
+        },
+        "elapsed_seconds": 37.322727462276816,
+        "tool_calls": [
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {},
+        "prompt_sha256": "5275e1e74971904a7363880d3988819372bc219205d6ba654ebf03ddaf9cad8d",
+        "events_sha256": "8776794b3a13f445dc2ea6a78495b85eabda1aad619296ca9a5f9d358db4d539"
+      },
+      "package": {
+        "arm": "package",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 0.0,
+          "source_pmid_hit": 0.0
+        },
+        "answer": {
+          "answer": "Serum thyroglobulin (Tg)",
+          "cited_pmids": [
+            "24728426",
+            "17201802",
+            "26782372"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/24728426/",
+            "https://pubmed.ncbi.nlm.nih.gov/17201802/",
+            "https://pubmed.ncbi.nlm.nih.gov/26782372/"
+          ]
+        },
+        "usage": {
+          "input_tokens": 105025,
+          "cached_input_tokens": 70400,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 780,
+          "reasoning_output_tokens": 316
+        },
+        "elapsed_seconds": 47.201037775725126,
+        "tool_calls": [
+          {
+            "type": "command_execution",
+            "tool": null,
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "mcp_tool_call",
+            "tool": "unified_search",
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "mcp_tool_call",
+            "tool": "fetch_article_details",
+            "status": "completed",
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {
+          ".agents/skills/pubmed-export-citations/SKILL.md": "0c6c2e80c3025caf0bde5761a7ab0f9ae8b74af21d73835c36bea0ac40267d30",
+          ".agents/skills/pubmed-fulltext-access/SKILL.md": "d3724eec0353e858aae88ae3ca249e2b00654ba98f053ddaadad21f8a35fd1cc",
+          ".agents/skills/pubmed-gene-drug-research/SKILL.md": "dd3ea3440078afcc70e1165e7904d53795cc334d95d873c2166256474b45d1c5",
+          ".agents/skills/pubmed-mcp-tools-reference/SKILL.md": "80482d27e5d274ce0051f4a9103311e9adda169c04c1bfba4e9336d765e911c3",
+          ".agents/skills/pubmed-multi-source-search/SKILL.md": "402e9e2e2392f3a87f2c5241bc880ae5651c245dbbf93ffbcab41571f7a085d1",
+          ".agents/skills/pubmed-paper-exploration/SKILL.md": "471ec261ec97538ee05fbfa607409afa89966ab4483d81e7bda2c5715534088c",
+          ".agents/skills/pubmed-pico-search/SKILL.md": "d462f988031f46af54f0964770db64b5943945a127ccfd7b51b69314b134e861",
+          ".agents/skills/pubmed-quick-search/SKILL.md": "ec28d698f6f1d8233860f9c45c142fe0c2ec4d3fd3d0f7af378592542ee4a100",
+          ".agents/skills/pubmed-research-chronicle/SKILL.md": "b863b4c2ef107b8412d92b1ecc1e4d56b1287a374e137990833a732d415d78d0",
+          ".agents/skills/pubmed-systematic-search/SKILL.md": "07e1e2e17afaf7b9ef9c067619f046fa9db70fbe8462f1f46bd2d30ac23ffe56",
+          ".agents/skills/pipeline-persistence/SKILL.md": "5e2b407f83d2bdf5dae985527c4021bc6d5eb8a2f309fb9ca3e97410c9a4ce2c",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.md": "414cd2de059914e9e0c126256d67ca94077ad8fdf83b08dc9041e16c76da34bd",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.zh-TW.md": "01a32e227bd1ac45c7220f54bfcfb47e313a79c40d725c018b455584658fd077"
+        },
+        "prompt_sha256": "23bac5cec9a1e5d4baa813a1f80eb112ad5df2c4a352be4a4be406e717a1d259",
+        "events_sha256": "99e8338bf10366d8313a81c0ee593f525e006dfbbaaf2dd79c847d9802a154ea"
+      }
+    },
+    "0011e59a622e033160b3fd1556ab6136d8d82bf0d7c2cb85c0a771268d8a5f7d": {
+      "package": {
+        "arm": "package",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 1.0,
+          "source_pmid_hit": 1.0
+        },
+        "answer": {
+          "answer": "c-Cbl",
+          "cited_pmids": [
+            "11704862"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/11704862/",
+            "https://www.nature.com/articles/1204919"
+          ]
+        },
+        "usage": {
+          "input_tokens": 153720,
+          "cached_input_tokens": 105088,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 542,
+          "reasoning_output_tokens": 91
+        },
+        "elapsed_seconds": 55.72115921601653,
+        "tool_calls": [
+          {
+            "type": "command_execution",
+            "tool": null,
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "mcp_tool_call",
+            "tool": "fetch_article_details",
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "mcp_tool_call",
+            "tool": "unified_search",
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {
+          ".agents/skills/pubmed-export-citations/SKILL.md": "0c6c2e80c3025caf0bde5761a7ab0f9ae8b74af21d73835c36bea0ac40267d30",
+          ".agents/skills/pubmed-fulltext-access/SKILL.md": "d3724eec0353e858aae88ae3ca249e2b00654ba98f053ddaadad21f8a35fd1cc",
+          ".agents/skills/pubmed-gene-drug-research/SKILL.md": "dd3ea3440078afcc70e1165e7904d53795cc334d95d873c2166256474b45d1c5",
+          ".agents/skills/pubmed-mcp-tools-reference/SKILL.md": "80482d27e5d274ce0051f4a9103311e9adda169c04c1bfba4e9336d765e911c3",
+          ".agents/skills/pubmed-multi-source-search/SKILL.md": "402e9e2e2392f3a87f2c5241bc880ae5651c245dbbf93ffbcab41571f7a085d1",
+          ".agents/skills/pubmed-paper-exploration/SKILL.md": "471ec261ec97538ee05fbfa607409afa89966ab4483d81e7bda2c5715534088c",
+          ".agents/skills/pubmed-pico-search/SKILL.md": "d462f988031f46af54f0964770db64b5943945a127ccfd7b51b69314b134e861",
+          ".agents/skills/pubmed-quick-search/SKILL.md": "ec28d698f6f1d8233860f9c45c142fe0c2ec4d3fd3d0f7af378592542ee4a100",
+          ".agents/skills/pubmed-research-chronicle/SKILL.md": "b863b4c2ef107b8412d92b1ecc1e4d56b1287a374e137990833a732d415d78d0",
+          ".agents/skills/pubmed-systematic-search/SKILL.md": "07e1e2e17afaf7b9ef9c067619f046fa9db70fbe8462f1f46bd2d30ac23ffe56",
+          ".agents/skills/pipeline-persistence/SKILL.md": "5e2b407f83d2bdf5dae985527c4021bc6d5eb8a2f309fb9ca3e97410c9a4ce2c",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.md": "414cd2de059914e9e0c126256d67ca94077ad8fdf83b08dc9041e16c76da34bd",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.zh-TW.md": "01a32e227bd1ac45c7220f54bfcfb47e313a79c40d725c018b455584658fd077"
+        },
+        "prompt_sha256": "c1db86bd7e21ac59a8e353587177c3fbbbabc25f4618109a0c7f84f27b62fbf8",
+        "events_sha256": "177649022ee1e367930fbb9f4e9f6601dcb7608c9acbac48af35b71dc644225b"
+      },
+      "native": {
+        "arm": "native",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 1.0,
+          "source_pmid_hit": 1.0
+        },
+        "answer": {
+          "answer": "c-Cbl",
+          "cited_pmids": [
+            "11704862"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/11704862/"
+          ]
+        },
+        "usage": {
+          "input_tokens": 94426,
+          "cached_input_tokens": 63360,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 397,
+          "reasoning_output_tokens": 178
+        },
+        "elapsed_seconds": 38.88333003036678,
+        "tool_calls": [
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {},
+        "prompt_sha256": "f9a8493c9c134264c9380b86ced3d63058e75c69b17b50c7a717ca6f68662fe1",
+        "events_sha256": "0261eb574634056c80e4dbc3ef3998c82014648379c9d7d0ba36b525b4425e6d"
+      }
+    },
+    "00228283ce0e1b21dda6c830906170048867456c600611c6fd7fcdc4369c439a": {
+      "native": {
+        "arm": "native",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 1.0,
+          "source_pmid_hit": 0.0
+        },
+        "answer": {
+          "answer": "RhoA",
+          "cited_pmids": [
+            "16354763",
+            "11373293"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/16354763/",
+            "https://pubmed.ncbi.nlm.nih.gov/11373293/"
+          ]
+        },
+        "usage": {
+          "input_tokens": 87900,
+          "cached_input_tokens": 60032,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 380,
+          "reasoning_output_tokens": 91
+        },
+        "elapsed_seconds": 39.97490449808538,
+        "tool_calls": [
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {},
+        "prompt_sha256": "a3160c0878eb1e2edcd625254b525721e5db0317a3b4ed3e82f16fbed8361253",
+        "events_sha256": "bb2a8d8d9914d4a319ad3eae5d27247848a9afaf62cc35b9de7cfbf116b691b8"
+      },
+      "package": {
+        "arm": "package",
+        "status": "completed",
+        "metrics": {
+          "answer_exact_match": 1.0,
+          "source_pmid_hit": 0.0
+        },
+        "answer": {
+          "answer": "RhoA",
+          "cited_pmids": [
+            "16354763",
+            "11373293"
+          ],
+          "source_urls": [
+            "https://pubmed.ncbi.nlm.nih.gov/16354763/",
+            "https://pubmed.ncbi.nlm.nih.gov/11373293/"
+          ]
+        },
+        "usage": {
+          "input_tokens": 70206,
+          "cached_input_tokens": 37120,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 428,
+          "reasoning_output_tokens": 35
+        },
+        "elapsed_seconds": 35.66511354781687,
+        "tool_calls": [
+          {
+            "type": "command_execution",
+            "tool": null,
+            "status": "completed",
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "web_search",
+            "tool": null,
+            "status": null,
+            "error": null
+          },
+          {
+            "type": "mcp_tool_call",
+            "tool": "fetch_article_details",
+            "status": "completed",
+            "error": null
+          }
+        ],
+        "package_skills_sha256": {
+          ".agents/skills/pubmed-export-citations/SKILL.md": "0c6c2e80c3025caf0bde5761a7ab0f9ae8b74af21d73835c36bea0ac40267d30",
+          ".agents/skills/pubmed-fulltext-access/SKILL.md": "d3724eec0353e858aae88ae3ca249e2b00654ba98f053ddaadad21f8a35fd1cc",
+          ".agents/skills/pubmed-gene-drug-research/SKILL.md": "dd3ea3440078afcc70e1165e7904d53795cc334d95d873c2166256474b45d1c5",
+          ".agents/skills/pubmed-mcp-tools-reference/SKILL.md": "80482d27e5d274ce0051f4a9103311e9adda169c04c1bfba4e9336d765e911c3",
+          ".agents/skills/pubmed-multi-source-search/SKILL.md": "402e9e2e2392f3a87f2c5241bc880ae5651c245dbbf93ffbcab41571f7a085d1",
+          ".agents/skills/pubmed-paper-exploration/SKILL.md": "471ec261ec97538ee05fbfa607409afa89966ab4483d81e7bda2c5715534088c",
+          ".agents/skills/pubmed-pico-search/SKILL.md": "d462f988031f46af54f0964770db64b5943945a127ccfd7b51b69314b134e861",
+          ".agents/skills/pubmed-quick-search/SKILL.md": "ec28d698f6f1d8233860f9c45c142fe0c2ec4d3fd3d0f7af378592542ee4a100",
+          ".agents/skills/pubmed-research-chronicle/SKILL.md": "b863b4c2ef107b8412d92b1ecc1e4d56b1287a374e137990833a732d415d78d0",
+          ".agents/skills/pubmed-systematic-search/SKILL.md": "07e1e2e17afaf7b9ef9c067619f046fa9db70fbe8462f1f46bd2d30ac23ffe56",
+          ".agents/skills/pipeline-persistence/SKILL.md": "5e2b407f83d2bdf5dae985527c4021bc6d5eb8a2f309fb9ca3e97410c9a4ce2c",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.md": "414cd2de059914e9e0c126256d67ca94077ad8fdf83b08dc9041e16c76da34bd",
+          ".agents/skills/pipeline-persistence/references/pipeline-tutorial.zh-TW.md": "01a32e227bd1ac45c7220f54bfcfb47e313a79c40d725c018b455584658fd077"
+        },
+        "prompt_sha256": "32f7720c0042e949eab85bea609c4ac2b4b6c0b42ff5193c0d0aaf22f684c9fb",
+        "events_sha256": "1512d52ef7da4f5a07c78109c7b7f8812bb33f78caef0e4edcb41285937a5f1a"
+      }
+    }
+  },
+  "scope": "Native Codex live web and direct API access, versus those same capabilities plus original production MCP and unmodified packaged research skills. Copilot/Cline runtime hooks are not loaded in Codex.",
+  "runtime": {
+    "python": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+    "platform": "Linux-5.15.0-177-generic-x86_64-with-glibc2.35",
+    "uv_lock_sha256": "afe232b4050e3321d84440c5e81218d33f6797c675be3d3f3e9e9502c3c0ed83"
+  },
+  "aggregate_resources": {
+    "native": {
+      "mean_elapsed_seconds": 38.72698733024299,
+      "total_usage": {
+        "input_tokens": 275292,
+        "cached_input_tokens": 183936,
+        "output_tokens": 1236,
+        "reasoning_output_tokens": 409
+      },
+      "tool_call_counts": {
+        "web_search": 9
+      }
+    },
+    "package": {
+      "mean_elapsed_seconds": 46.19577017985284,
+      "total_usage": {
+        "input_tokens": 328951,
+        "cached_input_tokens": 212608,
+        "output_tokens": 1750,
+        "reasoning_output_tokens": 442
+      },
+      "tool_call_counts": {
+        "command_execution": 3,
+        "web_search": 7,
+        "mcp_tool_call": 5
+      }
+    }
+  },
+  "interpretation": {
+    "positive_product_gain_demonstrated": false,
+    "formal_efficacy_conclusion": false,
+    "reason": "Three diagnostic questions with one run per arm are insufficient for generalization. Both paired quality deltas are zero; degenerate bootstrap intervals do not establish equivalence.",
+    "strict_em_audit": "On the first selected question both arms answered thyroglobulin, but formatting/parenthetical abbreviation did not match the accepted strings after official-style normalization. Scores were not changed.",
+    "source_metric_limit": "Originating PMID citation hit is not exhaustive retrieval recall or claim-support verification.",
+    "measurement_limits": [
+      "Live index/network variability",
+      "Wall time capped; tokens and backend API calls not capped",
+      "Skills and MCP evaluated together; not a server-only ablation",
+      "Model alias and runtime recorded; no immutable provider model snapshot available"
+    ]
+  }
+}

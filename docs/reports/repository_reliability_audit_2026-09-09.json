@@ -1,0 +1,267 @@
+{
+  "date": "2026-09-09",
+  "evaluation_type": "development_regressions_not_public_benchmark",
+  "baseline_revision": "dbcf0c88c76e6fac30877ff16a9850232e89bd4e",
+  "baseline_product_source_sha256": "f3df081c1a71a579d0e1d06046a1426be38c1d487190b2fc19e7be9d3ef623f4",
+  "updated_product_source_sha256": "ee4ae56dc2c765d2cb9598ad8d3259c7f757fa872cbe81b00a13b4ddae68bee7",
+  "test_file": "tests/test_research_reliability.py",
+  "test_file_sha256": "4014b506be450d823af1dda0638f47c0ace58354cc759525053355389fe724e3",
+  "baseline": {
+    "tests": 22,
+    "passed": 3,
+    "failed": 19,
+    "error": 0,
+    "skipped": 0,
+    "elapsed_seconds": 1.307,
+    "cases": [
+      {
+        "name": "test_reference_conflicts_require_review[doi-10.1056/wrong]",
+        "status": "failed"
+      },
+      {
+        "name": "test_reference_conflicts_require_review[title-Different trial results]",
+        "status": "failed"
+      },
+      {
+        "name": "test_reference_conflicts_require_review[year-2022]",
+        "status": "failed"
+      },
+      {
+        "name": "test_doi_resolution_cannot_be_outvoted_by_unrelated_metadata",
+        "status": "failed"
+      },
+      {
+        "name": "test_doi_search_does_not_accept_a_different_doi",
+        "status": "passed"
+      },
+      {
+        "name": "test_doi_only_reference_does_not_invent_author_or_publication_year",
+        "status": "failed"
+      },
+      {
+        "name": "test_unavailable_reference_does_not_discard_other_rows[pmid]",
+        "status": "failed"
+      },
+      {
+        "name": "test_unavailable_reference_does_not_discard_other_rows[ecitmatch]",
+        "status": "failed"
+      },
+      {
+        "name": "test_pmid_lookup_checks_returned_identity[False]",
+        "status": "failed"
+      },
+      {
+        "name": "test_pmid_lookup_checks_returned_identity[True]",
+        "status": "failed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[doi-DOI: https://doi.org/10.1000/Example-10.1000/example]",
+        "status": "failed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[pmid- 12345678 -12345678]",
+        "status": "failed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[pmc-https://pmc.ncbi.nlm.nih.gov/articles/PMC12345/-PMC12345]",
+        "status": "failed"
+      },
+      {
+        "name": "test_empty_doi_prefix_does_not_merge_unrelated_papers",
+        "status": "failed"
+      },
+      {
+        "name": "test_empty_identifiers_allow_title_fallback",
+        "status": "failed"
+      },
+      {
+        "name": "test_different_cache_keys_fetch_concurrently",
+        "status": "failed"
+      },
+      {
+        "name": "test_normalized_cache_keys_share_one_inflight_fetch",
+        "status": "passed"
+      },
+      {
+        "name": "test_cancelled_cache_fetch_allows_waiter_to_retry",
+        "status": "passed"
+      },
+      {
+        "name": "test_cache_can_be_reused_across_event_loops",
+        "status": "failed"
+      },
+      {
+        "name": "test_extended_source_failure_preserves_successful_fulltext[create]",
+        "status": "failed"
+      },
+      {
+        "name": "test_extended_source_failure_preserves_successful_fulltext[close]",
+        "status": "failed"
+      },
+      {
+        "name": "test_section_filter_ignores_trailing_comma_and_untitled_sections",
+        "status": "failed"
+      }
+    ]
+  },
+  "updated": {
+    "tests": 22,
+    "passed": 22,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0,
+    "elapsed_seconds": 0.08,
+    "cases": [
+      {
+        "name": "test_reference_conflicts_require_review[doi-10.1056/wrong]",
+        "status": "passed"
+      },
+      {
+        "name": "test_reference_conflicts_require_review[title-Different trial results]",
+        "status": "passed"
+      },
+      {
+        "name": "test_reference_conflicts_require_review[year-2022]",
+        "status": "passed"
+      },
+      {
+        "name": "test_doi_resolution_cannot_be_outvoted_by_unrelated_metadata",
+        "status": "passed"
+      },
+      {
+        "name": "test_doi_search_does_not_accept_a_different_doi",
+        "status": "passed"
+      },
+      {
+        "name": "test_doi_only_reference_does_not_invent_author_or_publication_year",
+        "status": "passed"
+      },
+      {
+        "name": "test_unavailable_reference_does_not_discard_other_rows[pmid]",
+        "status": "passed"
+      },
+      {
+        "name": "test_unavailable_reference_does_not_discard_other_rows[ecitmatch]",
+        "status": "passed"
+      },
+      {
+        "name": "test_pmid_lookup_checks_returned_identity[False]",
+        "status": "passed"
+      },
+      {
+        "name": "test_pmid_lookup_checks_returned_identity[True]",
+        "status": "passed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[doi-DOI: https://doi.org/10.1000/Example-10.1000/example]",
+        "status": "passed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[pmid- 12345678 -12345678]",
+        "status": "passed"
+      },
+      {
+        "name": "test_cross_source_identity_agrees_with_deduplication[pmc-https://pmc.ncbi.nlm.nih.gov/articles/PMC12345/-PMC12345]",
+        "status": "passed"
+      },
+      {
+        "name": "test_empty_doi_prefix_does_not_merge_unrelated_papers",
+        "status": "passed"
+      },
+      {
+        "name": "test_empty_identifiers_allow_title_fallback",
+        "status": "passed"
+      },
+      {
+        "name": "test_different_cache_keys_fetch_concurrently",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalized_cache_keys_share_one_inflight_fetch",
+        "status": "passed"
+      },
+      {
+        "name": "test_cancelled_cache_fetch_allows_waiter_to_retry",
+        "status": "passed"
+      },
+      {
+        "name": "test_cache_can_be_reused_across_event_loops",
+        "status": "passed"
+      },
+      {
+        "name": "test_extended_source_failure_preserves_successful_fulltext[create]",
+        "status": "passed"
+      },
+      {
+        "name": "test_extended_source_failure_preserves_successful_fulltext[close]",
+        "status": "passed"
+      },
+      {
+        "name": "test_section_filter_ignores_trailing_comma_and_untitled_sections",
+        "status": "passed"
+      }
+    ]
+  },
+  "full_suite": {
+    "tests": 4278,
+    "passed": 4240,
+    "failed": 1,
+    "error": 0,
+    "skipped": 37,
+    "elapsed_seconds": 205.808,
+    "failures": [
+      {
+        "name": "test_europe_pmc_pdf_url",
+        "status": "failed"
+      }
+    ]
+  },
+  "final_focused_suite": {
+    "tests": 65,
+    "passed": 65,
+    "failed": 0,
+    "error": 0,
+    "skipped": 0,
+    "elapsed_seconds": 1.089
+  },
+  "external_failure_control": {
+    "test": "tests/test_fulltext_urls.py::TestURLFormats::test_europe_pmc_pdf_url",
+    "http_status": 520,
+    "test_identical_to_baseline": true,
+    "reproduced_with_baseline": true
+  },
+  "checks": {
+    "mypy": {
+      "files": 394,
+      "status": "passed"
+    },
+    "ruff": "passed",
+    "ruff_format": {
+      "files": 429,
+      "status": "passed"
+    },
+    "async": "passed",
+    "ddd": "passed",
+    "skills": "passed",
+    "bandit_medium_high": "passed",
+    "deptry_src": "passed",
+    "vulture_80": "passed",
+    "mcp_tool_count": 45
+  },
+  "agent_benchmark": {
+    "state": "prepared_not_started",
+    "questions": 5000,
+    "planned_runs": 10000,
+    "actual_attempts": 0,
+    "resume_prepare_only": "passed",
+    "original_manifest_unchanged": true,
+    "manifest_sha256": "c6775cc585c63bf9d43eaf206afaf14d53d20561ead3f1aa9fa25ad3181f843f"
+  },
+  "limitations": [
+    "Regression cases were designed after finding defects; they do not estimate public benchmark gain.",
+    "Full suite has one live upstream failure, reproduced with unchanged original test.",
+    "Cross-event-loop regression was added after full suite collection and passed in the final focused suite.",
+    "No new native Codex versus MCP long-run comparison was executed.",
+    "Bibliographic verification does not evaluate citation claim support."
+  ]
+}

@@ -167,12 +167,12 @@ class TestExtractArticleTerms:
     def test_filters_short_terms(self):
         article = _make_article(title="A B CD EFG HIJK")
         terms = _extract_article_terms(article)
-        # Only terms >= 3 chars should be included
+        # Two-character biomedical abbreviations must remain indexable.
         assert "efg" in terms
         assert "hijk" in terms
         assert "a" not in terms
         assert "b" not in terms
-        assert "cd" not in terms
+        assert "cd" in terms
 
     def test_empty_article(self):
         article = _make_article(title=None, abstract=None)
@@ -327,12 +327,13 @@ class TestReciprocalRankFusion:
         assert result.ranked_articles == []
         assert result.rrf_scores == {}
 
-    def test_missing_rank_gets_worst(self, sample_articles):
-        # Article 333 not in dim1 ranking → gets worst rank
+    def test_missing_rank_gets_no_vote(self, sample_articles):
+        # Article 333 not in dim1 ranking contributes nothing.
         dim_rankings = {
             "dim1": ["pmid:111", "pmid:222"],  # 333 missing
         }
         result = reciprocal_rank_fusion(sample_articles, dim_rankings)
+        assert result.rrf_scores["pmid:333"] == 0
         # 333 should be last
         assert result.ranked_articles[-1].pmid == "333"
 

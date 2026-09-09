@@ -1,5 +1,26 @@
 # Decision Log
 
+## [2026-09-09] Preserve Evaluation History Across the v0.7.2 Integration
+
+### Decision
+
+Port retrieval and reliability fixes onto the released v0.7.1 contracts while
+retaining immutable pre-integration benchmark/audit results. Keep the original
+`dbcf0c8` comparison source untouched. Prepare a new experiment manifest when
+release metadata, the lockfile, or evaluator code changes; do not relabel
+historical scores as measurements of the new release.
+
+### Consequences
+
+- Frozen diagnostic adapters support the historical revision and current
+  server-owned container/typed page seam only inside evaluation code.
+- Public tools retain strict source failures and invalid-response rejection.
+- Bibliographic verification is distinct from citation claim support.
+- Local regressions, public retrieval metrics, and full agent efficacy remain
+  separate claims. The 5,000-question model run is not authorized to start.
+
+---
+
 ## [2026-09-01] Gate Every Public Tool Through Real MCP Transports
 
 ### Decision

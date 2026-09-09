@@ -1,4 +1,27 @@
-# Progress (Updated: 2026-09-01)
+# Progress (Updated: 2026-09-09)
+
+## v0.7.2 Retrieval, Reliability, and Evaluation — Publication Pending
+
+- Integrated the work with upstream v0.7.1, preserving the strict 41-tool
+  protocol instead of restoring retired aliases or global runtime lookups.
+- Corrected BM25 tokenization, duplicate/absent RRF votes, final pipeline query
+  ranking, article identity normalization, reference consistency and identifier
+  parsing, per-key/per-loop cache locking, and fulltext section selection.
+- Added public-corpus metrics and separate frozen-agent/online-product runners
+  with immutable manifests, per-attempt checkpoints, resume, and budget controls.
+- Preserved historical NFCorpus measurements and the small native Codex pilot;
+  neither is a measured full-agent score for v0.7.2. Long runs remain unstarted.
+- Added README explanations and website/Wiki entries for benchmark and audit
+  reports. Local validation passes **4,562 tests, 53 intentional skips**, all
+  three complete MCP acceptance paths, Ruff/format, mypy across 426 files,
+  async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
+- Prepared a separate v0.7.2 full-dataset manifest after evaluator/lockfile
+  changes and verified resume without model calls. Historical experiments and
+  the original `dbcf0c8` product baseline remain unchanged; attempts stay zero.
+- Hosted CI and publication verification are still pending.
+- Initial Windows CI caught the frozen evaluator's unconditional `AF_UNIX`
+  lookup. The guard now supports platforms without that constant and a local
+  regression simulates its absence while asserting external sockets stay blocked.
 
 ## v0.7.1 Complete MCP Protocol Acceptance and Release
 

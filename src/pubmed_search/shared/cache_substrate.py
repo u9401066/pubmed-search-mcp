@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from weakref import WeakValueDictionary
 
 from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
 
@@ -365,7 +366,12 @@ class CacheStore(Generic[T]):
         self._key_normalizer = key_normalizer or (lambda value: value.strip())
         self._serializer = serializer or (lambda value: value)
         self._deserializer = deserializer or (lambda value: value)
-        self._lock = asyncio.Lock()
+        # Coalesce fetches only for the same normalized key and event loop.
+        # Weak values release idle locks instead of growing with every query.
+        self._fetch_locks: WeakValueDictionary[tuple[asyncio.AbstractEventLoop, str], asyncio.Lock] = (
+            WeakValueDictionary()
+        )
+        self._fetch_locks_guard = threading.Lock()
         self._stats = CacheStats()
         self._name = name
 
@@ -504,11 +510,19 @@ class CacheStore(Generic[T]):
         return created
 
     async def get_or_fetch(self, key: str, fetch_func: Callable[[], Awaitable[T | None]]) -> T | None:
+        """Coalesce equivalent fetches while allowing unrelated keys to proceed."""
         value = self.get(key)
         if value is not None:
             return value
 
-        async with self._lock:
+        lock_key = (asyncio.get_running_loop(), self._normalize_key(key))
+        with self._fetch_locks_guard:
+            fetch_lock = self._fetch_locks.get(lock_key)
+            if fetch_lock is None:
+                fetch_lock = asyncio.Lock()
+                self._fetch_locks[lock_key] = fetch_lock
+
+        async with fetch_lock:
             value = self.get(key)
             if value is not None:
                 return value

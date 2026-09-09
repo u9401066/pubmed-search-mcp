@@ -67,6 +67,12 @@ PAGES: tuple[WikiPage, ...] = (
     WikiPage("Tool-Quality-Audit.zh-TW", "工具品質稽核", DOCS_ROOT / "TOOL_QUALITY_AUDIT.zh-TW.md"),
     WikiPage("Architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
     WikiPage(
+        "Academic-Retrieval-Benchmarks", "Academic Retrieval Benchmarks", DOCS_ROOT / "ACADEMIC_RETRIEVAL_BENCHMARKS.md"
+    ),
+    WikiPage(
+        "Repository-Reliability-Audit", "Repository Reliability Audit", DOCS_ROOT / "REPOSITORY_RELIABILITY_AUDIT.md"
+    ),
+    WikiPage(
         "Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
     ),
     WikiPage("Source-Contracts", "Source Contracts", DOCS_ROOT / "SOURCE_CONTRACTS.md"),

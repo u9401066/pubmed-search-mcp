@@ -2,6 +2,22 @@
 
 ## Current Focus
 
+- Prepare v0.7.2 from upstream v0.7.1 plus the retrieval/reliability work. Keep
+  the 41-tool strict contracts, server-scoped containers, typed search pages,
+  `source_unavailable` reporting, and complete MCP acceptance gates intact.
+- Publication is pending. README, benchmark/audit pages, generated website,
+  Wiki navigation, and project memory are being synchronized before tagging.
+- Local release checks pass: 4,562 tests with 53 intentional skips, all three
+  41-tool MCP acceptance paths, Ruff, 461-file formatting, 426-file mypy,
+  async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
+  Hosted CI and tagged artifact publication still require verification.
+- Academic evaluation remains setup-only: do not launch the 5,000-question
+  model run without a new execution budget. Preserve the original `dbcf0c8`
+  source snapshot and historical reports. A release lockfile or evaluator
+  change requires a new manifest, never editing an existing experiment.
+
+## Previous Published Boundary
+
 - v0.7.1 is the published boundary. It adds a complete MCP protocol regression
   gate for the canonical **41 tools in 16 registry categories**; removed public
   aliases, legacy wrappers, and alternate Copilot tool registries are not

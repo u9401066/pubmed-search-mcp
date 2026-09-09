@@ -584,6 +584,7 @@ class FulltextService:
                     await downloader.close()
                 except Exception as exc:
                     logger.warning("Extended source cleanup failed (%s)", type(exc).__name__)
+                    await self._report_log(log, "warning", "Extended fulltext cleanup failed")
 
     async def _collect_figures(
         self,
@@ -648,11 +649,11 @@ class FulltextService:
     def _select_sections(parsed: dict[str, Any], sections_filter: str | None) -> list[dict[str, Any]]:
         all_sections = cast("list[dict[str, Any]]", parsed.get("sections", []))
         if sections_filter:
-            requested = [section.strip().lower() for section in sections_filter.split(",")]
+            requested = [section.strip().lower() for section in sections_filter.split(",") if section.strip()]
             filtered: list[dict[str, Any]] = []
             for section in all_sections:
-                section_title = str(section.get("title", "")).lower()
-                if any(
+                section_title = str(section.get("title") or "").strip().lower()
+                if section_title and any(
                     requested_name in section_title or section_title in requested_name for requested_name in requested
                 ):
                     filtered.append(section)

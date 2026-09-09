@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "evaluation": "real_agent_frozen_corpus_pilot",
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "split": "dev",
+  "query_count": 3,
+  "repeats": 1,
+  "repo_root": "/tmp/pubmed-harness-baseline-dbcf0c8",
+  "backend_search_budget": 6,
+  "document_exposure_budget": 120,
+  "token_budget_enforced": false,
+  "timeout_seconds": 240,
+  "data_sha256": {
+    "corpus.jsonl": "10cc83ef1826b1425e6a87090b5140b39b27755d5a27e48215a88611c899991f",
+    "queries.jsonl": "d024e6621b84925d485ae473d316a0c3af31c62c8068a59fb29d22f7613aef2a",
+    "qrels/dev.tsv": "b1d38b5e8f78c4a5820bce2b7ec2db54911d7690dc601e76811846b211180bd8"
+  },
+  "comparison": {
+    "selection_f1": {
+      "query_count": 3,
+      "baseline_mean": 0.2066066066066066,
+      "treatment_mean": 0.2066066066066066,
+      "delta": 0.0,
+      "paired_bootstrap_95_interval": [
+        0.0,
+        0.0
+      ]
+    },
+    "selection_recall": {
+      "query_count": 3,
+      "baseline_mean": 0.14444444444444446,
+      "treatment_mean": 0.14444444444444446,
+      "delta": 0.0,
+      "paired_bootstrap_95_interval": [
+        0.0,
+        0.0
+      ]
+    },
+    "retrieval_recall": {
+      "query_count": 3,
+      "baseline_mean": 0.6345679012345679,
+      "treatment_mean": 0.6345679012345679,
+      "delta": 0.0,
+      "paired_bootstrap_95_interval": [
+        0.0,
+        0.0
+      ]
+    },
+    "ndcg@10": {
+      "query_count": 3,
+      "baseline_mean": 0.37640573238187497,
+      "treatment_mean": 0.3690716099010633,
+      "delta": -0.007334122480811667,
+      "paired_bootstrap_95_interval": [
+        -0.015257518779489332,
+        0.0
+      ]
+    }
+  },
+  "results": {
+    "PLAIN-1866": {
+      "basic": {
+        "arm": "basic",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.0,
+          "recall@10": 0.0,
+          "f1@10": 0.0,
+          "ndcg@10": 0.0,
+          "mrr@10": 0.0,
+          "judged@10": 0.0,
+          "retrieval_recall": 1.0,
+          "selection_precision": 0.0,
+          "selection_recall": 0.0,
+          "selection_f1": 0.0,
+          "gold_discard_rate": 1.0
+        },
+        "selected_ids": [
+          "MED-1846",
+          "MED-3744"
+        ],
+        "usage": {
+          "input_tokens": 85513,
+          "cached_input_tokens": 58880,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 305,
+          "reasoning_output_tokens": 26
+        },
+        "elapsed_seconds": 26.488644456490874,
+        "backend_search_calls": 3,
+        "document_exposures": 35,
+        "tool_calls": [
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "read",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "9053ff3e6d83a5c185110752d49b5c4727738c8a154bba657f3e9daa4cb54891"
+      },
+      "repo": {
+        "arm": "repo",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.0,
+          "recall@10": 0.0,
+          "f1@10": 0.0,
+          "ndcg@10": 0.0,
+          "mrr@10": 0.0,
+          "judged@10": 0.0,
+          "retrieval_recall": 1.0,
+          "selection_precision": 0.0,
+          "selection_recall": 0.0,
+          "selection_f1": 0.0,
+          "gold_discard_rate": 1.0
+        },
+        "selected_ids": [
+          "MED-1846",
+          "MED-3744"
+        ],
+        "usage": {
+          "input_tokens": 127845,
+          "cached_input_tokens": 98432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 711,
+          "reasoning_output_tokens": 221
+        },
+        "elapsed_seconds": 41.304969714954495,
+        "backend_search_calls": 3,
+        "document_exposures": 43,
+        "tool_calls": [
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "budget_status",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "get_session_pmids",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "6378c55b68aff3a81570d178a1336ec73b4b0609c6b195ab5242cf856106d192"
+      }
+    },
+    "PLAIN-2144": {
+      "repo": {
+        "arm": "repo",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.9,
+          "recall@10": 0.3333333333333333,
+          "f1@10": 0.48648648648648646,
+          "ndcg@10": 0.8899541168509599,
+          "mrr@10": 1.0,
+          "judged@10": 0.9,
+          "retrieval_recall": 0.7037037037037037,
+          "selection_precision": 0.9,
+          "selection_recall": 0.3333333333333333,
+          "selection_f1": 0.48648648648648646,
+          "gold_discard_rate": 0.5263157894736842
+        },
+        "selected_ids": [
+          "MED-1342",
+          "MED-1348",
+          "MED-1010",
+          "MED-1347",
+          "MED-1343",
+          "MED-1354",
+          "MED-1352",
+          "MED-1349",
+          "MED-1353",
+          "MED-3540"
+        ],
+        "usage": {
+          "input_tokens": 257356,
+          "cached_input_tokens": 196608,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1298,
+          "reasoning_output_tokens": 520
+        },
+        "elapsed_seconds": 70.62867834791541,
+        "backend_search_calls": 4,
+        "document_exposures": 81,
+        "tool_calls": [
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "budget_status",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "6378c55b68aff3a81570d178a1336ec73b4b0609c6b195ab5242cf856106d192"
+      },
+      "basic": {
+        "arm": "basic",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.9,
+          "recall@10": 0.3333333333333333,
+          "f1@10": 0.48648648648648646,
+          "ndcg@10": 0.9052116356304493,
+          "mrr@10": 1.0,
+          "judged@10": 0.9,
+          "retrieval_recall": 0.7037037037037037,
+          "selection_precision": 0.9,
+          "selection_recall": 0.3333333333333333,
+          "selection_f1": 0.48648648648648646,
+          "gold_discard_rate": 0.5263157894736842
+        },
+        "selected_ids": [
+          "MED-1342",
+          "MED-1347",
+          "MED-1348",
+          "MED-1010",
+          "MED-1353",
+          "MED-1343",
+          "MED-1354",
+          "MED-1352",
+          "MED-3540",
+          "MED-1360"
+        ],
+        "usage": {
+          "input_tokens": 231940,
+          "cached_input_tokens": 188288,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1106,
+          "reasoning_output_tokens": 525
+        },
+        "elapsed_seconds": 58.52758819423616,
+        "backend_search_calls": 4,
+        "document_exposures": 85,
+        "tool_calls": [
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "budget_status",
+            "status": "completed"
+          },
+          {
+            "tool": "read",
+            "status": "completed"
+          },
+          {
+            "tool": "read",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "9053ff3e6d83a5c185110752d49b5c4727738c8a154bba657f3e9daa4cb54891"
+      }
+    },
+    "PLAIN-1846": {
+      "basic": {
+        "arm": "basic",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.2,
+          "recall@10": 0.1,
+          "f1@10": 0.13333333333333333,
+          "ndcg@10": 0.22400556151517553,
+          "mrr@10": 0.5,
+          "judged@10": 0.2,
+          "retrieval_recall": 0.2,
+          "selection_precision": 0.2,
+          "selection_recall": 0.1,
+          "selection_f1": 0.13333333333333333,
+          "gold_discard_rate": 0.5
+        },
+        "selected_ids": [
+          "MED-2323",
+          "MED-2970",
+          "MED-1793",
+          "MED-3744",
+          "MED-4585",
+          "MED-3521",
+          "MED-5082",
+          "MED-5273",
+          "MED-4903",
+          "MED-917"
+        ],
+        "usage": {
+          "input_tokens": 124606,
+          "cached_input_tokens": 87680,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 942,
+          "reasoning_output_tokens": 365
+        },
+        "elapsed_seconds": 58.320483945310116,
+        "backend_search_calls": 4,
+        "document_exposures": 111,
+        "tool_calls": [
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "budget_status",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "search",
+            "status": "completed"
+          },
+          {
+            "tool": "budget_status",
+            "status": "completed"
+          },
+          {
+            "tool": "read",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "9053ff3e6d83a5c185110752d49b5c4727738c8a154bba657f3e9daa4cb54891"
+      },
+      "repo": {
+        "arm": "repo",
+        "status": "completed",
+        "metrics": {
+          "precision@10": 0.2,
+          "recall@10": 0.1,
+          "f1@10": 0.13333333333333333,
+          "ndcg@10": 0.21726071285222986,
+          "mrr@10": 0.5,
+          "judged@10": 0.2,
+          "retrieval_recall": 0.2,
+          "selection_precision": 0.2,
+          "selection_recall": 0.1,
+          "selection_f1": 0.13333333333333333,
+          "gold_discard_rate": 0.5
+        },
+        "selected_ids": [
+          "MED-2323",
+          "MED-2970",
+          "MED-1793",
+          "MED-1789",
+          "MED-3744",
+          "MED-4585",
+          "MED-3521",
+          "MED-917",
+          "MED-5082",
+          "MED-5273"
+        ],
+        "usage": {
+          "input_tokens": 224443,
+          "cached_input_tokens": 163584,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1254,
+          "reasoning_output_tokens": 571
+        },
+        "elapsed_seconds": 65.10677745938301,
+        "backend_search_calls": 4,
+        "document_exposures": 94,
+        "tool_calls": [
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          },
+          {
+            "tool": "unified_search",
+            "status": "completed"
+          }
+        ],
+        "instructions_sha256": "6378c55b68aff3a81570d178a1336ec73b4b0609c6b195ab5242cf856106d192"
+      }
+    }
+  },
+  "repo_revision_label": "dbcf0c88c76e6fac30877ff16a9850232e89bd4e",
+  "repo_source_sha256": "f3df081c1a71a579d0e1d06046a1426be38c1d487190b2fc19e7be9d3ef623f4",
+  "scope": "Frozen lexical diagnostic with restricted tools; NOT native Codex versus complete product. Retrieval recall measures backend candidate exposure.",
+  "provenance_note": "Source fingerprint added after run against the unchanged isolated baseline; runner evolved during diagnostic setup, so no post-hoc runner fingerprint is asserted."
+}

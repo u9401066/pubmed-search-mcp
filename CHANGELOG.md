@@ -10,6 +10,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-09
+
+### Fixed
+
+- Align BM25 document statistics and scoring tokenization, preserve short
+  biomedical terms, and exclude PubMed field tags, Boolean operators, and
+  duplicate query terms from lexical relevance scoring.
+- Share RRF across pipeline and ranking: count each document once per list,
+  retain its first rank, and give absent documents no vote.
+- Rank pipeline output using executed queries from successful search ancestors
+  before applying the result limit.
+- Require consistent supplied metadata for reference verification; DOI searches
+  use exact normalized identifiers, PMID fetches validate returned identities,
+  and identifier-only citations no longer invent authors or publication years.
+  Existing typed source failures and batch isolation remain in place.
+- Share DOI/PMC normalization across article identity and merging; recognize
+  modern PMC URLs, normalize PMID whitespace, and prevent empty DOI prefixes
+  from merging unrelated records or blocking title-based deduplication.
+- Coalesce asynchronous cache misses per normalized key and event loop, allowing
+  unrelated fetches to overlap without retaining idle locks or blocking retries
+  after cancellation.
+- Ignore empty/untitled matches in named fulltext section filters and expose
+  sanitized cleanup warnings while preserving existing successful content.
+- Keep frozen-benchmark network isolation effective on Python environments
+  without Unix-domain socket support, including Windows.
+
+### Added
+
+- Offline BEIR retrieval-quality evaluator with measured precision, recall,
+  nDCG, MRR, judged coverage, per-query outputs, and dataset fingerprints.
+  See [benchmark assessment and measured results](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md).
+- Real-agent paired evaluation runners for native Codex versus the complete
+  PubMed MCP and packaged skills, plus a separate frozen-corpus diagnostic.
+  Record public-label scores, failures, tool usage, budgets, and revision hashes.
+- Full-dataset preparation and resumable paired evaluation with immutable
+  manifests, atomic per-attempt checkpoints, batch limits, quota pauses,
+  development-question exclusions, and query-level aggregation of repetitions.
+- Before/after reliability regressions and a
+  [repository audit](docs/REPOSITORY_RELIABILITY_AUDIT.md) covering citation
+  identity, fulltext failure isolation, deduplication, and concurrent cache use.
+
+
 ## [0.7.1] - 2026-09-01
 
 ### Added

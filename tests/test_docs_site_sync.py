@@ -154,7 +154,7 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260901-v07"}
+    assert cache_keys == {"20260909-v072"}
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
     assert "41</strong>" in index_html
