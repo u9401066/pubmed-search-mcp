@@ -1,0 +1,71 @@
+{
+  "state": "verified",
+  "version": "0.7.2",
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.2",
+  "published_at": "2026-09-09T08:51:55Z",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.2/",
+  "distributions": [
+    {
+      "filename": "pubmed_search_mcp-0.7.2-py3-none-any.whl",
+      "sha256": "cf6d2e368ed93527680608b12f8b66928d4e9a45267911dcc4a65cabfb89d11e",
+      "size": 840523
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.2.tar.gz",
+      "sha256": "4c8f52d7fe3be867b10efc7f5577b7a208076bcd5b4fcb56fc398050f3163d9d",
+      "size": 734109
+    }
+  ],
+  "site": "https://u9401066.github.io/pubmed-search-mcp/",
+  "site_pages": {
+    "academic-retrieval-benchmarks": "9b1891822425df57960cde2167bfa4d52a5195061841208393f256afe2875549",
+    "repository-reliability-audit": "4c0e38465ed23cd90c4309b5a96c3c7f36c1c33d215ebb1c965104259e8dd5be"
+  },
+  "wiki_pages": {
+    "Academic-Retrieval-Benchmarks": "535e9f19871961f5627ba64a3cfba99e4544e04f7c0bc1666113642c937c00fd",
+    "Repository-Reliability-Audit": "71857e939966d513fba0bb072ff694390e98e397a3181486751992050114a0af"
+  },
+  "release_commit": "c331ac5af0742cd73838184ab6bdb30c7f57e3a6",
+  "tested_head": "d65387d0c741447fdc37525b4e329e2d673a4c7a",
+  "tested_tree_matches_release": true,
+  "pull_request": "https://github.com/u9401066/pubmed-search-mcp/pull/14",
+  "release_commits": 9,
+  "workflow_runs": {
+    "branch_ci": 34330391447,
+    "pull_request_ci": 34330395431,
+    "master_ci": 34331042992,
+    "publish_verify_pypi_github": 34331096208,
+    "pages": 34331042963,
+    "wiki": 34331043013
+  },
+  "workflow_conclusions": "all_success",
+  "local_tests": {
+    "passed": 4562,
+    "skipped": 53,
+    "seconds": 101.73
+  },
+  "long_evaluation": {
+    "prepared_questions": 5000,
+    "planned_runs": 10000,
+    "actual_attempts": 0
+  },
+  "browser_verification": {
+    "target": "https://u9401066.github.io/pubmed-search-mcp/",
+    "runner": "Playwright (Browser plugin not available)",
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "flows": [
+      "benchmark page rendering",
+      "navigation filter to audit",
+      "Chinese language switch",
+      "global search to benchmark",
+      "mobile menu to audit"
+    ],
+    "console_errors": 0,
+    "console_warnings": 0,
+    "mobile_document_overflow": false,
+    "limitation": "Test browser lacks emoji fonts; emoji glyph appearance was not validated."
+  }
+}
