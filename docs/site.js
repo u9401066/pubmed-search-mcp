@@ -294,6 +294,30 @@ const DOC_PAGES = [
     keywords: "local stdio loopback multi-user service bearer auth tenant Host Origin scheduler replica backup",
     file: "site-content/deployment.md",
   },
+  {
+    slug: "academic-retrieval-benchmarks",
+    group: "academic-retrieval-benchmarks",
+    lang: "all",
+    audience: "developer",
+    title: "Academic Retrieval Benchmarks",
+    titleByLang: { zh: "學術檢索 Benchmark" },
+    blurb: "Public-corpus measurements, native Codex/package comparisons, and resumable full-evaluation setup.",
+    blurbByLang: { zh: "公開語料實測、原生 Codex／套件對照，以及可續跑的完整評測設定。" },
+    keywords: "benchmark PaperSearchQA NFCorpus ScholarGym Codex recall nDCG evaluation 評測 召回率",
+    file: "site-content/academic-retrieval-benchmarks.md",
+  },
+  {
+    slug: "repository-reliability-audit",
+    group: "repository-reliability-audit",
+    lang: "all",
+    audience: "developer",
+    title: "Repository Reliability Audit",
+    titleByLang: { zh: "可靠性稽核" },
+    blurb: "Reproduced citation, deduplication, fulltext, and cache defects, with validation and release boundaries.",
+    blurbByLang: { zh: "引用、去重、全文與快取缺陷的重現、修正與驗證範圍。" },
+    keywords: "reliability citation DOI PMID PMC cache concurrency regression 可靠性 引用 快取",
+    file: "site-content/repository-reliability-audit.md",
+  },
 ];
 
 // Complete 41 Tools Rich Database for Interactive Tool Explorer

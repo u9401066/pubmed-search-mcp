@@ -28,6 +28,25 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Research quality and evaluation — v0.7.2
+
+This release improves query-aware ranking and fusion, cross-source article
+deduplication, bibliographic verification, section filtering, and concurrent
+cache fetches. The canonical 41-tool interface remains unchanged.
+
+The [benchmark report](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md) separates component
+quality from the value of the complete agent package. On public BEIR NFCorpus,
+an earlier BM25 component comparison improved test nDCG@10 from **0.293357 to
+0.297831**. That result does not measure this release's full agent performance.
+The three-question native Codex/package pilot is too small to establish a
+product-level gain; the complete 5,000-question evaluation is prepared but has
+not been started.
+
+Read the [reliability audit](docs/REPOSITORY_RELIABILITY_AUDIT.md) for reproduced
+defects, validation boundaries, and revision fingerprints. Reference verification
+checks bibliographic consistency; confirming that a paper supports a claim still
+requires inspecting the relevant passage.
+
 ## 🚀 Quick Install
 
 ### Prerequisites

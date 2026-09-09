@@ -1,9 +1,13 @@
+<!-- Generated from docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md by scripts/build_docs_site.py -->
+<!-- markdownlint-configure-file {"MD051": false} -->
+<!-- markdownlint-disable MD051 -->
+
 # Academic retrieval benchmarks 與 PubMed Search MCP 改進紀錄
 
 核對日期：2026-09-09。程式基線：`dbcf0c88c76e6fac30877ff16a9850232e89bd4e`。
 
 後續的引用驗證、文獻去重、全文容錯與快取並行修正，見
-[repository 改進與驗證紀錄](REPOSITORY_RELIABILITY_AUDIT.md)。
+[repository 改進與驗證紀錄](#/repository-reliability-audit)。
 該輪回歸測試與下列公開 benchmark 結果分開報告；完整 Agent 長跑仍未啟動。
 
 **v0.7.2 整合註記：** 發布版建立在遠端 v0.7.1 的 41-tool 嚴格介面上；下方

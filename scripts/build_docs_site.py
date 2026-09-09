@@ -60,6 +60,8 @@ PAGES = [
         DOCS_ROOT / "UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     ),
     ("tool-quality-audit", "Tool Quality Audit", DOCS_ROOT / "TOOL_QUALITY_AUDIT.md"),
+    ("academic-retrieval-benchmarks", "Academic Retrieval Benchmarks", DOCS_ROOT / "ACADEMIC_RETRIEVAL_BENCHMARKS.md"),
+    ("repository-reliability-audit", "Repository Reliability Audit", DOCS_ROOT / "REPOSITORY_RELIABILITY_AUDIT.md"),
     (
         "tool-quality-audit-zh",
         "Tool Quality Audit (zh-TW)",

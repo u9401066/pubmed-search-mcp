@@ -1,3 +1,7 @@
+<!-- Generated from docs/REPOSITORY_RELIABILITY_AUDIT.md by scripts/build_docs_site.py -->
+<!-- markdownlint-configure-file {"MD051": false} -->
+<!-- markdownlint-disable MD051 -->
+
 # Repository 改進與驗證紀錄
 
 日期：2026-09-09。對照原版：`dbcf0c88c76e6fac30877ff16a9850232e89bd4e`。
@@ -47,7 +51,7 @@
 | 章節篩選 | `results, ` 的空項目匹配所有章節；無標題也會誤中 | 忽略空項目，具名篩選只匹配有標題的章節 |
 
 搜尋排序先前完成的 BM25、RRF 與 pipeline 查詢相關性修正，繼續保留並通過回歸測試。
-其公開資料結果與完整 Agent 評測設計見 [benchmark 紀錄](ACADEMIC_RETRIEVAL_BENCHMARKS.md)。
+其公開資料結果與完整 Agent 評測設計見 [benchmark 紀錄](#/academic-retrieval-benchmarks)。
 
 `verified` 是書目一致性判定，尚未評估論文是否支持某個論述。引用語境、立場與
 選文召回率仍需各自的公開標註及 Agent 實驗，不能從這些修正推算得分。
