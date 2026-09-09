@@ -39,12 +39,12 @@ def normalize_article_doi(doi: str | None) -> str:
     Returns:
         Normalized lowercase DOI without transport prefixes.
     """
-    if not doi:
+    if not isinstance(doi, str) or not doi:
         return ""
 
     normalized = doi.strip().lower()
-    for prefix in _DOI_PREFIXES:
-        normalized = normalized.removeprefix(prefix)
+    while prefix := next((prefix for prefix in _DOI_PREFIXES if normalized.startswith(prefix)), None):
+        normalized = normalized.removeprefix(prefix).strip()
     return normalized
 
 
@@ -80,7 +80,16 @@ def normalize_article_identifier(kind: str, value: str | int | None) -> str:
     kind = kind.strip().lower()
     lowered = normalized.lower()
     if kind == "pmc":
-        lowered = lowered.removeprefix("https://www.ncbi.nlm.nih.gov/pmc/articles/").strip("/")
+        for prefix in (
+            "https://pmc.ncbi.nlm.nih.gov/articles/",
+            "http://pmc.ncbi.nlm.nih.gov/articles/",
+            "https://www.ncbi.nlm.nih.gov/pmc/articles/",
+            "http://www.ncbi.nlm.nih.gov/pmc/articles/",
+        ):
+            lowered = lowered.removeprefix(prefix)
+        lowered = lowered.strip("/")
+        if not lowered:
+            return ""
         return lowered.upper() if lowered.upper().startswith("PMC") else f"PMC{lowered.upper()}"
     if kind == "openalex":
         return lowered.removeprefix("https://openalex.org/").upper()

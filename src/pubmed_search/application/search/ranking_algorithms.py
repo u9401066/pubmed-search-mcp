@@ -49,7 +49,75 @@ _BM25_K1 = 1.5  # Term frequency saturation parameter
 _BM25_B = 0.75  # Document length normalization parameter
 _BM25_TITLE_BOOST = 2.0  # Title match gets 2x IDF weight
 _BM25_MESH_BOOST = 1.5  # MeSH/keyword match gets 1.5x IDF weight
-_MIN_TERM_LENGTH = 3  # Minimum term length for indexing
+_MIN_TERM_LENGTH = 2  # Preserve biomedical abbreviations such as AI, RA, MS and T2.
+_STOP_WORDS = frozenset(
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "being",
+        "but",
+        "by",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "how",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "these",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "will",
+        "with",
+        "would",
+    ]
+)
+_QUERY_FIELDS = re.compile(r"\[[^\]]*\]")
+_QUERY_OPERATORS = re.compile(r"\b(?:AND|OR|NOT)\b")
+
+
+def tokenize_relevance_text(text: str) -> list[str]:
+    """Use identical terms for document frequency, length, and field scoring."""
+    return [
+        term
+        for term in re.findall(r"\b\w+\b", text.lower())
+        if len(term) >= _MIN_TERM_LENGTH and term not in _STOP_WORDS
+    ]
+
+
+def tokenize_relevance_query(query: str) -> list[str]:
+    """Strip search syntax and count each lexical term once.
+
+    This is lexical reranking, not a Boolean evaluator: eligibility and field
+    constraints remain the responsibility of the retrieval backend.
+    """
+    query = _QUERY_OPERATORS.sub(" ", _QUERY_FIELDS.sub(" ", query))
+    return list(dict.fromkeys(tokenize_relevance_text(query)))
 
 
 @dataclass
@@ -105,7 +173,7 @@ def _extract_article_terms(article: UnifiedArticle) -> list[str]:
         text_parts.append(kw.lower())
 
     full_text = " ".join(text_parts)
-    return [t for t in re.findall(r"\b\w+\b", full_text) if len(t) >= _MIN_TERM_LENGTH]
+    return tokenize_relevance_text(full_text)
 
 
 def bm25_score(
@@ -137,18 +205,18 @@ def bm25_score(
     Returns:
         BM25 score (raw, not normalized). Higher = more relevant.
     """
-    query_terms = [t.lower() for t in re.findall(r"\b\w+\b", query) if len(t) >= _MIN_TERM_LENGTH]
+    query_terms = tokenize_relevance_query(query)
     if not query_terms or corpus.total_docs == 0:
         return 0.0
 
     # Extract terms from different fields
-    title_terms = re.findall(r"\b\w+\b", (article.title or "").lower())
-    abstract_terms = re.findall(r"\b\w+\b", (article.abstract or "").lower())
+    title_terms = tokenize_relevance_text(article.title or "")
+    abstract_terms = tokenize_relevance_text(article.abstract or "")
 
     keywords = getattr(article, "keywords", []) or []
     mesh_terms = getattr(article, "mesh_terms", []) or []
     keyword_text = " ".join(keywords + mesh_terms).lower()
-    keyword_terms = re.findall(r"\b\w+\b", keyword_text)
+    keyword_terms = tokenize_relevance_text(keyword_text)
 
     # Full document terms for TF calculation
     all_terms = title_terms + abstract_terms + keyword_terms
@@ -265,16 +333,18 @@ def reciprocal_rank_fusion(
     Returns:
         RRFResult with fused ranking, scores, and per-dimension contributions
     """
+    if k < 0:
+        raise ValueError("RRF k must be non-negative")
     # Build article key lookup
     article_map: dict[str, UnifiedArticle] = {}
     for article in articles:
         key = _article_key(article)
-        article_map[key] = article
+        article_map.setdefault(key, article)
 
     # Build rank lookup for each dimension
     dim_rank_maps: dict[str, dict[str, int]] = {}
     for dim_name, ranked_keys in dimension_rankings.items():
-        rank_map = {akey: rank_1based for rank_1based, akey in enumerate(ranked_keys, start=1)}
+        rank_map = {akey: rank_1based for rank_1based, akey in enumerate(dict.fromkeys(ranked_keys), start=1)}
         dim_rank_maps[dim_name] = rank_map
 
     if dim_rank_maps:
@@ -292,7 +362,6 @@ def reciprocal_rank_fusion(
     else:
         normalized_weights = {}
 
-    n_articles = len(articles)
     rrf_scores: dict[str, float] = {}
     contributions: dict[str, dict[str, float]] = {}
 
@@ -300,10 +369,10 @@ def reciprocal_rank_fusion(
         dim_contribs: dict[str, float] = {}
         total = 0.0
         for dim_name, rank_map in dim_rank_maps.items():
-            # Articles not in a dimension's ranking get worst rank
-            rank = rank_map.get(akey, n_articles + 1)
+            # An absent document has no vote from this ranker.
+            rank = rank_map.get(akey)
             dim_weight = normalized_weights.get(dim_name, 0.0)
-            contrib = dim_weight / (k + rank)
+            contrib = dim_weight / (k + rank) if rank is not None else 0.0
             dim_contribs[dim_name] = contrib
             total += contrib
 
@@ -312,7 +381,7 @@ def reciprocal_rank_fusion(
 
     # Sort articles by RRF score (descending)
     sorted_articles = sorted(
-        articles,
+        article_map.values(),
         key=lambda a: rrf_scores.get(_article_key(a), 0),
         reverse=True,
     )

@@ -973,12 +973,16 @@ class UnifiedArticle:
         Used for deduplication.
         """
         # DOI match (most reliable)
-        if self.doi and other.doi:
-            return self._normalize_doi(self.doi) == self._normalize_doi(other.doi)
+        left_doi = self._normalize_doi(self.doi or "")
+        right_doi = self._normalize_doi(other.doi or "")
+        if left_doi and right_doi:
+            return left_doi == right_doi
 
         # PMID match
-        if self.pmid and other.pmid:
-            return self.pmid == other.pmid
+        left_pmid = str(self.pmid or "").strip()
+        right_pmid = str(other.pmid or "").strip()
+        if left_pmid and right_pmid:
+            return left_pmid == right_pmid
 
         # Provider identifiers are equally strong within their own namespaces.
         # Normalize URLs/case/arXiv versions before comparing.
@@ -1001,15 +1005,13 @@ class UnifiedArticle:
     @staticmethod
     def _normalize_doi(doi: str) -> str:
         """Normalize DOI for comparison."""
-        doi = doi.lower().strip()
-        doi = doi.replace("https://doi.org/", "")
-        doi = doi.replace("http://doi.org/", "")
-        return doi.replace("doi:", "")
+        from pubmed_search.shared.article_identity import normalize_article_doi
+
+        return normalize_article_doi(doi)
 
     @staticmethod
     def _normalize_pmc(pmc: str) -> str:
         """Normalize PMC ID for comparison."""
-        pmc = pmc.upper().strip()
-        if not pmc.startswith("PMC"):
-            pmc = f"PMC{pmc}"
-        return pmc
+        from pubmed_search.shared.article_identity import normalize_article_identifier
+
+        return normalize_article_identifier("pmc", pmc)

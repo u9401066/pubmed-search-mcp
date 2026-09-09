@@ -253,11 +253,13 @@ class PipelineExecutor:
                     candidate = results.get(step.id)
                     if candidate and candidate.ok and candidate.articles:
                         final_articles = candidate.articles
+                        final_step_id = step.id
                         break
 
             # Apply ranking & limit from output config
             if final_articles:
-                final_articles = self._apply_ranking(final_articles, config)
+                ranking_query = self._ranking_query(config, results, final_step_id)
+                final_articles = self._apply_ranking(final_articles, config, query=ranking_query)
             limit = config.output.limit
             if limit and len(final_articles) > limit:
                 final_articles = final_articles[:limit]
@@ -1412,19 +1414,20 @@ class PipelineExecutor:
         article_lists: list[list[UnifiedArticle]],
         k: int = 60,
     ) -> list[UnifiedArticle]:
-        """Reciprocal Rank Fusion across multiple ranked lists."""
-        rrf_scores: dict[str, float] = defaultdict(float)
+        """Fuse independent search lists with one vote per document per list."""
+        from pubmed_search.application.search.ranking_algorithms import reciprocal_rank_fusion
+
         key_to_article: dict[str, UnifiedArticle] = {}
-
-        for articles in article_lists:
-            for rank_pos, article in enumerate(articles):
+        rankings: dict[str, list[str]] = {}
+        for index, articles in enumerate(article_lists):
+            keys: dict[str, None] = {}
+            for article in articles:
                 key = self._article_key(article)
-                rrf_scores[key] += 1.0 / (k + rank_pos + 1)
-                if key not in key_to_article:
-                    key_to_article[key] = article
-
-        sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
-        return [key_to_article[k] for k in sorted_keys if k in key_to_article]
+                keys[key] = None
+                key_to_article.setdefault(key, article)
+            if keys:
+                rankings[str(index)] = list(keys)
+        return reciprocal_rank_fusion(list(key_to_article.values()), rankings, k=k).ranked_articles
 
     # =====================================================================
     # Query Resolution
@@ -1504,7 +1507,26 @@ class PipelineExecutor:
     # =====================================================================
 
     @staticmethod
-    def _apply_ranking(articles: list[UnifiedArticle], config: PipelineConfig) -> list[UnifiedArticle]:
+    def _ranking_query(config: PipelineConfig, results: dict[str, StepResult], final_step_id: str) -> str | None:
+        """Recover executed queries only from the final result's search ancestry.
+
+        This also covers queries derived from PICO/expansion metadata. Failed
+        searches and unrelated DAG branches must not influence final relevance.
+        """
+        queries: dict[str, None] = {}
+        for step in PipelineExecutor._steps_through_stop_at(config.steps, final_step_id):
+            result = results.get(step.id)
+            if step.action != "search" or result is None or not result.ok:
+                continue
+            query = result.metadata.get("query")
+            if isinstance(query, str) and query.strip():
+                queries[query.strip()] = None
+        return " OR ".join(queries) or None
+
+    @staticmethod
+    def _apply_ranking(
+        articles: list[UnifiedArticle], config: PipelineConfig, query: str | None = None
+    ) -> list[UnifiedArticle]:
         from pubmed_search.application.search.result_aggregator import (
             RankingConfig,
             ResultAggregator,
@@ -1517,4 +1539,4 @@ class PipelineExecutor:
             "quality": RankingConfig.quality_focused,
         }
         factory = preset_map.get(config.output.ranking, RankingConfig.default)
-        return ResultAggregator().rank(articles, factory())
+        return ResultAggregator().rank(articles, factory(), query=query)

@@ -32,7 +32,6 @@ Example:
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -676,8 +675,8 @@ class ResultAggregator:
 
         for i, article in enumerate(articles):
             # DOI matching
-            if article.doi:
-                normalized_doi = self._normalize_doi(article.doi)
+            normalized_doi = self._normalize_doi(article.doi or "")
+            if normalized_doi:
                 if normalized_doi in doi_to_idx:
                     if uf.union(i, doi_to_idx[normalized_doi]):
                         stats.dedup_by_doi += 1
@@ -685,12 +684,13 @@ class ResultAggregator:
                     doi_to_idx[normalized_doi] = i
 
             # PMID matching
-            if article.pmid:
-                if article.pmid in pmid_to_idx:
-                    if uf.union(i, pmid_to_idx[article.pmid]):
+            normalized_pmid = str(article.pmid or "").strip()
+            if normalized_pmid:
+                if normalized_pmid in pmid_to_idx:
+                    if uf.union(i, pmid_to_idx[normalized_pmid]):
                         stats.dedup_by_pmid += 1
                 else:
-                    pmid_to_idx[article.pmid] = i
+                    pmid_to_idx[normalized_pmid] = i
 
             # Provider identifiers are strong identities too.  Indexing them
             # prevents records carrying OpenAlex/S2/CORE/arXiv/PMC IDs from
@@ -752,13 +752,13 @@ class ResultAggregator:
         """Return True when the record already carries a high-confidence identity."""
         return any(
             [
-                article.pmid,
-                article.doi,
-                article.pmc,
-                getattr(article, "openalex_id", None),
-                getattr(article, "s2_id", None),
-                getattr(article, "core_id", None),
-                getattr(article, "arxiv_id", None),
+                str(article.pmid or "").strip(),
+                normalize_article_doi(article.doi),
+                normalize_article_identifier("pmc", article.pmc),
+                normalize_article_identifier("openalex", getattr(article, "openalex_id", None)),
+                normalize_article_identifier("s2", getattr(article, "s2_id", None)),
+                normalize_article_identifier("core", getattr(article, "core_id", None)),
+                normalize_article_identifier("arxiv", getattr(article, "arxiv_id", None)),
             ]
         )
 
@@ -843,27 +843,31 @@ class ResultAggregator:
         if not query:
             return 0.5
 
-        query_lower = query.lower()
-        query_terms = set(re.findall(r"\b\w{3,}\b", query_lower))
+        from pubmed_search.application.search.ranking_algorithms import (
+            tokenize_relevance_query,
+            tokenize_relevance_text,
+        )
+
+        query_terms = set(tokenize_relevance_query(query))
 
         if not query_terms:
             return 0.5
 
         # Check title match
         title_lower = article.title.lower() if article.title else ""
-        title_terms = set(re.findall(r"\b\w{3,}\b", title_lower))
+        title_terms = set(tokenize_relevance_text(title_lower))
         title_overlap = len(query_terms & title_terms) / len(query_terms)
 
         # Check abstract match
         abstract_lower = article.abstract.lower() if article.abstract else ""
-        abstract_terms = set(re.findall(r"\b\w{3,}\b", abstract_lower))
+        abstract_terms = set(tokenize_relevance_text(abstract_lower))
         abstract_overlap = len(query_terms & abstract_terms) / len(query_terms)
 
         # Check keyword/MeSH match
         keywords = getattr(article, "keywords", []) or []
         mesh_terms = getattr(article, "mesh_terms", []) or []
         keywords_lower = " ".join(keywords + mesh_terms).lower()
-        keywords_terms = set(re.findall(r"\b\w{3,}\b", keywords_lower))
+        keywords_terms = set(tokenize_relevance_text(keywords_lower))
         keywords_overlap = len(query_terms & keywords_terms) / len(query_terms)
 
         # Weighted combination (title most important)
