@@ -7,7 +7,7 @@
   `source_unavailable` reporting, and complete MCP acceptance gates intact.
 - Publication is pending. README, benchmark/audit pages, generated website,
   Wiki navigation, and project memory are being synchronized before tagging.
-- Local release checks pass: 4,561 tests with 53 intentional skips, all three
+- Local release checks pass: 4,562 tests with 53 intentional skips, all three
   41-tool MCP acceptance paths, Ruff, 461-file formatting, 426-file mypy,
   async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
   Hosted CI and tagged artifact publication still require verification.

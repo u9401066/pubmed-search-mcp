@@ -133,8 +133,16 @@ def test_offline_server_rejects_external_sockets():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
         with pytest.raises(RuntimeError, match="Network access"):
             _block_network("socket.connect", (connection, ("example.com", 443)))
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        _block_network("socket.connect", (connection, "/tmp/local.sock"))
+    if hasattr(socket, "AF_UNIX"):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            _block_network("socket.connect", (connection, "/tmp/local.sock"))
+
+
+def test_offline_server_blocks_network_without_unix_socket_support(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delattr(socket, "AF_UNIX", raising=False)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+        with pytest.raises(RuntimeError, match="Network access"):
+            _block_network("socket.connect", (connection, ("example.com", 443)))
 
 
 def test_agent_configuration_limits_tools_and_separates_baseline(tmp_path: Path):

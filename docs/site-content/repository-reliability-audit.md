@@ -19,7 +19,7 @@
 
 本版整合後的本機發布驗證（Python 3.10）：
 
-- 完整 `uv run pytest -q`：**4,561 通過、53 跳過**，102.28 秒。
+- 完整 `uv run pytest -q`：**4,562 通過、53 跳過**，101.73 秒。
   包含 41 個工具的 source stdio、Streamable HTTP 與 fresh-wheel MCP acceptance。
 - Ruff lint／461 個檔案格式檢查、mypy **426 個檔案**、async、DDD、skill、
   Bandit 中高嚴重度、deptry 與 vulture 檢查通過。

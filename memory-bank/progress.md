@@ -12,13 +12,16 @@
 - Preserved historical NFCorpus measurements and the small native Codex pilot;
   neither is a measured full-agent score for v0.7.2. Long runs remain unstarted.
 - Added README explanations and website/Wiki entries for benchmark and audit
-  reports. Local validation passes **4,561 tests, 53 intentional skips**, all
+  reports. Local validation passes **4,562 tests, 53 intentional skips**, all
   three complete MCP acceptance paths, Ruff/format, mypy across 426 files,
   async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
 - Prepared a separate v0.7.2 full-dataset manifest after evaluator/lockfile
   changes and verified resume without model calls. Historical experiments and
   the original `dbcf0c8` product baseline remain unchanged; attempts stay zero.
 - Hosted CI and publication verification are still pending.
+- Initial Windows CI caught the frozen evaluator's unconditional `AF_UNIX`
+  lookup. The guard now supports platforms without that constant and a local
+  regression simulates its absence while asserting external sockets stay blocked.
 
 ## v0.7.1 Complete MCP Protocol Acceptance and Release
 

@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after cancellation.
 - Ignore empty/untitled matches in named fulltext section filters and expose
   sanitized cleanup warnings while preserving existing successful content.
+- Keep frozen-benchmark network isolation effective on Python environments
+  without Unix-domain socket support, including Windows.
 
 ### Added
 

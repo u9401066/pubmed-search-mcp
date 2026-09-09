@@ -22,7 +22,11 @@ from pubmed_search.infrastructure.evaluation.corpus import FrozenCorpus
 
 def _block_network(event: str, _args: tuple[Any, ...]) -> None:
     """Block external socket connections in this offline server process."""
-    if event == "socket.connect" and isinstance(_args[0], socket.socket) and _args[0].family != socket.AF_UNIX:
+    if (
+        event == "socket.connect"
+        and isinstance(_args[0], socket.socket)
+        and _args[0].family != getattr(socket, "AF_UNIX", None)
+    ):
         raise RuntimeError("Network access is unavailable in the frozen benchmark")
 
 
