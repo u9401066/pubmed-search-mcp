@@ -31,6 +31,11 @@ appraisal, clinical judgment, or a systematic-review protocol.
 
 ## Core Capabilities
 
+- Measurable research quality: public-corpus retrieval metrics and paired
+  native-agent/package evaluation with revision fingerprints, checkpointed
+  attempts, and explicit failure/cost accounting. Results distinguish
+  retrieval, selection, bibliographic identity, and unmeasured claim support.
+
 - `unified_search`: PubMed-primary broker with explicit source plans, normalized
   provenance, typed source outcomes, fail-closed contract validation,
   partial-failure reporting, and durable evidence artifacts.
