@@ -8,6 +8,7 @@ import pytest
 
 from pubmed_search.application.pipeline.executor import PipelineExecutor
 from pubmed_search.application.search.ranking_algorithms import BM25Corpus, bm25_score, reciprocal_rank_fusion
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineOutput, PipelineStep, StepResult
 from pubmed_search.shared.article_identity import canonical_article_key
@@ -65,10 +66,15 @@ def test_pipeline_rrf_does_not_reward_duplicates_within_one_search():
 
 async def test_pipeline_uses_query_to_rank_before_truncation():
     searcher = AsyncMock()
-    searcher.search.return_value = [
-        {"pmid": "1", "title": "Diabetes treatment", "abstract": "Clinical evidence"},
-        {"pmid": "2", "title": "Sepsis treatment", "abstract": "Clinical evidence"},
-    ]
+    searcher.search_page.return_value = SourceSearchPage(
+        source="pubmed",
+        query="sepsis",
+        total=2,
+        items=[
+            {"pmid": "1", "title": "Diabetes treatment", "abstract": "Clinical evidence"},
+            {"pmid": "2", "title": "Sepsis treatment", "abstract": "Clinical evidence"},
+        ],
+    )
     config = PipelineConfig(
         steps=[PipelineStep(id="search", action="search", params={"query": "sepsis"})],
         output=PipelineOutput(limit=1),

@@ -116,11 +116,23 @@ Use this path once you have one or more seed PMIDs. It covers `fetch_article_det
 
 Use `verify_reference_list` when a manuscript, bibliography, or generated answer needs PubMed-backed citation checking. Treat matches and mismatches as an audit trail, not as prose-only summary.
 
+`verified` confirms bibliographic consistency with the resolved PubMed record.
+A matching DOI or PMID does not override conflicting or unconfirmed supplied
+fields: these rows remain `partial_match` and enter the review queue. DOI
+resolution requires an exact normalized DOI, and PMID lookup checks the returned
+record's identity. Individual lookup failures retain successful rows and report
+`source_unavailable`; they are not missing references. This check does not
+determine whether the cited paper supports a claim; read the relevant passage.
+
 ### Full Text, Figures, And Image Evidence
 
 ![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
 
 Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `prepare_figure_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
+
+When requesting structured sections, empty comma-separated entries are ignored;
+untitled sections cannot match a named section. Extended-source initialization
+or cleanup failures preserve content already retrieved from a successful source.
 
 Use `prepare_figure_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
 

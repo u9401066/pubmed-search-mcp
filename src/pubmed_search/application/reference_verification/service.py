@@ -197,19 +197,21 @@ class ReferenceVerificationService:
         cleaned = self._clean_reference_text(reference_text)
         doi_match = _DOI_RE.search(cleaned)
         pmid_match = _PMID_RE.search(cleaned)
-        year_match = _YEAR_RE.search(cleaned)
+        # Identifier text is not bibliographic author, journal, or date evidence.
+        bibliography = _PMID_RE.sub("", _DOI_RE.sub("", cleaned)).strip(" .;")
+        year_match = _YEAR_RE.search(bibliography)
 
         doi = normalize_article_doi(doi_match.group(1)) if doi_match else ""
         pmid = pmid_match.group(1) if pmid_match else ""
         year = year_match.group(0) if year_match else ""
 
-        pre_year = cleaned.split(year, 1)[0] if year else cleaned
+        pre_year = bibliography.split(year, 1)[0] if year else bibliography
         segments = [segment.strip(" .;") for segment in pre_year.split(".") if segment.strip(" .;")]
         authors_segment = segments[0] if segments else ""
         journal = segments[-1] if len(segments) >= 2 else ""
         title = ". ".join(segments[1:-1]) if len(segments) >= 3 else ""
 
-        after_year = cleaned.split(year, 1)[1] if year else ""
+        after_year = bibliography.split(year, 1)[1] if year else ""
         volume = self._extract_volume(after_year)
         first_page = self._extract_first_page(after_year)
 
@@ -878,7 +880,8 @@ class ReferenceVerificationService:
         """Resolve by DOI using PubMed search results and exact DOI filtering."""
         page = await self._searcher.search_page(f'"{parsed.doi}"[AID]', limit=3)
         results = self._validated_search_items(page)
-        return self._choose_best_candidate(parsed, results)
+        exact_matches = [article for article in results if normalize_article_doi(article.get("doi")) == parsed.doi]
+        return self._choose_best_candidate(parsed, exact_matches)
 
     async def _resolve_by_citation(
         self,
@@ -928,7 +931,10 @@ class ReferenceVerificationService:
     ) -> dict[str, Any] | None:
         """Fetch one PubMed article and reject malformed source payloads."""
         if article_cache and pmid in article_cache:
-            return article_cache[pmid]
+            cached = article_cache[pmid]
+            if str(cached.get("pmid") or "").strip() != pmid:
+                raise RuntimeError("PubMed article cache returned an invalid article row")
+            return cached
 
         details = await self._searcher.fetch_details([pmid])
         if not isinstance(details, list):
@@ -1110,14 +1116,13 @@ class ReferenceVerificationService:
         if article is None:
             return "unresolved"
 
-        if comparison.get("doi") is True:
-            return "verified"
-
-        comparable_truths = [matched for matched in comparison.values() if matched is not None]
         mismatches = [field for field, matched in comparison.items() if matched is False]
         matched_fields = [field for field, matched in comparison.items() if matched is True]
 
-        if comparison.get("pmid") is True and not mismatches:
+        if mismatches:
+            return "partial_match" if matched_fields else "unresolved"
+
+        if comparison.get("doi") is True or comparison.get("pmid") is True:
             return "verified"
 
         if (
@@ -1131,7 +1136,7 @@ class ReferenceVerificationService:
         ):
             return "verified"
 
-        if matched_fields and comparable_truths:
+        if matched_fields:
             return "partial_match"
 
         return "unresolved"
@@ -1159,7 +1164,7 @@ class ReferenceVerificationService:
             return notes
 
         if status == "verified":
-            notes.append("PubMed evidence supports this reference")
+            notes.append("PubMed bibliographic evidence matches this reference; claim support has not been assessed")
         elif status == "partial_match":
             notes.append("A close PubMed candidate was found, but some provided fields disagree")
         else:
