@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-09
+
 ### Fixed
 
 - Align BM25 document statistics and scoring tokenization, preserve short
@@ -22,15 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require consistent supplied metadata for reference verification; DOI searches
   use exact normalized identifiers, PMID fetches validate returned identities,
   and identifier-only citations no longer invent authors or publication years.
-  Individual PMID/ECitMatch failures preserve other rows with retry notes.
+  Existing typed source failures and batch isolation remain in place.
 - Share DOI/PMC normalization across article identity and merging; recognize
   modern PMC URLs, normalize PMID whitespace, and prevent empty DOI prefixes
   from merging unrelated records or blocking title-based deduplication.
 - Coalesce asynchronous cache misses per normalized key and event loop, allowing
   unrelated fetches to overlap without retaining idle locks or blocking retries
   after cancellation.
-- Preserve successful fulltext when extended-source initialization or cleanup
-  fails, and ignore empty/untitled matches in named section filters.
+- Ignore empty/untitled matches in named fulltext section filters and expose
+  sanitized cleanup warnings while preserving existing successful content.
 
 ### Added
 
