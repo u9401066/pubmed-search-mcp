@@ -2,15 +2,20 @@
 
 ## Current Focus
 
-- Prepare v0.7.2 from upstream v0.7.1 plus the retrieval/reliability work. Keep
+- v0.7.2 is published from upstream v0.7.1 plus the retrieval/reliability work. Keep
   the 41-tool strict contracts, server-scoped containers, typed search pages,
   `source_unavailable` reporting, and complete MCP acceptance gates intact.
-- Publication is pending. README, benchmark/audit pages, generated website,
-  Wiki navigation, and project memory are being synchronized before tagging.
+- PR #14 merged nine focused commits at `c331ac5`, tagged as `v0.7.2`.
+  README, benchmark/audit pages, the generated website, and Wiki are published.
+  Release workflow `34331096208` passed verification, PyPI publication, and
+  GitHub Release creation. Wheel/sdist SHA-256 values match across PyPI and
+  GitHub; the public website and Wiki expose the updated pages. See
+  [publication verification](../docs/reports/release_v072_2026-09-09.json).
 - Local release checks pass: 4,562 tests with 53 intentional skips, all three
   41-tool MCP acceptance paths, Ruff, 461-file formatting, 426-file mypy,
   async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
-  Hosted CI and tagged artifact publication still require verification.
+  Both branch/PR CI runs and master CI pass, including Windows, macOS,
+  Linux/Python 3.10–3.13, container smoke, and actual MCP Mermaid rendering.
 - Academic evaluation remains setup-only: do not launch the 5,000-question
   model run without a new execution budget. Preserve the original `dbcf0c8`
   source snapshot and historical reports. A release lockfile or evaluator
@@ -18,7 +23,7 @@
 
 ## Previous Published Boundary
 
-- v0.7.1 is the published boundary. It adds a complete MCP protocol regression
+- v0.7.1 established the preceding published boundary and complete MCP protocol regression
   gate for the canonical **41 tools in 16 registry categories**; removed public
   aliases, legacy wrappers, and alternate Copilot tool registries are not
   compatibility surfaces.

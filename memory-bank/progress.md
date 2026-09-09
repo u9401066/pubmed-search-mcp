@@ -1,6 +1,6 @@
 # Progress (Updated: 2026-09-09)
 
-## v0.7.2 Retrieval, Reliability, and Evaluation — Publication Pending
+## v0.7.2 Retrieval, Reliability, and Evaluation — Published
 
 - Integrated the work with upstream v0.7.1, preserving the strict 41-tool
   protocol instead of restoring retired aliases or global runtime lookups.
@@ -18,10 +18,22 @@
 - Prepared a separate v0.7.2 full-dataset manifest after evaluator/lockfile
   changes and verified resume without model calls. Historical experiments and
   the original `dbcf0c8` product baseline remain unchanged; attempts stay zero.
-- Hosted CI and publication verification are still pending.
 - Initial Windows CI caught the frozen evaluator's unconditional `AF_UNIX`
   lookup. The guard now supports platforms without that constant and a local
   regression simulates its absence while asserting external sockets stay blocked.
+- Nine focused commits merged through PR #14 at `c331ac5`, then the identical
+  tested tree was tagged `v0.7.2`. Both branch/PR suites (`34330391447`,
+  `34330395431`) and master CI (`34331042992`) passed. The tag workflow
+  (`34331096208`) passed all three distribution verification/publication jobs.
+- PyPI and GitHub expose the same verified wheel and sdist, with matching
+  SHA-256 values. Pages (`34331042963`) and Wiki (`34331043013`) deployed
+  successfully; their public content was checked. Playwright also passed the
+  public site's desktop/mobile navigation, search, language, and menu flows.
+- Publication receipts and distribution hashes are saved in
+  [release verification](../docs/reports/release_v072_2026-09-09.json).
+  Public release:
+  https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.2
+  and https://pypi.org/project/pubmed-search-mcp/0.7.2/.
 
 ## v0.7.1 Complete MCP Protocol Acceptance and Release
 
