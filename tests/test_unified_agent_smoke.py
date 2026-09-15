@@ -219,7 +219,7 @@ async def _assert_planning_failure_is_recoverable(client: Client[Any]) -> None:
             "options": "shallow,no_oa,no_relax",
         },
     )
-    assert result.is_error is False
+    assert result.is_error is True
     error_payload = json.loads(_result_text(result))
     assert error_payload["success"] is False
     assert "read_session" in error_payload["suggestion"]
@@ -250,6 +250,8 @@ async def _assert_pipeline_dry_run_is_journaled(client: Client[Any]) -> None:
     payload = json.loads(_result_text(result))
     assert payload["type"] == "pipeline_result"
     assert payload["pipeline"]["dry_run"] is True
+    assert payload["summary"]["steps_executed"] == 0
+    assert payload["summary"]["steps_planned"] == 1
     assert payload["search_status"] == {
         "state": "completed",
         "bounded": True,
@@ -283,7 +285,7 @@ async def _assert_credential_bearing_query_is_rejected(client: Client[Any]) -> N
                 "output_format": "json",
             },
         )
-        assert result.is_error is False
+        assert result.is_error is True
         response_text = _result_text(result)
         assert SECRET_SENTINEL not in response_text
         payload = json.loads(response_text)

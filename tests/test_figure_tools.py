@@ -264,7 +264,7 @@ class TestResolvePmidToPmcid:
 
         mock_client = AsyncMock()
         mock_client.search.return_value = {
-            "results": [{"pmc_id": "PMC12086443"}],
+            "results": [{"pmid": "40384072", "pmc_id": "PMC12086443"}],
         }
         with patch(
             "pubmed_search.infrastructure.sources.get_europe_pmc_client",
@@ -401,3 +401,13 @@ class TestFormatFiguresOutput:
         assert "javascript:" not in output
         assert "unsafe URL omitted" in output
         assert "\\[click\\]\\(https://attacker.invalid\\)" in output
+
+
+async def test_figure_resolution_rejects_a_different_pubmed_record():
+    from pubmed_search.presentation.mcp_server.tools.figure_tools import _resolve_pmid_to_pmcid
+
+    client = AsyncMock()
+    client.search.return_value = {"results": [{"pmid": "999", "pmc_id": "PMC12086443"}]}
+    with patch("pubmed_search.infrastructure.sources.get_europe_pmc_client", return_value=client):
+        with pytest.raises(RuntimeError, match="requested PMID"):
+            await _resolve_pmid_to_pmcid("40384072")

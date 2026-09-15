@@ -410,3 +410,20 @@ class TestBuildCitationTreeTool:
 
 
 # TestSuggestCitationTreeTool removed in v0.3.1 - suggest_citation_tree merged (Agent decides directly)
+
+
+def test_graphml_accepts_double_hyphens_in_article_title():
+    from defusedxml import ElementTree
+
+    result = _to_graphml(SAMPLE_NODES, SAMPLE_EDGES, "Trial -- follow-up <analysis>")
+    root = ElementTree.fromstring(result)
+    assert root.find("{*}graph/{*}desc").text == "Trial -- follow-up <analysis>"
+
+
+def test_vis_preserves_large_identifiers_across_javascript_number_precision():
+    first, second = "9007199254740992", "9007199254740993"
+    nodes = [{**SAMPLE_NODES[0], "pmid": first}, {**SAMPLE_NODES[1], "pmid": second}]
+    graph = _to_vis(nodes, [{"source": first, "target": second, "edge_type": "cites"}])
+    assert [node["id"] for node in graph["nodes"]] == [first, second]
+    assert graph["edges"][0]["from"] == first
+    assert graph["edges"][0]["to"] == second

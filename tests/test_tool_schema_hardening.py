@@ -23,6 +23,19 @@ from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
 
 
+@pytest.mark.parametrize("value", ["https://doi.org:bad/10.1234/a", "https://[doi.org/10.1234/a"])
+def test_malformed_doi_urls_obey_the_identifier_error_contract(value: str) -> None:
+    from pubmed_search.domain.value_objects.article_identifiers import (
+        IdentifierValidationError,
+        normalize_doi,
+        try_normalize_doi,
+    )
+
+    assert try_normalize_doi(value) is None
+    with pytest.raises(IdentifierValidationError):
+        normalize_doi(value)
+
+
 def _schemas() -> dict[str, dict]:
     mcp = MCPServer("schema-hardening")
     searcher = MagicMock()

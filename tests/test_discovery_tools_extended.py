@@ -9,6 +9,7 @@ import pytest
 import toons
 
 from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
+from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 from pubmed_search.presentation.mcp_server.tools.discovery import (
     register_discovery_tools,
 )
@@ -30,6 +31,8 @@ def _capture_tools(mcp, searcher):
 def setup():
     mcp = MagicMock()
     searcher = AsyncMock()
+    searcher.filter_by_citations = ICiteMixin.filter_by_citations.__get__(searcher)
+    searcher.sort_by_citations = ICiteMixin.sort_by_citations.__get__(searcher)
     tools = _capture_tools(mcp, searcher)
     return tools, searcher
 
@@ -356,3 +359,13 @@ class TestGetCitationMetrics:
         assert parsed["article_count"] == 1
         assert parsed["next_tools"]
         assert parsed["section_provenance"]["articles"]["canonical_host"] == "NIH iCite"
+
+
+async def test_zero_metric_threshold_keeps_zero_but_excludes_missing(setup):
+    tools, searcher = setup
+    searcher.get_citation_metrics.return_value = {
+        "1": {"pmid": "1", "title": "Missing", "relative_citation_ratio": None},
+        "2": {"pmid": "2", "title": "Known zero", "relative_citation_ratio": 0.0},
+    }
+    result = json.loads(await tools["get_citation_metrics"](pmids="1,2", min_rcr=0.0, output_format="json"))
+    assert [article["pmid"] for article in result["articles"]] == ["2"]

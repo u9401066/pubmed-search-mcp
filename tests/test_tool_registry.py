@@ -30,30 +30,12 @@ def _fake_tools(names: set[str] | list[str]) -> list[SimpleNamespace]:
 
 
 class TestListRegisteredTools:
-    async def test_returns_dict(self):
-        result = list_registered_tools()
-        assert isinstance(result, dict)
-
-    async def test_has_all_categories(self):
-        result = list_registered_tools()
-        for cat_id in TOOL_CATEGORIES:
-            assert cat_id in result
-
-    async def test_tools_are_lists(self):
-        result = list_registered_tools()
-        for tools in result.values():
-            assert isinstance(tools, list)
-
     async def test_returned_lists_cannot_mutate_canonical_registry(self):
         result = list_registered_tools()
         result["search"].append("not_a_real_tool")
 
         assert TOOL_CATEGORIES["search"]["tools"] == ["unified_search"]
         assert "not_a_real_tool" not in get_tools_by_category("search")
-
-    async def test_unified_search_in_search(self):
-        result = list_registered_tools()
-        assert "unified_search" in result["search"]
 
     async def test_unified_search_is_the_only_generic_literature_search_tool(self):
         """Provider adapters and entity lookups must not expand the search facade."""

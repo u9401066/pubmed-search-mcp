@@ -682,3 +682,37 @@ class TestSaveLiteratureNotes:
         assert parsed["error"] == "Citation export could not be completed"
         assert "secret" not in result
         assert "/srv/private" not in result
+
+
+def test_medpaper_duplicate_ids_keep_distinct_note_and_csl_targets(tmp_path):
+    rows = [{"pmid": "123", "title": "First"}, {"pmid": "123", "title": "Second"}]
+    result = write_literature_notes(rows, tmp_path, note_format="medpaper", overwrite=True)
+    assert len({row["path"] for row in result["files"]}) == 2
+    payload = json.loads(Path(result["csl_file"]["path"]).read_text())
+    assert len({row["id"] for row in payload}) == 2
+    assert all(Path(row["path"]).read_text().find(row["title"]) >= 0 for row in result["files"])
+
+
+async def test_export_last_does_not_silently_truncate_at_one_hundred():
+    manager = MagicMock()
+    pmids = [str(i) for i in range(1, 151)]
+    manager.get_or_create_session.return_value.search_history = [{"pmids": pmids}]
+    with patch("pubmed_search.presentation.mcp_server.tools.export.get_session_manager", return_value=manager):
+        assert _resolve_pmids("last") == pmids
+
+
+async def test_official_export_refuses_unsupported_abstract_suppression():
+    tools = _capture_tools(MagicMock(), AsyncMock())
+    exporter = MagicMock()
+    exporter.export_citations = AsyncMock(
+        return_value=MagicMock(
+            success=True,
+            content="AB  - Private abstract\n",
+            pmid_count=1,
+        )
+    )
+    with patch("pubmed_search.infrastructure.ncbi.citation_exporter.get_exporter", return_value=exporter):
+        result = json.loads(await tools["prepare_export"](pmids="123", include_abstract=False))
+    assert result["success"] is False
+    assert "Private abstract" not in json.dumps(result)
+    exporter.export_citations.assert_not_awaited()

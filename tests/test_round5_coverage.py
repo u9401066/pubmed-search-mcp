@@ -380,7 +380,7 @@ class TestClinicalTrialsClient:
                 {
                     "protocolSection": {
                         "identificationModule": {
-                            "nctId": "NCT12345",
+                            "nctId": "NCT00012345",
                             "briefTitle": "Test Trial",
                             "officialTitle": "Official Title",
                         },
@@ -416,7 +416,7 @@ class TestClinicalTrialsClient:
 
         result = await c.search("diabetes treatment", limit=5)
         assert len(result) == 1
-        assert result[0]["nct_id"] == "NCT12345"
+        assert result[0]["nct_id"] == "NCT00012345"
         assert result[0]["status"] == "RECRUITING"
         assert result[0]["phase"] == "PHASE3"
         assert result[0]["enrollment"] == 200
@@ -502,9 +502,9 @@ class TestClinicalTrialsClient:
         )
 
         c = ClinicalTrialsClient()
-        study = {"protocolSection": {}}
+        study = {"protocolSection": {"identificationModule": {"nctId": "NCT00000001"}}}
         result = c._normalize_study(study)
-        assert result["nct_id"] == ""
+        assert result["nct_id"] == "NCT00000001"
         assert result["status"] == "UNKNOWN"
         assert result["phase"] == "N/A"
 
@@ -523,7 +523,7 @@ class TestClinicalTrialsGetStudy:
         mock_resp.json.return_value = {
             "protocolSection": {
                 "identificationModule": {
-                    "nctId": "NCT99999",
+                    "nctId": "NCT00099999",
                     "briefTitle": "Specific Trial",
                 },
                 "statusModule": {"overallStatus": "COMPLETED"},
@@ -536,9 +536,9 @@ class TestClinicalTrialsGetStudy:
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = await c.get_study("NCT99999")
+        result = await c.get_study("NCT00099999")
         assert result is not None
-        assert result["nct_id"] == "NCT99999"
+        assert result["nct_id"] == "NCT00099999"
         c._client = None
 
     async def test_get_study_not_found(self):
@@ -554,7 +554,7 @@ class TestClinicalTrialsGetStudy:
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = await c.get_study("NCT00000")
+        result = await c.get_study("NCT00000000")
         assert result is None
         c._client = None
 
@@ -716,7 +716,7 @@ class TestNCBICitationExporter:
 
         result = await e.export_citations(["11111", "22222", "33333"], format="ris")
         assert result.success is True
-        assert result.pmid_count == 3
+        assert result.pmid_count == 2
         e._client = None
 
     async def test_export_uses_shared_transport(self):

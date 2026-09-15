@@ -197,8 +197,9 @@ class TestConfigureInstitutionalAccess:
             {"resolver_url": "https://library.example/openurl"},
         ],
     )
-    async def test_authenticated_service_cannot_mutate_deployment_config(self, tools, arguments):
-        identity = TenantIdentity.for_principal("remote-team", source="auth")
+    @pytest.mark.parametrize("identity_source", ["auth", "transport", "anonymous_http"])
+    async def test_authenticated_service_cannot_mutate_deployment_config(self, tools, arguments, identity_source):
+        identity = TenantIdentity.for_principal("remote-team", source=identity_source)
 
         with (
             patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl") as configure,

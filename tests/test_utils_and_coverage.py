@@ -144,7 +144,7 @@ class TestUtilsMixin:
         """Test find_by_citation when article is found."""
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_handle = MagicMock()
-            mock_handle.read.return_value = "journal|2024|10|1|author||\t12345678"
+            mock_handle.read.return_value = "journal|2024|10|1|author||12345678"
             mock_ecitmatch.return_value = mock_handle
 
             result = await utils_mixin.find_by_citation(
@@ -157,7 +157,7 @@ class TestUtilsMixin:
         """Test find_by_citation when article is not found."""
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_handle = MagicMock()
-            mock_handle.read.return_value = "journal|2024||||\t"
+            mock_handle.read.return_value = "journal|2024|||||NOT_FOUND"
             mock_ecitmatch.return_value = mock_handle
 
             result = await utils_mixin.find_by_citation(journal="Unknown", year="1900")
@@ -413,3 +413,13 @@ class TestExportModuleCoverage:
 
         assert "PMID" in result
         assert "12345" in result
+
+
+async def test_ecitmatch_reads_official_pipe_delimited_pmid():
+    from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
+
+    mixin = UtilsMixin()
+    handle = MagicMock()
+    handle.read.return_value = "proc natl acad sci u s a|1991|88|3248|mann bj|Art1|2014248\n"
+    with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch", return_value=handle):
+        assert await mixin.find_by_citation("proc natl acad sci u s a", "1991", "88", "3248", "mann bj") == "2014248"

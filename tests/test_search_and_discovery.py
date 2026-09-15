@@ -100,12 +100,15 @@ class TestDiscoveryToolsComplete:
     @pytest.fixture
     def registered_tools(self):
         """Register discovery tools and capture them."""
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         from pubmed_search.presentation.mcp_server.tools.discovery import (
             register_discovery_tools,
         )
 
         mcp = MagicMock()
         searcher = AsyncMock()
+        searcher.filter_by_citations = ICiteMixin.filter_by_citations.__get__(searcher)
+        searcher.sort_by_citations = ICiteMixin.sort_by_citations.__get__(searcher)
 
         tools = {}
 

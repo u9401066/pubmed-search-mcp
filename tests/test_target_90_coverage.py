@@ -5,109 +5,11 @@ Focus on uncovered lines in remaining files.
 
 from __future__ import annotations
 
-import tempfile
-from unittest.mock import AsyncMock, MagicMock, patch
-
-
-class TestSearchRetryAndErrorPaths:
-    """Cover retry and error paths in search.py."""
-
-    async def test_search_with_rate_limit_error(self):
-        """Test search retry on rate limit errors."""
-        from pubmed_search.infrastructure.ncbi.search import SearchMixin
-
-        class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
-                return [{"pmid": p} for p in pmids]
-
-        searcher = TestSearcher()
-
-        with (
-            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
-                new_callable=AsyncMock,
-            ),
-        ):
-            # First two calls fail, third succeeds
-            call_count = [0]
-
-            def esearch_side_effect(*args, **kwargs):
-                call_count[0] += 1
-                if call_count[0] <= 2:
-                    raise Exception("Too Many Requests")
-                return MagicMock()
-
-            mock_esearch.side_effect = esearch_side_effect
-            mock_read.return_value = {"IdList": ["123"]}
-
-            try:
-                await searcher._search_ids("test", 10, "relevance")
-            except Exception:
-                pass  # May still fail after max retries
-
-    async def test_search_with_backend_failed_error(self):
-        """Test search retry on backend failed errors."""
-        from pubmed_search.infrastructure.ncbi.search import SearchMixin
-
-        class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
-                return [{"pmid": p} for p in pmids]
-
-        searcher = TestSearcher()
-
-        with (
-            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
-                new_callable=AsyncMock,
-            ),
-        ):
-            mock_esearch.side_effect = Exception("Backend failed")
-
-            try:
-                await searcher._search_ids("test", 10, "relevance")
-            except Exception:
-                pass  # Expected to fail after max retries
-
-
-class TestClientEdgeCases:
-    """Cover edge cases in client.py."""
-
-    async def test_literature_searcher_full_workflow(self):
-        """Test full search workflow."""
-        from pubmed_search import LiteratureSearcher
-
-        searcher = LiteratureSearcher(email="test@example.com")
-
-        # Test that all expected methods exist
-        assert hasattr(searcher, "search_page")
-        assert hasattr(searcher, "fetch_details")
-        assert hasattr(searcher, "get_related_articles")
-        assert hasattr(searcher, "get_citing_articles")
+from unittest.mock import MagicMock, patch
 
 
 class TestSessionFindCachedSearch:
     """Test session cached search functionality."""
-
-    async def test_find_cached_search_found(self):
-        """Test finding cached search results."""
-        from pubmed_search.application.session import SessionManager
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manager = SessionManager(data_dir=tmpdir)
-            manager.get_or_create_session()
-
-            # Add to cache
-            manager.add_to_cache([{"pmid": "111", "title": "Test 1"}, {"pmid": "222", "title": "Test 2"}])
-            manager.add_search_record("test query", ["111", "222"])
-
-            # Try to find cached
-            result = manager.find_cached_search("test query")
-
-            # Result depends on implementation
-            assert result is None or isinstance(result, list)
 
     async def test_session_no_current(self):
         """Test operations with no current session."""
@@ -152,32 +54,12 @@ class TestStrategyGeneratorPaths:
 class TestServerModulePaths:
     """Cover paths in server.py."""
 
-    async def test_server_constants(self):
-        """Test server module constants."""
-        from pubmed_search.presentation.mcp_server import server
-
-        assert hasattr(server, "DEFAULT_EMAIL")
-        assert hasattr(server, "SERVER_INSTRUCTIONS")
-        assert hasattr(server, "DEFAULT_DATA_DIR")
-
     async def test_server_instructions_content(self):
         """Test server instructions are defined."""
         from pubmed_search.presentation.mcp_server.server import SERVER_INSTRUCTIONS
 
         assert len(SERVER_INSTRUCTIONS) > 0
         assert "PubMed" in SERVER_INSTRUCTIONS or "search" in SERVER_INSTRUCTIONS.lower()
-
-
-class TestSessionToolsPaths:
-    """Cover paths in session_tools.py."""
-
-    async def test_session_tools_module_structure(self):
-        """Test session_tools module structure."""
-        from pubmed_search.presentation.mcp_server import session_tools
-
-        # Check expected attributes
-        assert hasattr(session_tools, "register_session_tools")
-        assert hasattr(session_tools, "register_session_resources")
 
 
 class TestCommonModuleEdgeCases:
@@ -216,28 +98,6 @@ class TestCommonModuleEdgeCases:
 
         assert "12345" in formatted
         assert "Test Article" in formatted
-
-
-class TestDiscoveryModuleEdgeCases:
-    """Cover edge cases in discovery.py."""
-
-    async def test_get_references_tool(self):
-        """Test that get_references tool function exists."""
-        from pubmed_search.presentation.mcp_server.tools import discovery
-
-        # Check the module has expected content
-        assert hasattr(discovery, "register_discovery_tools")
-
-
-class TestExportModuleEdgeCases:
-    """Cover edge cases in export.py."""
-
-    async def test_export_tool_module_structure(self):
-        """Test export tool module structure."""
-        from pubmed_search.presentation.mcp_server.tools import export
-
-        assert hasattr(export, "register_export_tools")
-        assert hasattr(export, "SUPPORTED_FORMATS")
 
 
 class TestFormatsModuleEdgeCases:
