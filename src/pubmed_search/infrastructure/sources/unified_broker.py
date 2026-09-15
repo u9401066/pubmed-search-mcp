@@ -1188,14 +1188,17 @@ async def _search_preprint_source_adapter(
         searcher = PreprintSearcher()
         metadata["physical_query"] = compiled_query
         metadata["query_executed"] = True
-        results = await searcher.search(
-            query=query,
-            sources=[source],
-            limit=limit,
-            categories=ARXIV_MEDICAL_CATEGORIES if source == "arxiv" else None,
-            from_date=from_date,
-            to_date=to_date,
-        )
+        try:
+            results = await searcher.search(
+                query=query,
+                sources=[source],
+                limit=limit,
+                categories=ARXIV_MEDICAL_CATEGORIES if source == "arxiv" else None,
+                from_date=from_date,
+                to_date=to_date,
+            )
+        finally:
+            await searcher.close()
         by_source = results.get("by_source")
         if not isinstance(by_source, dict):
             _raise_sanitized_search_error(source, APIRequestError(source))

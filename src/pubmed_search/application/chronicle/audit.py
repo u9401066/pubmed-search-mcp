@@ -459,7 +459,7 @@ def _bounded_diagnostic_ratio(value: object) -> float:
         return 0.0
     try:
         ratio = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0.0
     if not isfinite(ratio):
         return 0.0
@@ -470,7 +470,7 @@ def _nonnegative_diagnostic_count(value: object) -> int:
     """Coerce an untrusted persisted diagnostic into a non-negative count."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0
-    if not isfinite(float(value)):
+    if isinstance(value, float) and not isfinite(value):
         return 0
     return max(0, int(value))
 
@@ -664,7 +664,7 @@ def _audit_source_coverage(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding
             available = None
 
         details["normalized_counts"][str(source)] = {"returned": returned, "available": available}
-        if returned is None:
+        if returned is None or (available is not None and returned > available):
             invalid_sources.append(str(source))
         elif available is None:
             unknown_available_sources.append(str(source))
@@ -920,7 +920,14 @@ def _safe_citation_metrics_error(value: object) -> dict[str, Any] | None:
     retryable = value.get("retryable")
     status_code = value.get("status_code")
     exception_type = value.get("exception_type")
-    if kind not in {"http", "timeout", "transport", "retryable", "validation", "unexpected"}:
+    if not isinstance(kind, str) or kind not in {
+        "http",
+        "timeout",
+        "transport",
+        "retryable",
+        "validation",
+        "unexpected",
+    }:
         return None
     if not isinstance(retryable, bool):
         return None

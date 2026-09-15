@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
+from pubmed_search.domain.value_objects import normalize_pmcid
 from pubmed_search.infrastructure.sources.base_client import (
     _CONTINUE,
     APIRequestError,
@@ -89,6 +90,27 @@ class EuropePMCClient(BaseAPIClient):
             return None
         return _CONTINUE
 
+    @staticmethod
+    def compile_query(
+        query: str,
+        *,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        has_fulltext: bool = False,
+    ) -> str:
+        """Share the physical query between transport and provenance reporting."""
+        filters = []
+        if min_year is not None:
+            filters.append(f"FIRST_PDATE:[{min_year}-01-01 TO *]")
+        if max_year is not None:
+            filters.append(f"FIRST_PDATE:[* TO {max_year}-12-31]")
+        if open_access_only:
+            filters.append("OPEN_ACCESS:y")
+        if has_fulltext:
+            filters.append("HAS_FT:y")
+        return " AND ".join([f"({query})", *filters]) if filters else query
+
     async def search(
         self,
         query: str,
@@ -119,19 +141,13 @@ class EuropePMCClient(BaseAPIClient):
             Dict with results and pagination info
         """
         try:
-            # Build query with filters
-            query_parts = [query]
-
-            if min_year:
-                query_parts.append(f"FIRST_PDATE:[{min_year}-01-01 TO *]")
-            if max_year:
-                query_parts.append(f"FIRST_PDATE:[* TO {max_year}-12-31]")
-            if open_access_only:
-                query_parts.append("OPEN_ACCESS:y")
-            if has_fulltext:
-                query_parts.append("HAS_FT:y")
-
-            full_query = " AND ".join(query_parts) if len(query_parts) > 1 else query
+            full_query = self.compile_query(
+                query,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                has_fulltext=has_fulltext,
+            )
 
             params = {
                 "query": full_query,
@@ -198,7 +214,7 @@ class EuropePMCClient(BaseAPIClient):
                 "format": "json",
             }
 
-            url = f"{EPMC_ARTICLE_URL}/{source}/{article_id}?{urllib.parse.urlencode(params)}"
+            url = f"{EPMC_ARTICLE_URL}/{urllib.parse.quote(source, safe='')}/{urllib.parse.quote(article_id, safe='')}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
             if data is None:
@@ -233,8 +249,7 @@ class EuropePMCClient(BaseAPIClient):
         """
         try:
             # Normalize PMCID
-            if not pmcid.upper().startswith("PMC"):
-                pmcid = f"PMC{pmcid}"
+            pmcid = normalize_pmcid(pmcid)
 
             url = f"{EPMC_API_BASE}/{pmcid}/fullTextXML"
             result = await self._make_request(url, headers={"Accept": "application/xml"}, expect_json=False)
@@ -275,7 +290,7 @@ class EuropePMCClient(BaseAPIClient):
                 "pageSize": str(min(limit, 1000)),
             }
 
-            url = f"{EPMC_API_BASE}/{source}/{article_id}/references?{urllib.parse.urlencode(params)}"
+            url = f"{EPMC_API_BASE}/{urllib.parse.quote(source, safe='')}/{urllib.parse.quote(article_id, safe='')}/references?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
             if data is None:
@@ -322,7 +337,7 @@ class EuropePMCClient(BaseAPIClient):
                 "pageSize": str(min(limit, 1000)),
             }
 
-            url = f"{EPMC_API_BASE}/{source}/{article_id}/citations?{urllib.parse.urlencode(params)}"
+            url = f"{EPMC_API_BASE}/{urllib.parse.quote(source, safe='')}/{urllib.parse.quote(article_id, safe='')}/citations?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
             if data is None:
@@ -368,7 +383,7 @@ class EuropePMCClient(BaseAPIClient):
             if semantic_type:
                 params["semanticType"] = semantic_type
 
-            url = f"{EPMC_API_BASE}/{source}/{article_id}/textMinedTerms?{urllib.parse.urlencode(params)}"
+            url = f"{EPMC_API_BASE}/{urllib.parse.quote(source, safe='')}/{urllib.parse.quote(article_id, safe='')}/textMinedTerms?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
             if data is None:
@@ -397,13 +412,13 @@ class EuropePMCClient(BaseAPIClient):
         Normalize Europe PMC article to common format compatible with PubMed results.
         """
         # Extract IDs
-        pmid = article.get("pmid", "")
+        pmid = article.get("pmid") or (article.get("id", "") if article.get("source") == "MED" else "")
         pmcid = article.get("pmcid", "")
         doi = article.get("doi", "")
 
         # Extract authors
         author_string = article.get("authorString", "")
-        author_list = article.get("authorList", {}).get("author", [])
+        author_list = (article.get("authorList") or {}).get("author") or []
 
         authors = []
         authors_full = []
@@ -424,24 +439,26 @@ class EuropePMCClient(BaseAPIClient):
 
         # Extract date
         pub_year = article.get("pubYear", "")
-        first_pub_date = article.get("firstPublicationDate", "")
+        first_pub_date = article.get("firstPublicationDate") or ""
 
         year = pub_year or (first_pub_date[:4] if first_pub_date else "")
         month = first_pub_date[5:7] if len(first_pub_date) >= 7 else ""
         day = first_pub_date[8:10] if len(first_pub_date) >= 10 else ""
 
         # Extract journal info
-        journal = article.get("journalTitle", "") or article.get("journalInfo", {}).get("journal", {}).get("title", "")
-        journal_abbrev = article.get("journalInfo", {}).get("journal", {}).get("isoabbreviation", "")
+        journal = article.get("journalTitle", "") or ((article.get("journalInfo") or {}).get("journal") or {}).get(
+            "title", ""
+        )
+        journal_abbrev = ((article.get("journalInfo") or {}).get("journal") or {}).get("isoabbreviation", "")
 
         # Extract keywords and MeSH
         keywords = []
-        keyword_list = article.get("keywordList", {}).get("keyword", [])
+        keyword_list = (article.get("keywordList") or {}).get("keyword") or []
         if isinstance(keyword_list, list):
             keywords = keyword_list
 
         mesh_terms = []
-        mesh_list = article.get("meshHeadingList", {}).get("meshHeading", [])
+        mesh_list = (article.get("meshHeadingList") or {}).get("meshHeading") or []
         for mesh in mesh_list:
             descriptor = mesh.get("descriptorName", "")
             if descriptor:
@@ -518,7 +535,11 @@ class EuropePMCClient(BaseAPIClient):
 
             root = ElementTree.fromstring(xml_content)
 
-            # Define namespace handling
+            # JATS may use a default namespace; preserve attribute namespaces
+            # (notably xlink) while using local element names for extraction.
+            for element in root.iter():
+                if isinstance(element.tag, str):
+                    element.tag = element.tag.rsplit("}", 1)[-1]
 
             result: dict[str, Any] = {
                 "title": "",
@@ -541,6 +562,9 @@ class EuropePMCClient(BaseAPIClient):
             # Extract body sections
             body = root.find(".//body")
             if body is not None:
+                body_paragraphs = [self._get_text(p) for p in body.findall("p")]
+                if any(body_paragraphs):
+                    result["sections"].append({"title": "Body", "content": "\n\n".join(body_paragraphs)})
                 for sec in body.findall(".//sec"):
                     section = self._parse_section(sec)
                     if section:
@@ -568,12 +592,7 @@ class EuropePMCClient(BaseAPIClient):
 
     def _get_text(self, elem: Element) -> str:
         """Recursively get all text from an element."""
-        text = elem.text or ""
-        for child in elem:
-            text += self._get_text(child)
-            if child.tail:
-                text += child.tail
-        return text.strip()
+        return "".join(elem.itertext()).strip()
 
     def _parse_section(self, sec_elem: Element) -> dict[str, Any] | None:
         """Parse a section element."""
@@ -601,6 +620,8 @@ class EuropePMCClient(BaseAPIClient):
         mixed_citation = ref_elem.find(".//mixed-citation")
 
         if mixed_citation is None:
+            mixed_citation = ref_elem.find(".//element-citation")
+        if mixed_citation is None:
             return None
 
         return {
@@ -626,9 +647,10 @@ class EuropePMCClient(BaseAPIClient):
 
         for fig_elem in root.iter("fig"):
             fig_id = fig_elem.get("id", "")
-            if fig_id in seen_ids:
-                continue
-            seen_ids.add(fig_id)
+            if fig_id:
+                if fig_id in seen_ids:
+                    continue
+                seen_ids.add(fig_id)
 
             label_elem = fig_elem.find("label")
             label = self._get_text(label_elem) if label_elem is not None else ""

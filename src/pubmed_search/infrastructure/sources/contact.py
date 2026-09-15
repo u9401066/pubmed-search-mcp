@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def _normalize_contact_email(email: str | None) -> str | None:
-    if email is None:
+    if not isinstance(email, str):
         return None
     normalized = email.strip()
     return normalized or None

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -76,13 +76,17 @@ class TestMakeRequest:
         client._execute_request = AsyncMock(return_value=mock_response)
         assert await client._make_request("https://test.com") is None
 
-    async def test_422(self, client):
-        from unittest.mock import AsyncMock
+    async def test_422_contact_failure_is_not_an_absent_article(self, client):
+        import httpx
 
-        mock_response = MagicMock()
-        mock_response.status_code = 422
-        client._execute_request = AsyncMock(return_value=mock_response)
-        assert await client._make_request("https://test.com") is None
+        response = httpx.Response(
+            422,
+            json={"error": True, "message": "Please use your own email address"},
+            request=httpx.Request("GET", "https://api.unpaywall.org/v2/10.1234/test"),
+        )
+        client._execute_request = AsyncMock(return_value=response)
+        with pytest.raises(APIRequestError, match="HTTP 422"):
+            await client.get_oa_status("10.1234/test")
 
     async def test_429(self, client):
         from unittest.mock import AsyncMock
@@ -163,7 +167,7 @@ class TestGetOAStatus:
     @patch.object(UnpaywallClient, "_make_request")
     async def test_not_found(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.get_oa_status("10.xxxx/fake") is None
+        assert await client.get_oa_status("10.1234/fake") is None
 
     async def test_normalize_doi_strips_prefix(self, client):
         assert client._normalize_doi("https://doi.org/10.1234/test") == "10.1234/test"
@@ -177,7 +181,7 @@ class TestGetOAStatus:
         await client.get_oa_status("10.23736/S0375-9393.21.15517-8")
         url_called = mock_req.call_args[0][0]
         # The DOI slash should appear as '/' not '%2F'
-        assert "/10.23736/S0375-9393.21.15517-8?" in url_called
+        assert "/10.23736/s0375-9393.21.15517-8?" in url_called
         assert "%2F" not in url_called.split("?")[0]  # no encoded slash in path
 
 
@@ -322,7 +326,7 @@ class TestEnrichArticle:
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_not_found(self, mock_status, client):
         mock_status.return_value = None
-        result = await client.enrich_article("10.xxxx/fake")
+        result = await client.enrich_article("10.1234/fake")
         assert result["is_oa"] is False
         assert result["oa_links"] == []
 
@@ -341,3 +345,18 @@ class TestStaticMethods:
         assert "paywall" in UnpaywallClient.get_oa_status_description("closed")
         assert "not determined" in UnpaywallClient.get_oa_status_description("unknown")
         assert "Unknown" in UnpaywallClient.get_oa_status_description("XXX")
+
+
+async def test_pdf_lookup_handles_explicitly_null_best_location(client):
+    with patch.object(
+        client,
+        "get_oa_status",
+        AsyncMock(
+            return_value={
+                "is_oa": True,
+                "best_oa_location": None,
+                "oa_locations": [{"url_for_pdf": "https://example.org/actual.pdf"}],
+            }
+        ),
+    ):
+        assert await client.get_pdf_link("10.1234/test") == "https://example.org/actual.pdf"

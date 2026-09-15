@@ -470,3 +470,40 @@ def test_asgi_app_builds_for_each_http_transport(transport):
 def test_asgi_app_rejects_an_unknown_transport():
     with pytest.raises(ValueError, match="transport"):
         build_asgi_app(create_server(), "carrier-pigeon")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"status":"error","message":"Provider unavailable"}',
+        "tool: x\nstatus: failed\nmessage: unavailable",
+        "tool: x\nsuccess: false",
+        "type: pipeline_result\nstatus: failed",
+        '{"tool":"unified_search","search_status":{"state":"failed"}}',
+    ],
+)
+async def test_encoded_json_error_is_native_mcp_error(payload):
+    server = PubMedMCPServer("json-error-test")
+
+    @server.tool(name="analyze_search_query")
+    def failed_analysis() -> str:
+        return payload
+
+    async with Client(server) as client:
+        result = await client.call_tool("analyze_search_query", {})
+    assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_prompt_query_example_preserves_quotes_and_newlines(tmp_path):
+    import ast
+    import re
+
+    topic = '"heart failure" AND therapy\nfollow-up'
+    async with Client(create_server(data_dir=str(tmp_path))) as client:
+        prompt = await client.get_prompt("quick_search", {"topic": topic})
+    text = "\n".join(message.content.text for message in prompt.messages if hasattr(message.content, "text"))
+    command = re.search(r"Call `(.*?)`", text, re.DOTALL).group(1)
+    call = ast.parse(command, mode="eval").body
+    assert ast.literal_eval(call.keywords[0].value) == topic

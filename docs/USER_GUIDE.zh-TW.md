@@ -261,6 +261,12 @@ arguments、選擇內建 `note_format`，由 server 寫入該 principal 隔離�
 
 本機筆記會把可驗證 metadata 放在 frontmatter 與 sidecar files，summary、relevance、limitations、follow-up sections 則保留給人或 agent 編輯。
 
+匯出不代表已完成書目或論述支持度驗證。MedPaper 筆記使用 `verified: false`、
+`trust_state: "unverified"`，摘要節錄標為 Abstract Excerpt。
+`include_abstract=False` 會從新寫入的筆記、模板、sidecar 與 CSL JSON 排除摘要；
+既有檔案只有在 `overwrite=True` 才會更新。每個檔案原子發布，但整批失敗時可能保留已完成檔案。
+
+
 ### 8. 保存可重跑 Pipeline
 
 ![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)

@@ -395,10 +395,9 @@ class TestGetCrossRefLinks:
 
         with patch.object(
             downloader._discovery_phase,
-            "_get_client",
+            "_request_metadata",
             new_callable=AsyncMock,
         ) as mock_get_client:
-            mock_client = AsyncMock()
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
@@ -415,8 +414,7 @@ class TestGetCrossRefLinks:
                     ]
                 }
             }
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client
+            mock_get_client.return_value = mock_response
 
             links = await downloader._discovery_phase.get_crossref_links("10.1234/test")
 
@@ -433,14 +431,12 @@ class TestGetCrossRefLinks:
 
         with patch.object(
             downloader._discovery_phase,
-            "_get_client",
+            "_request_metadata",
             new_callable=AsyncMock,
         ) as mock_get_client:
-            mock_client = AsyncMock()
             mock_response = Mock()
             mock_response.status_code = 404
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_get_client.return_value = mock_client
+            mock_get_client.return_value = mock_response
 
             links = await downloader._discovery_phase.get_crossref_links("10.1234/notfound")
 

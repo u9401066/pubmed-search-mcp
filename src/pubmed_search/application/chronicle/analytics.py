@@ -9,6 +9,7 @@ between topics - something a per-call timeline could never do.
 from __future__ import annotations
 
 import math
+from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from .ordering import chronology_key
@@ -33,7 +34,7 @@ def landmark_importance_score(entry: ChronicleEntry) -> float | None:
         return None
     try:
         score = float(raw_score)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return score if math.isfinite(score) and 0.0 <= score <= 1.0 else None
 
@@ -133,7 +134,7 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
             "with_year": sum(1 for a in articles if a.year is not None),
             "with_citation_count": len(citations),
             "max_citations": max(citations) if citations else None,
-            "median_citations": sorted(citations)[len(citations) // 2] if citations else None,
+            "median_citations": median(citations) if citations else None,
             "source_distribution": _distribution([a.source for a in articles]),
         },
         "landmark_entries": [

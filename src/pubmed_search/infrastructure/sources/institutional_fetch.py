@@ -203,7 +203,7 @@ def rewrite_to_ezproxy(publisher_url: str, proxy_host: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_cookies(raw: Any) -> dict[str, str]:
+def _normalize_cookies(raw: Any, *, target_url: str | None = None) -> dict[str, str]:
     """Convert a browser cookies export into a flat ``{name: value}`` dict.
 
     Accepts:
@@ -220,6 +220,24 @@ def _normalize_cookies(raw: Any) -> dict[str, str]:
         for entry in raw:
             if not isinstance(entry, dict):
                 continue
+            if target_url is not None:
+                target = urlparse(target_url)
+                host = (target.hostname or "").lower()
+                domain = str(entry.get("domain") or "").lower()
+                domain_host = domain.lstrip(".")
+                if not domain_host or not (
+                    host == domain_host or (domain.startswith(".") and host.endswith("." + domain_host))
+                ):
+                    continue
+                cookie_path = str(entry.get("path") or "/")
+                request_path = target.path or "/"
+                if request_path != cookie_path and not request_path.startswith(cookie_path.rstrip("/") + "/"):
+                    continue
+                if entry.get("secure") and target.scheme != "https":
+                    continue
+                expires = entry.get("expires", entry.get("expirationDate"))
+                if isinstance(expires, (int, float)) and expires >= 0 and expires <= time.time():
+                    continue
             name = entry.get("name")
             value = entry.get("value")
             if name and value is not None:
@@ -228,7 +246,7 @@ def _normalize_cookies(raw: Any) -> dict[str, str]:
     return {}
 
 
-def load_cookies(cookie_file: str = "", cookie_string: str = "") -> dict[str, str]:
+def load_cookies(cookie_file: str = "", cookie_string: str = "", *, target_url: str | None = None) -> dict[str, str]:
     """Load cookies from a file or inline ``Cookie:`` header string."""
     cookies: dict[str, str] = {}
     if cookie_file:
@@ -236,7 +254,7 @@ def load_cookies(cookie_file: str = "", cookie_string: str = "") -> dict[str, st
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                cookies.update(_normalize_cookies(data))
+                cookies.update(_normalize_cookies(data, target_url=target_url))
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("Failed to load EZproxy cookies (%s)", type(exc).__name__)
     if cookie_string:
@@ -265,7 +283,7 @@ def classify_content(content_type: str, body: bytes) -> ContentClass:
     ct = (content_type or "").lower()
     if not body:
         return "empty"
-    if "application/pdf" in ct or body[:5] == b"%PDF-":
+    if body[:5] == b"%PDF-":
         return "pdf"
     if "html" not in ct and not body[:1024].lower().lstrip().startswith(b"<"):
         return "unknown"
@@ -567,7 +585,7 @@ async def probe_ezproxy(
         return result
 
     result.attempted = True
-    cookies = load_cookies(cfg.cookie_file, cfg.cookie_string)
+    cookies = load_cookies(cfg.cookie_file, cfg.cookie_string, target_url=proxy_url)
     if not cookies:
         result.error = "EZproxy cookies are empty or unreadable"
         result.advice = "Export cookies from a logged-in browser session to cookie_file."

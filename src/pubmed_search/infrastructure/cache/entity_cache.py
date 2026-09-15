@@ -142,8 +142,8 @@ class EntityCache:
         """
         Remove all expired entries.
 
-        cachetools.TTLCache handles expiration lazily on access.
-        This method triggers an explicit cleanup via expire().
+        The shared substrate also expires entries lazily on access; this
+        method removes all currently expired entries in one explicit pass.
 
         Returns:
             Number of entries removed

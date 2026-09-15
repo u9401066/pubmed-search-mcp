@@ -29,6 +29,7 @@ from pubmed_search.domain.value_objects import (
     normalize_pmid_batch,
 )
 from pubmed_search.shared.exceptions import APIError, ErrorContext, PubMedSearchError, ServiceUnavailableError
+from pubmed_search.shared.markdown import escape_markdown_text
 
 from ._common import ResponseFormatter, format_search_results
 from .agent_output import (
@@ -643,7 +644,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     @mcp.tool()
     async def fetch_article_details(
         pmids: PMIDBatchInput,
-        output_format: Literal["markdown", "json"] = "markdown",
+        output_format: Literal["markdown", "json", "toon"] = "markdown",
     ) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
@@ -868,15 +869,9 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             # Convert to list for sorting/filtering
             articles: list[dict[str, Any]] = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
 
-            # Apply filters
-            if min_citations is not None:
-                articles = [a for a in articles if (a["icite"].get("citation_count") or 0) >= min_citations]
-
-            if min_rcr is not None:
-                articles = [a for a in articles if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr]
-
-            if min_percentile is not None:
-                articles = [a for a in articles if (a["icite"].get("nih_percentile") or 0) >= min_percentile]
+            articles = searcher.filter_by_citations(
+                articles, min_citations=min_citations, min_rcr=min_rcr, min_percentile=min_percentile
+            )
 
             if not articles:
                 return ResponseFormatter.no_results(
@@ -889,12 +884,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     tool_name="get_citation_metrics",
                 )
 
-            # Sort
-            def get_sort_value(a):
-                val = a["icite"].get(sort_by)
-                return val if val is not None else -1
-
-            articles = sorted(articles, key=get_sort_value, reverse=True)
+            articles = searcher.sort_by_citations(articles, metric=sort_by)
 
             if is_structured_output_format(normalized_output_format):
                 return _format_citation_metrics_structured(
@@ -913,13 +903,13 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             output = f"📊 **Citation Metrics** ({len(articles)} articles)\n"
             output += f"Sorted by: {sort_by}\n"
 
-            if min_citations or min_rcr or min_percentile:
+            if any(value is not None for value in (min_citations, min_rcr, min_percentile)):
                 filters = []
-                if min_citations:
+                if min_citations is not None:
                     filters.append(f"citations≥{min_citations}")
-                if min_rcr:
+                if min_rcr is not None:
                     filters.append(f"RCR≥{min_rcr}")
-                if min_percentile:
+                if min_percentile is not None:
                     filters.append(f"percentile≥{min_percentile}")
                 output += f"Filters: {', '.join(filters)}\n"
 
@@ -928,9 +918,9 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             for i, article in enumerate(articles, 1):
                 icite = article["icite"]
                 pmid = icite.get("pmid", article["pmid"])
-                title = icite.get("title", "Unknown")[:80]
-                year = icite.get("year", "?")
-                journal = icite.get("journal", "Unknown")
+                title = escape_markdown_text(str(icite.get("title") or "Unknown")[:80])
+                year = escape_markdown_text(icite.get("year") or "?")
+                journal = escape_markdown_text(icite.get("journal") or "Unknown")
 
                 citations = icite.get("citation_count", 0) or 0
                 rcr = icite.get("relative_citation_ratio")

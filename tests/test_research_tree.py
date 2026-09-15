@@ -58,6 +58,27 @@ def _make_timeline(events: list[TimelineEvent], topic: str = "TestTopic") -> Res
     )
 
 
+def test_timeline_serializers_keep_untrusted_text_as_data():
+    event = _event("1", 2024, MilestoneType.OTHER, label="Label\nsection injected", title="<script>x</script>")
+    timeline = _make_timeline([event], topic="Topic\nsection injected")
+    rendered = timeline.to_mermaid()
+    assert sum(line.strip().startswith("section ") for line in rendered.splitlines()) == 1
+    data = timeline.to_json_timeline()
+    assert data["events"][0]["text"]["text"] == "<p>&lt;script&gt;x&lt;/script&gt;</p>"
+
+
+def test_text_tree_renders_grandchildren_and_direct_events_once():
+    event = _event("1", 2024, MilestoneType.OTHER, title="Deep study")
+    direct = _event("2", 2025, MilestoneType.OTHER, title="Direct study")
+    leaf = ResearchBranch("leaf", "Leaf", events=[event])
+    mid = ResearchBranch("mid", "Mid", sub_branches=[leaf])
+    root = ResearchBranch("root", "Root", sub_branches=[mid], events=[direct])
+    output = ResearchTree("Topic", branches=[root]).to_text_tree()
+    assert output.count("Deep study") == output.count("Direct study") == 1
+    assert "│   └──" in output
+    assert not any(0xE000 <= ord(char) <= 0xF8FF for char in output)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # ResearchBranch Tests
 # ─────────────────────────────────────────────────────────────────────

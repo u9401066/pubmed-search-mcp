@@ -13,6 +13,7 @@ Maintenance:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,12 @@ class FulltextExtractPhase:
         self._europe_pmc_client_factory = europe_pmc_client_factory
 
     async def extract_pdf_text(self, pdf_bytes: bytes | None) -> str | None:
+        """Keep CPU-bound PDF backends off the MCP event loop."""
+        if not pdf_bytes:
+            return None
+        return await asyncio.to_thread(self._extract_pdf_text, pdf_bytes)
+
+    def _extract_pdf_text(self, pdf_bytes: bytes) -> str | None:
         if not pdf_bytes:
             return None
 
@@ -37,11 +44,13 @@ class FulltextExtractPhase:
 
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             text_parts: list[str] = []
-            for page in doc:
-                text = page.get_text()
-                if text.strip():
-                    text_parts.append(text)
-            doc.close()
+            try:
+                for page in doc:
+                    text = page.get_text()
+                    if text.strip():
+                        text_parts.append(text)
+            finally:
+                doc.close()
             if text_parts:
                 return "\n\n".join(text_parts)
         except ImportError:
@@ -98,7 +107,8 @@ class FulltextExtractPhase:
                 if not content:
                     continue
                 text_parts.append(f"{title.upper()}\n{content}")
-                sections[title.lower()] = content
+                key = title.lower()
+                sections[key] = "\n\n".join(part for part in (sections.get(key, ""), content) if part)
 
             return {
                 "text": "\n\n".join(text_parts),

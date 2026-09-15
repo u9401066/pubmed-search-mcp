@@ -409,3 +409,20 @@ class TestSourcesIntegration:
             result = await search_alternate_source_adapter(query="test", source="europe_pmc", limit=5)
             assert result.status == "ok"
             assert len(result.items) == 1
+
+
+async def test_jats_namespace_inline_spacing_references_and_anonymous_figures():
+    from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
+
+    client = EuropePMCClient()
+    xml = """<article xmlns="urn:jats"><front><article-meta><title-group><article-title>Trial</article-title></title-group></article-meta></front>
+    <body><p>A<italic> B </italic>C</p><fig><label>Figure 1</label></fig><fig><label>Figure 2</label></fig></body>
+    <back><ref-list><ref><label>1</label><element-citation>Study <pub-id pub-id-type="pmid">123</pub-id></element-citation></ref></ref-list></back></article>"""
+    try:
+        result = client.parse_fulltext_xml(xml)
+        assert result["title"] == "Trial"
+        assert result["sections"][0]["content"] == "A B C"
+        assert result["references"][0]["pmid"] == "123"
+        assert [figure["label"] for figure in result["figures"]] == ["Figure 1", "Figure 2"]
+    finally:
+        await client.close()

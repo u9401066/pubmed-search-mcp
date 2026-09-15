@@ -189,13 +189,6 @@ def normalize_unified_search_request(
         msg = "query appears to contain credential material; remove secrets and use server environment configuration"
         raise ValueError(msg)
 
-    if ranking not in {"balanced", "impact", "recency", "quality"}:
-        msg = f"unsupported ranking mode: {ranking}"
-        raise ValueError(msg)
-    if output_format not in {"markdown", "json", "toon"}:
-        msg = f"unsupported output format: {output_format}"
-        raise ValueError(msg)
-
     parsed_filters, filter_diagnostics = _parse_filters_detailed(filters)
     parsed_options, option_diagnostics = _parse_options_detailed(options)
     diagnostics = (*filter_diagnostics, *option_diagnostics)

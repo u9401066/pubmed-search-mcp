@@ -11,6 +11,7 @@ Executes a PipelineConfig by:
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import math
 import re
@@ -34,6 +35,7 @@ from pubmed_search.application.pipeline.budgets import (
     action_limit,
     validate_pipeline_budgets,
 )
+from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import CitationMetrics
 from pubmed_search.domain.entities.pipeline import (
@@ -191,6 +193,12 @@ class PipelineExecutor:
         budget = PipelineRunBudget(self._execution_policy)
         budget_token = self._run_budget.set(budget)
         results: dict[str, StepResult] = {}
+        tasks: list[asyncio.Task[StepResult]] = []
+
+        def consume_outcome(task: asyncio.Task[StepResult]) -> None:
+            if not task.cancelled():
+                task.exception()
+
         try:
             for batch_index, batch in enumerate(batches):
                 remaining = budget.remaining_seconds()
@@ -204,10 +212,12 @@ class PipelineExecutor:
                     )
                     break
 
-                tasks: list[asyncio.Task[StepResult]] = []
+                tasks = []
                 for step in batch:
                     step_inputs = {sid: results[sid] for sid in step.inputs if sid in results}
-                    tasks.append(asyncio.create_task(self._execute_step(step, step_inputs)))
+                    task = asyncio.create_task(self._execute_step(step, copy.deepcopy(step_inputs)))
+                    task.add_done_callback(consume_outcome)
+                    tasks.append(task)
 
                 _done, pending = await asyncio.wait(tasks, timeout=remaining)
                 for step, task in zip(batch, tasks):
@@ -223,7 +233,6 @@ class PipelineExecutor:
                     budget.mark_deadline_exhausted()
                     for task in pending:
                         task.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
                     pending_steps = [step for step, task in zip(batch, tasks) if task in pending]
                     future_steps = [step for pending_batch in batches[batch_index + 1 :] for step in pending_batch]
                     self._record_unexecuted_budget_steps(
@@ -267,6 +276,11 @@ class PipelineExecutor:
             return final_articles, results
         finally:
             self._run_budget.reset(budget_token)
+            pending_tasks = [task for task in tasks if not task.done()]
+            for task in pending_tasks:
+                task.cancel()
+            if pending_tasks:
+                await asyncio.wait(pending_tasks, timeout=0.1)
 
     def _record_step_outcome(
         self,
@@ -278,6 +292,8 @@ class PipelineExecutor:
         """Record one task outcome using query-safe typed budget failures."""
         if not isinstance(outcome, BaseException):
             results[step.id] = outcome
+            if not outcome.ok and step.on_error == "abort":
+                raise RuntimeError(f"Pipeline aborted at step '{step.id}' (step failure)")
             return
         if not isinstance(outcome, Exception):
             raise outcome
@@ -440,9 +456,15 @@ class PipelineExecutor:
             raise ValueError(msg)
         validate_pipeline_budgets(config)
         validate_pipeline_action_contracts(config)
+        if config.output.format not in {"markdown", "json"}:
+            raise ValueError("Pipeline output format must be markdown or json")
+        if config.output.ranking not in {"balanced", "impact", "recency", "quality"}:
+            raise ValueError("Unknown pipeline output ranking")
 
         seen_ids: set[str] = set()
         for step in config.steps:
+            if step.on_error not in {"skip", "abort"}:
+                raise ValueError("Pipeline on_error must be skip or abort")
             if not step.id:
                 msg = "Every step must have a non-empty 'id'"
                 raise ValueError(msg)
@@ -456,7 +478,7 @@ class PipelineExecutor:
                 raise ValueError(msg)
 
             for inp in step.inputs:
-                if inp not in seen_ids:
+                if inp == step.id or inp not in seen_ids:
                     msg = f"Step '{step.id}' references unknown input '{inp}'. Inputs must reference earlier steps."
                     raise ValueError(msg)
 
@@ -631,14 +653,16 @@ class PipelineExecutor:
         coros: list[Any] = []
         source_order: list[str] = []
 
+        source_queries = {source: self._resolve_query(step, inputs, source=source) for source in source_list}
         for source in source_list:
+            source_query = source_queries[source]
             if source == "pubmed" and self._searcher:
-                coros.append(self._search_pubmed(query, limit, min_year, max_year, step.params))
+                coros.append(self._search_pubmed(source_query, limit, min_year, max_year, step.params))
                 source_order.append("pubmed")
                 continue
 
             if source in _PIPELINE_ALTERNATE_SOURCES and self._alternate_search_adapter:
-                coros.append(self._search_alternate(source, query, limit, min_year, max_year))
+                coros.append(self._search_alternate(source, source_query, limit, min_year, max_year))
                 source_order.append(source)
 
         # Track per-source API return counts
@@ -745,6 +769,7 @@ class PipelineExecutor:
             pmids=pmids,
             metadata={
                 "query": query,
+                "source_queries": source_queries,
                 "source_api_counts": source_api_counts,
                 "source_errors": source_errors,
                 "source_results": source_results,
@@ -817,6 +842,8 @@ class PipelineExecutor:
         min_year: int | None,
         max_year: int | None,
     ) -> SourceAdapterResult[UnifiedArticle]:
+        if pubmed_field_tags(query):
+            raise ValueError(f"Pipeline {source} search does not accept PubMed field syntax")
         kwargs = {
             "query": query,
             "source": source,
@@ -986,8 +1013,9 @@ class PipelineExecutor:
             for e in enhanced.entities or []:
                 entities.append(
                     {
-                        "text": getattr(e, "text", str(e)),
-                        "type": getattr(e, "type", "unknown"),
+                        "text": e.original_text,
+                        "resolved_name": e.resolved_name,
+                        "type": e.entity_type,
                     }
                 )
 
@@ -1033,7 +1061,8 @@ class PipelineExecutor:
         for inp in inputs.values():
             if inp.ok and inp.pmids:
                 pmids.extend(inp.pmids)
-        pmids = validate_pipeline_details_pmids(pmids)
+        # Independent upstream searches commonly return the same PMID.
+        pmids = validate_pipeline_details_pmids(list(dict.fromkeys(pmids)))
 
         if not pmids or not self._searcher:
             return StepResult(
@@ -1242,7 +1271,7 @@ class PipelineExecutor:
 
         input_lists: list[list[UnifiedArticle]] = []
         for inp in inputs.values():
-            if inp.ok and inp.articles:
+            if inp.ok:
                 input_lists.append(inp.articles)
 
         if not input_lists:
@@ -1352,10 +1381,7 @@ class PipelineExecutor:
 
     @staticmethod
     def _coerce_int(value: Any) -> int:
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return 0
+        return PipelineExecutor._optional_int(value) or 0
 
     @staticmethod
     def _canonical_article_type_value(value: Any) -> str:
@@ -1407,7 +1433,19 @@ class PipelineExecutor:
         for ks in key_sets[1:]:
             common &= ks
 
-        return [key_to_article[k] for k in common if k in key_to_article]
+        return [
+            article
+            for key, article in key_to_article.items()
+            if key in common
+            and all(
+                any(
+                    self._article_key(other) == key
+                    and (key.startswith(("title:", "fallback:")) or article.matches_identifier(other))
+                    for other in items
+                )
+                for items in article_lists
+            )
+        ]
 
     def _rrf_merge(
         self,
@@ -1423,6 +1461,13 @@ class PipelineExecutor:
             keys: dict[str, None] = {}
             for article in articles:
                 key = self._article_key(article)
+                previous = key_to_article.get(key)
+                if (
+                    previous is not None
+                    and not key.startswith(("title:", "fallback:"))
+                    and not previous.matches_identifier(article)
+                ):
+                    raise ValueError("RRF merge received conflicting article identifiers")
                 keys[key] = None
                 key_to_article.setdefault(key, article)
             if keys:
@@ -1434,7 +1479,7 @@ class PipelineExecutor:
     # =====================================================================
 
     @staticmethod
-    def _resolve_query(step: PipelineStep, inputs: dict[str, StepResult]) -> str:
+    def _resolve_query(step: PipelineStep, inputs: dict[str, StepResult], *, source: str | None = None) -> str:
         """Derive search query from step params or upstream step results."""
         # 1. Explicit query param
         query = step.params.get("query")
@@ -1479,6 +1524,18 @@ class PipelineExecutor:
             if inp_result.action == "expand":
                 strategy_name = step.params.get("strategy")
                 if strategy_name is None:
+                    if source is not None:
+                        candidates = [
+                            item
+                            for item in inp_result.metadata.get("strategies", [])
+                            if isinstance(item, dict) and item.get("source") == source
+                        ]
+                        if candidates:
+                            best = max(candidates, key=lambda item: item.get("priority", 0))
+                            return PipelineExecutor._require_query_metadata(best.get("query", ""), "source strategy")
+                        return PipelineExecutor._require_query_metadata(
+                            inp_result.metadata.get("original_query", ""), "original expansion query"
+                        )
                     return PipelineExecutor._require_query_metadata(
                         inp_result.metadata.get("expanded_query", ""),
                         "expanded query",

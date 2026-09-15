@@ -230,6 +230,8 @@ class SearchRunJournal:
             return
         for step_id, result in dict(getattr(outcome, "step_results", {}) or {}).items():
             metadata = dict(getattr(result, "metadata", {}) or {})
+            if metadata.get("dry_run") is True:
+                continue
             source_errors = [error for error in list(metadata.get("source_errors") or []) if isinstance(error, dict)]
             articles = list(getattr(result, "articles", []) or [])
             if getattr(result, "error", None):

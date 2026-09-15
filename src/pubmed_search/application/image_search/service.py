@@ -291,9 +291,3 @@ class ImageSearchService:
         if not requested:
             raise ValueError("At least one biomedical image source is required")
         return requested
-
-    @staticmethod
-    def _deduplicate(images: list[ImageResult]) -> list[ImageResult]:
-        """Apply the shared aggregation-kernel deduplication policy."""
-        deduplicated, _duplicates_removed = ImageAggregationKernel.deduplicate(images)
-        return deduplicated

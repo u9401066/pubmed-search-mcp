@@ -15,24 +15,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryAnalyzer
-from pubmed_search.application.search.query_validator import VALID_FIELD_TAGS
+from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import RankingConfig
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
 
-from .helpers import DispatchStrategy, detect_and_expand_icd_codes
+from .helpers import DispatchStrategy, detect_and_expand_icd_codes, expand_icd_matches
 from .use_case import SourceSelectionError as _SourceSelectionError
 
 if TYPE_CHECKING:
     from .request import UnifiedSearchRequest
 
 logger = logging.getLogger(__name__)
-_FIELD_TAG_CAPTURE = re.compile(r"\[([^\]]+)]")
 
 ProgressReporter = Callable[[float, float, str], Awaitable[None]]
 
@@ -70,18 +68,7 @@ def _build_provider_neutral_icd_query(
     provider-neutral sibling for every non-PubMed search leg.
     """
 
-    expanded = original_query
-    for match in icd_matches:
-        code = str(match["code"])
-        mesh = str(match["mesh"])
-        replacement = f"{mesh} ({code})" if semantic else f'("{mesh}" OR {code})'
-        expanded = re.sub(
-            rf"\b{re.escape(code)}\b",
-            replacement,
-            expanded,
-            flags=re.IGNORECASE,
-        )
-    return expanded
+    return expand_icd_matches(original_query, icd_matches, dialect="semantic" if semantic else "boolean")
 
 
 def _build_deep_strategies(
@@ -209,13 +196,7 @@ def _validate_query_dialect(
 ) -> None:
     """Fail closed when PubMed field syntax would leak to another provider."""
 
-    pubmed_tags = sorted(
-        {
-            match.group(1).strip()
-            for match in _FIELD_TAG_CAPTURE.finditer(request.query)
-            if match.group(1).strip().lower() in VALID_FIELD_TAGS
-        }
-    )
+    pubmed_tags = pubmed_field_tags(request.query)
     if not pubmed_tags:
         return
 
@@ -293,10 +274,12 @@ async def build_unified_search_plan(
     registry = source_registry_factory()
     auto_sources = DispatchStrategy.get_sources(analysis, registry=registry)
     user_sources: list[str] | None = None
+    excluded_sources: set[str] = set()
 
     if request.sources is not None:
         selection = registry.resolve_unified_sources(request.sources, auto_sources=auto_sources)
         user_sources = list(selection.sources)
+        excluded_sources = set(selection.excluded)
         logger.info(
             "User-specified sources resolved to %s (mode=%s, excluded=%s)",
             user_sources,
@@ -316,7 +299,7 @@ async def build_unified_search_plan(
     if request.include_preprints:
         preprint_keys = ("arxiv", "medrxiv", "biorxiv")
         for key in preprint_keys:
-            if registry.is_enabled(key) and key not in dispatch_sources:
+            if registry.is_enabled(key) and key not in dispatch_sources and key not in excluded_sources:
                 dispatch_sources.append(key)
 
     dispatch_sources = _apply_retrieval_capabilities(

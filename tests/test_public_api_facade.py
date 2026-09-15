@@ -35,20 +35,12 @@ class _FakeUnifiedSearchUseCase:
         return _outcome(request)
 
 
-def test_public_api_exports_typed_application_facade() -> None:
-    from pubmed_search.api import (
-        PubMedSearchClient,
-        PubMedSearchConfig,
-        SourceSearchPage,
-        UnifiedSearchResult,
-        UnifiedSourceCount,
-    )
+def test_public_api_config_repr_keeps_api_key_private() -> None:
+    from pubmed_search.api import PubMedSearchConfig
 
-    assert PubMedSearchClient is not None
-    assert SourceSearchPage is not None
-    assert PubMedSearchConfig(email="test@example.com").email == "test@example.com"
-    assert UnifiedSearchResult.__annotations__["articles"] == "tuple[UnifiedArticle, ...]"
-    assert UnifiedSourceCount(source="pubmed", returned=1, total_available=1, status="ok").returned == 1
+    config = PubMedSearchConfig(api_key="private-test-api-key")
+    assert "private-test-api-key" not in repr(config)
+    assert config.api_key == "private-test-api-key"
 
 
 async def test_public_api_unified_search_uses_injected_application_use_case() -> None:

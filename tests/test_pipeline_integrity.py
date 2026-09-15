@@ -387,3 +387,104 @@ class TestTenantSafePipelineDeletion:
         assert "Configuration permanently removed" in output
         assert "live schedule cleanup failed" in output
         assert "private detail" not in output
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf")])
+def test_run_budget_rejects_unbounded_timeouts(timeout):
+    with pytest.raises(ValueError, match="finite"):
+        PipelineExecutionPolicy(run_timeout_seconds=timeout)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_pipeline_cancels_owned_provider_work():
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def search_page(**kwargs):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    searcher = MagicMock(search_page=search_page)
+    executor = PipelineExecutor(searcher=searcher)
+    config = PipelineConfig(steps=[PipelineStep(id="search", action="search", params={"query": "sepsis"})])
+    parent = asyncio.create_task(executor.execute(config))
+    await entered.wait()
+    parent.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await parent
+    try:
+        assert cancelled.is_set()
+    finally:
+        # Clean up the pre-fix reproduction without leaving tasks in the loop.
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task() and "PipelineExecutor" in str(task.get_coro()):
+                task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_abort_policy_stops_after_a_structured_step_failure():
+    config = PipelineConfig(
+        steps=[PipelineStep(id="search", action="search", params={"query": "sepsis"}, on_error="abort")]
+    )
+    with pytest.raises(RuntimeError, match="aborted"):
+        await PipelineExecutor().execute(config)
+
+
+@pytest.mark.asyncio
+async def test_intersection_includes_valid_empty_inputs():
+    from pubmed_search.domain.entities.article import UnifiedArticle
+    from pubmed_search.domain.entities.pipeline import StepResult
+
+    paper = UnifiedArticle(title="Sepsis", pmid="1", primary_source="pubmed")
+    inputs = {"a": StepResult("a", "search", articles=[paper]), "b": StepResult("b", "search")}
+    result = await PipelineExecutor()._action_merge(
+        PipelineStep("m", "merge", params={"method": "intersection"}), inputs
+    )
+    assert result.articles == []
+
+
+def test_config_hash_tracks_output_and_error_policy():
+    from pubmed_search.application.pipeline.validator import compute_config_hash
+
+    config = PipelineConfig(steps=[PipelineStep("s", "search", params={"query": "sepsis"})])
+    initial = compute_config_hash(config)
+    config.output.limit = 10
+    assert compute_config_hash(config) != initial
+    previous = compute_config_hash(config)
+    config.steps[0].on_error = "abort"
+    assert compute_config_hash(config) != previous
+
+
+@pytest.mark.asyncio
+async def test_builtin_expansion_uses_available_source_dialects():
+    from pubmed_search.application.search.semantic_enhancer import ResolvedEntity, SemanticEnhancer
+    from pubmed_search.shared.source_contracts import SourceAdapterResult
+
+    resolver = MagicMock(
+        resolve_entity=AsyncMock(return_value=ResolvedEntity("aspirin", "Aspirin", "chemical", "aspirin", mesh_id="D1"))
+    )
+    enhancer = SemanticEnhancer(entity_resolver=resolver)
+    searcher = MagicMock(search_page=AsyncMock(return_value=SourceSearchPage(source="pubmed", items=[], total=0)))
+    alternate = AsyncMock(return_value=SourceAdapterResult.empty(source="openalex", operation="search"))
+    executor = PipelineExecutor(
+        searcher=searcher, alternate_search_adapter=alternate, semantic_enhancer_factory=lambda: enhancer
+    )
+    config = build_pipeline_from_template("comprehensive", {"query": "aspirin", "sources": ["pubmed", "openalex"]})
+    _, results = await executor.execute(config)
+    assert all(result.ok for result in results.values())
+    assert any("MeSH Terms" in call.kwargs["query"] for call in searcher.search_page.await_args_list)
+    assert all("[MeSH" not in call.kwargs["query"] for call in alternate.await_args_list)
+
+
+def test_set_operations_do_not_collapse_conflicting_identifiers():
+    from pubmed_search.domain.entities.article import UnifiedArticle
+
+    first = UnifiedArticle(title="A", doi="10.1000/shared", pmid="1", primary_source="pubmed")
+    second = UnifiedArticle(title="B", doi="10.1000/shared", pmid="2", primary_source="pubmed")
+    executor = PipelineExecutor()
+    assert first.matches_identifier(second) is False
+    assert executor._intersect_articles([[first], [second]]) == []
+    with pytest.raises(ValueError, match="conflicting"):
+        executor._rrf_merge([[first], [second]])

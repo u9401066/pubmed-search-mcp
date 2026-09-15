@@ -29,6 +29,8 @@ import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects.article_identifiers import normalize_doi
+from pubmed_search.infrastructure.provider_payload import is_provider_error_envelope
 from pubmed_search.infrastructure.sources.base_client import (
     _CONTINUE,
     BaseAPIClient,
@@ -116,8 +118,15 @@ class CrossRefClient(BaseAPIClient):
 
     def _parse_response(self, response: httpx.Response, expect_json: bool) -> dict[str, Any] | str:
         """Extract 'message' key from CrossRef JSON responses."""
+        if not expect_json:
+            return response.text
         data = response.json()
-        return data.get("message", data)
+        if not isinstance(data, dict) or is_provider_error_envelope(data):
+            raise_provider_schema_error(self._service_name)
+        message = data.get("message", data)
+        if not isinstance(message, dict):
+            raise_provider_schema_error(self._service_name)
+        return message
 
     async def get_work(self, doi: str) -> dict[str, Any] | None:
         """
@@ -199,8 +208,13 @@ class CrossRefClient(BaseAPIClient):
         if not isinstance(data, dict):
             raise_provider_schema_error(self._service_name)
 
+        if not isinstance(data.get("items"), list) or any(not isinstance(item, dict) for item in data["items"]):
+            raise_provider_schema_error(self._service_name)
+        count = data.get("total-results")
+        if isinstance(count, bool) or not isinstance(count, int) or count < len(data["items"]):
+            raise_provider_schema_error(self._service_name)
         return {
-            "total_results": data.get("total-results", 0),
+            "total_results": count,
             "items": data.get("items", []),
             "query": query,
         }
@@ -211,7 +225,7 @@ class CrossRefClient(BaseAPIClient):
         limit: int = 5,
     ) -> list[dict[str, Any]]:
         """
-        Search for works by exact title match.
+        Search for candidate works using title relevance.
 
         More precise than general search - useful for finding specific articles.
 
@@ -235,7 +249,10 @@ class CrossRefClient(BaseAPIClient):
         if not isinstance(data, dict):
             raise_provider_schema_error(self._service_name)
 
-        return data.get("items", [])
+        items = data.get("items")
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise_provider_schema_error(self._service_name)
+        return items
 
     async def get_references(
         self,
@@ -258,7 +275,9 @@ class CrossRefClient(BaseAPIClient):
         if not work:
             return []
 
-        references = work.get("reference", [])
+        references = work.get("reference") or []
+        if not isinstance(references, list) or any(not isinstance(item, dict) for item in references):
+            raise_provider_schema_error(self._service_name)
         return references[:limit]
 
     async def get_citations(
@@ -268,10 +287,10 @@ class CrossRefClient(BaseAPIClient):
         offset: int = 0,
     ) -> dict[str, Any]:
         """
-        Get articles that cite this DOI (forward citations).
+        Get the deposited citation count and explicitly report unavailable edges.
 
-        Uses CrossRef's citation index, which may not be complete
-        for all publishers.
+        The public Crossref REST API does not implement a references:DOI filter.
+        This compatibility method never fabricates an incoming bibliography.
 
         Args:
             doi: DOI of the cited article
@@ -279,34 +298,18 @@ class CrossRefClient(BaseAPIClient):
             offset: Pagination offset
 
         Returns:
-            Dict with citing articles and count
+            Dict with optional citation_count, empty items and retrieval_supported=False
         """
         doi = self._normalize_doi(doi)
-
-        # Get citation count from work metadata
         work = await self.get_work(doi)
-        citation_count = work.get("is-referenced-by-count", 0) if work else 0
-
-        # Search for citing works
-        params = {
-            "filter": f"references:{doi}",
-            "rows": str(min(limit, 100)),
-            "offset": str(offset),
-            "sort": "published",
-            "order": "desc",
-        }
-
-        url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
-        data = await self._make_request(url)
-
-        if data is None:
-            return {"citation_count": citation_count, "items": []}
-        if not isinstance(data, dict):
-            raise_provider_schema_error(self._service_name)
-
+        count = work.get("is-referenced-by-count") if work else None
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            count = None
         return {
-            "citation_count": citation_count,
-            "items": data.get("items", []),
+            "citation_count": count,
+            "items": [],
+            "retrieval_supported": False,
+            "warning": "Crossref provides a citation count but does not expose incoming citation lookup through a references filter. Use a citation-network provider for incoming edges.",
         }
 
     async def get_journal(self, issn: str) -> dict[str, Any] | None:
@@ -368,7 +371,10 @@ class CrossRefClient(BaseAPIClient):
             return []
         if not isinstance(data, dict):
             raise_provider_schema_error(self._service_name)
-        return data.get("items", [])
+        items = data.get("items")
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise_provider_schema_error(self._service_name)
+        return items
 
     async def resolve_doi_batch(
         self,
@@ -428,12 +434,7 @@ class CrossRefClient(BaseAPIClient):
     @staticmethod
     def _normalize_doi(doi: str) -> str:
         """Normalize DOI string."""
-        doi = doi.strip()
-        # Remove URL prefixes
-        for prefix in ["https://doi.org/", "http://doi.org/", "doi:"]:
-            if doi.lower().startswith(prefix.lower()):
-                doi = doi[len(prefix) :]
-        return doi
+        return normalize_doi(doi)
 
     @staticmethod
     def _normalize_funder_id(funder_id: str) -> str:
@@ -458,7 +459,7 @@ class CrossRefClient(BaseAPIClient):
         Extract publication date from CrossRef work.
 
         CrossRef has multiple date fields with different granularity.
-        Priority: published-print > published-online > published > created
+        Priority: published-print > published-online > published > issued
 
         Args:
             work: CrossRef work metadata
@@ -471,17 +472,30 @@ class CrossRefClient(BaseAPIClient):
             "published-print",
             "published-online",
             "published",
-            "created",
+            "issued",
         ]
 
         for field in date_fields:
-            if field in work:
-                date_parts = work[field].get("date-parts", [[]])
-                if date_parts and date_parts[0]:
-                    parts = date_parts[0]
-                    year = parts[0] if len(parts) >= 1 else None
-                    month = parts[1] if len(parts) >= 2 else None
-                    day = parts[2] if len(parts) >= 3 else None
-                    return (year, month, day)
-
+            value = work.get(field)
+            if not isinstance(value, dict):
+                continue
+            date_parts = value.get("date-parts")
+            if (
+                not isinstance(date_parts, list)
+                or not date_parts
+                or not isinstance(date_parts[0], list)
+                or not date_parts[0]
+            ):
+                continue
+            parts = date_parts[0]
+            year = parts[0]
+            if isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= 9999:
+                continue
+            month = parts[1] if len(parts) > 1 else None
+            day = parts[2] if len(parts) > 2 else None
+            if isinstance(month, bool) or not isinstance(month, int) or not 1 <= month <= 12:
+                month = None
+            if month is None or isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 31:
+                day = None
+            return (year, month, day)
         return (None, None, None)

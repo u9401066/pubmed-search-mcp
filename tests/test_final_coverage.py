@@ -366,7 +366,7 @@ class TestExportToolsEdgeCases:
             query="test",
             timestamp="2024-01-01T00:00:00",
             result_count=3,
-            pmids=["aaa", "bbb", "ccc"],
+            pmids=["111", "222", "333"],
         )
         mock_session.search_history = [search_record]
 
@@ -377,7 +377,7 @@ class TestExportToolsEdgeCases:
 
         result = _resolve_pmids("last")
 
-        assert result == ["aaa", "bbb", "ccc"]
+        assert result == ["111", "222", "333"]
 
         # Cleanup
         set_session_manager(None)

@@ -403,3 +403,66 @@ async def test_s2_batch_enforces_500_id_contract() -> None:
     assert result[1] is None
     assert client._make_request.await_args.kwargs["method"] == "POST"
     assert client._make_request.await_args.kwargs["data"] == {"ids": ["id-1", "id-2"]}
+
+
+async def test_s2_batch_rejects_missing_slots_and_bulk_invalid_rows():
+    client = SemanticScholarClient()
+    try:
+        with patch.object(client, "_make_request", AsyncMock(return_value=[{"paperId": "1"}])):
+            with pytest.raises(APIRequestError):
+                await client.get_papers_batch(["1", "2"])
+        with patch.object(client, "_make_request", AsyncMock(return_value={"total": 1, "data": [None]})):
+            with pytest.raises(APIRequestError):
+                await client.bulk_search_page("diabetes")
+    finally:
+        await client.close()
+
+
+async def test_s2_partial_page_does_not_advertise_a_token_that_skips_records():
+    client = SemanticScholarClient()
+    try:
+        with patch.object(
+            client,
+            "bulk_search_page",
+            AsyncMock(
+                return_value=SourceSearchPage(
+                    source="semantic_scholar",
+                    items=[{"paperId": str(i)} for i in range(3)],
+                    total=10,
+                    next_token="page2",
+                )
+            ),
+        ):
+            result = await client.bulk_search("diabetes", max_results=2)
+        assert len(result.items) == 2
+        assert result.next_token is None
+        assert result.metadata["truncated_page"] is True
+        assert result.warnings
+    finally:
+        await client.close()
+
+
+async def test_filtered_boolean_topics_are_grouped_and_epmc_provenance_matches_request():
+    from urllib.parse import parse_qs, urlsplit
+
+    from pubmed_search.infrastructure.sources import search_alternate_source_adapter
+    from pubmed_search.infrastructure.sources.core import COREClient
+    from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
+
+    topic = "cancer OR diabetes"
+    assert COREClient.compile_query(topic, year_from=2024) == '(cancer OR diabetes) AND yearPublished>="2024"'
+    client = EuropePMCClient()
+    with (
+        patch("pubmed_search.infrastructure.sources.get_europe_pmc_client", return_value=client),
+        patch.object(
+            client,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value={"hitCount": 0, "resultList": {"result": []}},
+        ) as request,
+    ):
+        result = await search_alternate_source_adapter(topic, "europe_pmc", min_year=2024)
+    actual_query = parse_qs(urlsplit(request.call_args.args[0]).query)["query"][0]
+    assert result.status == "empty"
+    assert actual_query == "(cancer OR diabetes) AND FIRST_PDATE:[2024-01-01 TO *]"
+    assert result.provenance["physical_query"] == actual_query

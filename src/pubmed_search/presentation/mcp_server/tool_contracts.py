@@ -79,13 +79,26 @@ _LOCAL_ONLY_TOOLS = {
 logger = logging.getLogger(__name__)
 
 
+def _is_error_payload(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if value.get("success") is False or value.get("status") in ("error", "failed"):
+        return True
+    search_status = value.get("search_status")
+    return (
+        value.get("tool") == "unified_search"
+        and isinstance(search_status, dict)
+        and search_status.get("state") == "failed"
+    )
+
+
 def _looks_like_tool_error(value: Any) -> bool:
     """Recognize canonical public error envelopes without treating no-results as failure."""
     if isinstance(value, CallToolResult):
         if value.is_error:
             return True
         structured = value.structured_content
-        if isinstance(structured, dict) and (structured.get("success") is False or structured.get("status") == "error"):
+        if _is_error_payload(structured):
             return True
         return bool(value.content) and _looks_like_tool_error(value.content)
     if isinstance(value, str):
@@ -97,11 +110,18 @@ def _looks_like_tool_error(value: Any) -> bool:
                 payload = json.loads(text)
             except (TypeError, ValueError):
                 return False
-            return isinstance(payload, dict) and (payload.get("success") is False or payload.get("status") == "error")
+            return _is_error_payload(payload)
+        if text.startswith(("tool:", "type:", "status:", "success:")):
+            import toons
+
+            try:
+                return _is_error_payload(toons.loads(text))
+            except (TypeError, ValueError):
+                return False
         return False
     if isinstance(value, list) and value:
         first = value[0]
-        return isinstance(first, TextContent) and first.text.lstrip().startswith(("❌", "Error:"))
+        return isinstance(first, TextContent) and _looks_like_tool_error(first.text)
     return False
 
 

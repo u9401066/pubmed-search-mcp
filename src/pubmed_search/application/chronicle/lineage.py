@@ -159,7 +159,7 @@ def build_chronicle_lineage(timeline: ResearchTimeline) -> ResearchTree:
     MeSH descriptors are preferred over author keywords because they are
     controlled vocabulary.  A semantic result is accepted only when at least
     two distinct branches can be formed and the selected signals cover at least
-    60% of dated milestone events.
+    60% of the supplied timeline events (including undated entries).
     """
     if not timeline.events:
         return ResearchTree(
@@ -220,6 +220,8 @@ def _topic_signal_candidates(timeline: ResearchTimeline) -> tuple[list[_TopicSig
                 raw_values = [raw_values]
             if not isinstance(raw_values, (list, tuple, set)):
                 continue
+            if isinstance(raw_values, set):
+                raw_values = sorted(raw_values, key=str)
             for raw_index, raw in enumerate(raw_values):
                 if terms_examined >= _MAX_TERMS_PER_EVENT:
                     extraction["terms_omitted_per_event_limit"] += len(raw_values) - raw_index
@@ -596,7 +598,7 @@ def _clean_label(value: str, *, source: str) -> str:
     label = re.sub(r"\s+", " ", label)
     if source == "mesh_terms":
         label = _strip_mesh_qualifiers(label)
-    return label[:80]
+    return label
 
 
 def _strip_mesh_qualifiers(label: str) -> str:

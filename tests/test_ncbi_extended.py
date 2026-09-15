@@ -162,7 +162,9 @@ class TestSearchGene:
         assert result == []
         # Verify organism was added to query
         call_url = mock_req.call_args_list[0][0][0]
-        assert "human%5BOrganism%5D" in call_url or "human[Organism]" in call_url
+        from urllib.parse import parse_qs, urlsplit
+
+        assert parse_qs(urlsplit(call_url).query)["term"] == ["(BRCA1) AND (human)[Organism]"]
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_search_gene_no_results(self, mock_req, client):

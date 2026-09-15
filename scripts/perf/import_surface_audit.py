@@ -11,6 +11,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "pubmed_search"
 PACKAGE = "pubmed_search"
@@ -239,6 +244,7 @@ def _collect_imports(path: Path, modules: dict[str, Path]) -> list[ImportRecord]
 
     visit(tree)
 
+    value: ast.expr | None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             target_names = [target.id for target in node.targets if isinstance(target, ast.Name)]
@@ -304,6 +310,13 @@ def _classify_importer(importer_path: str) -> str:
 
 def build_audit() -> dict[str, Any]:
     modules = _source_modules()
+    # Console scripts are runtime roots even when nothing imports them in src.
+    metadata = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = metadata.get("project", {})
+    entrypoints = {
+        target.split(":", 1)[0] for group in ("scripts", "gui-scripts") for target in project.get(group, {}).values()
+    }
+    roots = ROOT_MODULES | entrypoints
     records: list[ImportRecord] = []
     for path in _iter_python_files():
         records.extend(_collect_imports(path, modules))
@@ -324,7 +337,7 @@ def build_audit() -> dict[str, Any]:
         test_importers = sorted(groups["tests"])
         script_importers = sorted(groups["scripts"])
         other_importers = sorted(groups["other"])
-        if module in ROOT_MODULES or path.name == "__init__.py":
+        if module in roots or path.name == "__init__.py":
             status = "root_or_package"
         elif not src_importers and not test_importers and not script_importers and not other_importers:
             status = "no_static_importers"

@@ -25,7 +25,17 @@ from .advisor_policy import (
 
 
 def _match_keywords(query_lower: str, keywords: frozenset[str]) -> tuple[str, ...]:
-    return tuple(sorted(keyword for keyword in keywords if keyword in query_lower))
+    return tuple(
+        sorted(
+            keyword
+            for keyword in keywords
+            if (
+                re.search(r"(?<![a-z0-9])" + re.escape(keyword) + r"(?![a-z0-9])", query_lower)
+                if keyword.isascii()
+                else keyword in query_lower
+            )
+        )
+    )
 
 
 def _make_feature_hit(

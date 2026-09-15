@@ -180,3 +180,63 @@ async def test_loopback_origin_and_explicit_token_reach_browser_fetch(
 
     assert response.status_code == 200
     fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_download_fallback_ignores_publisher_filename_and_checks_pdf(tmp_path: Path) -> None:
+    from pathlib import Path
+
+    destination = tmp_path / "existing.txt"
+    destination.write_bytes(b"keep")
+    download = MagicMock(suggested_filename=str(destination))
+    download.path = AsyncMock(return_value=None)
+
+    async def save(path: str) -> None:
+        Path(path).write_bytes(b"%PDF-test")
+
+    download.save_as = AsyncMock(side_effect=save)
+    assert await broker._download_pdf_bytes(download, max_bytes=64) == b"%PDF-test"
+    assert destination.read_bytes() == b"keep"
+    with pytest.raises(broker.HTTPException):
+        broker._ensure_size(b"<html>login</html>", max_bytes=64)
+
+
+@pytest.mark.asyncio
+async def test_navigation_cancellation_releases_download_listener() -> None:
+    import asyncio
+
+    started = asyncio.Event()
+    released = asyncio.Event()
+
+    async def wait_download(*args, **kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            released.set()
+
+    page = MagicMock()
+    page.wait_for_event = wait_download
+
+    async def cancelled_navigation(*args, **kwargs):
+        await started.wait()
+        raise asyncio.CancelledError
+
+    page.goto = cancelled_navigation
+    task = asyncio.create_task(
+        broker._goto_with_download_capture(page, "https://publisher.example", timeout_ms=100, max_bytes=64)
+    )
+    await started.wait()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    try:
+        assert released.is_set()
+    finally:
+        # Failed original implementation leaves an orphan task; reclaim it in the test.
+        for pending in asyncio.all_tasks():
+            if pending is not asyncio.current_task() and pending.get_coro().__name__ == "wait_download":
+                pending.cancel()
+                try:
+                    await pending
+                except asyncio.CancelledError:
+                    pass

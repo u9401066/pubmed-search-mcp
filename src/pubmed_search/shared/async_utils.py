@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import time
 from contextlib import asynccontextmanager, contextmanager
@@ -29,6 +30,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar
 from weakref import WeakKeyDictionary
 
@@ -135,7 +137,8 @@ def parse_retry_after(value: str | None) -> float | None:
         return None
 
     try:
-        return max(0.0, float(value))
+        seconds = float(value)
+        return max(0.0, seconds) if math.isfinite(seconds) else None
     except (TypeError, ValueError):
         pass
 
@@ -154,6 +157,11 @@ def parse_retry_after(value: str | None) -> float | None:
 # =============================================================================
 # Rate Limiter (Token Bucket Algorithm)
 # =============================================================================
+
+
+def _validate_rate_budget(rate: float, per: float) -> None:
+    if not math.isfinite(rate) or not math.isfinite(per) or rate <= 0 or per <= 0:
+        raise ValueError(f"RateLimiter needs a finite positive budget, got rate={rate}, per={per}")
 
 
 @dataclass
@@ -179,9 +187,7 @@ class RateLimiter:
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
-        if self.rate <= 0 or self.per <= 0:
-            # Otherwise the token maths divides by zero deep inside acquire().
-            raise ValueError(f"RateLimiter needs a positive budget, got rate={self.rate}, per={self.per}")
+        _validate_rate_budget(self.rate, self.per)
         self._tokens = self.rate
         self._last_update = time.monotonic()
 
@@ -226,6 +232,7 @@ class RateLimiter:
 
     def reconfigure(self, *, rate: float, per: float = 1.0) -> None:
         """Update limiter throughput for an existing shared limiter."""
+        _validate_rate_budget(rate, per)
         self.rate = rate
         self.per = per
         self._tokens = min(self._tokens, self.rate)
@@ -298,6 +305,7 @@ def get_rate_limiter(
     Returns:
         The shared limiter for *api_name*.
     """
+    _validate_rate_budget(rate, per)
     table = _loop_scoped(_rate_limiters, _rate_limiters_no_loop)
     limiter = table.get(api_name)
     if limiter is None:
@@ -435,14 +443,17 @@ class TransportExecutionKernel:
 
             if limiter is not None:
                 await self._await_with_budget(
-                    limiter.acquire(),
+                    limiter.acquire,
                     policy=policy,
                     deadline=deadline,
                     phase="rate limit wait",
                 )
 
             try:
-                async with self._bulkhead_context(bulkhead), self._breaker_context(breaker):
+                async with (
+                    self._bulkhead_context(bulkhead, policy=policy, deadline=deadline),
+                    self._breaker_context(breaker),
+                ):
                     return await self._execute_operation_with_budget(operation, policy=policy, deadline=deadline)
             except OperationBudgetExceeded:
                 raise
@@ -452,7 +463,12 @@ class TransportExecutionKernel:
                 retry_after = self._extract_retry_after(exc)
                 if limiter is not None and retry_after is not None:
                     capped_retry_after = min(retry_after, policy.retry.retry_after_cap)
-                    await limiter.apply_cooldown(capped_retry_after)
+                    await self._await_with_budget(
+                        partial(limiter.apply_cooldown, capped_retry_after),
+                        policy=policy,
+                        deadline=deadline,
+                        phase="cooldown update",
+                    )
 
                 if attempt + 1 >= attempts or not self._is_retryable(exc, policy.retry, should_retry):
                     raise
@@ -502,7 +518,7 @@ class TransportExecutionKernel:
     @classmethod
     async def _await_with_budget(
         cls,
-        awaitable: Awaitable[T],
+        awaitable_factory: Callable[[], Awaitable[T]],
         *,
         policy: RequestExecutionPolicy,
         deadline: float | None,
@@ -510,11 +526,11 @@ class TransportExecutionKernel:
     ) -> T:
         remaining = cls._remaining_budget(deadline)
         if remaining is None:
-            return await awaitable
+            return await awaitable_factory()
         if remaining <= 0:
             raise OperationBudgetExceeded(cls._budget_message(policy, phase))
         try:
-            return await asyncio.wait_for(awaitable, timeout=remaining)
+            return await asyncio.wait_for(awaitable_factory(), timeout=remaining)
         except asyncio.TimeoutError as exc:
             raise OperationBudgetExceeded(cls._budget_message(policy, phase)) from exc
 
@@ -595,15 +611,29 @@ class TransportExecutionKernel:
         name = policy.concurrency_name or policy.service_name
         return get_bulkhead(name, policy.concurrency_limit)
 
-    @staticmethod
+    @classmethod
     @asynccontextmanager
-    async def _bulkhead_context(semaphore: asyncio.Semaphore | None) -> AsyncIterator[None]:
+    async def _bulkhead_context(
+        cls,
+        semaphore: asyncio.Semaphore | None,
+        *,
+        policy: RequestExecutionPolicy,
+        deadline: float | None,
+    ) -> AsyncIterator[None]:
         if semaphore is None:
             yield
             return
 
-        async with semaphore:
+        await cls._await_with_budget(
+            semaphore.acquire,
+            policy=policy,
+            deadline=deadline,
+            phase="concurrency wait",
+        )
+        try:
             yield
+        finally:
+            semaphore.release()
 
     @staticmethod
     @asynccontextmanager
@@ -620,7 +650,7 @@ class TransportExecutionKernel:
         if isinstance(error, RetryableOperationError):
             return error.retry_after
 
-        if isinstance(error, RateLimitError) and error.context.retry_after:
+        if isinstance(error, RateLimitError) and error.context.retry_after is not None:
             return float(error.context.retry_after)
 
         retry_after = getattr(error, "retry_after", None)
@@ -768,6 +798,9 @@ async def batch_process(
     """
     all_results: list[R | Exception] = []
 
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
 
@@ -832,7 +865,9 @@ class CircuitBreaker:
         if self._state != "open":
             return False
         # Check if recovery timeout passed
-        return not (self._last_failure_time and time.monotonic() - self._last_failure_time > self.recovery_timeout)
+        return not (
+            self._last_failure_time is not None and time.monotonic() - self._last_failure_time > self.recovery_timeout
+        )
 
     async def __aenter__(self) -> Self:
         async with self._lock:
@@ -860,6 +895,10 @@ class CircuitBreaker:
         exc_tb: object,
     ) -> None:
         async with self._lock:
+            if isinstance(exc_val, asyncio.CancelledError):
+                if self._state == "half_open":
+                    self._half_open_calls = max(0, self._half_open_calls - 1)
+                return
             if exc_val is not None:
                 self._failure_count += 1
                 self._last_failure_time = time.monotonic()

@@ -15,7 +15,7 @@ Advantages over local formatting:
 - Official formatting, always up-to-date
 - Complete metadata (abstracts, MeSH terms, affiliations)
 - Batch support (multiple PMIDs in single request)
-- No maintenance required
+- Local validation remains necessary when upstream behavior changes
 
 Rate limits:
 - Same as E-utilities (3/sec without key, 10/sec with key)
@@ -23,13 +23,16 @@ Rate limits:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Literal
 
 import httpx
 from typing_extensions import Self
 
+from pubmed_search.domain.value_objects.article_identifiers import normalize_pmid
 from pubmed_search.shared.async_utils import (
     RetryableOperationError,
     create_async_http_client,
@@ -163,6 +166,10 @@ class NCBICitationExporter:
                 error=f"Unsupported format: {format}. Use: {', '.join(OFFICIAL_FORMATS)}",
             )
 
+        try:
+            pmids = list(dict.fromkeys(normalize_pmid(pmid) for pmid in pmids))
+        except ValueError:
+            return CitationResult(False, format, "", 0, "Invalid PMID")
         # Build request
         pmid_str = ",".join(str(p) for p in pmids)
         params = {
@@ -186,8 +193,6 @@ class NCBICitationExporter:
 
             # Check for API error response (JSON with error)
             if content.startswith("{") and '"format"' in content:
-                import json
-
                 try:
                     error_data = json.loads(content)
                     if "format" in error_data:
@@ -201,13 +206,33 @@ class NCBICitationExporter:
                 except json.JSONDecodeError:
                     pass  # Not an error response, continue
 
-            logger.info(f"Exported {len(pmids)} citations in {format} format via official API")
+            if format == "ris":
+                starts = len(re.findall(r"^TY  - ", content, re.MULTILINE))
+                count = len(re.findall(r"^ER  -[ \t]*$", content, re.MULTILINE))
+                valid = count > 0 and count == starts
+            elif format == "medline":
+                count = len(re.findall(r"^PMID- [1-9][0-9]*[ \t]*$", content, re.MULTILINE))
+                valid = count > 0
+            else:
+                try:
+                    records = json.loads(content)
+                except json.JSONDecodeError:
+                    records = None
+                valid = (
+                    isinstance(records, list)
+                    and bool(records)
+                    and all(isinstance(row, dict) and row.get("type") for row in records)
+                )
+                count = len(records) if isinstance(records, list) else 0
+            if not valid or count > len(pmids):
+                return CitationResult(False, format, "", 0, "Citation API returned invalid citation records")
+            logger.info("Exported %s citation records in %s format", count, format)
 
             return CitationResult(
                 success=True,
                 format=format,
                 content=content,
-                pmid_count=len(pmids),
+                pmid_count=count,
             )
 
         except httpx.HTTPStatusError as exc:

@@ -318,23 +318,25 @@ def reciprocal_rank_fusion(
     where r iterates over ranking dimensions and rank_r(d) is the
     1-based rank of document d in dimension r.
 
-    This is proven to outperform individual rankers and other fusion
-    methods (Condorcet, CombMNZ) without requiring score calibration.
+    Rank-based fusion avoids requiring calibrated scores across dimensions;
+    effectiveness depends on the corpus, query and contributing rankers.
 
     Args:
         articles: List of articles to rank
         dimension_rankings: {dimension_name: [article_keys in ranked order]}
             Each value is a list of article keys (PMID/DOI/title) sorted by
             that dimension's score (best first).
-        k: RRF constant (default 60, proven optimal in TREC evaluations)
+        k: RRF constant (default 60; tune against held-out retrieval judgments)
         dimension_weights: Optional per-dimension weights. When omitted,
             all dimensions contribute equally.
 
     Returns:
         RRFResult with fused ranking, scores, and per-dimension contributions
     """
-    if k < 0:
-        raise ValueError("RRF k must be non-negative")
+    if not math.isfinite(k) or k < 0:
+        raise ValueError("RRF k must be non-negative and finite")
+    if dimension_weights and any(not math.isfinite(weight) for weight in dimension_weights.values()):
+        raise ValueError("RRF weights must be finite")
     # Build article key lookup
     article_map: dict[str, UnifiedArticle] = {}
     for article in articles:
@@ -432,6 +434,14 @@ def mmr_diversify(
     Returns:
         MMRResult with diversified article list and diagnostics
     """
+    if not math.isfinite(lambda_param) or not 0 <= lambda_param <= 1:
+        raise ValueError("MMR lambda must be finite and between zero and one")
+    if top_k is not None and top_k < 0:
+        raise ValueError("MMR top_k must be non-negative")
+    if top_k == 0:
+        return MMRResult(articles=[], diversity_scores={}, avg_pairwise_distance=1.0)
+    if any(article.ranking_score is not None and not math.isfinite(article.ranking_score) for article in articles):
+        raise ValueError("MMR ranking scores must be finite")
     if len(articles) <= 1:
         return MMRResult(
             articles=articles,
@@ -461,13 +471,13 @@ def mmr_diversify(
 
     # Pre-compute relevance scores (use existing ranking_score if available)
     relevance_scores: list[float] = []
-    for article in articles:
+    for index, article in enumerate(articles):
         score = getattr(article, "ranking_score", None)
         if score is not None:
             relevance_scores.append(score)
         else:
             # Fallback: Jaccard with query
-            relevance_scores.append(_jaccard_similarity(term_sets[articles.index(article)], query_terms))
+            relevance_scores.append(_jaccard_similarity(term_sets[index], query_terms))
 
     # Normalize relevance to [0, 1]
     max_rel = max(relevance_scores) if relevance_scores else 1.0
@@ -582,15 +592,17 @@ def analyze_source_disagreement(
     source_to_articles: dict[str, list[str]] = {}
     article_to_sources: dict[str, list[str]] = {}
 
-    for article in articles:
-        key = _article_key(article)
+    for index, article in enumerate(articles):
+        # Deduplicated records may still share a DOI when their PMIDs conflict.
+        key = str(index)
         sources: list[str] = []
 
         # Get sources from SourceMetadata
         source_metas = getattr(article, "sources", []) or []
         for sm in source_metas:
             src_name = sm.source if hasattr(sm, "source") else str(sm)
-            sources.append(src_name)
+            if src_name not in sources:
+                sources.append(src_name)
 
         # Always include primary_source
         if article.primary_source and article.primary_source not in sources:

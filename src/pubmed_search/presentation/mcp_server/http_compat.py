@@ -39,15 +39,19 @@ class CopilotStudioCompatibilityMiddleware:
                     message["status"] = 200
 
                     headers = list(message.get("headers", []))
-                    headers = [(key, value) for key, value in headers if key.lower() != b"content-length"]
+                    headers = [
+                        (key, value)
+                        for key, value in headers
+                        if key.lower() not in {b"content-length", b"content-type", b"transfer-encoding"}
+                    ]
                     headers.append((b"content-length", b"2"))
-
-                    if not any(key.lower() == b"content-type" for key, _ in headers):
-                        headers.append((b"content-type", b"application/json"))
+                    headers.append((b"content-type", b"application/json"))
 
                     message["headers"] = headers
 
             elif message["type"] == "http.response.body" and converted:
+                if message.get("more_body", False):
+                    return
                 message = dict(message)
                 message["body"] = b"{}"
                 message["more_body"] = False

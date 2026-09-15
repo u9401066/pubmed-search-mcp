@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 
+import pytest
 from scripts.perf.complexity_scan import (
     ComplexityModel,
     fit_complexity,
     iter_target_specs,
+    run_scan,
     summarize_static_hotspots,
 )
 
@@ -47,3 +49,32 @@ def test_static_hotspot_summary_returns_repo_files() -> None:
     assert hotspots
     assert all(item.path.startswith("src/pubmed_search/") for item in hotspots)
     assert hotspots[0].lines >= hotspots[-1].lines
+
+
+@pytest.mark.parametrize(
+    "samples",
+    [
+        [(1, 0.1), (2, -0.1), (3, 0.3)],
+        [(1, 0.1), (2, float("nan")), (3, 0.3)],
+        [(1, 0.1), (2, float("inf")), (3, 0.3)],
+        [(0, 0.1), (2, 0.2), (3, 0.3)],
+        [(1, 0.1), (1, 0.2), (1, 0.3)],
+    ],
+)
+def test_invalid_measurements_cannot_produce_a_successful_complexity_report(samples) -> None:
+    with pytest.raises(ValueError):
+        fit_complexity(samples)
+
+
+def test_unknown_target_is_rejected_before_running_any_benchmark() -> None:
+    with pytest.raises(ValueError, match="Unknown complexity targets"):
+        run_scan({"rank_article_typo"})
+
+
+def test_cache_misses_cannot_be_reported_as_fast_cache_hits(monkeypatch) -> None:
+    from pubmed_search.application.session.manager import SessionManager
+
+    monkeypatch.setattr(SessionManager, "get_from_cache", lambda self, pmids: ({}, pmids))
+    target = next(target for target in iter_target_specs() if target.name == "session_cache_lookup")
+    with pytest.raises(RuntimeError, match="requires all articles to be cache hits"):
+        target.runner(3)

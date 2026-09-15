@@ -12,11 +12,14 @@ if TYPE_CHECKING:
 def source_fingerprint(repo_root: Path) -> str:
     """Fingerprint Python product sources; exclude the shared evaluation adapter."""
     digest = hashlib.sha256()
-    paths = sorted((repo_root / "src" / "pubmed_search").rglob("*.py"))
+    paths = sorted(
+        path
+        for path in (repo_root / "src" / "pubmed_search").rglob("*.py")
+        if "/infrastructure/evaluation/" not in path.relative_to(repo_root).as_posix()
+    )
     if not paths:
         raise ValueError(f"No PubMed Search sources found in {repo_root}")
     for path in paths:
         relative = path.relative_to(repo_root).as_posix()
-        if "/infrastructure/evaluation/" not in relative:
-            digest.update(relative.encode() + b"\0" + path.read_bytes() + b"\0")
+        digest.update(relative.encode() + b"\0" + path.read_bytes() + b"\0")
     return digest.hexdigest()

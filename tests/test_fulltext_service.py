@@ -44,6 +44,92 @@ class _FigureStub:
 
 
 class TestFulltextService:
+    async def test_europe_pmc_preserves_full_selected_text_and_figure_failure(self):
+        from pubmed_search.application.fulltext import FulltextPolicyDefinition, FulltextRegistry
+
+        provider = MagicMock()
+        provider.get_fulltext_xml = AsyncMock(return_value="<article/>")
+        full_text = "Evidence " * 1000
+        provider.parse_fulltext_xml.return_value = {
+            "sections": [{"title": "Results", "content": full_text}],
+        }
+        figures = AsyncMock()
+        figures.get_article_figures.return_value = SimpleNamespace(figures=[], error="upstream unavailable")
+        service = FulltextService(
+            registry=FulltextRegistry(
+                policies=(
+                    FulltextPolicyDefinition(
+                        key="structured_first",
+                        label="PMC only",
+                        sources=("europe_pmc",),
+                    ),
+                )
+            ),
+            europe_pmc_client_factory=lambda: provider,
+            unpaywall_client_factory=MagicMock(),
+            core_client_factory=MagicMock(),
+            downloader_factory=MagicMock(),
+            figure_client_factory=lambda: figures,
+        )
+        result = await service.retrieve(FulltextRequest(pmcid="PMC123", include_figures=True))
+        assert full_text in result.raw_fulltext_content
+        assert full_text not in result.fulltext_content
+        assert result.coverage_status == "partial"
+        assert [error.source for error in result.source_errors] == ["pmc_figures"]
+
+    async def test_custom_policy_order_controls_retrieval(self):
+        from pubmed_search.application.fulltext import FulltextPolicyDefinition, FulltextRegistry
+
+        core = AsyncMock()
+        core.search.return_value = {"results": [{"full_text": "CORE evidence"}]}
+        unpaywall = AsyncMock()
+        unpaywall.get_oa_status.return_value = None
+        service = FulltextService(
+            registry=FulltextRegistry(
+                policies=(
+                    FulltextPolicyDefinition(
+                        key="standard_discovery",
+                        label="CORE first",
+                        sources=("core", "unpaywall"),
+                    ),
+                )
+            ),
+            europe_pmc_client_factory=MagicMock(),
+            unpaywall_client_factory=lambda: unpaywall,
+            core_client_factory=lambda: core,
+            downloader_factory=MagicMock(),
+        )
+        result = await service.retrieve(FulltextRequest(doi="10.1000/test"))
+        assert result.sources_tried == ["core", "unpaywall"]
+
+    async def test_custom_policy_can_disable_the_pdf_fallback(self):
+        from pubmed_search.application.fulltext import FulltextPolicyDefinition, FulltextRegistry
+
+        provider = AsyncMock()
+        provider.get_fulltext_xml.return_value = None
+        downloader = MagicMock()
+        service = FulltextService(
+            registry=FulltextRegistry(
+                policies=(
+                    FulltextPolicyDefinition(
+                        key="structured_first",
+                        label="PMC only",
+                        sources=("europe_pmc",),
+                    ),
+                )
+            ),
+            europe_pmc_client_factory=lambda: provider,
+            unpaywall_client_factory=MagicMock(),
+            core_client_factory=MagicMock(),
+            downloader_factory=downloader,
+        )
+
+        result = await service.retrieve(FulltextRequest(pmcid="PMC123"))
+
+        assert result.sources_tried == ["europe_pmc"]
+        assert result.fulltext_content is None
+        downloader.assert_not_called()
+
     def test_coverage_fields_reject_display_labels(self):
         result = FulltextServiceResult()
 
@@ -93,6 +179,8 @@ class TestFulltextService:
     async def test_source_exception_is_reported_as_unavailable_without_details(self):
         mock_europe_pmc = AsyncMock()
         mock_europe_pmc.get_fulltext_xml.side_effect = RuntimeError("token=super-secret")
+        downloader = AsyncMock()
+        downloader.get_fulltext.side_effect = RuntimeError("token=super-secret")
         messages: list[str] = []
 
         async def capture_log(_level: Literal["debug", "info", "warning", "error"], message: str) -> None:
@@ -102,20 +190,21 @@ class TestFulltextService:
             europe_pmc_client_factory=lambda: mock_europe_pmc,
             unpaywall_client_factory=lambda: AsyncMock(),
             core_client_factory=lambda: AsyncMock(),
-            downloader_factory=lambda: MagicMock(),
+            downloader_factory=lambda: downloader,
         )
 
         result = await service.retrieve(FulltextRequest(pmcid="PMC7096777"), log=capture_log)
 
         assert result.coverage_status == "unavailable"
-        assert result.sources_tried == ["europe_pmc"]
+        assert result.sources_tried == ["europe_pmc", "pdf_retrieval_fallback"]
         assert result.sources_completed == []
         assert [issue.to_dict() for issue in result.source_errors] == [
             {
-                "source": "europe_pmc",
+                "source": source,
                 "code": "source_unavailable",
                 "message": "The upstream source was unavailable during this request.",
             }
+            for source in ("europe_pmc", "pdf_retrieval_fallback")
         ]
         assert "super-secret" not in " ".join(messages)
 
@@ -149,7 +238,9 @@ class TestFulltextService:
         assert result.pdf_links[0]["source"] == "PubMed Central"
 
     @pytest.mark.asyncio
-    async def test_uses_extended_sources_for_pdf_text_and_links(self):
+    @pytest.mark.parametrize("extended", [False, True])
+    @pytest.mark.parametrize("cleanup_failure", [False, True])
+    async def test_uses_extended_sources_for_pdf_text_and_links(self, extended, cleanup_failure):
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
 
@@ -182,7 +273,7 @@ class TestFulltextService:
                 content_type="pdf",
             )
         )
-        mock_downloader.close = AsyncMock()
+        mock_downloader.close = AsyncMock(side_effect=RuntimeError("cleanup failed") if cleanup_failure else None)
 
         service = FulltextService(
             europe_pmc_client_factory=lambda: AsyncMock(),
@@ -193,7 +284,7 @@ class TestFulltextService:
         )
 
         result = await service.retrieve(
-            FulltextRequest(doi="10.1234/test", extended_sources=True),
+            FulltextRequest(doi="10.1234/test", extended_sources=extended),
         )
 
         mock_downloader.get_fulltext.assert_awaited_once_with(
@@ -203,6 +294,10 @@ class TestFulltextService:
             strategy="extract_text",
             allow_browser_session=None,
         )
+        mock_downloader.close.assert_awaited_once()
+        assert result.fulltext_content == "Institutional PDF text"
+        assert result.extended_sources_attempted is extended
+        assert (result.fallback_notice is None) is extended
         assert result.fulltext_provenance == "derived"
         assert result.content_sections[0]["title"] == "Extracted PDF Text"
         assert any(link["url"] == "https://publisher.example.edu/paper.pdf" for link in result.pdf_links)
@@ -308,11 +403,14 @@ class TestFulltextService:
         mock_core = AsyncMock()
         mock_core.search.return_value = {"results": []}
 
+        downloader = AsyncMock()
+        downloader.get_fulltext.return_value = FulltextResult(link_discovery=PDFLinkDiscoveryResult())
+
         service = FulltextService(
             europe_pmc_client_factory=lambda: mock_europe_pmc,
             unpaywall_client_factory=lambda: mock_unpaywall,
             core_client_factory=lambda: mock_core,
-            downloader_factory=lambda: MagicMock(),
+            downloader_factory=lambda: downloader,
             figure_client_factory=None,
         )
 
@@ -321,8 +419,8 @@ class TestFulltextService:
         mock_europe_pmc.get_article.assert_awaited_once_with("MED", "41817525", result_type="core")
         mock_unpaywall.get_oa_status.assert_awaited_once_with("10.1001/jamanetworkopen.2026.1515")
         assert result.doi == "10.1001/jamanetworkopen.2026.1515"
-        assert result.sources_tried == ["europe_pmc_metadata", "unpaywall", "core"]
-        assert result.sources_completed == ["europe_pmc_metadata", "unpaywall", "core"]
+        assert result.sources_tried == ["europe_pmc_metadata", "unpaywall", "core", "pdf_retrieval_fallback"]
+        assert result.sources_completed == ["europe_pmc_metadata", "unpaywall", "core", "pdf_retrieval_fallback"]
         assert any(link["url"] == "https://jamanetwork.com/articlepdf/example.pdf" for link in result.pdf_links)
 
     @pytest.mark.asyncio
@@ -339,6 +437,7 @@ class TestFulltextService:
         mock_figure_client = MagicMock()
         mock_figure_client.get_article_figures = AsyncMock(
             return_value=SimpleNamespace(
+                error=None,
                 figures=[
                     _FigureStub(
                         {
@@ -347,7 +446,7 @@ class TestFulltextService:
                             "image_url": "https://pmc.example/figure1.png",
                         }
                     )
-                ]
+                ],
             )
         )
 

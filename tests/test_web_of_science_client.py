@@ -40,14 +40,13 @@ class TestWebOfScienceClient:
                 limit=5,
                 min_year=2020,
                 max_year=2024,
-                open_access_only=True,
                 page=2,
             )
 
         assert page.source == "web_of_science"
         assert page.total == 12
         assert page.next_token == 3
-        assert page.query == "TS=(icu sedation) AND PY=(2020-2024) AND OA=(Y)"
+        assert page.query == "TS=(icu sedation) AND PY=(2020-2024)"
         assert page.metadata == {
             "page": 2,
             "requested_page": 2,
@@ -67,7 +66,7 @@ class TestWebOfScienceClient:
         params = mock_make_request.await_args.kwargs["params"]
         assert "TS=(icu sedation)" in params["q"]
         assert "PY=(2020-2024)" in params["q"]
-        assert "OA=(Y)" in params["q"]
+        assert "OA=" not in params["q"]
         assert params["page"] == 2
         assert params["limit"] == 5
 
@@ -93,3 +92,44 @@ class TestWebOfScienceClient:
         client = WebOfScienceClient(api_key="licensed-key")
 
         assert not hasattr(client, "search")
+
+
+async def test_wos_official_server_path_and_publication_fields():
+    import httpx
+
+    def handler(request):
+        assert request.url.path == "/apis/wos-starter/v1/documents"
+        return httpx.Response(
+            200,
+            json={
+                "metadata": {"total": 1, "page": 1, "limit": 10},
+                "hits": [
+                    {
+                        "uid": "WOS:1",
+                        "title": "Example",
+                        "source": {"sourceTitle": "Journal", "publishYear": 2024},
+                        "identifiers": {"pmid": "123"},
+                    }
+                ],
+            },
+        )
+
+    client = WebOfScienceClient(api_key="test-key")
+    await client.close()
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        page = await client.search_page("diabetes")
+        assert page.items[0]["year"] == 2024
+        assert page.items[0]["pmid"] == "123"
+    finally:
+        await client.close()
+
+
+async def test_wos_rejects_unsupported_open_access_filter_before_request():
+    client = WebOfScienceClient(api_key="test-key")
+    try:
+        with patch.object(client, "_make_request", AsyncMock(side_effect=AssertionError("must not call"))):
+            with pytest.raises(ValueError, match="open_access_only"):
+                await client.search_page("diabetes", open_access_only=True)
+    finally:
+        await client.close()

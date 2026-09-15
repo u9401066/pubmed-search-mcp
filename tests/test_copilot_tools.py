@@ -134,3 +134,14 @@ class TestCommonFunctions:
         set_session_manager(None)
         assert get_last_search_pmids() == []
         assert check_cache("test query") is None
+
+
+def test_response_retains_immediate_retry_and_zero_suggestion_budget():
+    from pubmed_search.presentation.mcp_server.tools.agent_output import finalize_next_tools
+    from pubmed_search.shared.exceptions import RateLimitError
+
+    payload = json.loads(ResponseFormatter.error(RateLimitError(retry_after=0), output_format="json"))
+    assert payload["retry_after"] == 0
+    assert finalize_next_tools(
+        [{"tool": "unified_search", "command": "unified_search(query='test')"}], max_items=0
+    ) == ([], [])

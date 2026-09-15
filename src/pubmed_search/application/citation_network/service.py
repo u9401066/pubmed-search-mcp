@@ -9,10 +9,12 @@ frontier order so output remains deterministic.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from pubmed_search.domain.value_objects.article_identifiers import normalize_pmid, try_normalize_pmid
 from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
 
 
@@ -51,13 +53,24 @@ class CitationNetworkConfig:
     timeout_seconds: float = 45.0
 
     def __post_init__(self) -> None:
+        if any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in (self.depth, self.limit_per_level, self.max_total_nodes, self.max_concurrency)
+        ):
+            raise ValueError("citation limits must be integers")
         if not 1 <= self.depth <= 3:
             raise ValueError("depth must be between 1 and 3")
         if self.direction not in {"forward", "backward", "both"}:
             raise ValueError("direction must be forward, backward, or both")
         if self.limit_per_level <= 0 or self.max_total_nodes <= 0:
             raise ValueError("citation limits must be positive")
-        if self.max_concurrency <= 0 or self.timeout_seconds <= 0:
+        if (
+            self.max_concurrency <= 0
+            or isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+        ):
             raise ValueError("execution limits must be positive")
 
 
@@ -247,10 +260,7 @@ def make_citation_edge(source_pmid: str, target_pmid: str) -> dict[str, Any]:
 
 
 def _valid_pmid(value: Any) -> str | None:
-    text = str(value or "").strip()
-    if not text or not text.isascii() or not text.isdecimal() or int(text) <= 0:
-        return None
-    return text
+    return try_normalize_pmid(value)
 
 
 class CitationNetworkService:
@@ -266,6 +276,7 @@ class CitationNetworkService:
         self._task_supervisor = task_supervisor or CitationTaskSupervisor()
 
     async def build(self, root_pmid: str, config: CitationNetworkConfig) -> CitationNetworkResult:
+        root_pmid = normalize_pmid(root_pmid)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + config.timeout_seconds
         root_article = await self._fetch_root(root_pmid, deadline=deadline)

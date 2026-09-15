@@ -192,3 +192,39 @@ def test_response_limit_cannot_disable_or_exceed_hard_cap(value: int) -> None:
 def test_response_limit_rejects_bool() -> None:
     with pytest.raises(TypeError, match="max_response_bytes"):
         BaseAPIClient(max_response_bytes=True)
+
+
+async def test_empty_json_post_keeps_method_and_body() -> None:
+    observed = []
+
+    def handler(request):
+        observed.append((request.method, request.content))
+        return httpx.Response(200, json={"ok": True})
+
+    client = _BoundedClient(handler, max_response_bytes=64)
+    try:
+        await client._make_request("/batch", method="POST", data={})
+    finally:
+        await client.close()
+    assert observed == [("POST", b"{}")]
+
+
+async def test_custom_credentials_are_not_forwarded_to_another_origin() -> None:
+    observed = []
+
+    def handler(request):
+        observed.append(request)
+        if request.url.host == "api.example.test":
+            return httpx.Response(302, headers={"Location": "https://other.example.test/finish"})
+        return httpx.Response(200, json={"ok": True})
+
+    client = _BoundedClient(handler, max_response_bytes=64)
+    try:
+        await client._make_request(
+            "/start", headers={"X-ApiKey": "test-private-key", "X-ELS-Insttoken": "test-private-token"}
+        )
+    finally:
+        await client.close()
+    assert "x-apikey" in observed[0].headers
+    assert "x-apikey" not in observed[1].headers
+    assert "x-els-insttoken" not in observed[1].headers

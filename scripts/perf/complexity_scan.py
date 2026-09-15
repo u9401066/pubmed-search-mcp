@@ -59,7 +59,7 @@ class StaticHotspot:
     complexity_findings: int
 
 
-def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
+def _linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float, float, float]:
     if len(xs) != len(ys):
         raise ValueError("xs and ys must have the same length")
     if not xs:
@@ -93,9 +93,13 @@ def fit_complexity(samples: list[tuple[int, float]]) -> FitResult:
     """Fit common growth models to ``(N, seconds)`` samples."""
     if len(samples) < 3:
         raise ValueError("at least three samples are required")
+    if len({size for size, _ in samples}) < 3:
+        raise ValueError("at least three distinct input sizes are required")
+    if any(size <= 0 or not math.isfinite(size) or sec < 0 or not math.isfinite(sec) for size, sec in samples):
+        raise ValueError("input sizes must be positive and timings finite and non-negative")
 
     sizes = [n for n, _ in samples]
-    timings = [max(sec, 0.0) for _, sec in samples]
+    timings = [sec for _, sec in samples]
     models: list[ComplexityModel] = []
 
     for name in _model_features(sizes[0]):
@@ -280,13 +284,15 @@ def _target_export_ris(n: int) -> float:
 def _target_session_cache_lookup(n: int) -> float:
     from pubmed_search.application.session.manager import SessionManager
 
-    manager = SessionManager(data_dir=str(DEFAULT_OUTPUT_DIR / "session-bench"))
+    manager = SessionManager()
     articles = _make_article_dicts(n)
     manager.add_to_cache(articles, _skip_save=True)
     pmids = [article["pmid"] for article in articles]
 
     def run() -> None:
-        manager.get_from_cache(pmids)
+        cached, missing = manager.get_from_cache(pmids)
+        if missing or len(cached) != n:
+            raise RuntimeError("Cache benchmark requires all articles to be cache hits")
 
     return _time_callable(run, repeats=3)
 
@@ -397,6 +403,9 @@ def run_target(target: TargetSpec) -> dict[str, Any]:
 def run_scan(target_names: set[str] | None = None) -> dict[str, Any]:
     specs = iter_target_specs()
     if target_names:
+        unknown = target_names - {spec.name for spec in specs}
+        if unknown:
+            raise ValueError(f"Unknown complexity targets: {', '.join(sorted(unknown))}")
         specs = [spec for spec in specs if spec.name in target_names]
     return {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),

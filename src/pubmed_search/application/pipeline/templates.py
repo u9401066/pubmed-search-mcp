@@ -202,7 +202,6 @@ def build_comprehensive_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 action="search",
                 inputs=["expand"],
                 params={
-                    "strategy": "mesh",
                     "sources": sources,
                     "limit": limit * 2,
                     **year_params,
@@ -301,7 +300,6 @@ def build_gene_drug_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 action="search",
                 inputs=["expand"],
                 params={
-                    "strategy": "mesh",
                     "sources": sources,
                     "limit": limit * 2,
                     **year_params,

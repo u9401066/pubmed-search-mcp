@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 from pubmed_search.application.session.artifacts import ArtifactStore
+from pubmed_search.domain.entities.article import Author
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
 from pubmed_search.shared.credential_sanitizer import is_credential_field, redact_credential_assignments
 from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
@@ -223,15 +224,23 @@ class CachedArticle:
         payload["cached_at"] = cached_at
         payload.setdefault("pmid", pmid)
 
+        # Normalize the cache envelope; preserve original provider metadata in full_data.
+        authors = payload.get("authors") or []
+        if isinstance(authors, (str, dict)):
+            authors = [authors]
         return cls(
             pmid=pmid,
-            title=payload.get("title", ""),
-            authors=payload.get("authors", []),
-            abstract=payload.get("abstract", ""),
-            journal=payload.get("journal", ""),
-            year=payload.get("year", ""),
-            doi=payload.get("doi", ""),
-            pmc_id=payload.get("pmc_id", ""),
+            title=str(payload.get("title") or ""),
+            authors=[
+                Author.from_dict(author).display_name if isinstance(author, dict) else str(author)
+                for author in authors
+                if author
+            ],
+            abstract=str(payload.get("abstract") or ""),
+            journal=str(payload.get("journal") or ""),
+            year=str(payload.get("year") or ""),
+            doi=str(payload.get("doi") or ""),
+            pmc_id=str(payload.get("pmc_id") or ""),
             cached_at=cached_at,
             full_data=payload,
         )
@@ -540,7 +549,11 @@ class SessionManager:
     def __init__(self, data_dir: str | None = None, article_cache: ArticleCache | None = None):
         self._lock = threading.RLock()
         self.data_dir = Path(data_dir) if data_dir else None
-        self.article_cache = article_cache or ArticleCache(cache_dir=str(self.data_dir) if self.data_dir else None)
+        self.article_cache = (
+            article_cache
+            if article_cache is not None
+            else ArticleCache(cache_dir=str(self.data_dir) if self.data_dir else None)
+        )
         self.artifact_store = ArtifactStore(self.data_dir / "artifacts") if self.data_dir else None
         self._sessions: dict[str, ResearchSession] = {}
         self._current_session_id: str | None = None
@@ -946,8 +959,10 @@ class SessionManager:
             for session in self._sessions.values()
         ]
 
-    @synchronized
-    def warm_article_cache(self, articles: list[dict[str, Any]]) -> int:
+    def _cache_articles(
+        self, articles: list[dict[str, Any]], *, event_kind: str, event_message: str, save: bool = True
+    ) -> int:
+        """Shared cache/session bookkeeping, called under the manager lock."""
         warmed = self.article_cache.put_many(articles)
         session = self._current_session()
         if session:
@@ -955,35 +970,31 @@ class SessionManager:
             if warmed:
                 self._append_session_event(
                     session,
-                    kind="cache_warmed",
-                    message="Session cache warmed with article payloads",
+                    kind=event_kind,
+                    message=event_message,
                     details={
                         "article_count": warmed,
                         "pmids": [article.get("pmid", "") for article in articles[:10] if article.get("pmid")],
                     },
                 )
-            self._save_session(session)
+            if save:
+                self._save_session(session)
         return warmed
 
     @synchronized
+    def warm_article_cache(self, articles: list[dict[str, Any]]) -> int:
+        return self._cache_articles(
+            articles, event_kind="cache_warmed", event_message="Session cache warmed with article payloads"
+        )
+
+    @synchronized
     def add_to_cache(self, articles: list[dict[str, Any]], *, _skip_save: bool = False) -> int:
-        warmed = self.article_cache.put_many(articles)
-        session = self._current_session()
-        if session:
-            self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
-            if warmed:
-                self._append_session_event(
-                    session,
-                    kind="cache_updated",
-                    message="Cached article payloads added to the active session",
-                    details={
-                        "article_count": warmed,
-                        "pmids": [article.get("pmid", "") for article in articles[:10] if article.get("pmid")],
-                    },
-                )
-        if session and not _skip_save:
-            self._save_session(session)
-        return warmed
+        return self._cache_articles(
+            articles,
+            event_kind="cache_updated",
+            event_message="Cached article payloads added to the active session",
+            save=not _skip_save,
+        )
 
     @synchronized
     def get_cached_article(self, pmid: str) -> dict[str, Any] | None:
@@ -1437,6 +1448,10 @@ class SessionManager:
             return None
         request = run.get("request") if isinstance(run.get("request"), dict) else {}
         arguments = self._replay_request(str(run.get("query") or ""), request)
+        if arguments.get("filters") == {}:
+            arguments.pop("filters")
+        elif isinstance(arguments.get("filters"), dict):
+            raise ValueError("Legacy metadata filters cannot be replayed as unified_search filter syntax")
         return {
             "tool": "unified_search",
             "arguments": arguments,
@@ -1582,9 +1597,10 @@ class SessionManager:
         if not lookup_artifact_id:
             return None
 
-        for manifest in self.list_artifacts(session_id=lookup_session_id, limit=10_000):
+        session = self._get_session_for_artifact_lookup(lookup_session_id)
+        for manifest in reversed(session.artifacts if session is not None else []):
             if manifest.get("artifact_id") == lookup_artifact_id:
-                return manifest
+                return copy.deepcopy(manifest)
         return None
 
     def _get_session_for_artifact_lookup(self, session_id: str | None = None) -> ResearchSession | None:
@@ -1716,12 +1732,22 @@ class SessionManager:
         if session is None:
             return None
 
+        if limit is not None and limit < 0:
+            raise ValueError("Cached search limit must be non-negative")
+        if limit == 0:
+            return []
         normalized_query = query.strip().lower()
 
         for record in reversed(session.search_history):
             if record.get("query", "").strip().lower() != normalized_query:
                 continue
 
+            if record.get("status", "completed") != "completed" or record.get("filters"):
+                continue
+            run = self._find_search_run(session, str(record.get("run_id") or ""))
+            request = run.get("request", {}) if run else {}
+            if any(request.get(key) for key in ("sources", "filters", "options", "pipeline")):
+                continue
             pmids = record.get("pmids", [])
             if limit and len(pmids) < limit:
                 continue

@@ -56,7 +56,7 @@ class TestFulltextRegistry:
         )
 
         assert policy.key == "standard_discovery"
-        assert policy.sources == ("unpaywall", "institutional", "core")
+        assert policy.sources == ("unpaywall", "institutional", "core", "pdf_retrieval_fallback")
 
     def test_requires_at_least_one_identifier(self):
         registry = FulltextRegistry()

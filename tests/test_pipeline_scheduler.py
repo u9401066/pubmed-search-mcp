@@ -186,3 +186,18 @@ class TestAPSPipelineScheduler:
 
         with pytest.raises(ValueError, match="Invalid cron expression"):
             scheduler.schedule("weekly_remi", "bad cron")
+
+
+@pytest.mark.asyncio
+async def test_unscheduling_during_run_does_not_resurrect_schedule(pipeline_store, mock_runner, scheduler_settings):
+    scheduler = APSPipelineScheduler(store=pipeline_store, runner=mock_runner, settings=scheduler_settings)
+    scheduler.schedule("weekly_remi", "0 9 * * 1")
+    result = mock_runner.execute_saved_pipeline.return_value
+
+    async def execute(name):
+        scheduler.unschedule(name)
+        return result
+
+    mock_runner.execute_saved_pipeline.side_effect = execute
+    await scheduler._execute_job("weekly_remi")
+    assert pipeline_store.get_schedule("weekly_remi") is None

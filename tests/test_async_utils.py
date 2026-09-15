@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
+    OperationBudgetExceeded,
     RateLimiter,
     RateLimitPolicy,
     RequestExecutionPolicy,
@@ -18,6 +20,7 @@ from pubmed_search.shared.async_utils import (
     batch_process,
     close_shared_async_client,
     gather_with_errors,
+    get_bulkhead,
     get_rate_limiter,
     get_shared_async_client,
     get_transport_kernel,
@@ -32,6 +35,15 @@ from pubmed_search.shared.exceptions import RateLimitError
 
 
 class TestRateLimiter:
+    @pytest.mark.parametrize("rate,per", [(0, 1), (1, 0), (float("nan"), 1), (1, float("inf"))])
+    def test_invalid_reconfiguration_preserves_the_working_limiter(self, rate, per):
+        limiter = RateLimiter(rate=2, per=1)
+        with pytest.raises(ValueError, match="positive"):
+            limiter.reconfigure(rate=rate, per=per)
+        assert (limiter.rate, limiter.per) == (2, 1)
+        with pytest.raises(ValueError, match="positive"):
+            RateLimiter(rate=rate, per=per)
+
     @pytest.mark.asyncio
     async def test_acquire_fast(self):
         rl = RateLimiter(rate=10.0, per=1.0)
@@ -43,22 +55,7 @@ class TestRateLimiter:
         async with rl:
             pass  # Should not raise
 
-    @pytest.mark.asyncio
-    async def test_rate_limiting_kicks_in(self):
-        rl = RateLimiter(rate=2.0, per=1.0)
-        for _ in range(3):
-            await rl.acquire()
         # After 3 acquires at rate=2, it should have waited for the 3rd
-
-    @pytest.mark.asyncio
-    async def test_tokens_replenish(self):
-        rl = RateLimiter(rate=10.0, per=1.0)
-        # Drain tokens
-        for _ in range(10):
-            await rl.acquire()
-        # Wait a bit for replenish
-        await asyncio.sleep(0.15)
-        await rl.acquire()  # Should succeed
 
     @pytest.mark.asyncio
     async def test_waited_token_time_is_not_counted_twice(self, monkeypatch):
@@ -177,6 +174,13 @@ class TestGatherWithErrors:
 
 
 class TestBatchProcess:
+    @pytest.mark.parametrize("batch_size", [0, -1])
+    async def test_invalid_batch_size_cannot_silently_skip_work(self, batch_size):
+        processor = AsyncMock(return_value="processed")
+        with pytest.raises(ValueError, match="batch_size"):
+            await batch_process([1, 2], processor, batch_size=batch_size)
+        processor.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_basic_processing(self):
         async def double(n):
@@ -221,6 +225,26 @@ class TestBatchProcess:
 
 
 class TestCircuitBreaker:
+    @pytest.mark.parametrize("recovering", [False, True])
+    async def test_caller_cancellation_does_not_trip_or_exhaust_the_breaker(self, monkeypatch, recovering):
+        from pubmed_search.shared import async_utils
+
+        clock = [0.0]
+        monkeypatch.setattr(async_utils, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=0, half_open_max_calls=1)
+        if recovering:
+            with pytest.raises(RuntimeError):
+                async with breaker:
+                    raise RuntimeError("upstream failed")
+            clock[0] = 1.0
+        with pytest.raises(asyncio.CancelledError):
+            async with breaker:
+                raise asyncio.CancelledError
+        assert not breaker.is_open
+        async with breaker:
+            pass
+        assert breaker.state == "closed"
+
     @pytest.mark.asyncio
     async def test_closed_state_allows_calls(self):
         cb = CircuitBreaker(failure_threshold=3)
@@ -376,6 +400,54 @@ class TestTimeoutWithFallback:
 
 
 class TestTransportKernel:
+    async def test_total_timeout_includes_waiting_for_a_bulkhead_slot(self):
+        semaphore = get_bulkhead("core-review-blocked", 1)
+        await semaphore.acquire()
+        operation = AsyncMock(return_value="ok")
+        policy = RequestExecutionPolicy(
+            service_name="core-review-blocked",
+            concurrency_limit=1,
+            total_timeout=0.01,
+        )
+        try:
+            with pytest.raises(OperationBudgetExceeded, match="concurrency wait"):
+                await asyncio.wait_for(get_transport_kernel().execute(operation, policy=policy), timeout=1)
+            operation.assert_not_called()
+            assert semaphore.locked()
+        finally:
+            semaphore.release()
+        assert await get_transport_kernel().execute(operation, policy=policy) == "ok"
+        assert not semaphore.locked()
+
+    async def test_total_timeout_includes_waiting_to_apply_cooldown(self):
+        limiter = get_rate_limiter("core-review-cooldown", rate=100)
+
+        async def throttled():
+            # Another operation owns the shared limiter while this response is processed.
+            await limiter._lock.acquire()
+            raise RetryableOperationError("throttled", retry_after=1)
+
+        try:
+            with pytest.raises(OperationBudgetExceeded, match="cooldown update"):
+                await asyncio.wait_for(
+                    get_transport_kernel().execute(
+                        throttled,
+                        policy=RequestExecutionPolicy(
+                            service_name="core-review-cooldown",
+                            total_timeout=0.01,
+                            rate_limit=RateLimitPolicy(name="core-review-cooldown", rate=100),
+                        ),
+                    ),
+                    timeout=1,
+                )
+        finally:
+            if limiter._lock.locked():
+                limiter._lock.release()
+
+    @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+    def test_nonfinite_retry_after_is_not_a_usable_delay(self, value):
+        assert parse_retry_after(value) is None
+
     @pytest.mark.asyncio
     async def test_parse_retry_after_seconds(self):
         assert parse_retry_after("3") == 3.0

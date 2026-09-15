@@ -14,16 +14,18 @@ https://www.ncbi.nlm.nih.gov/research/pubtator3/api
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Literal
 
 import httpx
 
 from pubmed_search.application.search.semantic_enhancer import ResolvedEntity
+from pubmed_search.domain.value_objects.article_identifiers import try_normalize_pmid
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
     RelationMatch,
 )
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, raise_provider_schema_error
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,8 @@ class PubTatorClient(BaseAPIClient):
             timeout: Request timeout in seconds
             rate_limit: Max requests per second
         """
+        if isinstance(rate_limit, bool) or not math.isfinite(rate_limit) or rate_limit <= 0:
+            raise ValueError("rate_limit must be finite and positive")
         self._timeout = timeout
         self._requests_per_second = rate_limit
         self._default_headers = {"User-Agent": "PubMed-Search-MCP/1.0"}
@@ -109,7 +113,7 @@ class PubTatorClient(BaseAPIClient):
 
     async def close(self):
         """Close HTTP client and release resources."""
-        if not self._client.is_closed:
+        if self._client is not None and not self._client.is_closed:
             await self._client.aclose()
         self._client = None  # type: ignore[assignment]
 
@@ -123,8 +127,10 @@ class PubTatorClient(BaseAPIClient):
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """Execute a request using the lazily recreated shared client."""
-        client = await self._get_client()
-        return await client.get(url, params=params or data or {}, headers=headers or {})
+        await self._get_client()
+        return await super()._execute_request(
+            url, method=method, params=params if params is not None else data, headers=headers
+        )
 
     async def _request(
         self,
@@ -142,8 +148,10 @@ class PubTatorClient(BaseAPIClient):
             JSON response, or ``None`` only for an explicitly handled optional
             endpoint response. Other failures raise sanitized typed errors.
         """
-        data = await self._make_request(endpoint, data=params or {}, expect_json=True)
-        return data if isinstance(data, dict) else None
+        data = await self._make_request("/" + endpoint.lstrip("/"), params=params, expect_json=True)
+        if data is not None and not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
+        return data
 
     # ==================== Entity APIs ====================
 
@@ -176,8 +184,10 @@ class PubTatorClient(BaseAPIClient):
             params["concept"] = concept
 
         data = await self._request("entity/autocomplete/", params)
-        if not data:
+        if data is None:
             return []
+        if not isinstance(data.get("results"), list) or any(not isinstance(item, dict) for item in data["results"]):
+            raise_provider_schema_error(self._service_name)
 
         results = []
         for item in data.get("results", [])[:limit]:
@@ -214,10 +224,22 @@ class PubTatorClient(BaseAPIClient):
         if not data:
             return {"count": 0, "pmids": []}
 
-        return {
-            "count": data.get("count", 0),
-            "pmids": data.get("results", [])[:limit],
-        }
+        rows = data.get("results")
+        count = data.get("count")
+        if not isinstance(rows, list) or isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise_provider_schema_error(self._service_name)
+        pmids = []
+        for row in rows[:limit]:
+            pmid = (
+                try_normalize_pmid(row.get("pmid", row.get("id"))) if isinstance(row, dict) else try_normalize_pmid(row)
+            )
+            if pmid is None:
+                raise_provider_schema_error(self._service_name)
+            if pmid not in pmids:
+                pmids.append(pmid)
+        if count < len(pmids):
+            raise_provider_schema_error(self._service_name)
+        return {"count": count, "pmids": pmids}
 
     async def resolve_entity(
         self,
@@ -287,8 +309,10 @@ class PubTatorClient(BaseAPIClient):
             params["e2"] = target_type
 
         data = await self._request("relations/", params)
-        if not data:
+        if data is None:
             return []
+        if not isinstance(data.get("results"), list) or any(not isinstance(item, dict) for item in data["results"]):
+            raise_provider_schema_error(self._service_name)
 
         results = []
         for item in data.get("results", [])[:limit]:
@@ -299,7 +323,7 @@ class PubTatorClient(BaseAPIClient):
                     relation_type=item.get("type", item.get("relation", "")),
                     target_entity=item.get("e2", {}).get("id", ""),
                     target_name=item.get("e2", {}).get("name", ""),
-                    evidence_count=item.get("count", item.get("score", 0)),
+                    evidence_count=item.get("count", 0),
                     pmids=item.get("pmids", [])[:10],
                 )
             )
@@ -321,31 +345,40 @@ class PubTatorClient(BaseAPIClient):
         Returns:
             dict with annotated entities by type
         """
-        data = await self._request("publications/export/pubtator", {"pmids": pmid})
-        if not data:
+        data = await self._request("publications/export/biocjson", {"pmids": pmid})
+        if data is None:
             return {}
-
-        # Parse PubTator format
+        documents = data.get("PubTator3")
+        if not isinstance(documents, list):
+            raise_provider_schema_error(self._service_name)
         annotations: dict[str, list[Any]] = {
-            "genes": [],
-            "diseases": [],
-            "chemicals": [],
-            "species": [],
-            "variants": [],
+            key: [] for key in ("genes", "diseases", "chemicals", "species", "variants")
         }
-
-        # Parse the response (format depends on API)
-        if isinstance(data, dict) and "PubTator3" in data:
-            for annotation in data.get("PubTator3", []):
-                entity_type = annotation.get("type", "").lower()
-                if entity_type in annotations:
-                    annotations[entity_type].append(
-                        {
-                            "text": annotation.get("text", ""),
-                            "id": annotation.get("identifier", ""),
-                        }
-                    )
-
+        categories = {
+            "gene": "genes",
+            "disease": "diseases",
+            "chemical": "chemicals",
+            "species": "species",
+            "variant": "variants",
+            "mutation": "variants",
+        }
+        for document in documents:
+            if not isinstance(document, dict) or not isinstance(document.get("passages"), list):
+                raise_provider_schema_error(self._service_name)
+            if str(document.get("id")) != pmid:
+                raise_provider_schema_error(self._service_name)
+            for passage in document["passages"]:
+                if not isinstance(passage, dict) or not isinstance(passage.get("annotations", []), list):
+                    raise_provider_schema_error(self._service_name)
+                for annotation in passage.get("annotations", []):
+                    if not isinstance(annotation, dict) or not isinstance(annotation.get("infons"), dict):
+                        raise_provider_schema_error(self._service_name)
+                    infons = annotation["infons"]
+                    category = categories.get(str(infons.get("type", "")).lower())
+                    if category:
+                        annotations[category].append(
+                            {"text": annotation.get("text", ""), "id": infons.get("identifier", "")}
+                        )
         return annotations
 
 

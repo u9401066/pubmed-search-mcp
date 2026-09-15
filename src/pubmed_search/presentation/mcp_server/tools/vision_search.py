@@ -230,21 +230,21 @@ def register_vision_tools(mcp):
 
         This tool enables searching for scientific literature based on images.
 
-        WORKFLOW (Agent MUST follow all steps automatically):
+        WORKFLOW (the host agent performs the analysis and search):
         ─────────────────────────────────────────────────────────
         1. Provide an image (URL or base64-encoded)
         2. This tool returns the image using MCP ImageContent protocol
         3. YOU (the Agent) analyze the image using your vision capabilities
         4. Extract relevant ENGLISH search terms from the image
-        5. IMMEDIATELY call `search_biomedical_images()` or `unified_search()`
-           with the extracted terms - DO NOT wait for user confirmation
+        5. Call `search_biomedical_images()` or `unified_search()` with extracted
+           terms when literature retrieval is within the user-requested scope
         6. Return both the analysis and search results to the user
 
         ⚠️ IMPORTANT RULES:
         ────────────────
         - ALL search queries must be in ENGLISH (Open-i requirement)
-        - After analyzing the image, proceed to search automatically
-        - Do NOT just describe the image and stop - complete the full workflow
+        - This tool returns an image and guidance; it does not invoke a vision model
+        - The host agent controls any subsequent search within its permissions
         - If the image shows a medical condition, extract the medical term in English
 
         SEARCH TYPES:
@@ -266,8 +266,8 @@ def register_vision_tools(mcp):
 
         IMPORTANT:
         ──────────
-        After analyzing the image, IMMEDIATELY search for related literature.
-        Do NOT ask the user "do you want me to search?" — just do it.
+        Image observations are search hypotheses that require source verification.
+        Follow the user-requested scope and the host agent's execution rules.
         Use English medical terminology in all search queries.
 
         Args:
@@ -300,21 +300,8 @@ def register_vision_tools(mcp):
                 if image.startswith("data:image/"):
                     # Parse data URI
                     mime_type, image_data = parse_data_uri(image)
-                elif is_base64_image(image):
-                    mime_type, image_data = _decode_base64_image(image)
                 else:
-                    return [
-                        TextContent(
-                            type="text",
-                            text=(
-                                "❌ **Error**: Invalid image format\n\n"
-                                "💡 **Supported formats**:\n"
-                                "- Data URI: `data:image/png;base64,iVBORw0...`\n"
-                                "- Raw base64 string\n"
-                                "- Image URL"
-                            ),
-                        )
-                    ]
+                    mime_type, image_data = _decode_base64_image(image)
 
             # Add the image content for Agent to analyze
             results.append(
@@ -390,7 +377,7 @@ Suggest clinical search terms and relevant MeSH headings.
             # Build instruction text
             instruction_text = (
                 prompt
-                + "\n\n_After analysis, IMMEDIATELY search for related literature using the extracted English terms. Call `search_biomedical_images()` or `unified_search()` without asking for confirmation._"
+                + "\n\n_Use the extracted terms as search hypotheses. When literature retrieval is requested, continue with `search_biomedical_images()` or `unified_search()` under the host agent's permissions._"
             )
 
             if context:

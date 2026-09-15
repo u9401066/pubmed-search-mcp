@@ -294,7 +294,11 @@ class SearchMixin:
                 )
         if min_year is not None and max_year is not None and min_year > max_year:
             raise ValueError("min_year must not exceed max_year")
-        if article_type is not None and (not isinstance(article_type, str) or not article_type.strip()):
+        if article_type is not None and (
+            not isinstance(article_type, str)
+            or not article_type.strip()
+            or any(char in article_type for char in '\r\n"[]')
+        ):
             raise ValueError("article_type must be a non-empty string or None")
 
         allowed_strategies = frozenset(member.value for member in SearchStrategy)
@@ -315,7 +319,11 @@ class SearchMixin:
                 raise ValueError(f"{field_name} must be one of: {', '.join(sorted(allowed))}")
 
         sort_param = "pub_date" if strategy == SearchStrategy.RECENT.value else "relevance"
-        full_query = query
+        has_filters = any(
+            value is not None
+            for value in (min_year, max_year, article_type, age_group, sex, species, language, clinical_query)
+        )
+        full_query = f"({query})" if has_filters else query
         if min_year is not None or max_year is not None:
             date_range = f"{min_year or MIN_PUBLICATION_YEAR}/01/01:{max_year or MAX_PUBLICATION_YEAR}/12/31[dp]"
             full_query += f" AND {date_range}"
@@ -515,7 +523,8 @@ class SearchMixin:
             returned_pmids.append(pmid)
         if len(returned_pmids) != len(set(returned_pmids)):
             raise NCBIProviderSchemaError("fetch_details")
-        return results
+        by_pmid = {row["pmid"]: row for row in results}
+        return [by_pmid[pmid] for pmid in dict.fromkeys(expected_pmids) if pmid in by_pmid]
 
     def _parse_pubmed_article(self, article: dict) -> dict[str, Any]:
         """
@@ -686,8 +695,6 @@ class SearchMixin:
         for pt in pub_type_list:
             if hasattr(pt, "__str__"):
                 pub_types.append(str(pt))
-            elif isinstance(pt, str):
-                pub_types.append(pt)
         return pub_types
 
     def _extract_identifiers(self, pubmed_data: dict) -> tuple:

@@ -54,6 +54,61 @@ def _capture_tools(register_fn, *args):
 
 
 class TestReferenceVerificationService:
+    async def test_timeout_does_not_wait_for_cancellation_resistant_provider(self):
+        release = asyncio.Event()
+
+        async def fetch(_pmids):
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                await release.wait()
+            return []
+
+        self.searcher.fetch_details.side_effect = fetch
+        service = ReferenceVerificationService(self.searcher, total_timeout_seconds=0.01)
+        try:
+            row = await asyncio.wait_for(service.verify_reference("PMID:12345678", index=1), timeout=0.2)
+            assert row["status"] == "not_checked"
+            assert service._task_supervisor.pending_count == 1
+        finally:
+            release.set()
+            await service._task_supervisor.aclose()
+
+    async def test_different_journal_with_shared_name_is_not_verified(self):
+        self.searcher.fetch_details.return_value = [
+            {
+                "pmid": "12345678",
+                "title": "Example title",
+                "journal": "Science Advances",
+                "year": "2024",
+                "volume": "12",
+                "pages": "1-9",
+                "authors_full": [{"last_name": "Smith"}],
+            }
+        ]
+        result = await self.service.verify_reference(
+            "Smith J. Example title. Science. 2024;12:1-9. PMID:12345678",
+            index=1,
+        )
+        assert result["status"] != "verified"
+        assert "journal" in result["mismatched_fields"]
+
+    async def test_malformed_batch_payload_falls_back_to_individual_resolution(self):
+        self.searcher.verify_references.return_value = None
+        self.searcher.fetch_details.return_value = None
+        report = await self.service.verify_reference_list("Smith J. Example. Science. 2024;12:1-9.")
+        assert len(report["results"]) == 1
+
+    @pytest.mark.parametrize("timeout", [float("nan"), float("inf")])
+    def test_rejects_nonfinite_deadline(self, timeout):
+        with pytest.raises(ReferenceVerificationInputError):
+            ReferenceVerificationService(self.searcher, total_timeout_seconds=timeout)
+
+    def test_short_pmid_and_author_initial_block(self):
+        parsed = self.service.parse_reference("Smith AB. Example. Science. 2024;12:1-9. PMID:123", index=1)
+        assert parsed.pmid == "123"
+        assert parsed.first_author == "Smith"
+
     def setup_method(self):
         self.searcher = MagicMock()
         self.searcher.find_by_citation = AsyncMock(return_value=None)

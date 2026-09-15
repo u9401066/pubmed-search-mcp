@@ -55,7 +55,7 @@ class TestPreprintArticleExtended:
         assert d["doi"] == "10.48550/arXiv.2301.00001"
         assert "arxiv.org/abs/2301.00001" in d["source_url"]
 
-    async def test_to_dict_long_abstract_truncated(self):
+    async def test_to_dict_preserves_long_abstract(self):
         article = PreprintArticle(
             id="1",
             title="T",
@@ -69,7 +69,7 @@ class TestPreprintArticleExtended:
             doi=None,
         )
         d = article.to_dict()
-        assert len(d["abstract"]) == 503
+        assert d["abstract"] == article.abstract
 
     async def test_source_url_medrxiv(self):
         article = PreprintArticle(

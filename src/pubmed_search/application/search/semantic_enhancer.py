@@ -1,27 +1,12 @@
 """
 SemanticEnhancer - Deep Query Understanding via PubTator3
 
-This module provides semantic understanding of biomedical queries using:
-1. PubTator3 entity resolution (Gene, Disease, Chemical, Species, Variant)
-2. MeSH term expansion via NCBI E-utilities
-3. Synonym generation and query expansion
+Resolves biomedical terms through an injected PubTator-compatible port and
+builds baseline, MeSH-constrained, entity and broad retrieval variants.
+The unified planner chooses whether to use this optional enhancement; resolver
+failure preserves baseline search. Expected precision/recall fields are static
+planning hints, not measurements against relevance judgments.
 
-Architecture:
-    SemanticEnhancer sits between QueryAnalyzer and MultiSourceSearcher.
-    It enriches the analyzed query with standardized entities and expanded terms.
-
-    Query Flow:
-    User Query ??QueryAnalyzer ??SemanticEnhancer ??MultiSourceSearcher
-                      ??               ??                   ??
-                AnalyzedQuery ??EnhancedQuery ??SearchStrategies
-
-Example:
-    >>> enhancer = SemanticEnhancer(entity_resolver=resolver)
-    >>> enhanced = await enhancer.enhance("propofol sedation ICU")
-    >>> enhanced.entities
-    [ResolvedEntity(resolved_name="Propofol", entity_type="chemical", ...)]
-    >>> enhanced.expanded_terms
-    ["Propofol"[MeSH], "2,6-Diisopropylphenol", ...]
 """
 
 from __future__ import annotations
@@ -65,7 +50,7 @@ class ResolvedEntity:
     ncbi_id: str | None = None
 
     def to_search_term(self) -> str:
-        """Generate the provider-neutral search expression for this entity."""
+        """Generate a PubMed search expression for this entity."""
         if self.mesh_id:
             return f'"{self.resolved_name}"[MeSH Terms]'
         if self.entity_type == "gene" and self.ncbi_id:
@@ -213,13 +198,13 @@ class SemanticEnhancer:
     """
     Enhances queries with semantic understanding via PubTator3.
 
-    Every query goes through deep enhancement:
+    For queries selected by the unified planner, optional enhancement provides:
     1. Entity resolution (PubTator3) - Standardize biomedical terms
     2. Term expansion (MeSH, synonyms) - Broaden coverage
     3. Strategy generation - Multiple search approaches
 
-    This is called for EVERY search, not just complex ones.
-    The philosophy: "Every search is deep AND wide."
+    Simple lookups and explicit provider requests can bypass enhancement.
+    Baseline retrieval remains available when the resolver fails or times out.
 
     Usage:
         enhancer = SemanticEnhancer(entity_resolver=resolver)
@@ -367,7 +352,7 @@ class SemanticEnhancer:
         async def resolve_one(term: str) -> ResolvedEntity | None:
             # Check cache first
             cache_key = _entity_cache_key(term)
-            if cache:
+            if cache is not None:
                 cached = cache.get(cache_key)
                 if cached is not None:
                     return cached  # type: ignore[no-any-return]
@@ -376,7 +361,7 @@ class SemanticEnhancer:
             entity = await self._resolver.resolve_entity(term)
 
             # Cache result
-            if cache and entity:
+            if cache is not None and entity:
                 cache.set(cache_key, entity)
 
             return entity
@@ -409,15 +394,17 @@ class SemanticEnhancer:
         """
         import re
 
+        # Field names and Boolean operators are syntax, not biomedical entities.
+        query = re.sub(r"\[[^\]]*\]", " ", query)
         # Extract quoted phrases first
         quoted = re.findall(r'"([^"]+)"', query)
 
         # Extract remaining words
         unquoted = re.sub(r'"[^"]+"', "", query)
-        words = re.findall(r"\b[a-zA-Z]{3,}\b", unquoted)
+        words = re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*\b", unquoted)
 
         # Filter stop words
-        words = [w for w in words if w.lower() not in self.STOP_WORDS]
+        words = [w for w in words if len(w) >= 2 and w.lower() not in self.STOP_WORDS and w.lower() != "not"]
 
         # Build candidate list: quoted phrases + long words + short words
         candidates = []
@@ -504,7 +491,7 @@ class SemanticEnhancer:
 
         # Strategy 5: Broad title/abstract search
         broad_query = self._build_broad_query(terms)
-        if broad_query != query:
+        if broad_query and broad_query != query:
             strategies.append(
                 SearchPlan(
                     name="broad_tiab",
@@ -532,22 +519,11 @@ class SemanticEnhancer:
         if not mesh_parts:
             return original_query
 
-        # Combine MeSH terms with OR, then AND with remaining query
+        # Keep the user's complete constraints. Removing resolved words from
+        # a Boolean expression can leave dangling AND/NOT or change its scope.
+        # Entity-only and broad strategies provide separate recall variants.
         mesh_clause = " OR ".join(mesh_parts)
-
-        # Try to identify non-entity parts of original query
-        entity_names = {e.original_text.lower() for e in mesh_entities}
-        entity_names.update({e.resolved_name.lower() for e in mesh_entities})
-
-        remaining_words = []
-        for word in original_query.split():
-            if word.lower() not in entity_names:
-                remaining_words.append(word)
-
-        if remaining_words:
-            remaining = " ".join(remaining_words)
-            return f"({mesh_clause}) AND ({remaining})"
-        return mesh_clause
+        return f"({mesh_clause}) AND ({original_query})"
 
     def _build_entity_query(self, entities: list[ResolvedEntity]) -> str:
         """Build query using resolved entity names."""

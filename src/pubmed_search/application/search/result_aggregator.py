@@ -32,6 +32,7 @@ Example:
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -59,20 +60,6 @@ def _get_ranking_algorithms() -> Any:
 
         _ranking_algorithms = _ra
     return _ranking_algorithms
-
-
-# Lazy import to avoid circular dependency
-_UnifiedArticle: Any = None
-
-
-def _get_unified_article() -> type[UnifiedArticle]:
-    """Lazy import UnifiedArticle to avoid circular imports."""
-    global _UnifiedArticle
-    if _UnifiedArticle is None:
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
-        _UnifiedArticle = UnifiedArticle
-    return cast("type[UnifiedArticle]", _UnifiedArticle)
 
 
 def _article_key(article: UnifiedArticle) -> str:
@@ -261,26 +248,18 @@ class RankingConfig:
 
     def normalized_weights(self) -> dict[str, float]:
         """Get normalized weights that sum to 1.0."""
-        total = (
-            self.relevance_weight
-            + self.quality_weight
-            + self.recency_weight
-            + self.impact_weight
-            + self.source_trust_weight
-            + self.entity_match_weight
-        )
-
-        if total == 0:
-            total = 1.0
-
-        return {
-            "relevance": self.relevance_weight / total,
-            "quality": self.quality_weight / total,
-            "recency": self.recency_weight / total,
-            "impact": self.impact_weight / total,
-            "source_trust": self.source_trust_weight / total,
-            "entity_match": self.entity_match_weight / total,
+        weights = {
+            "relevance": self.relevance_weight,
+            "quality": self.quality_weight,
+            "recency": self.recency_weight,
+            "impact": self.impact_weight,
+            "source_trust": self.source_trust_weight,
+            "entity_match": self.entity_match_weight,
         }
+        if any(not math.isfinite(weight) or weight < 0 for weight in weights.values()):
+            raise ValueError("Ranking weights must be finite and non-negative")
+        total = sum(weights.values()) or 1.0
+        return {dimension: weight / total for dimension, weight in weights.items()}
 
     def get_article_type_weight(self, article_type: str) -> float:
         """Get weight for article type, using custom or default."""
@@ -487,6 +466,16 @@ class ResultAggregator:
         if not articles:
             return []
 
+        canonical_keys = [_article_key(article) for article in articles]
+        has_key_collisions = len(set(canonical_keys)) != len(canonical_keys)
+        ranking_keys = {
+            id(article): f"row:{index}" if has_key_collisions else canonical_keys[index]
+            for index, article in enumerate(articles)
+        }
+
+        def ranking_key(article: UnifiedArticle) -> str:
+            return ranking_keys[id(article)]
+
         # === Step 1: BM25 corpus statistics (if enabled) ===
         bm25_corpus = None
         bm25_scores: dict[str, float] = {}
@@ -494,7 +483,7 @@ class ResultAggregator:
             bm25_corpus = ra.BM25Corpus.from_articles(articles)
             # Pre-compute raw BM25 scores for all articles
             for article in articles:
-                key = _article_key(article)
+                key = ranking_key(article)
                 bm25_scores[key] = ra.bm25_score(article, query, bm25_corpus)
             max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
         else:
@@ -504,7 +493,7 @@ class ResultAggregator:
         article_dim_scores: dict[str, dict[str, float]] = {}
         use_bm25_relevance = bool(config.use_bm25 and query and ra and max_bm25 > 0)
         for article in articles:
-            key = _article_key(article)
+            key = ranking_key(article)
             bm25_relevance = None
             if use_bm25_relevance:
                 raw_bm25 = bm25_scores.get(key, 0.0)
@@ -520,10 +509,12 @@ class ResultAggregator:
 
         # === Step 3: Ranking — RRF or weighted sum ===
         sorted_articles: list[UnifiedArticle]
-        if config.use_rrf and ra and len(articles) > 1:
-            # Build per-dimension rankings
-            dimension_rankings: dict[str, list[str]] = {}
+        dimension_rankings: dict[str, list[str]] = {}
+        if config.use_rrf and ra and len(articles) > 1 and not has_key_collisions:
+            # Rank only dimensions with nonzero weight and differing scores.
             for dim_name in ("relevance", "quality", "recency", "impact", "source_trust", "entity_match"):
+                if weights[dim_name] <= 0:
+                    continue
                 dimension_values = [article_dim_scores[key].get(dim_name, 0.0) for key in article_dim_scores]
                 if len({round(value, 12) for value in dimension_values}) <= 1:
                     continue
@@ -536,44 +527,25 @@ class ResultAggregator:
                 )
                 dimension_rankings[dim_name] = sorted_keys
 
-            if dimension_rankings:
-                rrf_result = ra.reciprocal_rank_fusion(
-                    articles,
-                    dimension_rankings,
-                    dimension_weights=weights,
-                )
+        if dimension_rankings:
+            rrf_result = ra.reciprocal_rank_fusion(
+                articles,
+                dimension_rankings,
+                dimension_weights=weights,
+            )
 
-                # Store RRF score as ranking_score
-                max_rrf = max(rrf_result.rrf_scores.values()) if rrf_result.rrf_scores else 1.0
-                for article in rrf_result.ranked_articles:
-                    key = _article_key(article)
-                    raw_rrf = rrf_result.rrf_scores.get(key, 0.0)
-                    article.ranking_score = raw_rrf / max_rrf if max_rrf > 0 else 0.0
+            # Store RRF score as ranking_score
+            max_rrf = max(rrf_result.rrf_scores.values()) if rrf_result.rrf_scores else 1.0
+            for article in rrf_result.ranked_articles:
+                key = ranking_key(article)
+                raw_rrf = rrf_result.rrf_scores.get(key, 0.0)
+                article.ranking_score = raw_rrf / max_rrf if max_rrf > 0 else 0.0
 
-                sorted_articles = cast("list[UnifiedArticle]", rrf_result.ranked_articles)
-            else:
-                for article in articles:
-                    key = _article_key(article)
-                    scores = article_dim_scores.get(key, {})
-                    final_score = (
-                        scores.get("relevance", 0.5) * weights["relevance"]
-                        + scores.get("quality", 0.5) * weights["quality"]
-                        + scores.get("recency", 0.5) * weights["recency"]
-                        + scores.get("impact", 0.5) * weights["impact"]
-                        + scores.get("source_trust", 0.5) * weights["source_trust"]
-                        + scores.get("entity_match", 0.5) * weights["entity_match"]
-                    )
-                    article.ranking_score = final_score
-
-                sorted_articles = sorted(
-                    articles,
-                    key=lambda a: getattr(a, "ranking_score", 0) or 0,
-                    reverse=True,
-                )
+            sorted_articles = cast("list[UnifiedArticle]", rrf_result.ranked_articles)
         else:
             # Fallback: weighted sum (original method)
             for article in articles:
-                key = _article_key(article)
+                key = ranking_key(article)
                 scores = article_dim_scores.get(key, {})
                 final_score = (
                     scores.get("relevance", 0.5) * weights["relevance"]
@@ -605,7 +577,9 @@ class ResultAggregator:
             sorted_articles = [a for a in sorted_articles if (getattr(a, "ranking_score", 0) or 0) >= config.min_score]
 
         # Limit results
-        if config.max_results:
+        if config.max_results is not None:
+            if config.max_results < 0:
+                raise ValueError("max_results must be non-negative")
             sorted_articles = sorted_articles[: config.max_results]
 
         return sorted_articles
@@ -627,8 +601,9 @@ class ResultAggregator:
         Returns:
             Tuple of (ranked articles, aggregation statistics)
         """
-        articles, stats = self.aggregate(article_lists)
-        ranked = self.rank(articles, config, query)
+        aggregator = self if config is None else ResultAggregator(config)
+        articles, stats = aggregator.aggregate(article_lists)
+        ranked = aggregator.rank(articles, query=query)
         return ranked, stats
 
     # =========================================================================
@@ -656,6 +631,39 @@ class ResultAggregator:
             return []
 
         uf = UnionFind(n)
+        identities = []
+        for article in articles:
+            identities.append(
+                {
+                    kind: value
+                    for kind, value in (
+                        ("doi", normalize_article_doi(article.doi)),
+                        ("pmid", str(article.pmid or "").strip()),
+                        *(
+                            (kind, normalize_article_identifier(kind, getattr(article, attr)))
+                            for attr, kind in (
+                                ("pmc", "pmc"),
+                                ("openalex_id", "openalex"),
+                                ("s2_id", "s2"),
+                                ("core_id", "core"),
+                                ("arxiv_id", "arxiv"),
+                            )
+                        ),
+                    )
+                    if value
+                }
+            )
+
+        def union_compatible(left: int, right: int) -> bool:
+            left_root, right_root = uf.find(left), uf.find(right)
+            if left_root == right_root:
+                return False
+            left_ids, right_ids = identities[left_root], identities[right_root]
+            if any(key in left_ids and left_ids[key] != value for key, value in right_ids.items()):
+                return False
+            uf.union(left_root, right_root)
+            identities[uf.find(left_root)] = {**left_ids, **right_ids}
+            return True
 
         # Build indexes and union
         doi_to_idx: dict[str, int] = {}
@@ -678,7 +686,7 @@ class ResultAggregator:
             normalized_doi = self._normalize_doi(article.doi or "")
             if normalized_doi:
                 if normalized_doi in doi_to_idx:
-                    if uf.union(i, doi_to_idx[normalized_doi]):
+                    if union_compatible(i, doi_to_idx[normalized_doi]):
                         stats.dedup_by_doi += 1
                 else:
                     doi_to_idx[normalized_doi] = i
@@ -687,7 +695,7 @@ class ResultAggregator:
             normalized_pmid = str(article.pmid or "").strip()
             if normalized_pmid:
                 if normalized_pmid in pmid_to_idx:
-                    if uf.union(i, pmid_to_idx[normalized_pmid]):
+                    if union_compatible(i, pmid_to_idx[normalized_pmid]):
                         stats.dedup_by_pmid += 1
                 else:
                     pmid_to_idx[normalized_pmid] = i
@@ -707,7 +715,7 @@ class ResultAggregator:
                     continue
                 key = (kind, identifier)
                 if key in identifier_to_idx:
-                    if uf.union(i, identifier_to_idx[key]):
+                    if union_compatible(i, identifier_to_idx[key]):
                         stats.dedup_by_identifier += 1
                 else:
                     identifier_to_idx[key] = i
@@ -717,7 +725,7 @@ class ResultAggregator:
                 normalized_title = self._normalize_title(article.title)
                 if len(normalized_title) >= min_title_len:
                     if normalized_title in title_to_idx:
-                        if uf.union(i, title_to_idx[normalized_title]):
+                        if union_compatible(i, title_to_idx[normalized_title]):
                             stats.dedup_by_title += 1
                     else:
                         title_to_idx[normalized_title] = i
@@ -736,12 +744,10 @@ class ResultAggregator:
 
                 for dup in duplicates:
                     if dup is not primary:
-                        # Only transfer strong identifiers when the duplicate
-                        # relationship is corroborated by an existing
-                        # identifier match. Title-only deduplication may still
-                        # collapse two records into one result, but it must not
-                        # copy DOI/PMID/PMC across records.
-                        primary.merge_from(dup, merge_identifiers=primary.matches_identifier(dup))
+                        # The component was checked for conflicting identifiers
+                        # before every union. Transitive identity evidence is
+                        # therefore sufficient even without a direct pair match.
+                        primary.merge_from(dup, merge_identifiers=bool(identities[uf.find(member_indices[0])]))
                         stats.merged_records += 1
 
                 unique.append(primary)
@@ -942,6 +948,8 @@ class ResultAggregator:
 
         # Exponential decay
         half_life = config.recency_half_life_years
+        if not math.isfinite(half_life) or half_life <= 0:
+            raise ValueError("recency_half_life_years must be positive and finite")
         return float(0.5 ** (age / half_life))
 
     def _calculate_impact(self, article: UnifiedArticle) -> float:
@@ -957,28 +965,24 @@ class ResultAggregator:
         if not metrics:
             return 0.3  # Unknown impact gets low-neutral score
 
-        # Use NIH percentile if available (0-100 → 0-1)
-        nih_percentile = getattr(metrics, "nih_percentile", None)
-        if nih_percentile is not None:
-            return float(nih_percentile) / 100
+        def metric_value(value: Any) -> float | None:
+            if isinstance(value, bool):
+                return None
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            return number if math.isfinite(number) and number >= 0 else None
 
-        # Use RCR if available (normalize: 2.0 = average, 4.0 = excellent)
-        rcr = getattr(metrics, "relative_citation_ratio", None)
+        percentile = metric_value(getattr(metrics, "nih_percentile", None))
+        if percentile is not None:
+            return min(percentile / 100, 1.0)
+        rcr = metric_value(getattr(metrics, "relative_citation_ratio", None))
         if rcr is not None:
-            # Sigmoid-like transformation
-            rcr_val = float(rcr)
-            score = rcr_val / (rcr_val + 2.0)  # 0 → 0, 2 → 0.5, 4 → 0.67, 10 → 0.83
-            return min(score, 1.0)
-
-        # Use raw citation count (log scale)
-        citation_count = getattr(metrics, "citation_count", None)
-        if citation_count is not None:
-            if citation_count <= 0:
-                return 0.1
-            # Log transformation: 1 → 0.1, 10 → 0.4, 100 → 0.7, 1000 → 1.0
-            score = math.log10(float(citation_count) + 1) / 3
-            return min(score, 1.0)
-
+            return rcr / (rcr + 2.0)
+        citations = metric_value(getattr(metrics, "citation_count", None))
+        if citations is not None:
+            return min(math.log10(citations + 1) / 3, 1.0) if citations else 0.1
         return 0.3
 
     def _calculate_source_trust(
@@ -1041,7 +1045,7 @@ class ResultAggregator:
 
         for entity_name in config.matched_entities:
             entity_lower = entity_name.lower()
-            if entity_lower in article_text:
+            if entity_lower and re.search(r"(?<!\w)" + re.escape(entity_lower) + r"(?!\w)", article_text):
                 matched_count += 1
 
         # Calculate score (0-1)

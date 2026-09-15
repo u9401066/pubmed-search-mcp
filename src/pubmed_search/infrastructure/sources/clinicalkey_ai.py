@@ -29,6 +29,7 @@ from pubmed_search.application.search.source_governance import (
     CLINICALKEY_AI_DATA_POLICY,
     SourceDataOperation,
 )
+from pubmed_search.domain.value_objects import try_normalize_pmid
 from pubmed_search.shared.article_identity import normalize_article_doi
 from pubmed_search.shared.async_utils import create_async_http_client, parse_retry_after
 
@@ -110,9 +111,17 @@ class ClinicalKeyAIConfig:
     token_expiry_skew_seconds: float = 30.0
 
     def __post_init__(self) -> None:
-        if self.timeout_seconds <= 0:
+        if (
+            isinstance(self.timeout_seconds, bool)
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+        ):
             raise ValueError("ClinicalKey AI timeout must be positive")
-        if self.token_expiry_skew_seconds < 0:
+        if (
+            isinstance(self.token_expiry_skew_seconds, bool)
+            or not math.isfinite(self.token_expiry_skew_seconds)
+            or self.token_expiry_skew_seconds < 0
+        ):
             raise ValueError("ClinicalKey AI token expiry skew cannot be negative")
 
     @classmethod
@@ -153,11 +162,15 @@ class ClinicalKeyAIClient:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._config = config
-        self._http_client = http_client or create_async_http_client(
-            timeout=config.timeout_seconds,
-            follow_redirects=False,
-            max_connections=10,
-            max_keepalive_connections=5,
+        self._http_client = (
+            http_client
+            if http_client is not None
+            else create_async_http_client(
+                timeout=config.timeout_seconds,
+                follow_redirects=False,
+                max_connections=10,
+                max_keepalive_connections=5,
+            )
         )
         self._owns_http_client = http_client is None
         self._clock = clock
@@ -319,6 +332,7 @@ class ClinicalKeyAIClient:
             data=data,
             json=json,
             headers=headers,
+            timeout=self._config.timeout_seconds,
         )
         if isinstance(response, _FailureSentinel):
             raise ClinicalKeyAITransportError(f"ClinicalKey AI {operation} failed before a response was received")
@@ -351,12 +365,31 @@ async def _post_without_exception_context(
     data: Mapping[str, str] | None,
     json: Mapping[str, str] | None,
     headers: Mapping[str, str] | None,
+    timeout: float,
 ) -> httpx.Response | _FailureSentinel:
     """Return a marker so RequestError objects owning secret requests are discarded."""
 
+    async def _perform_request() -> httpx.Response | _FailureSentinel:
+        async with http_client.stream(
+            "POST", url, data=data, json=json, headers=headers, follow_redirects=False
+        ) as response:
+            content = bytearray()
+            async for chunk in response.aiter_bytes(65_536):
+                if len(content) + len(chunk) > 8 * 1024 * 1024:
+                    return _REQUEST_FAILED
+                content.extend(chunk)
+            decoded_headers = {
+                key: value
+                for key, value in response.headers.items()
+                if key not in {"content-encoding", "content-length", "transfer-encoding"}
+            }
+            return httpx.Response(
+                response.status_code, content=bytes(content), headers=decoded_headers, request=response.request
+            )
+
     try:
-        return await http_client.post(url, data=data, json=json, headers=headers)
-    except httpx.RequestError:
+        return await asyncio.wait_for(_perform_request(), timeout=timeout)
+    except (httpx.RequestError, TimeoutError):
         return _REQUEST_FAILED
 
 
@@ -509,7 +542,7 @@ def _reference_entries(payload: Mapping[str, object]) -> list[tuple[str, object]
         return entries
     if isinstance(references, Sequence) and not isinstance(references, (str, bytes, bytearray)):
         return [(str(index), value) for index, value in enumerate(references, start=1)]
-    return []
+    raise ClinicalKeyAIResponseError("ClinicalKey AI citation response omitted a reference collection")
 
 
 def _citation_source(raw_reference: object) -> Mapping[str, object] | None:
@@ -655,8 +688,7 @@ def _clean_pmid(value: object) -> str | None:
     raw = _clean_scalar(value, max_length=32)
     if raw is None:
         return None
-    normalized = raw.removeprefix("PMID:").removeprefix("pmid:").strip()
-    return normalized if normalized.isdigit() else None
+    return try_normalize_pmid(raw)
 
 
 def _safe_href(value: object) -> str | None:

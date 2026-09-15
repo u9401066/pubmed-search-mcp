@@ -104,7 +104,7 @@ CLINICAL_QUERY_REFERENCE = {
         "therapy_narrow": {
             "syntax": "(Therapy/Narrow[filter])",
             "scope": "Narrow (high specificity)",
-            "use_case": "只要高品質 RCT",
+            "use_case": "高特異性治療研究檢索；仍須評讀",
         },
         "diagnosis": {
             "syntax": "(Diagnosis/Broad[filter])",
@@ -114,7 +114,7 @@ CLINICAL_QUERY_REFERENCE = {
         "diagnosis_narrow": {
             "syntax": "(Diagnosis/Narrow[filter])",
             "scope": "Narrow",
-            "use_case": "高品質診斷研究",
+            "use_case": "高特異性診斷研究檢索",
         },
         "prognosis": {
             "syntax": "(Prognosis/Broad[filter])",
@@ -124,7 +124,7 @@ CLINICAL_QUERY_REFERENCE = {
         "prognosis_narrow": {
             "syntax": "(Prognosis/Narrow[filter])",
             "scope": "Narrow",
-            "use_case": "高品質預後研究",
+            "use_case": "高特異性預後研究檢索",
         },
         "etiology": {
             "syntax": "(Etiology/Broad[filter])",
@@ -134,7 +134,7 @@ CLINICAL_QUERY_REFERENCE = {
         "etiology_narrow": {
             "syntax": "(Etiology/Narrow[filter])",
             "scope": "Narrow",
-            "use_case": "高品質病因研究",
+            "use_case": "高特異性病因研究檢索",
         },
         "clinical_prediction": {
             "syntax": "(Clinical Prediction Guides/Broad[filter])",
@@ -144,7 +144,7 @@ CLINICAL_QUERY_REFERENCE = {
         "clinical_prediction_narrow": {
             "syntax": "(Clinical Prediction Guides/Narrow[filter])",
             "scope": "Narrow",
-            "use_case": "驗證過的預測工具",
+            "use_case": "高特異性臨床預測研究檢索",
         },
     },
     "usage_example": 'unified_search(query="diabetes treatment", filters="clinical_query:therapy")',
@@ -165,7 +165,7 @@ ARTICLE_TYPE_REFERENCE = {
         "Letter": "讀者來函",
         "Comment": "評論",
     },
-    "usage_example": 'unified_search(query="COVID-19 AND "Systematic Review"[pt]")',
+    "usage_example": """unified_search(query='COVID-19 AND "Systematic Review"[pt]')""",
 }
 
 # ============================================================================

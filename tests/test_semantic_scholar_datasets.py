@@ -20,7 +20,7 @@ async def test_release_catalog_and_manifest_need_no_key() -> None:
     client._min_interval = 0
     client._make_request = AsyncMock(
         side_effect=[
-            ["2026-07-28", "2026-08-05", 123],
+            ["2026-07-28", "2026-08-05"],
             {
                 "release_id": "2026-08-05",
                 "README": "release terms",
@@ -199,3 +199,34 @@ async def test_schema_validation_errors_do_not_retain_presigned_urls(
     assert "SENTINEL" not in repr(error)
     assert error.__cause__ is None
     assert error.__context__ is None
+
+
+@pytest.mark.asyncio
+async def test_dataset_control_plane_rejects_wrong_identity_and_broken_diff_chain() -> None:
+    client = SemanticScholarDatasetsClient(api_key="secret")
+    client._make_request = AsyncMock(
+        side_effect=[
+            ["2026-08-05", 123],
+            {"release_id": "2026-08-06", "datasets": []},
+            {"name": "authors", "files": []},
+            {
+                "dataset": "papers",
+                "start_release": "2026-08-01",
+                "end_release": "2026-08-05",
+                "diffs": [
+                    {"from_release": "2026-08-02", "to_release": "2026-08-05", "update_files": [], "delete_files": []}
+                ],
+            },
+        ]
+    )
+    try:
+        with pytest.raises(SemanticScholarDatasetResponseError):
+            await client.list_releases()
+        with pytest.raises(SemanticScholarDatasetResponseError):
+            await client.get_release_manifest("2026-08-05")
+        with pytest.raises(SemanticScholarDatasetResponseError):
+            await client.get_dataset_manifest("2026-08-05", "papers")
+        with pytest.raises(SemanticScholarDatasetResponseError, match="discontinuous"):
+            await client.get_diff_manifest("2026-08-01", "2026-08-05", "papers")
+    finally:
+        await client.close()

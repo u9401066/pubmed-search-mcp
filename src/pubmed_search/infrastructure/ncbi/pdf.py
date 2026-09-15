@@ -13,7 +13,7 @@ from typing import Any
 
 from Bio import Entrez
 
-from pubmed_search.shared.async_utils import get_shared_async_client
+from pubmed_search.domain.value_objects.article_identifiers import try_normalize_pmcid
 
 from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
 
@@ -82,7 +82,8 @@ class PDFMixin:
                 if linkset.get("LinkName") == "pubmed_pmc":
                     links = linkset.get("Link", [])
                     if links:
-                        return str(links[0]["Id"])
+                        identifier = try_normalize_pmcid(links[0]["Id"])
+                        return identifier[3:] if identifier else None
         return None
 
     async def get_pmc_fulltext_url(self, pmid: str) -> str | None:
@@ -117,42 +118,7 @@ class PDFMixin:
         Returns:
             True if download successful, False otherwise.
         """
-        try:
-            # First, get PMC ID via elink
-            pmc_id = await self._get_pmc_id(pmid)
-
-            if not pmc_id:
-                logger.info("No PMC identifier found for requested article")
-                return False
-
-            logger.info("PMC identifier found; attempting PDF download")
-
-            # Try to get the PDF from PMC
-            oa_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
-
-            headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
-
-            client = get_shared_async_client()
-            response = await client.get(
-                oa_url,
-                headers=headers,
-            )
-
-            content_type = response.headers.get("Content-Type", "")
-
-            if response.status_code == 200 and "application/pdf" in content_type:
-                await asyncio.to_thread(Path(output_path).write_bytes, response.content)
-                logger.info("PMC PDF downloaded successfully (%s bytes)", len(response.content))
-                return True
-
-            logger.warning(
-                "PMC PDF download returned an unusable response (status=%s)",
-                response.status_code,
-            )
-            return False
-        except Exception as exc:
-            logger.warning("PMC PDF download failed (%s)", type(exc).__name__)
-            return False
+        return await self.download_pdf(pmid, output_path) is not None
 
     async def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
@@ -175,15 +141,20 @@ class PDFMixin:
 
             headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
 
-            client = get_shared_async_client()
-            response = await client.get(
-                oa_url,
-                headers=headers,
+            from pubmed_search.infrastructure.http.safe_outbound import SafeFetchPolicy, fetch_public_url
+
+            fetched = await fetch_public_url(
+                oa_url, headers=headers, policy=SafeFetchPolicy(max_bytes=50 * 1024 * 1024, total_timeout=60.0)
             )
+            response = fetched.response
 
             content_type = response.headers.get("Content-Type", "")
 
-            if response.status_code == 200 and "application/pdf" in content_type:
+            if (
+                response.status_code == 200
+                and "application/pdf" in content_type.lower()
+                and response.content.startswith(b"%PDF-")
+            ):
                 if output_path:
                     await asyncio.to_thread(Path(output_path).write_bytes, response.content)
                 return response.content

@@ -148,13 +148,16 @@ def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
 
 
 def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None:
+    from pubmed_search import __version__
+
     index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
     site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
     site_css = (DOCS_ROOT / "site.css").read_text(encoding="utf-8")
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260909-v072"}
+    assert len(cache_keys) == 1
+    assert re.fullmatch(r"\d{8}-v" + re.escape(__version__.replace(".", "")), next(iter(cache_keys)))
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
     assert "41</strong>" in index_html

@@ -296,7 +296,12 @@ class FulltextFetchPhase:
                     candidate_result = await self.download_from_url_impl(
                         candidate_url,
                         source,
-                        headers=headers,
+                        headers=(
+                            headers
+                            if httpx.URL(candidate_url).netloc == httpx.URL(url).netloc
+                            and httpx.URL(candidate_url).scheme == httpx.URL(url).scheme
+                            else None
+                        ),
                         depth=depth + 1,
                         visited=frozenset(visited_urls),
                         deadline=effective_deadline,

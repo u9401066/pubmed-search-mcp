@@ -15,7 +15,6 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import threading
@@ -28,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from weakref import WeakValueDictionary
 
 from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
+from pubmed_search.shared.file_io import atomic_write_json
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -138,6 +138,14 @@ class StoredCacheEntry:
             raise TypeError("Invalid cache entry payload")
         if not isinstance(metadata, dict):
             raise TypeError("Invalid cache entry payload")
+        if expires_at == "":
+            raise ValueError("Invalid cache entry payload")
+        try:
+            _parse_datetime(cached_at)
+            if expires_at is not None:
+                _parse_datetime(expires_at)
+        except ValueError:
+            raise ValueError("Invalid cache entry payload") from None
         return cls(
             value=data.get("value"),
             cached_at=cached_at,
@@ -185,6 +193,8 @@ class MemoryCacheBackend(CacheBackend):
     """In-memory backend with optional LRU-style max entry eviction."""
 
     def __init__(self, max_entries: int | None = None):
+        if max_entries is not None and max_entries < 0:
+            raise ValueError("max_entries must be nonnegative or None")
         self._entries: OrderedDict[str, StoredCacheEntry] = OrderedDict()
         self._max_entries = max_entries
         self._lock = threading.RLock()
@@ -240,6 +250,8 @@ class JsonFileCacheBackend(CacheBackend):
     """JSON file-backed cache backend."""
 
     def __init__(self, file_path: str | Path, max_entries: int | None = None):
+        if max_entries is not None and max_entries < 0:
+            raise ValueError("max_entries must be nonnegative or None")
         self._file_path = Path(file_path)
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
         self._max_entries = max_entries
@@ -270,17 +282,14 @@ class JsonFileCacheBackend(CacheBackend):
                     logger.warning("Skipping invalid cache entry (%s)", type(exc).__name__)
                     continue
                 self._entries[str(key)] = entry
+            while self._max_entries is not None and len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
 
     def _save(self) -> None:
         payload = {key: entry.to_dict() for key, entry in self._entries.items()}
-        tmp_path = self._file_path.with_name(f"{self._file_path.name}.tmp")
         try:
-            with tmp_path.open("w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-            tmp_path.replace(self._file_path)
+            atomic_write_json(self._file_path, payload)
         except (OSError, TypeError, ValueError) as exc:
-            with contextlib.suppress(OSError):
-                tmp_path.unlink(missing_ok=True)
             logger.warning("Failed to persist cache backend (%s)", type(exc).__name__)
 
     def get_entry(self, key: str) -> StoredCacheEntry | None:

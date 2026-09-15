@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.shared.article_identity import canonical_article_key
@@ -183,14 +184,12 @@ async def execute_unified_search(
             clinical_trials_task = asyncio.create_task(
                 source_broker.search_related_trials(clinical_trials_query, limit=3)
             )
-            parent_task = asyncio.current_task()
-            if parent_task is not None:
 
-                def _cancel_orphaned_trials(_completed_parent: asyncio.Task[Any]) -> None:
-                    if clinical_trials_task is not None and not clinical_trials_task.done():
-                        clinical_trials_task.cancel()
+            def consume_trial_outcome(task: asyncio.Task[Any]) -> None:
+                if not task.cancelled():
+                    task.exception()
 
-                parent_task.add_done_callback(_cancel_orphaned_trials)
+            clinical_trials_task.add_done_callback(consume_trial_outcome)
         except Exception as exc:
             clinical_trials_coverage.record_failure(exc)
             error_payload = clinical_trials_error_payload(clinical_trials_coverage)
@@ -198,414 +197,425 @@ async def execute_unified_search(
                 source_errors.append(error_payload)
             logger.debug("Clinical trials adjunct startup failed (%s)", type(exc).__name__)
 
-    if request.deep_search and plan.enhanced_query and plan.deep_strategies:
-        enhanced_query = plan.enhanced_query
-        await progress(4, 10, f"Deep search: {len(plan.deep_strategies)} strategies...")
-        logger.info("Executing DEEP SEARCH with %s strategies", len(plan.deep_strategies))
-        (
-            all_results,
-            deep_search_metrics,
-            pubmed_total_count,
-            source_api_counts,
-            deep_source_errors,
-        ) = await source_broker.execute_deep_search(
-            enhanced_query,
-            request.limit,
-            plan.effective_min_year,
-            plan.effective_max_year,
-            request.advanced_filters,
-            strategies=plan.deep_strategies,
-        )
-        for error in deep_source_errors:
-            logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
-            source_errors.append(_source_error_payload(error))
-        for source, (returned, _total) in source_api_counts.items():
-            attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
-            executed_attempts = [attempt for attempt in attempts if attempt.status != "skipped_budget"]
-            attempt_statuses = {attempt.status for attempt in executed_attempts}
-            has_failure = "error" in attempt_statuses
-            has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
-            if has_failure and has_response:
-                source_statuses[source] = "partial"
-            elif has_failure:
-                source_statuses[source] = "error"
-            elif "partial" in attempt_statuses:
-                source_statuses[source] = "partial"
-            else:
-                source_statuses[source] = "ok" if returned else "empty"
-
-            physical_queries = list(
-                dict.fromkeys(
-                    attempt.physical_query
-                    for attempt in executed_attempts
-                    if isinstance(attempt.physical_query, str) and attempt.physical_query
-                )
+    try:
+        if request.deep_search and plan.enhanced_query and plan.deep_strategies:
+            enhanced_query = plan.enhanced_query
+            await progress(4, 10, f"Deep search: {len(plan.deep_strategies)} strategies...")
+            logger.info("Executing DEEP SEARCH with %s strategies", len(plan.deep_strategies))
+            (
+                all_results,
+                deep_search_metrics,
+                pubmed_total_count,
+                source_api_counts,
+                deep_source_errors,
+            ) = await source_broker.execute_deep_search(
+                enhanced_query,
+                request.limit,
+                plan.effective_min_year,
+                plan.effective_max_year,
+                request.advanced_filters,
+                strategies=plan.deep_strategies,
             )
-            logical_queries = list(dict.fromkeys(attempt.query for attempt in executed_attempts if attempt.query))
-            warning_values: list[str] = []
-            for attempt in attempts:
-                attempt_warnings = attempt.metadata.get("warnings")
-                if isinstance(attempt_warnings, list):
-                    warning_values.extend(str(warning) for warning in attempt_warnings)
-            warnings = list(dict.fromkeys(warning_values))
-            source_metadata[source] = {
-                "requested_mode": request.retrieval_mode,
-                "provider_mode": "deep_strategy",
-                "logical_query": plan.query if source == "pubmed" else plan.provider_neutral_query,
-                "logical_queries": logical_queries,
-                "physical_query": physical_queries[0] if len(physical_queries) == 1 else None,
-                "physical_queries": physical_queries,
-                "query_executed": any(attempt.query_executed for attempt in executed_attempts),
-                "warnings": warnings,
-                "budget": {
-                    "per_source_limit": request.limit,
-                    "allocated": sum(attempt.allocated_limit for attempt in attempts),
-                    "returned": returned,
-                },
-                "attempts": [
-                    {
-                        "strategy": attempt.strategy_name,
-                        "status": attempt.status,
-                        "logical_query": attempt.query,
-                        "physical_query": attempt.physical_query,
-                        "query_executed": attempt.query_executed,
-                        "allocated_limit": attempt.allocated_limit,
-                        "returned": attempt.articles_count,
-                        "total_available": attempt.total_available,
-                        "metadata": dict(attempt.metadata),
-                    }
-                    for attempt in attempts
-                ],
-            }
-        logger.info(
-            "Deep search: %s strategies, %s with results, depth score: %.0f",
-            deep_search_metrics.strategies_executed,
-            deep_search_metrics.strategies_with_results,
-            deep_search_metrics.depth_score,
-        )
-    else:
-        logger.info("Using traditional source-based search (no deep search)")
-        search_sources = [source for source in plan.dispatch_sources if source != "crossref"]
+            for error in deep_source_errors:
+                logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
+                source_errors.append(_source_error_payload(error))
+            for source, (returned, _total) in source_api_counts.items():
+                attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
+                executed_attempts = [attempt for attempt in attempts if attempt.status != "skipped_budget"]
+                attempt_statuses = {attempt.status for attempt in executed_attempts}
+                has_failure = "error" in attempt_statuses
+                has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
+                if has_failure and has_response:
+                    source_statuses[source] = "partial"
+                elif has_failure:
+                    source_statuses[source] = "error"
+                elif "partial" in attempt_statuses:
+                    source_statuses[source] = "partial"
+                else:
+                    source_statuses[source] = "ok" if returned else "empty"
 
-        def _build_search_call(source: str) -> SourceAdapterCall[UnifiedArticle]:
-            async def _execute() -> SourceAdapterResult[UnifiedArticle]:
-                return await _search_single_source(source, plan, search_functions)
-
-            return SourceAdapterCall(source=source, operation="search", execute=_execute)
-
-        search_results = await gather_source_adapter_calls(
-            [_build_search_call(source) for source in search_sources],
-            per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
-        )
-
-        # A default simple/lookup search often has one fast primary leg. If
-        # that leg failed (rather than returning a valid empty set), make one
-        # bounded provider-neutral attempt so a transient provider outage does
-        # not become a false "no literature" answer. Explicit source choices
-        # and provider-native/systematic contracts remain fail-closed.
-        if (
-            request.sources is None
-            and request.retrieval_mode == "auto"
-            and (analysis.complexity.value == "simple" or analysis.intent.value == "lookup")
-            and search_results
-            and all(result.status == "error" for result in search_results)
-        ):
-            fallback_source = next(
-                (
-                    source
-                    for source in ("europe_pmc", "openalex")
-                    if source not in search_sources
-                    and source in search_functions
-                    and source_registry.is_enabled(source)
-                ),
-                None,
-            )
-            if fallback_source is not None:
-                initial_failed_sources = [result.source for result in search_results]
-
-                async def _execute_fallback() -> SourceAdapterResult[UnifiedArticle]:
-                    return await _search_single_source(
-                        fallback_source,
-                        plan,
-                        search_functions,
-                        limit_override=min(request.limit, 20),
+                physical_queries = list(
+                    dict.fromkeys(
+                        attempt.physical_query
+                        for attempt in executed_attempts
+                        if isinstance(attempt.physical_query, str) and attempt.physical_query
                     )
+                )
+                logical_queries = list(dict.fromkeys(attempt.query for attempt in executed_attempts if attempt.query))
+                warning_values: list[str] = []
+                for attempt in attempts:
+                    attempt_warnings = attempt.metadata.get("warnings")
+                    if isinstance(attempt_warnings, list):
+                        warning_values.extend(str(warning) for warning in attempt_warnings)
+                warnings = list(dict.fromkeys(warning_values))
+                source_metadata[source] = {
+                    "requested_mode": request.retrieval_mode,
+                    "provider_mode": "deep_strategy",
+                    "logical_query": plan.query if source == "pubmed" else plan.provider_neutral_query,
+                    "logical_queries": logical_queries,
+                    "physical_query": physical_queries[0] if len(physical_queries) == 1 else None,
+                    "physical_queries": physical_queries,
+                    "query_executed": any(attempt.query_executed for attempt in executed_attempts),
+                    "warnings": warnings,
+                    "budget": {
+                        "per_source_limit": request.limit,
+                        "allocated": sum(attempt.allocated_limit for attempt in attempts),
+                        "returned": returned,
+                    },
+                    "attempts": [
+                        {
+                            "strategy": attempt.strategy_name,
+                            "status": attempt.status,
+                            "logical_query": attempt.query,
+                            "physical_query": attempt.physical_query,
+                            "query_executed": attempt.query_executed,
+                            "allocated_limit": attempt.allocated_limit,
+                            "returned": attempt.articles_count,
+                            "total_available": attempt.total_available,
+                            "metadata": dict(attempt.metadata),
+                        }
+                        for attempt in attempts
+                    ],
+                }
+            logger.info(
+                "Deep search: %s strategies, %s with results, depth score: %.0f",
+                deep_search_metrics.strategies_executed,
+                deep_search_metrics.strategies_with_results,
+                deep_search_metrics.depth_score,
+            )
+        else:
+            logger.info("Using traditional source-based search (no deep search)")
+            search_sources = [source for source in plan.dispatch_sources if source != "crossref"]
 
-                fallback_call: SourceAdapterCall[UnifiedArticle] = SourceAdapterCall(
-                    source=fallback_source,
-                    operation="search",
-                    execute=_execute_fallback,
+            def _build_search_call(source: str) -> SourceAdapterCall[UnifiedArticle]:
+                async def _execute() -> SourceAdapterResult[UnifiedArticle]:
+                    return await _search_single_source(source, plan, search_functions)
+
+                return SourceAdapterCall(source=source, operation="search", execute=_execute)
+
+            search_results = await gather_source_adapter_calls(
+                [_build_search_call(source) for source in search_sources],
+                per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+            )
+
+            # A default simple/lookup search often has one fast primary leg. If
+            # that leg failed (rather than returning a valid empty set), make one
+            # bounded provider-neutral attempt so a transient provider outage does
+            # not become a false "no literature" answer. Explicit source choices
+            # and provider-native/systematic contracts remain fail-closed.
+            if (
+                request.sources is None
+                and request.retrieval_mode == "auto"
+                and (analysis.complexity.value == "simple" or analysis.intent.value == "lookup")
+                and not pubmed_field_tags(plan.provider_neutral_query)
+                and search_results
+                and all(result.status == "error" for result in search_results)
+            ):
+                fallback_source = next(
+                    (
+                        source
+                        for source in ("europe_pmc", "openalex")
+                        if source not in search_sources
+                        and source in search_functions
+                        and source_registry.is_enabled(source)
+                    ),
+                    None,
                 )
-                fallback_results: list[SourceAdapterResult[UnifiedArticle]] = await gather_source_adapter_calls(
-                    [fallback_call],
-                    per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+                if fallback_source is not None:
+                    initial_failed_sources = [result.source for result in search_results]
+
+                    async def _execute_fallback() -> SourceAdapterResult[UnifiedArticle]:
+                        return await _search_single_source(
+                            fallback_source,
+                            plan,
+                            search_functions,
+                            limit_override=min(request.limit, 20),
+                        )
+
+                    fallback_call: SourceAdapterCall[UnifiedArticle] = SourceAdapterCall(
+                        source=fallback_source,
+                        operation="search",
+                        execute=_execute_fallback,
+                    )
+                    fallback_results: list[SourceAdapterResult[UnifiedArticle]] = await gather_source_adapter_calls(
+                        [fallback_call],
+                        per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+                    )
+                    fallback_result = fallback_results[0]
+                    fallback_result.metadata.update(
+                        {
+                            "fallback": True,
+                            "fallback_reason": "all_auto_primary_sources_failed",
+                            "fallback_from": initial_failed_sources,
+                            "fallback_limit": min(request.limit, 20),
+                        }
+                    )
+                    search_results.append(fallback_result)
+
+            for result in search_results:
+                attempt_metadata = dict(result.metadata)
+                logical_query = plan.query if result.source == "pubmed" else plan.provider_neutral_query
+                attempt_metadata.setdefault("logical_query", logical_query)
+                attempt_metadata.setdefault("physical_query", logical_query)
+                attempt_metadata.setdefault("query_executed", True)
+                if result.source == "semantic_scholar" and request.retrieval_mode == "systematic":
+                    attempt_metadata.setdefault("provider_mode", "bulk")
+                else:
+                    attempt_metadata.setdefault("provider_mode", request.retrieval_mode)
+                attempt_metadata.setdefault("requested_mode", request.retrieval_mode)
+                if result.source != "pubmed" and request.advanced_filters:
+                    warnings = attempt_metadata.setdefault("warnings", [])
+                    warning = (
+                        f"{result.source} does not apply PubMed-only filter(s): "
+                        f"{', '.join(sorted(request.advanced_filters))}"
+                    )
+                    if isinstance(warnings, list) and warning not in warnings:
+                        warnings.append(warning)
+
+                for error in result.errors:
+                    log_method = logger.warning if error.retryable else logger.error
+                    log_method("Search source warning: %s", format_source_adapter_error(error))
+                    source_errors.append(_source_error_payload(error))
+
+                articles = result.items
+                raw_total_count = result.metadata.get("total_available")
+                total_count = raw_total_count if isinstance(raw_total_count, int) else None
+                if articles:
+                    all_results.append(articles)
+                source_api_counts[result.source] = (len(articles), total_count)
+                source_statuses[result.source] = result.status
+                source_metadata[result.source] = attempt_metadata
+                if result.source == "pubmed" and total_count is not None:
+                    pubmed_total_count = total_count
+                logger.info(
+                    "%s: %s results%s", result.source, len(articles), f" (total: {total_count})" if total_count else ""
                 )
-                fallback_result = fallback_results[0]
-                fallback_result.metadata.update(
+
+        # Preprints (arXiv/medRxiv/bioRxiv) are first-class sources injected into
+        # dispatch_sources by unified_planning when include_preprints=True. They
+        # flow through the main aggregator. Records merge only through a shared,
+        # stable identifier; a matching title alone never overwrites conflicting
+        # preprint and published-version identities.
+
+        await progress(5, 10, "Aggregating results...")
+        aggregator = ResultAggregator(plan.ranking_config)
+        articles, stats = aggregator.aggregate(all_results)
+        logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
+
+        if (
+            request.auto_relax
+            and stats.unique_articles == 0
+            and not analysis.identifiers
+            and "pubmed" in plan.dispatch_sources
+            and source_statuses.get("pubmed") == "empty"
+        ):
+            logger.info("0 results — attempting auto-relaxation")
+            relaxation_result = await source_broker.auto_relax(
+                plan.query,
+                request.limit,
+                request.min_year or analysis.year_from,
+                request.max_year or analysis.year_to,
+                request.advanced_filters,
+            )
+            if relaxation_result:
+                for error in relaxation_result.errors:
+                    source_errors.append(_source_error_payload(error))
+                relaxation_attempts = [
                     {
-                        "fallback": True,
-                        "fallback_reason": "all_auto_primary_sources_failed",
-                        "fallback_from": initial_failed_sources,
-                        "fallback_limit": min(request.limit, 20),
+                        "level": attempt.level,
+                        "action": attempt.action,
+                        "status": attempt.status,
+                        "result_count": attempt.result_count,
+                        **(
+                            {
+                                "error_kind": attempt.error.kind,
+                                "retryable": attempt.error.retryable,
+                            }
+                            if attempt.error is not None
+                            else {}
+                        ),
+                    }
+                    for attempt in relaxation_result.steps_tried
+                ]
+                source_metadata.setdefault("pubmed", {}).update(
+                    {
+                        "relaxation_attempts": relaxation_attempts,
+                        "relaxation_incomplete": relaxation_result.incomplete,
                     }
                 )
-                search_results.append(fallback_result)
-
-        for result in search_results:
-            attempt_metadata = dict(result.metadata)
-            logical_query = plan.query if result.source == "pubmed" else plan.provider_neutral_query
-            attempt_metadata.setdefault("logical_query", logical_query)
-            attempt_metadata.setdefault("physical_query", logical_query)
-            attempt_metadata.setdefault("query_executed", True)
-            if result.source == "semantic_scholar" and request.retrieval_mode == "systematic":
-                attempt_metadata.setdefault("provider_mode", "bulk")
-            else:
-                attempt_metadata.setdefault("provider_mode", request.retrieval_mode)
-            attempt_metadata.setdefault("requested_mode", request.retrieval_mode)
-            if result.source != "pubmed" and request.advanced_filters:
-                warnings = attempt_metadata.setdefault("warnings", [])
-                warning = (
-                    f"{result.source} does not apply PubMed-only filter(s): "
-                    f"{', '.join(sorted(request.advanced_filters))}"
+                if relaxation_result.incomplete:
+                    # The original query produced a valid empty response, but one
+                    # or more broader queries did not complete. This is neither a
+                    # confirmed empty federation nor a total source failure.
+                    source_statuses["pubmed"] = "partial"
+            if relaxation_result and relaxation_result.successful_step:
+                step = relaxation_result.successful_step
+                all_results = [relaxation_result.articles]
+                articles, stats = aggregator.aggregate(all_results)
+                pubmed_total_count = relaxation_result.total_results
+                source_api_counts["pubmed"] = (
+                    len(relaxation_result.articles),
+                    relaxation_result.total_results,
                 )
-                if isinstance(warnings, list) and warning not in warnings:
-                    warnings.append(warning)
+                source_statuses["pubmed"] = "partial" if relaxation_result.incomplete else "ok"
+                source_metadata.setdefault("pubmed", {}).update(
+                    {
+                        "total_available": relaxation_result.total_results,
+                        "requested_mode": request.retrieval_mode,
+                        "provider_mode": "auto_relax",
+                        "original_query": relaxation_result.original_query,
+                        "canonical_query": relaxation_result.relaxed_query,
+                        "relaxation_level": step.level,
+                        "relaxation_action": step.action,
+                        "replaces_empty_federation": True,
+                    }
+                )
+                logger.info(
+                    "Auto-relaxation: %s results at level %s (%s)", stats.unique_articles, step.level, step.action
+                )
 
-            for error in result.errors:
-                log_method = logger.warning if error.retryable else logger.error
-                log_method("Search source warning: %s", format_source_adapter_error(error))
-                source_errors.append(_source_error_payload(error))
-
-            articles = result.items
-            raw_total_count = result.metadata.get("total_available")
-            total_count = raw_total_count if isinstance(raw_total_count, int) else None
-            if articles:
-                all_results.append(articles)
-            source_api_counts[result.source] = (len(articles), total_count)
-            source_statuses[result.source] = result.status
-            source_metadata[result.source] = attempt_metadata
-            if result.source == "pubmed" and total_count is not None:
-                pubmed_total_count = total_count
-            logger.info(
-                "%s: %s results%s", result.source, len(articles), f" (total: {total_count})" if total_count else ""
+        await progress(6, 10, "Enriching results...")
+        include_crossref = "crossref" in plan.dispatch_sources
+        include_journal_metrics = "openalex" in plan.dispatch_sources
+        include_unpaywall = request.include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(analysis)
+        enrichment_requested = include_crossref or include_journal_metrics or include_unpaywall
+        enrichment_candidates = (
+            _rank_articles_deterministically(
+                articles,
+                aggregator,
+                plan.ranking_config,
+                plan.query,
             )
-
-    # Preprints (arXiv/medRxiv/bioRxiv) are first-class sources injected into
-    # dispatch_sources by unified_planning when include_preprints=True. They
-    # flow through the main aggregator. Records merge only through a shared,
-    # stable identifier; a matching title alone never overwrites conflicting
-    # preprint and published-version identities.
-
-    await progress(5, 10, "Aggregating results...")
-    aggregator = ResultAggregator(plan.ranking_config)
-    articles, stats = aggregator.aggregate(all_results)
-    logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
-
-    if (
-        request.auto_relax
-        and stats.unique_articles == 0
-        and not analysis.identifiers
-        and "pubmed" in plan.dispatch_sources
-        and source_statuses.get("pubmed") == "empty"
-    ):
-        logger.info("0 results — attempting auto-relaxation")
-        relaxation_result = await source_broker.auto_relax(
-            plan.query,
-            request.limit,
-            request.min_year or analysis.year_from,
-            request.max_year or analysis.year_to,
-            request.advanced_filters,
+            if enrichment_requested
+            else articles
         )
-        if relaxation_result:
-            for error in relaxation_result.errors:
-                source_errors.append(_source_error_payload(error))
-            relaxation_attempts = [
-                {
-                    "level": attempt.level,
-                    "action": attempt.action,
-                    "status": attempt.status,
-                    "result_count": attempt.result_count,
-                    **(
-                        {
-                            "error_kind": attempt.error.kind,
-                            "retryable": attempt.error.retryable,
-                        }
-                        if attempt.error is not None
-                        else {}
-                    ),
-                }
-                for attempt in relaxation_result.steps_tried
-            ]
-            source_metadata.setdefault("pubmed", {}).update(
-                {
-                    "relaxation_attempts": relaxation_attempts,
-                    "relaxation_incomplete": relaxation_result.incomplete,
-                }
-            )
-            if relaxation_result.incomplete:
-                # The original query produced a valid empty response, but one
-                # or more broader queries did not complete. This is neither a
-                # confirmed empty federation nor a total source failure.
-                source_statuses["pubmed"] = "partial"
-        if relaxation_result and relaxation_result.successful_step:
-            step = relaxation_result.successful_step
-            all_results = [relaxation_result.articles]
-            articles, stats = aggregator.aggregate(all_results)
-            pubmed_total_count = relaxation_result.total_results
-            source_api_counts["pubmed"] = (
-                len(relaxation_result.articles),
-                relaxation_result.total_results,
-            )
-            source_statuses["pubmed"] = "partial" if relaxation_result.incomplete else "ok"
-            source_metadata.setdefault("pubmed", {}).update(
-                {
-                    "total_available": relaxation_result.total_results,
-                    "requested_mode": request.retrieval_mode,
-                    "provider_mode": "auto_relax",
-                    "original_query": relaxation_result.original_query,
-                    "canonical_query": relaxation_result.relaxed_query,
-                    "relaxation_level": step.level,
-                    "relaxation_action": step.action,
-                    "replaces_empty_federation": True,
-                }
-            )
-            logger.info("Auto-relaxation: %s results at level %s (%s)", stats.unique_articles, step.level, step.action)
+        enrichment_report = await enrichment.enrich(
+            enrichment_candidates,
+            include_crossref=include_crossref,
+            include_journal_metrics=include_journal_metrics,
+            include_unpaywall=include_unpaywall,
+        )
+        enrichment_metadata = enrichment_report.to_diagnostic()
+        if enrichment_requested:
+            enrichment_metadata["candidate_selection"] = "preliminary_rank_with_canonical_tiebreak"
 
-    await progress(6, 10, "Enriching results...")
-    include_crossref = "crossref" in plan.dispatch_sources
-    include_journal_metrics = "openalex" in plan.dispatch_sources
-    include_unpaywall = request.include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(analysis)
-    enrichment_requested = include_crossref or include_journal_metrics or include_unpaywall
-    enrichment_candidates = (
-        _rank_articles_deterministically(
+        retrieved_unique = len(articles)
+        excluded_detected_preprints = 0
+        if request.exclude_detected_preprints and articles:
+            from pubmed_search.domain.entities.article import ArticleType
+
+            pre_filter_count = len(articles)
+            articles = [article for article in articles if not is_preprint(article, ArticleType)]
+            excluded_detected_preprints = pre_filter_count - len(articles)
+            if excluded_detected_preprints > 0:
+                logger.info(
+                    "Detected-preprint heuristic: excluded %s recognized preprints",
+                    excluded_detected_preprints,
+                )
+
+        await progress(8, 10, "Ranking results...")
+        ranked = _rank_articles_deterministically(
             articles,
             aggregator,
             plan.ranking_config,
             plan.query,
         )
-        if enrichment_requested
-        else articles
-    )
-    enrichment_report = await enrichment.enrich(
-        enrichment_candidates,
-        include_crossref=include_crossref,
-        include_journal_metrics=include_journal_metrics,
-        include_unpaywall=include_unpaywall,
-    )
-    enrichment_metadata = enrichment_report.to_diagnostic()
-    if enrichment_requested:
-        enrichment_metadata["candidate_selection"] = "preliminary_rank_with_canonical_tiebreak"
+        if request.limit and len(ranked) > request.limit:
+            ranked = ranked[: request.limit]
 
-    retrieved_unique = len(articles)
-    excluded_detected_preprints = 0
-    if request.exclude_detected_preprints and articles:
-        from pubmed_search.domain.entities.article import ArticleType
+        result_filter_counts = {
+            "retrieved_unique": retrieved_unique,
+            "excluded_detected_preprints": excluded_detected_preprints,
+            "eligible_unique": len(articles),
+            "returned": len(ranked),
+        }
 
-        pre_filter_count = len(articles)
-        articles = [article for article in articles if not is_preprint(article, ArticleType)]
-        excluded_detected_preprints = pre_filter_count - len(articles)
-        if excluded_detected_preprints > 0:
-            logger.info(
-                "Detected-preprint heuristic: excluded %s recognized preprints",
-                excluded_detected_preprints,
+        if request.include_rank_scores:
+            enrich_with_rank_percentiles(ranked)
+
+        source_disagreement = None
+        if request.show_analysis and len(source_api_counts) > 1:
+            from pubmed_search.application.search.ranking_algorithms import analyze_source_disagreement
+
+            source_disagreement = analyze_source_disagreement(ranked)
+
+        reproducibility = None
+        if request.show_analysis:
+            from pubmed_search.application.search.reproducibility import calculate_reproducibility
+
+            sources_queried_list = (
+                list(source_api_counts.keys())
+                if source_api_counts
+                else [source for source in plan.dispatch_sources if source != "crossref"]
+            )
+            sources_responded_list = (
+                [
+                    source
+                    for source in sources_queried_list
+                    if source_statuses.get(source, "empty") in {"ok", "empty", "partial"}
+                ]
+                if source_api_counts
+                else sources_queried_list
+            )
+            reproducibility = calculate_reproducibility(
+                query=plan.query,
+                sources_queried=sources_queried_list,
+                sources_responded=sources_responded_list,
+                articles=ranked,
+                has_source_counts=bool(source_api_counts),
             )
 
-    await progress(8, 10, "Ranking results...")
-    ranked = _rank_articles_deterministically(
-        articles,
-        aggregator,
-        plan.ranking_config,
-        plan.query,
-    )
-    if request.limit and len(ranked) > request.limit:
-        ranked = ranked[: request.limit]
+        prefetched_trials: list[dict[str, Any]] = []
+        if clinical_trials_task:
+            try:
+                completed, _pending = await asyncio.wait(
+                    {clinical_trials_task},
+                    timeout=CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
+                )
+                if not completed:
+                    raise asyncio.TimeoutError  # noqa: TRY301 - shared adjunct failure handling
+                raw_trials = clinical_trials_task.result()
+                prefetched_trials = validate_clinical_trials_rows(raw_trials, limit=3)
+                clinical_trials_coverage.record_retrieval(len(prefetched_trials))
+            except asyncio.TimeoutError as exc:
+                clinical_trials_coverage.record_failure(exc, status="timeout")
+                logger.debug(
+                    "Clinical trials prefetch exceeded %.2fs budget",
+                    CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
+                )
+            except ClinicalTrialsResponseError as exc:
+                clinical_trials_coverage.record_validation_failure(exc)
+                logger.debug("Clinical trials response validation failed (%s)", type(exc).__name__)
+            except Exception as exc:
+                clinical_trials_coverage.record_failure(exc)
+                logger.debug("Clinical trials adjunct failed (%s)", type(exc).__name__)
 
-    result_filter_counts = {
-        "retrieved_unique": retrieved_unique,
-        "excluded_detected_preprints": excluded_detected_preprints,
-        "eligible_unique": len(articles),
-        "returned": len(ranked),
-    }
+            error_payload = clinical_trials_error_payload(clinical_trials_coverage)
+            if error_payload is not None:
+                source_errors.append(error_payload)
 
-    if request.include_rank_scores:
-        enrich_with_rank_percentiles(ranked)
-
-    source_disagreement = None
-    if request.show_analysis and len(source_api_counts) > 1:
-        from pubmed_search.application.search.ranking_algorithms import analyze_source_disagreement
-
-        source_disagreement = analyze_source_disagreement(ranked)
-
-    reproducibility = None
-    if request.show_analysis:
-        from pubmed_search.application.search.reproducibility import calculate_reproducibility
-
-        sources_queried_list = (
-            list(source_api_counts.keys())
-            if source_api_counts
-            else [source for source in plan.dispatch_sources if source != "crossref"]
+        return UnifiedSearchExecutionResult(
+            ranked=ranked,
+            stats=stats,
+            pubmed_total_count=pubmed_total_count,
+            source_api_counts=source_api_counts,
+            deep_search_metrics=deep_search_metrics,
+            relaxation_result=relaxation_result,
+            source_disagreement=source_disagreement,
+            reproducibility_score=reproducibility,
+            prefetched_trials=prefetched_trials,
+            clinical_trials_query=clinical_trials_query,
+            clinical_trials_coverage=clinical_trials_coverage,
+            source_errors=source_errors,
+            source_statuses=source_statuses,
+            source_metadata=source_metadata,
+            result_filter_counts=result_filter_counts,
+            enrichment_metadata=enrichment_metadata,
         )
-        sources_responded_list = (
-            [
-                source
-                for source in sources_queried_list
-                if source_statuses.get(source, "empty") in {"ok", "empty", "partial"}
-            ]
-            if source_api_counts
-            else sources_queried_list
-        )
-        reproducibility = calculate_reproducibility(
-            query=plan.query,
-            sources_queried=sources_queried_list,
-            sources_responded=sources_responded_list,
-            articles=ranked,
-            has_source_counts=bool(source_api_counts),
-        )
-
-    prefetched_trials: list[dict[str, Any]] = []
-    if clinical_trials_task:
-        try:
-            raw_trials = await asyncio.wait_for(
-                clinical_trials_task,
-                timeout=CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
-            )
-            prefetched_trials = validate_clinical_trials_rows(raw_trials, limit=3)
-            clinical_trials_coverage.record_retrieval(len(prefetched_trials))
-        except asyncio.TimeoutError as exc:
-            clinical_trials_coverage.record_failure(exc, status="timeout")
-            logger.debug(
-                "Clinical trials prefetch exceeded %.2fs budget",
-                CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
-            )
-        except ClinicalTrialsResponseError as exc:
-            clinical_trials_coverage.record_validation_failure(exc)
-            logger.debug("Clinical trials response validation failed (%s)", type(exc).__name__)
-        except Exception as exc:
-            clinical_trials_coverage.record_failure(exc)
-            logger.debug("Clinical trials adjunct failed (%s)", type(exc).__name__)
-
-        error_payload = clinical_trials_error_payload(clinical_trials_coverage)
-        if error_payload is not None:
-            source_errors.append(error_payload)
-
-    return UnifiedSearchExecutionResult(
-        ranked=ranked,
-        stats=stats,
-        pubmed_total_count=pubmed_total_count,
-        source_api_counts=source_api_counts,
-        deep_search_metrics=deep_search_metrics,
-        relaxation_result=relaxation_result,
-        source_disagreement=source_disagreement,
-        reproducibility_score=reproducibility,
-        prefetched_trials=prefetched_trials,
-        clinical_trials_query=clinical_trials_query,
-        clinical_trials_coverage=clinical_trials_coverage,
-        source_errors=source_errors,
-        source_statuses=source_statuses,
-        source_metadata=source_metadata,
-        result_filter_counts=result_filter_counts,
-        enrichment_metadata=enrichment_metadata,
-    )
+    finally:
+        if clinical_trials_task is not None and not clinical_trials_task.done():
+            clinical_trials_task.cancel()
+            await asyncio.wait({clinical_trials_task}, timeout=0.1)
 
 
 __all__ = ["UnifiedSearchExecutionResult", "execute_unified_search"]

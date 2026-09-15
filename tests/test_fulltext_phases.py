@@ -84,9 +84,8 @@ async def test_discovery_phase_pmid_lookup_timeout_propagates_without_blocking(m
 async def test_http_discovery_phase_accepts_only_explicit_absence(method_name, arguments):
     request = httpx.Request("GET", "https://provider.example/record")
     response = httpx.Response(404, request=request)
-    client = AsyncMock()
-    client.get.return_value = response
-    phase = FulltextDiscoveryPhase(AsyncMock(return_value=client))
+    phase = FulltextDiscoveryPhase(AsyncMock())
+    phase._request_metadata = AsyncMock(return_value=response)  # type: ignore[method-assign]
 
     links = await getattr(phase, method_name)(*arguments)
 
@@ -273,3 +272,43 @@ async def test_extract_failure_log_does_not_expose_exception_details(caplog):
     assert "RuntimeError" in caplog.text
     assert "super-secret" not in caplog.text
     assert "/srv/private" not in caplog.text
+
+
+async def test_html_pdf_candidate_does_not_receive_cross_origin_credentials():
+    from unittest.mock import AsyncMock, patch
+
+    import httpx
+
+    from pubmed_search.infrastructure.http.safe_outbound import SafeFetchResult
+    from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader, PDFSource
+
+    downloader = FulltextDownloader()
+    responses = [
+        SafeFetchResult(
+            httpx.Response(
+                200,
+                text='<meta name="citation_pdf_url" content="https://cdn.example/paper.pdf">',
+                headers={"content-type": "text/html"},
+                request=httpx.Request("GET", "https://publisher.example/article"),
+            ),
+            (),
+        ),
+        SafeFetchResult(
+            httpx.Response(200, content=b"%PDF-1.4", request=httpx.Request("GET", "https://cdn.example/paper.pdf")), ()
+        ),
+    ]
+    try:
+        with patch(
+            "pubmed_search.infrastructure.sources.fulltext_fetch.fetch_public_url",
+            new_callable=AsyncMock,
+            side_effect=responses,
+        ) as fetch:
+            result = await downloader._fetch_phase.download_from_url_impl(
+                "https://publisher.example/article",
+                PDFSource.CROSSREF,
+                headers={"Authorization": "Bearer secret", "Cookie": "session=secret"},
+            )
+        assert result.success
+        assert not fetch.call_args_list[1].kwargs["headers"]
+    finally:
+        await downloader.close()

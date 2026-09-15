@@ -17,7 +17,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -59,8 +59,8 @@ class PipelineHistoryError(RuntimeError):
     """A persisted pipeline run record could not be decoded safely."""
 
 
-def _config_to_dict(config: PipelineConfig) -> dict[str, Any]:
-    """Convert PipelineConfig to a serializable dict."""
+def _config_to_dict(config: PipelineConfig, *, include_output_defaults: bool = False) -> dict[str, Any]:
+    """Serialize one canonical pipeline mapping, optionally including output defaults for display."""
     data: dict[str, Any] = {}
 
     if config.name:
@@ -89,13 +89,13 @@ def _config_to_dict(config: PipelineConfig) -> dict[str, Any]:
 
     # Output (only if non-default)
     out = config.output
-    if out.format != "markdown" or out.limit != 20 or out.ranking != "balanced":
+    if include_output_defaults or out.format != "markdown" or out.limit != 20 or out.ranking != "balanced":
         data["output"] = {}
-        if out.format != "markdown":
+        if include_output_defaults or out.format != "markdown":
             data["output"]["format"] = out.format
-        if out.limit != 20:
+        if include_output_defaults or out.limit != 20:
             data["output"]["limit"] = out.limit
-        if out.ranking != "balanced":
+        if include_output_defaults or out.ranking != "balanced":
             data["output"]["ranking"] = out.ranking
 
     return data
@@ -137,7 +137,7 @@ class PipelineStore:
             global_data_dir: New global data directory for the derived store.
 
         Returns:
-            A new :class:`PipelineStore` sharing this store's workspace scope.
+            A new :class:`PipelineStore` with an isolated global scope only.
         """
         return PipelineStore(global_data_dir=global_data_dir)
 
@@ -191,6 +191,8 @@ class PipelineStore:
             return PipelineScope.WORKSPACE
         if scope == "global":
             return PipelineScope.GLOBAL
+        if scope != "auto":
+            raise ValueError("Pipeline scope must be auto, workspace, or global")
         # auto: prefer workspace
         if self._workspace_dir:
             return PipelineScope.WORKSPACE
@@ -445,9 +447,15 @@ class PipelineStore:
             msg = f"Pipeline '{name}' parsed but no config returned"
             raise ValueError(msg)
 
-        # Get or create metadata
+        # Get or create metadata, detecting supported manual YAML edits.
         index = self._load_index(scope)
         meta = index.get(name)
+        current_hash = compute_config_hash(config)
+        if meta is not None and meta.config_hash != current_hash:
+            meta.config_hash = current_hash
+            meta.step_count = len(config.steps)
+            meta.updated = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+            self._save_index(scope, index)
         if not meta:
             meta = PipelineMeta(
                 name=name,
@@ -630,6 +638,28 @@ class PipelineStore:
         self._save_schedules(schedules)
         return True
 
+    @synchronized
+    def record_schedule_run(
+        self,
+        name: str,
+        *,
+        last_run: datetime | None,
+        last_status: Literal["scheduled", "success", "partial", "error"],
+        last_error: str | None,
+        next_run: datetime | None,
+    ) -> None:
+        """Update run status atomically without recreating a removed schedule."""
+        name = self._validate_name(name)
+        schedules = self._load_schedules()
+        current = schedules.get(name)
+        if current is None:
+            return
+        current.last_run = last_run
+        current.last_status = last_status
+        current.last_error = last_error
+        current.next_run = next_run
+        self._save_schedules(schedules)
+
     def _load_schedules(self) -> dict[str, ScheduleEntry]:
         """Load persisted schedule metadata from disk."""
         path = self._global_schedules_path
@@ -674,14 +704,15 @@ class PipelineStore:
         runs_dir = self._runs_dir_for(scope) / name
         runs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save run record
+        # Load before publishing so index reconstruction cannot count this run twice.
+        index = self._load_index(scope)
         run_path = runs_dir / f"{run_id}.json"
+        is_new = not run_path.exists()
         atomic_write_json(run_path, run.to_dict())
 
-        # Update run count in index
-        index = self._load_index(scope)
+        # Replacing an existing run is not another execution.
         if name in index:
-            index[name].run_count += 1
+            index[name].run_count += int(is_new)
             self._save_index(scope, index)
 
         # Prune old history
@@ -700,7 +731,7 @@ class PipelineStore:
         scope = self._find_pipeline_scope(name)
         runs_dir = self._runs_dir_for(scope) / name
 
-        if not runs_dir.exists():
+        if not runs_dir.exists() or limit <= 0:
             return []
 
         # Load all run files, sorted by name (timestamp-based) descending
@@ -720,10 +751,10 @@ class PipelineStore:
         return runs
 
     @synchronized
-    def get_latest_run(self, name: str) -> PipelineRun | None:
-        """Get the most recent execution for a pipeline."""
-        history = self.get_history(name, limit=1)
-        return history[0] if history else None
+    def get_latest_run(self, name: str, *, successful_only: bool = False) -> PipelineRun | None:
+        """Get the latest run, optionally requiring a complete comparison baseline."""
+        history = self.get_history(name, limit=_MAX_HISTORY if successful_only else 1)
+        return next((run for run in history if not successful_only or run.status == "success"), None)
 
     @synchronized
     def count_history(self, name: str) -> int:

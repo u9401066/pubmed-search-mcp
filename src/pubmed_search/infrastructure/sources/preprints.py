@@ -108,12 +108,12 @@ class PreprintArticle:
         return {
             "id": self.id,
             "title": self.title,
-            "abstract": self.abstract[:500] + "..." if len(self.abstract) > 500 else self.abstract,
-            "authors": self.authors,
+            "abstract": self.abstract,
+            "authors": list(self.authors),
             "published": self.published,
             "updated": self.updated,
             "source": self.source,
-            "categories": self.categories,
+            "categories": list(self.categories),
             "pdf_url": self.pdf_url,
             "doi": self.doi,
             "source_url": self._get_source_url(),
@@ -219,6 +219,8 @@ class ArXivClient(BaseAPIClient):
             }
 
             root = ET.fromstring(xml_text)
+            if root.tag != "{http://www.w3.org/2005/Atom}feed":
+                raise_provider_schema_error(self._service_name)
 
             for entry in root.findall("atom:entry", ns):
                 try:
@@ -227,9 +229,11 @@ class ArXivClient(BaseAPIClient):
                     arxiv_id = ""
                     if id_elem is not None and id_elem.text:
                         # Extract ID from URL like http://arxiv.org/abs/1234.5678v1
-                        match = re.search(r"arxiv.org/abs/(.+)", id_elem.text)
+                        match = re.fullmatch(r"https?://arxiv\.org/abs/(.+)", id_elem.text.strip())
                         if match:
                             arxiv_id = match.group(1)
+                    if not arxiv_id:
+                        raise_provider_schema_error(self._service_name)
 
                     # Extract title
                     title_elem = entry.find("atom:title", ns)
@@ -400,8 +404,9 @@ class MedBioRxivClient(BaseAPIClient):
         to_date: str | None,
     ) -> list[PreprintArticle]:
         """Common search logic for medRxiv/bioRxiv."""
+        query_terms = compile_rxiv_local_terms(query)
         try:
-            # Default date range: last 30 days
+            # Default date range: last 90 days
             default_from, default_to = default_rxiv_date_range()
             if not to_date:
                 to_date = default_to
@@ -422,7 +427,6 @@ class MedBioRxivClient(BaseAPIClient):
                 raise_provider_schema_error(self._service_name)
 
             articles = []
-            query_terms = compile_rxiv_local_terms(query)
 
             for item in collection:
                 try:
@@ -430,7 +434,7 @@ class MedBioRxivClient(BaseAPIClient):
                     abstract = item.get("abstract", "")
 
                     # Filter by query terms
-                    text = f"{title} {abstract}".lower()
+                    text = f"{title} {abstract}".casefold()
                     if query_terms and not all(term in text for term in query_terms):
                         continue
 
@@ -525,7 +529,7 @@ class PreprintSearcher:
                 articles = await self.arxiv.search(
                     query=query,
                     limit=limit,
-                    categories=categories or ARXIV_MEDICAL_CATEGORIES,
+                    categories=categories if categories is not None else ARXIV_MEDICAL_CATEGORIES,
                 )
                 return SourceAdapterResult(
                     source="arxiv",
@@ -617,3 +621,10 @@ class PreprintSearcher:
         """Get specific arXiv paper by ID."""
         article = await self.arxiv.get_by_id(arxiv_id)
         return article.to_dict() if article else None
+
+    async def close(self) -> None:
+        """Close both owned provider pools, including on failed searches."""
+        try:
+            await self.arxiv.close()
+        finally:
+            await self.rxiv.close()

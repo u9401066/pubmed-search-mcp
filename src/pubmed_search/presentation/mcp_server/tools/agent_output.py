@@ -58,10 +58,7 @@ def preferred_structured_output_format(
 
 def is_structured_output_format(value: OutputFormat | str | None) -> bool:
     """Return whether the requested format is one of the structured encodings."""
-    return preferred_structured_output_format(value) in {"json", "toon"} and normalize_output_format(
-        value,
-        default="markdown",
-    ) in {"json", "toon"}
+    return normalize_output_format(value, default="markdown") in {"json", "toon"}
 
 
 def serialize_structured_payload(
@@ -125,6 +122,10 @@ def finalize_next_tools(
     max_items: int = 4,
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Deduplicate next-tool suggestions and return both rich and flat command views."""
+    if isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 0:
+        raise ValueError("max_items must be a nonnegative integer")
+    if max_items == 0:
+        return [], []
     seen_tools: set[str] = set()
     next_tools: list[dict[str, str]] = []
 

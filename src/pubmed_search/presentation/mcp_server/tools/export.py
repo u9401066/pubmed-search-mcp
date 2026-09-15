@@ -5,11 +5,12 @@ Provides citation exports and local literature-note persistence.
 
 v0.1.30 Updates:
 - Official NCBI Citation API as default source
-- Fallback to local formatting when API unavailable
+- Explicit local formatting for caller-selected offline formats
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import tempfile
@@ -152,7 +153,8 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             format: Export format (default: "ris")
                    - official API: ris, medline, csl
                    - local only: bibtex, csv, json
-            include_abstract: Include abstracts in output (default: True)
+            include_abstract: Include abstracts in output (default: True).
+                False requires source="local"; official payloads are returned unmodified.
             source: Citation source (default: "official")
                    - "official": NCBI Citation API (recommended, best quality)
                    - "local": Local formatting (more formats, offline capable)
@@ -172,6 +174,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         """
         try:
             normalized_pmids = normalize_pmid_batch(pmids)
+            pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         except IdentifierValidationError as exc:
             return ResponseFormatter.error(
                 error=exc,
@@ -188,9 +191,6 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             )
         normalized_abstract = include_abstract
 
-        # Handle "last" keyword
-        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
-
         if not pmid_list:
             return ResponseFormatter.error(
                 error="No valid PMIDs provided",
@@ -202,6 +202,13 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         format_lower = format
         source_lower = source
+        if source_lower == "official" and not include_abstract:
+            return ResponseFormatter.error(
+                error="Official citation export cannot suppress abstracts",
+                suggestion="Set source='local' with a supported local format and include_abstract=False",
+                tool_name="prepare_export",
+                output_format="json",
+            )
 
         if source_lower == "official" and format_lower not in OFFICIAL_FORMATS:
             return ResponseFormatter.error(
@@ -236,7 +243,8 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 )
 
                 if result.success:
-                    return _format_export_response(
+                    return await asyncio.to_thread(
+                        _format_export_response,
                         result.content,
                         format_lower,
                         result.pmid_count,
@@ -319,6 +327,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         """
         try:
             normalized_pmids = normalize_pmid_batch(pmids)
+            pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         except IdentifierValidationError as exc:
             return ResponseFormatter.error(
                 error=exc,
@@ -354,7 +363,6 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     tool_name="save_literature_notes",
                 )
 
-        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         if not pmid_list:
             return ResponseFormatter.error(
                 error="No valid PMIDs provided",
@@ -431,7 +439,8 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     ],
                 )
 
-            result = write_literature_notes(
+            result = await asyncio.to_thread(
+                write_literature_notes,
                 articles,
                 target_dir,
                 note_format=note_format,
@@ -470,7 +479,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             )
 
 
-def _resolve_pmids(pmids: str) -> list:
+def _resolve_pmids(pmids: str) -> list[str]:
     """Resolve PMID string to list. Supports 'last' for last search results."""
     if pmids.lower() == "last":
         # Get from session manager
@@ -481,14 +490,14 @@ def _resolve_pmids(pmids: str) -> list:
                 last_search = session.search_history[-1]
                 # search_history is List[Dict], each dict has 'pmids' key
                 if isinstance(last_search, dict):
-                    return last_search.get("pmids", [])[:100]  # Limit to 100
+                    return normalize_pmid_batch(last_search.get("pmids", []), allow_last=False)
                 # Fallback for SearchRecord dataclass
                 if hasattr(last_search, "pmids"):
-                    return last_search.pmids[:100]
+                    return normalize_pmid_batch(last_search.pmids, allow_last=False)
         return []
 
     # Parse comma-separated list
-    return [p.strip() for p in pmids.split(",") if p.strip()]
+    return normalize_pmid_batch(pmids, allow_last=False)
 
 
 def _save_export_file(content: str, format: str) -> str:
@@ -510,13 +519,13 @@ def _configured_export_data_dir() -> str | None:
     """
     registry = get_session_registry()
     if registry is not None:
-        return registry.data_dir
+        return registry.data_dir  # tenant-ok: base only; tenant_export_root scopes before writing
 
     # Keep the export tool's import surface lightweight. Settings pulls in
     # pydantic-settings and is only needed for this no-registry fallback.
     from pubmed_search.shared.settings import load_settings
 
-    return load_settings().data_dir
+    return load_settings().data_dir  # tenant-ok: base only; tenant_export_root scopes before writing
 
 
 def _get_file_extension(format: str) -> str:
@@ -541,8 +550,7 @@ async def _export_local(
     """
     Export citations using local formatting.
 
-    Used as fallback when official API is unavailable,
-    or for formats not supported by official API (bibtex, csv, json).
+    Used only when the caller explicitly selects local formatting.
     """
     articles = await searcher.fetch_details(pmid_list)
 
@@ -557,7 +565,8 @@ async def _export_local(
 
     exported_text = export_articles(articles, fmt=format_lower, include_abstract=include_abstract)
 
-    return _format_export_response(
+    return await asyncio.to_thread(
+        _format_export_response,
         exported_text,
         format_lower,
         len(articles),

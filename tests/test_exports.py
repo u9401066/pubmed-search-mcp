@@ -15,6 +15,21 @@ import pytest
 from pubmed_search.domain.entities.article import Author, UnifiedArticle
 
 
+@pytest.mark.parametrize("fmt", ["ris", "bibtex"])
+@pytest.mark.parametrize("authors", [[" \t", "Smith John", None], "Smith John", None])
+def test_exports_ignore_blank_authors_and_keep_a_single_author_string_intact(fmt, authors) -> None:
+    from pubmed_search.application.export.formats import export_articles
+
+    output = export_articles([{"pmid": "123", "title": "Example", "authors": authors}], fmt)
+    assert "Example" in output
+    assert "123" in output
+    if authors is not None:
+        assert "Smith, John" in output
+    else:
+        assert "AU  - " not in output
+        assert "author =" not in output
+
+
 def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypatch):
     from pubmed_search.application.export import artifacts as export_artifacts
     from pubmed_search.shared import file_io
@@ -136,31 +151,31 @@ class TestExportFormats:
         assert _strip_html_tags("") == ""
         assert _strip_html_tags(None) is None
 
-    async def test_format_author_ris_simple(self):
+    async def test_format_author_family_first_simple(self):
         """Test RIS author formatting - simple case."""
-        from pubmed_search.application.export.formats import _format_author_ris
+        from pubmed_search.application.export.formats import _format_author_family_first
 
-        assert _format_author_ris("Smith John") == "Smith, John"
-        assert _format_author_ris("Doe Jane Mary") == "Doe, Jane Mary"
+        assert _format_author_family_first("Smith John") == "Smith, John"
+        assert _format_author_family_first("Doe Jane Mary") == "Doe, Jane Mary"
 
-    async def test_format_author_ris_already_formatted(self):
+    async def test_format_author_family_first_already_formatted(self):
         """Test RIS author formatting - already has comma."""
-        from pubmed_search.application.export.formats import _format_author_ris
+        from pubmed_search.application.export.formats import _format_author_family_first
 
-        assert _format_author_ris("Smith, John") == "Smith, John"
+        assert _format_author_family_first("Smith, John") == "Smith, John"
 
-    async def test_format_author_ris_single_name(self):
+    async def test_format_author_family_first_single_name(self):
         """Test RIS author formatting - single name."""
-        from pubmed_search.application.export.formats import _format_author_ris
+        from pubmed_search.application.export.formats import _format_author_family_first
 
-        assert _format_author_ris("Madonna") == "Madonna"
+        assert _format_author_family_first("Madonna") == "Madonna"
 
-    async def test_format_author_ris_empty(self):
+    async def test_format_author_family_first_empty(self):
         """Test RIS author formatting - empty."""
-        from pubmed_search.application.export.formats import _format_author_ris
+        from pubmed_search.application.export.formats import _format_author_family_first
 
-        assert _format_author_ris("") == ""
-        assert _format_author_ris(None) is None
+        assert _format_author_family_first("") == ""
+        assert _format_author_family_first(None) is None
 
     async def test_export_ris(self, sample_article):
         """Test RIS format export."""
@@ -488,7 +503,7 @@ class TestFulltextLinks:
         result = get_fulltext_links(sample_article_no_pmc)
 
         assert result["has_free_fulltext"] is False
-        assert result["access_type"] == "subscription"
+        assert result["access_type"] == "unknown"
         assert result["pmc_url"] is None
         assert result["doi_url"] is not None
 
@@ -526,7 +541,8 @@ class TestFulltextLinks:
 
         assert summary["total"] == 3
         assert summary["open_access"] == 1
-        assert summary["subscription"] == 1
+        assert summary["subscription"] == 0
+        assert summary["unknown"] == 1
         assert summary["abstract_only"] == 1
         assert summary["pmc_percentage"] == pytest.approx(33.3, rel=0.1)
 
@@ -538,3 +554,56 @@ class TestFulltextLinks:
 
         assert summary["total"] == 0
         assert summary["pmc_percentage"] == 0
+
+
+def test_medline_respects_abstract_opt_out_and_record_boundaries():
+    from io import StringIO
+
+    from Bio import Medline
+
+    from pubmed_search.application.export.formats import export_articles
+
+    text = export_articles(
+        [{"pmid": "123", "title": "First\n\nPMID- 456\nTI  - injected", "abstract": "PRIVATE ABSTRACT"}],
+        "medline",
+        include_abstract=False,
+    )
+    rows = list(Medline.parse(StringIO(text)))
+    assert len(rows) == 1
+    assert rows[0]["PMID"] == "123"
+    assert "AB" not in rows[0]
+
+
+def test_bibtex_metadata_escaping_and_abbreviation_without_full_journal():
+    from pubmed_search.application.export.formats import export_bibtex
+
+    text = export_bibtex(
+        [{"pmid": "123", "title": "A & B {trial}", "journal_abbrev": "J Test", "authors": ["Smith, John"]}]
+    )
+    assert text.startswith("@article{Smith_")
+    assert "\\\\&" not in text
+    assert "\\&" in text
+    assert "shortjournal = {J Test}" in text
+
+
+def test_fulltext_link_metadata_does_not_infer_subscription_from_doi():
+    from pubmed_search.application.export.links import get_fulltext_links
+
+    links = get_fulltext_links({"pmid": "123", "doi": "https://doi.org/10.1000/test"})
+    assert links["doi_url"] == "https://doi.org/10.1000/test"
+    assert links["access_type"] == "unknown"
+    assert get_fulltext_links({"pmc_id": "../../outside"})["pmc_url"] is None
+
+
+def test_note_abstract_opt_out_applies_to_all_files_and_no_automatic_verification(tmp_path):
+    from pubmed_search.application.export.notes import write_literature_notes
+
+    article = {"pmid": "123", "title": "Example", "abstract": "PRIVATE ABSTRACT", "authors": ["Smith J"]}
+    result = write_literature_notes([article], tmp_path, note_format="medpaper", include_abstract=False)
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            assert "PRIVATE ABSTRACT" not in path.read_text()
+    content = Path(result["files"][0]["path"]).read_text()
+    assert "verified: false" in content
+    assert 'trust_state: "unverified"' in content
+    assert article["abstract"] == "PRIVATE ABSTRACT"

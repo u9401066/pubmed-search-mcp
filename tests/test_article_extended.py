@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from pubmed_search.domain.entities.article import (
     ArticleType,
     Author,
@@ -20,6 +22,60 @@ from pubmed_search.domain.entities.article import (
 
 
 class TestAuthor:
+    @pytest.mark.parametrize("name", ["family consortium", "display_name group"])
+    def test_string_author_keeps_provider_key_words(self, name):
+        assert Author.from_dict(name).display_name == name
+
+    def test_crossref_null_affiliation(self):
+        assert Author.from_dict({"family": "Smith", "affiliation": None}).affiliation is None
+
+    def test_apa_large_group_keeps_actual_last_author(self):
+        paper = UnifiedArticle(
+            title="Team study",
+            primary_source="pubmed",
+            year=2024,
+            authors=[Author(family_name=f"Author{i}", given_name="X") for i in range(22)],
+        )
+        citation = paper.cite_apa()
+        assert "Author18, X., . . . Author21, X. (2024)." in citation
+        assert "Author19," not in citation and "Author20," not in citation
+
+    def test_merge_preserves_zero_metrics_and_donor_ownership(self):
+        first = UnifiedArticle(
+            title="T",
+            primary_source="pubmed",
+            citation_metrics=CitationMetrics(
+                relative_citation_ratio=0.0,
+                nih_percentile=0.0,
+                apt=0.0,
+                influential_citation_count=0,
+            ),
+        )
+        donor = UnifiedArticle(
+            title="T",
+            primary_source="s2",
+            citation_metrics=CitationMetrics(
+                citation_count=3,
+                relative_citation_ratio=2.0,
+                nih_percentile=90.0,
+                apt=0.8,
+                influential_citation_count=2,
+            ),
+        )
+        first.merge_from(donor)
+        assert first.citation_metrics == CitationMetrics(
+            citation_count=3,
+            relative_citation_ratio=0.0,
+            nih_percentile=0.0,
+            apt=0.0,
+            influential_citation_count=0,
+        )
+        empty = UnifiedArticle(title="T", primary_source="pubmed")
+        empty.merge_from(donor)
+        assert empty.citation_metrics is not None
+        empty.citation_metrics.citation_count = 99
+        assert donor.citation_metrics is not None and donor.citation_metrics.citation_count == 3
+
     async def test_display_name_full_name(self):
         a = Author(full_name="John Smith")
         assert a.display_name == "John Smith"
@@ -316,7 +372,8 @@ class TestCiteApa:
         authors = [Author(given_name=f"Author{i}", family_name=f"Last{i}") for i in range(10)]
         a = UnifiedArticle(title="T", primary_source="p", authors=authors, year=2024)
         cite = a.cite_apa()
-        assert "..." in cite  # APA truncates after 7
+        assert "..." not in cite
+        assert "Last9, A. (2024)." in cite
 
     async def test_apa_three_authors(self):
         authors = [
@@ -335,6 +392,36 @@ class TestCiteApa:
 
 
 class TestFromPubmed:
+    def test_generic_publication_type_does_not_hide_randomized_trial(self):
+        article = UnifiedArticle.from_pubmed(
+            {
+                "title": "Trial",
+                "authors": None,
+                "article_type": ["Journal Article", "Randomized Controlled Trial"],
+            }
+        )
+        assert article.article_type is ArticleType.RANDOMIZED_CONTROLLED_TRIAL
+
+    @pytest.mark.parametrize(
+        "factory,key",
+        [
+            (UnifiedArticle.from_crossref, "is-referenced-by-count"),
+            (UnifiedArticle.from_openalex, "cited_by_count"),
+            (UnifiedArticle.from_semantic_scholar, "citationCount"),
+            (UnifiedArticle.from_core, "citation_count"),
+            (UnifiedArticle.from_scopus, "cited_by_count"),
+            (UnifiedArticle.from_web_of_science, "cited_by_count"),
+        ],
+    )
+    def test_source_mapping_distinguishes_zero_citations_from_missing(self, factory, key):
+        article = factory({"title": "T", key: 0})
+        assert article.citation_metrics is not None
+        assert article.citation_metrics.citation_count == 0
+
+    def test_crossref_empty_title_and_null_author_metadata(self):
+        article = UnifiedArticle.from_crossref({"title": [], "author": None, "published": None})
+        assert article.title == "Unknown Title" and article.authors == []
+
     async def test_basic(self):
         data = {
             "pmid": "12345",
@@ -402,7 +489,7 @@ class TestFromCrossref:
         a = UnifiedArticle.from_crossref(data)
         assert a.pmc == "PMC12345"
 
-    async def test_oa_links_from_crossref(self):
+    async def test_crossref_pdf_link_does_not_assert_open_access(self):
         data = {
             "title": ["T"],
             "link": [
@@ -414,7 +501,8 @@ class TestFromCrossref:
             ],
         }
         a = UnifiedArticle.from_crossref(data)
-        assert len(a.oa_links) == 1
+        assert a.oa_links == [] and not a.has_open_access
+        assert a.sources[0].raw_data == data
 
 
 class TestFromOpenalex:

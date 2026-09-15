@@ -7,7 +7,7 @@ artifacts. Runtime clients are created lazily and owned by this client.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import Self
@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class PubMedSearchConfig:
-    """Configuration used by :class:`PubMedSearchClient`."""
+    """SDK settings; ``data_dir`` is reserved and does not enable persistence."""
 
     email: str = "pubmed-search@example.com"
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     data_dir: str | None = None
 
 

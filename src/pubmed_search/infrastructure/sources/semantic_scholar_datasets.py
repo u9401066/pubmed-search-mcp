@@ -108,9 +108,11 @@ class SemanticScholarDatasetsClient(BaseAPIClient):
 
         # This official endpoint is an array-root JSON response.
         payload: Any = await self._make_request(f"{S2_DATASETS_API_BASE}/release/")
-        if not isinstance(payload, list):
+        if not isinstance(payload, list) or any(
+            not isinstance(release, str) or not release.strip() for release in payload
+        ):
             raise SemanticScholarDatasetResponseError("Semantic Scholar release catalog response was invalid")
-        return [release for release in payload if isinstance(release, str)]
+        return list(dict.fromkeys(payload))
 
     async def get_release_manifest(self, release_id: str = "latest") -> SemanticScholarReleaseManifest | None:
         """Fetch a release catalog and the exact upstream licensing READMEs."""
@@ -120,7 +122,7 @@ class SemanticScholarDatasetsClient(BaseAPIClient):
         if not isinstance(payload, dict):
             raise SemanticScholarDatasetResponseError("Semantic Scholar release manifest response was invalid")
         manifest = _validate_response_model(SemanticScholarReleaseManifest, payload)
-        if manifest is None:
+        if manifest is None or (release_id.strip() != "latest" and manifest.release_id != release_id.strip()):
             raise SemanticScholarDatasetResponseError("Semantic Scholar release manifest response was invalid")
         return manifest
 
@@ -139,7 +141,7 @@ class SemanticScholarDatasetsClient(BaseAPIClient):
         if not isinstance(payload, dict):
             raise SemanticScholarDatasetResponseError("Semantic Scholar dataset manifest response was invalid")
         manifest = _validate_response_model(SemanticScholarDatasetManifest, payload)
-        if manifest is None:
+        if manifest is None or manifest.name != dataset_name.strip():
             raise SemanticScholarDatasetResponseError("Semantic Scholar dataset manifest response was invalid")
         return manifest
 
@@ -160,8 +162,20 @@ class SemanticScholarDatasetsClient(BaseAPIClient):
         if not isinstance(payload, dict):
             raise SemanticScholarDatasetResponseError("Semantic Scholar diff manifest response was invalid")
         manifest = _validate_response_model(SemanticScholarDatasetDiffManifest, payload)
-        if manifest is None:
+        if (
+            manifest is None
+            or manifest.dataset != dataset_name.strip()
+            or (start_release_id.strip() != "latest" and manifest.start_release != start_release_id.strip())
+            or (end_release_id.strip() != "latest" and manifest.end_release != end_release_id.strip())
+        ):
             raise SemanticScholarDatasetResponseError("Semantic Scholar diff manifest response was invalid")
+        previous = manifest.start_release
+        for diff in manifest.diffs:
+            if diff.from_release != previous or diff.to_release == previous:
+                raise SemanticScholarDatasetResponseError("Semantic Scholar diff chain was discontinuous")
+            previous = diff.to_release
+        if previous != manifest.end_release:
+            raise SemanticScholarDatasetResponseError("Semantic Scholar diff chain did not reach the requested release")
         return manifest
 
     def _require_api_key(self, operation: str) -> None:

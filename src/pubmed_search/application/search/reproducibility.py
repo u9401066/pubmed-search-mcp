@@ -6,8 +6,8 @@ addressing a critical gap in evidence-based medicine: the ability to
 verify and replicate systematic searches.
 
 PRISMA 2020 guidelines (Page et al., BMJ 2021) require transparent,
-reproducible search strategies. This module provides machine-readable
-reproducibility metrics that no existing tool offers.
+reproducible search strategies. This module provides unvalidated heuristic diagnostics, not measured replay
+accuracy or evidence of compliance with reporting guidelines.
 
 Key Metrics:
     - deterministic: Whether results are fully deterministic (no LLM/randomness)
@@ -53,16 +53,6 @@ _MESH_PATTERNS = re.compile(
 # Boolean operator patterns
 _BOOLEAN_PATTERN = re.compile(r"\b(AND|OR|NOT)\b")
 
-# All known sources we can query
-_ALL_SOURCES = {
-    "pubmed",
-    "europe_pmc",
-    "openalex",
-    "semantic_scholar",
-    "core",
-    "crossref",
-}
-
 # Source stability tiers (how often a source's results change)
 _SOURCE_STABILITY: dict[str, float] = {
     "pubmed": 0.95,  # Very stable, archival
@@ -107,6 +97,9 @@ class ReproducibilityScore:
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
         return {
+            "measurement_type": "heuristic",
+            "determinism_scope": "local_algorithms_only",
+            "provider_results_may_change": True,
             "overall_score": round(self.overall_score, 3),
             "deterministic": self.deterministic,
             "query_formality": round(self.query_formality, 3),
@@ -273,20 +266,14 @@ def _score_source_coverage(
     """
     Score what fraction of queried sources successfully responded.
 
-    Accounts for:
-    - Coverage ratio (responded / queried)
-    - Diversity bonus (more sources queried = better)
+    Counts unique responding sources only when they were actually queried.
+    A diversity bonus must not disguise a missing response.
     """
     if not queried:
         return 0.5  # Unknown
 
-    coverage_ratio = len(responded) / len(queried)
-
-    # Diversity bonus: querying more sources is better for reproducibility
-    diversity = min(len(queried) / max(len(_ALL_SOURCES), 1), 1.0)
-    diversity_bonus = diversity * 0.1  # Up to 0.1 bonus
-
-    return min(coverage_ratio + diversity_bonus, 1.0)
+    queried_set = set(queried)
+    return len(queried_set & set(responded)) / len(queried_set)
 
 
 def _score_result_stability(

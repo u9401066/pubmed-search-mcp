@@ -579,3 +579,62 @@ async def test_persisted_results_receive_the_same_source_metadata_as_live_json()
 
     assert manifest == {"artifact_id": "artifact-1"}
     assert formatter.call_args.kwargs["source_metadata"] == source_metadata
+
+
+@pytest.mark.asyncio
+async def test_failed_primary_does_not_send_pubmed_tags_to_fallback() -> None:
+    plan = _simple_plan(explicit_sources=False)
+    plan.query = plan.provider_neutral_query = "sepsis[tiab]"
+    fallback = AsyncMock()
+    failure = SourceAdapterResult.failure(
+        source="pubmed",
+        operation="search",
+        error=SourceAdapterError(
+            source="pubmed",
+            operation="search",
+            message="Timeout",
+            kind="timeout",
+            retryable=True,
+        ),
+    )
+    result = await _execute_plan(
+        plan, search_functions={"pubmed": AsyncMock(return_value=failure), "europe_pmc": fallback}
+    )
+    assert result.source_statuses == {"pubmed": "error"}
+    fallback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_foreground_failure_cancels_trials_before_parent_task_finishes() -> None:
+    from dataclasses import replace
+
+    plan = _simple_plan(explicit_sources=True)
+    plan.request = replace(plan.request, include_clinical_trials=True)
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def trials(*args, **kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def fail_progress(*args):
+        await started.wait()
+        raise RuntimeError("progress unavailable")
+
+    with patch("pubmed_search.infrastructure.sources.clinical_trials.search_related_trials", side_effect=trials):
+        with pytest.raises(RuntimeError, match="progress unavailable"):
+            await execute_unified_search(
+                plan,
+                progress=fail_progress,
+                source_broker=UnifiedSourceBroker(
+                    AsyncMock(),
+                    search_functions_override={
+                        "pubmed": AsyncMock(return_value=SourceAdapterResult.empty(source="pubmed", operation="search"))
+                    },
+                ),
+                enrichment=_NoopEnrichment(),
+                source_registry=get_source_registry(),
+            )
+    assert cancelled.is_set()

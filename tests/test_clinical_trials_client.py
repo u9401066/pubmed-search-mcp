@@ -267,7 +267,7 @@ class TestNormalizeStudy:
 
         study = {
             "protocolSection": {
-                "identificationModule": {},
+                "identificationModule": {"nctId": "NCT00000001"},
                 "statusModule": {},
                 "designModule": {},
                 "conditionsModule": {},
@@ -277,21 +277,16 @@ class TestNormalizeStudy:
 
         result = client._normalize_study(study)
 
-        assert result["nct_id"] == ""
+        assert result["nct_id"] == "NCT00000001"
         assert result["title"] == ""
         assert result["status"] == "UNKNOWN"
         assert result["phase"] == "N/A"
 
     async def test_normalize_empty_study(self):
-        """Test normalization of empty study."""
-        client = ClinicalTrialsClient()
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
 
-        study = {}
-
-        result = client._normalize_study(study)
-
-        assert result["nct_id"] == ""
-        assert result["title"] == ""
+        with pytest.raises(APIRequestError):
+            ClinicalTrialsClient()._normalize_study({})
 
     async def test_normalize_multiple_phases(self):
         """Test normalization with multiple phases."""
@@ -299,7 +294,7 @@ class TestNormalizeStudy:
 
         study = {
             "protocolSection": {
-                "identificationModule": {"nctId": "NCT00001"},
+                "identificationModule": {"nctId": "NCT00000001"},
                 "statusModule": {},
                 "designModule": {"phases": ["PHASE1", "PHASE2"]},
                 "conditionsModule": {},
@@ -317,7 +312,7 @@ class TestNormalizeStudy:
 
         study = {
             "protocolSection": {
-                "identificationModule": {"nctId": "NCT00002"},
+                "identificationModule": {"nctId": "NCT00000002"},
                 "statusModule": {},
                 "designModule": {},
                 "conditionsModule": {},
@@ -378,3 +373,27 @@ class TestModuleConstants:
         """Test DEFAULT_TIMEOUT is reasonable."""
         assert DEFAULT_TIMEOUT > 0
         assert DEFAULT_TIMEOUT <= 60  # Not too long
+
+
+async def test_study_identity_required_and_actual_enrollment_remains_actual():
+    from pubmed_search.infrastructure.sources.base_client import APIRequestError
+    from pubmed_search.infrastructure.sources.clinical_trials import ClinicalTrialsClient, format_trials_section
+
+    client = ClinicalTrialsClient()
+    with pytest.raises(APIRequestError):
+        client._normalize_study({"protocolSection": {}})
+    study = client._normalize_study(
+        {
+            "protocolSection": {
+                "identificationModule": {"nctId": "NCT12345678"},
+                "statusModule": None,
+                "designModule": {"enrollmentInfo": {"count": 0, "type": "ACTUAL"}},
+                "conditionsModule": None,
+                "armsInterventionsModule": None,
+            }
+        }
+    )
+    assert study["enrollment_type"] == "ACTUAL"
+    formatted = format_trials_section([study])
+    assert "Actual enrollment: 0" in formatted
+    assert "Target enrollment" not in formatted

@@ -86,10 +86,10 @@ class _TextOnlyParser(HTMLParser):
             self._in_title = False
 
     def handle_data(self, data: str) -> None:
-        if self._skip_depth > 0:
-            return
         if self._in_title:
             self._title_parts.append(data)
+            return
+        if self._skip_depth > 0:
             return
         stripped = data.strip()
         if stripped:

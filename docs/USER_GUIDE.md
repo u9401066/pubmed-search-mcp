@@ -261,7 +261,14 @@ In local mode, directory resolution is:
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 
-Local notes keep verified metadata in frontmatter and sidecar files, then leave summary, relevance, limitations, and follow-up sections editable.
+Local notes keep retrieved metadata in frontmatter and sidecar files, then leave summary, relevance, limitations, and follow-up sections editable.
+
+Exporting does not verify bibliographic identity or claim support. MedPaper notes use
+`verified: false` and `trust_state: "unverified"`; abstract excerpts are labeled as
+excerpts. `include_abstract=False` omits abstracts from new notes, templates, sidecars,
+and CSL JSON. Existing files remain untouched unless `overwrite=True`. Each file is
+published atomically; a failed batch may leave already completed files.
+
 
 ### 8. Save Repeatable Pipelines
 

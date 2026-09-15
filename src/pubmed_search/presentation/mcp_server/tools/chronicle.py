@@ -8,8 +8,9 @@ Two thin wrappers over :class:`ChronicleService`:
   milestones, and compare.
 
 The chronicle's primary axis is chronological; branches are a secondary
-organizing dimension. Both are projections of the same stored snapshot, so
-``output="timeline"`` and ``output="tree"`` never disagree.
+organizing dimension. Both are projections of the same stored snapshot, with shared
+provenance for ``output="timeline"`` and ``output="tree"``. Projection consistency
+does not establish the scientific truth of source claims.
 
 Business logic lives in ``pubmed_search.application.chronicle``; these functions
 only validate inputs, call the service, persist an artifact, and format text.
@@ -493,8 +494,9 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         to see exactly what changed.
 
         The primary axis is chronological; research branches are a secondary
-        organizing dimension. Both come from the same stored snapshot, so
-        `output="timeline"` and `output="tree"` can never disagree.
+        organizing dimension. Both come from the same stored snapshot, and
+        preserve shared provenance in `output="timeline"` and `output="tree"`.
+        Agreement between projections is not independent evidence verification.
 
         Every entry carries:
         - a one-sentence claim with inline citations
@@ -569,13 +571,6 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                     output_format=response_format,
                 )
         topic = topic.strip() if topic else None
-        if topic is not None and len(topic) > 500:
-            return ResponseFormatter.error(
-                error="topic must contain at most 500 characters",
-                suggestion="Use a focused biomedical topic or a saved PMID set",
-                tool_name="build_research_chronicle",
-                output_format=response_format,
-            )
         if max_events is not None and (
             isinstance(max_events, bool) or not isinstance(max_events, int) or not 1 <= max_events <= 200
         ):

@@ -34,6 +34,7 @@ from pubmed_search.shared.source_contracts import (
     normalize_source_adapter_error,
 )
 
+from .dates import parse_publication_month, parse_publication_year
 from .diagnostics import build_timeline_diagnostics
 from .landmark_scorer import LandmarkScorer, evidence_level_to_score
 from .milestone_detector import MilestoneDetector
@@ -295,7 +296,7 @@ class TimelineBuilder:
         sorted_articles = sorted(articles, key=self._article_sort_key)
 
         for i, article in enumerate(sorted_articles):
-            is_first = i == 0 and self._parse_year(article.get("year") or article.get("pub_year")) is not None
+            is_first = i == 0 and parse_publication_year(article.get("year") or article.get("pub_year")) is not None
             event = self.detector.detect_milestone(article, is_first=is_first)
 
             if event:
@@ -420,7 +421,7 @@ class TimelineBuilder:
         sorted_articles = sorted(articles, key=self._article_sort_key)
         events: list[TimelineEvent] = []
         for index, article in enumerate(sorted_articles):
-            is_first = index == 0 and self._parse_year(article.get("year") or article.get("pub_year")) is not None
+            is_first = index == 0 and parse_publication_year(article.get("year") or article.get("pub_year")) is not None
             event = self.detector.detect_milestone(article, is_first=is_first)
             events.append(event or self._create_generic_event(article, earliest_observed_in_scope=is_first))
         diagnostics = build_timeline_diagnostics(
@@ -767,7 +768,7 @@ class TimelineBuilder:
         filtered = []
         for article in articles:
             raw_year = article.get("year") or article.get("pub_year")
-            year = self._parse_year(raw_year)
+            year = parse_publication_year(raw_year)
             if year is None:
                 continue
             if min_year and year < min_year:
@@ -787,11 +788,11 @@ class TimelineBuilder:
         pmid = str(article.get("pmid", ""))
 
         raw_year = article.get("year") or article.get("pub_year")
-        year = self._parse_year(raw_year) or 0
+        year = parse_publication_year(raw_year) or 0
 
         # Parse month (may be string like "Jan" or int)
         raw_month = article.get("month") or article.get("pub_month")
-        month = self._parse_month(raw_month)
+        month = parse_publication_month(raw_month)
 
         authors = article.get("authors", [])
         first_author = None
@@ -831,34 +832,27 @@ class TimelineBuilder:
             metadata=metadata,
         )
 
-    @staticmethod
-    def _parse_year(raw_year: Any) -> int | None:
-        """Parse a plausible four-digit publication year without raising."""
-        if isinstance(raw_year, bool) or raw_year is None:
-            return None
-        text = str(raw_year).strip()
-        if len(text) != 4 or not text.isdecimal():
-            return None
-        year = int(text)
-        return year if 1000 <= year <= 9999 else None
-
     @classmethod
     def _article_sort_key(cls, article: dict[str, Any]) -> tuple[int, int, str]:
         """Return a deterministic chronology key for an article mapping."""
-        year = cls._parse_year(article.get("year") or article.get("pub_year")) or 9999
-        month = cls._parse_month_value(article.get("month") or article.get("pub_month"))
+        year = parse_publication_year(article.get("year") or article.get("pub_year")) or 9999
+        month = parse_publication_month(article.get("month") or article.get("pub_month"))
         return (year, month or 0, str(article.get("pmid") or ""))
 
     @classmethod
     def _earliest_dated_article(cls, articles: list[dict[str, Any]]) -> dict[str, Any] | None:
         """Return the earliest article with a valid publication year."""
-        dated = [article for article in articles if cls._parse_year(article.get("year") or article.get("pub_year"))]
+        dated = [
+            article for article in articles if parse_publication_year(article.get("year") or article.get("pub_year"))
+        ]
         return min(dated, key=cls._article_sort_key, default=None)
 
     @classmethod
     def _latest_dated_article(cls, articles: list[dict[str, Any]]) -> dict[str, Any] | None:
         """Return the latest article with a valid publication year."""
-        dated = [article for article in articles if cls._parse_year(article.get("year") or article.get("pub_year"))]
+        dated = [
+            article for article in articles if parse_publication_year(article.get("year") or article.get("pub_year"))
+        ]
         return max(dated, key=cls._article_sort_key, default=None)
 
     @staticmethod
@@ -890,6 +884,8 @@ class TimelineBuilder:
 
         landmark_slots = min(max_events - len(selected), max_events // 2)
         for index in sorted(range(len(ordered)), key=importance, reverse=True):
+            if len(selected) >= 2 + landmark_slots:
+                break
             if index in selected:
                 continue
             selected.add(index)
@@ -926,91 +922,6 @@ class TimelineBuilder:
             str(right.get("title") or "").casefold(),
             str(right.get("year") or right.get("pub_year") or ""),
         )
-
-    @staticmethod
-    def _parse_month_value(raw_month: Any) -> int | None:
-        """Parse month values for sorting without constructing a builder."""
-        if isinstance(raw_month, int):
-            return raw_month if 1 <= raw_month <= 12 else None
-        text = str(raw_month or "").strip().lower()
-        if text.isdecimal():
-            value = int(text)
-            return value if 1 <= value <= 12 else None
-        return {
-            "jan": 1,
-            "january": 1,
-            "feb": 2,
-            "february": 2,
-            "mar": 3,
-            "march": 3,
-            "apr": 4,
-            "april": 4,
-            "may": 5,
-            "jun": 6,
-            "june": 6,
-            "jul": 7,
-            "july": 7,
-            "aug": 8,
-            "august": 8,
-            "sep": 9,
-            "sept": 9,
-            "september": 9,
-            "oct": 10,
-            "october": 10,
-            "nov": 11,
-            "november": 11,
-            "dec": 12,
-            "december": 12,
-        }.get(text)
-
-    def _parse_month(self, raw_month: Any) -> int | None:
-        """Parse month from various formats (int, string name, string number)."""
-        if not raw_month:
-            return None
-
-        # If already int
-        if isinstance(raw_month, int):
-            return raw_month if 1 <= raw_month <= 12 else None
-
-        # Convert to string
-        month_str = str(raw_month).strip()
-
-        # Try numeric
-        try:
-            month_int = int(month_str)
-            return month_int if 1 <= month_int <= 12 else None
-        except ValueError:
-            pass
-
-        # Month name mapping
-        month_names = {
-            "jan": 1,
-            "january": 1,
-            "feb": 2,
-            "february": 2,
-            "mar": 3,
-            "march": 3,
-            "apr": 4,
-            "april": 4,
-            "may": 5,
-            "jun": 6,
-            "june": 6,
-            "jul": 7,
-            "july": 7,
-            "aug": 8,
-            "august": 8,
-            "sep": 9,
-            "sept": 9,
-            "september": 9,
-            "oct": 10,
-            "october": 10,
-            "nov": 11,
-            "november": 11,
-            "dec": 12,
-            "december": 12,
-        }
-
-        return month_names.get(month_str.lower())
 
     def _compute_landmark_scores(
         self,

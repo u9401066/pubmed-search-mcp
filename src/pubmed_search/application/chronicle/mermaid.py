@@ -262,10 +262,17 @@ def _index_branches(branch_rows: _BranchRows, *, repairs: MermaidRepairLog) -> _
     points_by_key: dict[str, dict[str, Any]] = {}
     first_key_by_raw_id: dict[str, str] = {}
     raw_id_counts: Counter[str] = Counter()
+    reserved_ids = {str(row.get("branch_id") or f"branch-{index + 1}") for index, row in enumerate(branch_rows.rows)}
     for index, row in enumerate(branch_rows.rows):
         raw_id = str(row.get("branch_id") or f"branch-{index + 1}")
         raw_id_counts[raw_id] += 1
-        key = raw_id if raw_id_counts[raw_id] == 1 else f"{raw_id}#duplicate-{raw_id_counts[raw_id]}"
+        key = raw_id
+        if key in rows_by_key:
+            suffix = raw_id_counts[raw_id]
+            key = f"{raw_id}#duplicate-{suffix}"
+            while key in reserved_ids or key in rows_by_key:
+                suffix += 1
+                key = f"{raw_id}#duplicate-{suffix}"
         if raw_id_counts[raw_id] > 1:
             repairs.add("duplicate_branch_id")
         first_key_by_raw_id.setdefault(raw_id, key)
@@ -273,6 +280,8 @@ def _index_branches(branch_rows: _BranchRows, *, repairs: MermaidRepairLog) -> _
         rows_by_key[key] = row
         entries_by_key[key] = branch_rows.entries[index]
         points_by_key[key] = branch_rows.points[index]
+    # Ambiguous raw IDs cannot establish a parent; preserve every occurrence without guessing.
+    first_key_by_raw_id = {raw_id: key for raw_id, key in first_key_by_raw_id.items() if raw_id_counts[raw_id] == 1}
     return _BranchIndex(keys, rows_by_key, entries_by_key, points_by_key, first_key_by_raw_id)
 
 

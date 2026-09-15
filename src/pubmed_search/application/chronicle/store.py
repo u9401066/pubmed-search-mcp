@@ -18,13 +18,14 @@ import re
 import tempfile
 import threading
 import time
-import unicodedata
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from pubmed_search.domain.entities.chronicle import ChronicleSnapshot
+
+from .assembler import canonical_topic_key
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _REVISION_FILE_RE = re.compile(r"^revision-(\d+)\.json$")
@@ -37,12 +38,6 @@ _THREAD_LOCKS_GUARD = threading.Lock()
 
 SnapshotFactory = Callable[[int, ChronicleSnapshot | None], ChronicleSnapshot]
 logger = logging.getLogger(__name__)
-
-
-def _normalize_topic(topic: str) -> str:
-    """Return the exact-match key used for stored chronicle topics."""
-    normalized = unicodedata.normalize("NFC", topic)
-    return " ".join(normalized.split()).casefold()
 
 
 def _thread_lock_for(path: Path) -> threading.Lock:
@@ -113,7 +108,7 @@ class ChronicleStore:
             FileExistsError: If that revision is already stored.
             ValueError: If the revision number is not positive.
         """
-        if snapshot.revision < 1:
+        if isinstance(snapshot.revision, bool) or not isinstance(snapshot.revision, int) or snapshot.revision < 1:
             msg = f"Chronicle revisions must be positive, got {snapshot.revision}"
             raise ValueError(msg)
 
@@ -151,7 +146,11 @@ class ChronicleStore:
             if snapshot.chronicle_id != chronicle_id:
                 msg = f"Snapshot factory changed chronicle id: expected {chronicle_id}, got {snapshot.chronicle_id}"
                 raise ValueError(msg)
-            if snapshot.revision != next_revision:
+            if (
+                isinstance(snapshot.revision, bool)
+                or not isinstance(snapshot.revision, int)
+                or snapshot.revision != next_revision
+            ):
                 msg = f"Snapshot factory returned revision {snapshot.revision}; expected {next_revision}"
                 raise ValueError(msg)
 
@@ -168,6 +167,8 @@ class ChronicleStore:
         Returns:
             The snapshot, or ``None`` when the chronicle or revision is absent.
         """
+        if revision is not None and (isinstance(revision, bool) or not isinstance(revision, int) or revision < 1):
+            raise ValueError("revision must be a positive integer")
         chronicle_dir = self._chronicle_dir(chronicle_id)
         if not chronicle_dir.is_dir():
             return None
@@ -203,8 +204,8 @@ class ChronicleStore:
         """
         records = self._index_records()
         if topic:
-            topic_key = _normalize_topic(topic)
-            records = [record for record in records if topic_key in _normalize_topic(str(record.get("topic", "")))]
+            topic_key = canonical_topic_key(topic)
+            records = [record for record in records if topic_key in canonical_topic_key(str(record.get("topic", "")))]
 
         records.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
         return records[: max(limit, 0)]
@@ -216,14 +217,14 @@ class ChronicleStore:
         A list deliberately represents zero, one, or multiple matches so callers
         can surface ambiguity instead of silently choosing one chronicle.
         """
-        topic_key = _normalize_topic(topic)
+        topic_key = canonical_topic_key(topic)
         if not topic_key:
             return []
 
         matching_ids = {
             str(record["chronicle_id"])
             for record in self._index_records()
-            if record.get("chronicle_id") and _normalize_topic(str(record.get("topic", ""))) == topic_key
+            if record.get("chronicle_id") and canonical_topic_key(str(record.get("topic", ""))) == topic_key
         }
         return sorted(matching_ids)
 
@@ -249,9 +250,12 @@ class ChronicleStore:
     def _load_from_dir(chronicle_dir: Path, revision: int) -> ChronicleSnapshot | None:
         """Load one known revision directly from *chronicle_dir*."""
         revision_path = chronicle_dir / f"revision-{revision}.json"
-        if not revision_path.is_file():
+        if revision_path.is_symlink() or not revision_path.is_file():
             return None
-        return ChronicleSnapshot.from_dict(json.loads(revision_path.read_text(encoding="utf-8")))
+        snapshot = ChronicleSnapshot.from_dict(json.loads(revision_path.read_text(encoding="utf-8")))
+        if snapshot.revision != revision or snapshot.chronicle_id != chronicle_dir.name:
+            raise ValueError("Chronicle revision identity does not match its storage path")
+        return snapshot
 
     @staticmethod
     def _revisions_in_dir(chronicle_dir: Path) -> list[int]:
@@ -259,7 +263,10 @@ class ChronicleStore:
         return sorted(
             int(match.group(1))
             for path in chronicle_dir.iterdir()
-            if (match := _REVISION_FILE_RE.match(path.name)) is not None
+            if not path.is_symlink()
+            and path.is_file()
+            and (match := _REVISION_FILE_RE.fullmatch(path.name)) is not None
+            and int(match.group(1)) > 0
         )
 
     @classmethod
@@ -283,7 +290,7 @@ class ChronicleStore:
             return records
 
         for chronicle_dir in chronicle_dirs:
-            if _SAFE_ID_RE.fullmatch(chronicle_dir.name) is None:
+            if chronicle_dir.is_symlink() or _SAFE_ID_RE.fullmatch(chronicle_dir.name) is None:
                 continue
             try:
                 with self._revision_lock(chronicle_dir):
@@ -338,12 +345,6 @@ class ChronicleStore:
         snapshot = cls._load_from_dir(chronicle_dir, latest)
         if snapshot is None:
             return None, None
-        if snapshot.revision != latest:
-            msg = f"Revision payload {snapshot.revision} does not match revision-{latest}.json"
-            raise ValueError(msg)
-        if snapshot.chronicle_id != chronicle_dir.name:
-            msg = f"Revision Chronicle ID {snapshot.chronicle_id!r} does not match directory {chronicle_dir.name!r}"
-            raise ValueError(msg)
         return cls._index_record(snapshot), snapshot
 
     @staticmethod
@@ -449,7 +450,7 @@ class ChronicleStore:
 
     def _chronicle_dir(self, chronicle_id: str) -> Path:
         """Return the directory for *chronicle_id*, rejecting unsafe names."""
-        if not _SAFE_ID_RE.match(chronicle_id):
+        if not isinstance(chronicle_id, str) or not _SAFE_ID_RE.fullmatch(chronicle_id):
             msg = f"Unsafe chronicle id: {chronicle_id}"
             raise ValueError(msg)
         path = (self.root_dir / chronicle_id).resolve()

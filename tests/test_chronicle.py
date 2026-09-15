@@ -197,6 +197,7 @@ class TestChronicleEntities:
         assert EvidenceArticle(title="t", pmcid="PMC9").evidence_id == "pmcid:PMC9"
         assert EvidenceArticle(title="untitled").evidence_id.startswith("title:")
         assert EvidenceArticle(title="t").has_identifier is False
+        assert EvidenceArticle(title="x" * 80 + "A").evidence_id != EvidenceArticle(title="x" * 80 + "B").evidence_id
 
     def test_graph_rejects_invalid_edge_endpoints(self):
         graph = ChronicleGraph()

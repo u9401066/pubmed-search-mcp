@@ -1,5 +1,21 @@
 # Progress (Updated: 2026-09-09)
 
+## v0.7.3 Core Review and Reliability — Release Prepared
+
+- Completed all ten core phases: 223 source files, 456 classes, 2,445 functions/
+  methods/nested functions; all 2,901 definitions have authored review evidence.
+- Full local gate: 4,736 passed, 23 skipped, 30 deselected; smoke: 165 passed.
+  All 41 MCP tools retain source stdio, HTTP and fresh-wheel acceptance.
+- Consolidated duplicate policy, fixed reproduced source/runtime/persistence/
+  export/evaluation failures, preserved user-owned harness directories, and moved
+  routine full validation before push with independent cloud smoke.
+- User authorized segmented commits and publication. Release branch and metadata
+  are prepared; completion requires verified PR/master, tag workflow, PyPI assets,
+  GitHub Release, website and Wiki. No paid model benchmark has been started.
+- Review evidence: [core report](../docs/reports/core_review_2026-09-15.md) and
+  [ledger](../docs/reports/code_review_ledger.json).
+
+
 ## v0.7.2 Retrieval, Reliability, and Evaluation — Published
 
 - Integrated the work with upstream v0.7.1, preserving the strict 41-tool

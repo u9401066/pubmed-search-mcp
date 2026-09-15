@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING, Any
 
 from Bio import Entrez
 
-from .base import raise_ncbi_infrastructure_error
+from pubmed_search.domain.value_objects.article_identifiers import normalize_pmid, try_normalize_pmid
+
+from .base import NCBIProviderSchemaError, raise_ncbi_infrastructure_error
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -53,29 +55,7 @@ class CitationMixin:
         Returns:
             List of related article details.
         """
-        try:
-            handle = await self._rate_limited_call(
-                Entrez.elink,
-                dbfrom="pubmed",
-                db="pubmed",
-                id=pmid,
-                linkname="pubmed_pubmed",
-            )
-            record = await _read_entrez_handle(handle)
-
-            related_ids = []
-            if record and record[0].get("LinkSetDb"):
-                for linkset in record[0]["LinkSetDb"]:
-                    if linkset.get("LinkName") == "pubmed_pubmed":
-                        links = linkset.get("Link", [])
-                        related_ids = [link["Id"] for link in links[:limit]]
-                        break
-
-            if related_ids:
-                return await self.fetch_details(related_ids)
-            return []
-        except Exception as exc:
-            raise_ncbi_infrastructure_error("related_articles", exc)
+        return await self._get_linked_articles(pmid, limit, "pubmed_pubmed", "related_articles", exclude_self=True)
 
     async def get_citing_articles(self, pmid: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -88,29 +68,7 @@ class CitationMixin:
         Returns:
             List of citing article details.
         """
-        try:
-            handle = await self._rate_limited_call(
-                Entrez.elink,
-                dbfrom="pubmed",
-                db="pubmed",
-                id=pmid,
-                linkname="pubmed_pubmed_citedin",
-            )
-            record = await _read_entrez_handle(handle)
-
-            citing_ids = []
-            if record and record[0].get("LinkSetDb"):
-                for linkset in record[0]["LinkSetDb"]:
-                    if linkset.get("LinkName") == "pubmed_pubmed_citedin":
-                        links = linkset.get("Link", [])
-                        citing_ids = [link["Id"] for link in links[:limit]]
-                        break
-
-            if citing_ids:
-                return await self.fetch_details(citing_ids)
-            return []
-        except Exception as exc:
-            raise_ncbi_infrastructure_error("citing_articles", exc)
+        return await self._get_linked_articles(pmid, limit, "pubmed_pubmed_citedin", "citing_articles")
 
     async def get_article_references(self, pmid: str, limit: int = 20) -> list[dict[str, Any]]:
         """
@@ -123,26 +81,50 @@ class CitationMixin:
         Returns:
             List of referenced article details.
         """
+        return await self._get_linked_articles(pmid, limit, "pubmed_pubmed_refs", "article_references")
+
+    async def _get_linked_articles(
+        self, pmid: str, limit: int, linkname: str, operation: str, *, exclude_self: bool = False
+    ) -> list[dict[str, Any]]:
+        """Share ELink parsing while preserving direction, order and error provenance."""
+        pmid = normalize_pmid(pmid)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 0 <= limit <= 10_000:
+            raise ValueError("limit must be an integer between 0 and 10000")
+        if limit == 0:
+            return []
         try:
             handle = await self._rate_limited_call(
-                Entrez.elink,
-                dbfrom="pubmed",
-                db="pubmed",
-                id=pmid,
-                linkname="pubmed_pubmed_refs",
+                Entrez.elink, dbfrom="pubmed", db="pubmed", id=pmid, linkname=linkname
             )
             record = await _read_entrez_handle(handle)
-
-            ref_ids = []
-            if record and record[0].get("LinkSetDb"):
-                for linkset in record[0]["LinkSetDb"]:
-                    if linkset.get("LinkName") == "pubmed_pubmed_refs":
-                        links = linkset.get("Link", [])
-                        ref_ids = [link["Id"] for link in links[:limit]]
-                        break
-
-            if ref_ids:
-                return await self.fetch_details(ref_ids)
-            return []
+            ids = self._parse_linked_ids(record, pmid, linkname, operation, exclude_self=exclude_self)
+            return await self.fetch_details(list(ids)[:limit]) if ids else []
         except Exception as exc:
-            raise_ncbi_infrastructure_error("article_references", exc)
+            raise_ncbi_infrastructure_error(operation, exc)
+
+    @staticmethod
+    def _parse_linked_ids(
+        record: Any, pmid: str, linkname: str, operation: str, *, exclude_self: bool
+    ) -> dict[str, None]:
+        """Validate provider link rows and retain first occurrence order."""
+        if not isinstance(record, list):
+            raise NCBIProviderSchemaError(operation)
+        ids: dict[str, None] = {}
+        for group in record:
+            if not isinstance(group, dict) or not isinstance(group.get("LinkSetDb", []), list):
+                raise NCBIProviderSchemaError(operation)
+            for linkset in group.get("LinkSetDb", []):
+                if not isinstance(linkset, dict):
+                    raise NCBIProviderSchemaError(operation)
+                if linkset.get("LinkName") != linkname:
+                    continue
+                links = linkset.get("Link", [])
+                if not isinstance(links, list):
+                    raise NCBIProviderSchemaError(operation)
+                for link in links:
+                    identifier = try_normalize_pmid(link.get("Id")) if isinstance(link, dict) else None
+                    if identifier is None:
+                        raise NCBIProviderSchemaError(operation)
+                    if not exclude_self or identifier != pmid:
+                        ids[identifier] = None
+        return ids

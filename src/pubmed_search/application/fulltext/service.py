@@ -105,6 +105,17 @@ class FulltextSourceError:
         return {"source": self.source, "code": self.code, "message": self.message}
 
 
+@dataclass(frozen=True, slots=True)
+class FulltextDownloadNotice:
+    """Download facts for presentation; no Markdown or infrastructure types."""
+
+    source: str | None
+    source_name: str | None
+    retrieved_url: str | None
+    has_text: bool
+    error: bool
+
+
 @dataclass
 class FulltextServiceResult:
     """Normalized result returned to the tool formatting layer."""
@@ -127,6 +138,7 @@ class FulltextServiceResult:
     fulltext_canonical_host: str | None = None
     fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
     extended_sources_attempted: bool = False
+    fallback_notice: FulltextDownloadNotice | None = None
 
     def __post_init__(self) -> None:
         for field_name, sources in (
@@ -238,35 +250,41 @@ class FulltextService:
             else:
                 result.record_source_completed(source)
 
-        if request.pmcid and "europe_pmc" in policy.sources:
-            await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
-            result.record_source_attempted("europe_pmc")
-            await self._collect_europe_pmc(request, result, log)
-
-        if request.doi and "unpaywall" in policy.sources:
-            await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
-            result.record_source_attempted("unpaywall")
-            await self._collect_unpaywall(request, result, log)
-
-        if (
-            request.doi
-            and not result.fulltext_content
-            and "institutional" in policy.sources
-            and self._institutional_client_factory is not None
-        ):
-            await self._report_progress(progress, 3, 6, "Trying institutional direct/EZproxy fetch...")
-            result.record_source_attempted("institutional")
-            await self._collect_institutional(request, result, log)
-
-        if request.doi and not result.fulltext_content and "core" in policy.sources:
-            await self._report_progress(progress, 4, 6, "Trying CORE fallback...")
-            result.record_source_attempted("core")
-            await self._collect_core(request, result, log)
-
-        if request.extended_sources and "extended" in policy.sources:
-            await self._report_progress(progress, 5, 6, "Checking extended fulltext sources...")
-            result.record_source_attempted("extended")
-            await self._collect_extended_sources(request, result, log)
+        for source in policy.sources:
+            if source == "europe_pmc" and request.pmcid:
+                await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
+                result.record_source_attempted(source)
+                await self._collect_europe_pmc(request, result, log)
+            elif source == "unpaywall" and request.doi:
+                await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
+                result.record_source_attempted(source)
+                await self._collect_unpaywall(request, result, log)
+            elif (
+                source == "institutional"
+                and request.doi
+                and not result.fulltext_content
+                and self._institutional_client_factory is not None
+            ):
+                await self._report_progress(progress, 3, 6, "Trying institutional direct/EZproxy fetch...")
+                result.record_source_attempted(source)
+                await self._collect_institutional(request, result, log)
+            elif source == "core" and request.doi and not result.fulltext_content:
+                await self._report_progress(progress, 4, 6, "Trying CORE fallback...")
+                result.record_source_attempted(source)
+                await self._collect_core(request, result, log)
+            elif source == "extended" and request.extended_sources:
+                await self._report_progress(progress, 5, 6, "Checking extended fulltext sources...")
+                result.record_source_attempted(source)
+                result.extended_sources_attempted = True
+                await self._collect_download(request, result, log, source="extended")
+            elif (
+                source == "pdf_retrieval_fallback"
+                and not result.fulltext_content
+                and not result.extended_sources_attempted
+            ):
+                await self._report_progress(progress, 5.5, 6, "Trying multi-source PDF retrieval fallback...")
+                result.record_source_attempted(source)
+                await self._collect_download(request, result, log, source="pdf_retrieval_fallback")
 
         if request.include_figures and request.pmcid:
             await self._collect_figures(request, result, log)
@@ -280,11 +298,8 @@ class FulltextService:
         log: LogCallback | None,
     ) -> tuple[FulltextRequest, Literal["not_attempted", "completed", "failed"]]:
         """Resolve PMID metadata before policy selection so DOI-only sources can run."""
-        normalized_doi = request.doi
-        if not request.pmid or (request.pmcid and normalized_doi):
-            if normalized_doi == request.doi:
-                return request, "not_attempted"
-            return replace(request, doi=normalized_doi), "not_attempted"
+        if not request.pmid or (request.pmcid and request.doi):
+            return request, "not_attempted"
 
         try:
             client = self._europe_pmc_client_factory()
@@ -298,7 +313,7 @@ class FulltextService:
             source_status = "completed"
 
         resolved_pmcid = request.pmcid
-        resolved_doi = normalized_doi
+        resolved_doi = request.doi
         if not isinstance(article, dict):
             article = None
 
@@ -340,7 +355,9 @@ class FulltextService:
 
             result.content_sections = self._select_sections(parsed, request.sections)
             result.fulltext_content = self._render_selected_sections(parsed, result.content_sections)
-            result.raw_fulltext_content = result.fulltext_content
+            result.raw_fulltext_content = self._render_selected_sections(
+                parsed, result.content_sections, truncate=False
+            )
             result.title = parsed.get("title") or result.title
             result.fulltext_source_name = self._registry.label_for("europe_pmc")
             result.fulltext_canonical_host = "PubMed Central"
@@ -485,7 +502,7 @@ class FulltextService:
 
             if work.get("full_text") and not result.fulltext_content:
                 result.raw_fulltext_content = str(work.get("full_text", ""))
-                result.fulltext_content = self._format_core_fulltext(work, request.sections)
+                result.fulltext_content = self._format_core_fulltext(work)
                 result.fulltext_source_name = self._registry.label_for("core")
                 result.fulltext_canonical_host = "Repository / OA host"
                 result.fulltext_provenance = "indirect"
@@ -515,14 +532,15 @@ class FulltextService:
             result.record_source_error(source)
             await self._report_log(log, "warning", "CORE fulltext source unavailable")
 
-    async def _collect_extended_sources(
+    async def _collect_download(
         self,
         request: FulltextRequest,
         result: FulltextServiceResult,
         log: LogCallback | None,
+        *,
+        source: Literal["extended", "pdf_retrieval_fallback"],
     ) -> None:
-        result.extended_sources_attempted = True
-        source = "extended"
+        """Share discovery, extraction, coverage, and cleanup across both policies."""
         downloader: Any | None = None
         try:
             downloader = self._downloader_factory()
@@ -534,6 +552,14 @@ class FulltextService:
                 allow_browser_session=request.allow_browser_session,
             )
             link_discovery = extended_result.require_link_discovery()
+            if source == "pdf_retrieval_fallback":
+                result.fallback_notice = FulltextDownloadNotice(
+                    source=extended_result.source_used.source_id if extended_result.source_used else None,
+                    source_name=extended_result.source_used.display_name if extended_result.source_used else None,
+                    retrieved_url=extended_result.retrieved_url,
+                    has_text=bool(extended_result.text_content),
+                    error=bool(extended_result.error),
+                )
 
             for attempted_source in link_discovery.attempted_sources:
                 result.record_source_attempted(attempted_source)
@@ -547,8 +573,6 @@ class FulltextService:
                 extracted_text = self.truncate_extracted_text(extended_result.text_content)
                 result.fulltext_content = extracted_text
                 result.content_sections = [{"title": "Extracted PDF Text", "content": extracted_text}]
-                if not result.title and extended_result.title:
-                    result.title = extended_result.title
                 result.fulltext_source_name = (
                     extended_result.source_used.display_name
                     if extended_result.source_used
@@ -557,9 +581,11 @@ class FulltextService:
                 result.fulltext_canonical_host = result.fulltext_source_name
                 result.fulltext_provenance = "derived"
 
+            if not result.title and extended_result.title:
+                result.title = extended_result.title
             seen_urls = {link["url"] for link in result.pdf_links}
             for ext_link in link_discovery.links:
-                if ext_link.url in seen_urls:
+                if not ext_link.url or ext_link.url in seen_urls:
                     continue
                 seen_urls.add(ext_link.url)
                 result.pdf_links.append(
@@ -575,9 +601,9 @@ class FulltextService:
             if link_discovery.coverage_status != "unavailable" or extended_result.text_content:
                 result.record_source_completed(source)
         except Exception as exc:
-            logger.warning("Extended fulltext sources failed (%s)", type(exc).__name__)
+            logger.warning("Fulltext download stage %s failed (%s)", source, type(exc).__name__)
             result.record_source_error(source)
-            await self._report_log(log, "warning", "Extended fulltext sources unavailable")
+            await self._report_log(log, "warning", f"Fulltext download stage {source} unavailable")
         finally:
             if downloader is not None and hasattr(downloader, "close"):
                 try:
@@ -604,7 +630,10 @@ class FulltextService:
             )
             if figure_result.figures:
                 result.figures = [figure.to_dict() for figure in figure_result.figures]
-            result.record_source_completed(source)
+            if figure_result.error:
+                result.record_source_error(source)
+            else:
+                result.record_source_completed(source)
         except Exception as exc:
             logger.warning("Figure extraction in fulltext service failed (%s)", type(exc).__name__)
             result.record_source_error(source)
@@ -661,7 +690,9 @@ class FulltextService:
         return all_sections
 
     @staticmethod
-    def _render_selected_sections(parsed: dict[str, Any], sections: list[dict[str, Any]]) -> str:
+    def _render_selected_sections(
+        parsed: dict[str, Any], sections: list[dict[str, Any]], *, truncate: bool = True
+    ) -> str:
         if not sections:
             if parsed.get("abstract"):
                 return f"**Abstract**\n{parsed['abstract']}\n\n"
@@ -674,7 +705,7 @@ class FulltextService:
             if not content:
                 continue
             output += f"### {title}\n\n"
-            if len(content) > 5000:
+            if truncate and len(content) > 5000:
                 output += content[:5000]
                 output += f"\n\n_... {len(content) - 5000} characters truncated_\n\n"
             else:
@@ -686,20 +717,9 @@ class FulltextService:
         return output
 
     @staticmethod
-    def _format_core_fulltext(work: dict[str, Any], sections_filter: str | None) -> str:
+    def _format_core_fulltext(work: dict[str, Any]) -> str:
+        """Preview unstructured CORE text; section filtering requires structured sections."""
         fulltext = str(work.get("full_text", ""))
-        if not fulltext:
-            return ""
-
-        if sections_filter:
-            output = ""
-            for section in sections_filter.split(","):
-                section_name = section.strip().lower()
-                if section_name in fulltext.lower():
-                    output += f"_Contains '{section_name}' section_\n"
-            if output:
-                output += "\n"
-
         if len(fulltext) > 10000:
             return fulltext[:10000] + f"\n\n_... {len(fulltext) - 10000} characters truncated_"
         return fulltext

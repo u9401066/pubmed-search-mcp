@@ -486,3 +486,11 @@ async def test_s2_systematic_field_tags_fail_closed_before_network() -> None:
             )
 
     client.bulk_search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_preprint_option_does_not_override_explicit_exclusion() -> None:
+    request = normalize_unified_search_request(query="sepsis", sources="auto,-arxiv", options="preprints,shallow")
+    plan = await build_unified_search_plan(request, progress=_ignore_progress)
+    assert "arxiv" not in plan.dispatch_sources
+    assert "medrxiv" in plan.dispatch_sources

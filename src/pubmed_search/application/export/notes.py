@@ -22,6 +22,8 @@ from pubmed_search.shared.markdown import (
     markdown_relative_link,
 )
 
+from .formats import _normalize_article_for_export
+
 SUPPORTED_NOTE_FORMATS = ("wiki", "foam", "markdown", "medpaper")
 WIKILINK_NOTE_FORMATS = {"wiki", "foam", "medpaper"}
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
@@ -78,7 +80,7 @@ def write_literature_notes(
     template_file: Path | None = None,
     include_csl_json: bool = True,
 ) -> dict[str, Any]:
-    """Write one crash-safe note batch and return a JSON-ready result."""
+    """Write a serialized batch with atomic files; a failure may leave completed files."""
     with _note_batch_lock(output_dir):
         return _write_literature_notes_locked(
             articles,
@@ -120,10 +122,17 @@ def _write_literature_notes_locked(
     skipped: list[dict[str, Any]] = []
     template_text = _read_template_file(template_file) if template_file else None
 
-    note_entries = _build_note_entries(articles)
+    normalized_articles = [_normalize_article_for_export(article) for article in articles]
+    if not include_abstract:
+        normalized_articles = [
+            {key: value for key, value in article.items() if key != "abstract"} for article in normalized_articles
+        ]
+    note_entries = _build_note_entries(normalized_articles)
     for entry in note_entries:
         article = entry["article"]
         note_path = _note_path(output_dir, entry, normalized_format)
+        if not note_path.resolve().is_relative_to(output_dir.resolve()):
+            raise ValueError("Note path escapes the output directory through a symlink")
         note_path.parent.mkdir(parents=True, exist_ok=True)
         existed = note_path.exists()
         if existed and not overwrite:
@@ -230,10 +239,13 @@ def _write_literature_notes_locked(
 def _build_note_entries(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     used_stems: set[str] = set()
+    used_citation_keys: set[str] = set()
     for index, article in enumerate(articles, 1):
         title = str(article.get("title") or "").strip()
         fallback = f"article-{index}"
         citation_key = _build_citation_key(article, fallback_id=_primary_identifier(article, fallback=fallback))
+        citation_key = _dedupe_stem(citation_key, used_citation_keys)
+        used_citation_keys.add(citation_key)
         stable_id = _primary_identifier(article, fallback=title or fallback)
         stem = _dedupe_stem(_slugify(stable_id, fallback=fallback, max_length=96), used_stems)
         used_stems.add(stem)
@@ -243,8 +255,7 @@ def _build_note_entries(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _note_path(output_dir: Path, entry: dict[str, Any], note_format: str) -> Path:
     if note_format == "medpaper":
-        directory_name = _reference_directory_name(entry["article"], fallback=entry["citation_key"])
-        return output_dir / directory_name / f"{entry['citation_key']}.md"
+        return output_dir / str(entry["stem"]) / f"{entry['citation_key']}.md"
     return output_dir / f"{entry['stem']}.md"
 
 
@@ -259,21 +270,12 @@ def _read_template_file(template_file: Path) -> str:
     return template_path.read_text(encoding="utf-8")
 
 
-def _unique_reference_id(article: dict[str, Any], *, fallback: str) -> str:
-    return _primary_identifier(article, fallback=fallback)
-
-
 def _primary_identifier(article: dict[str, Any], *, fallback: str) -> str:
     for key in ("pmid", "doi", "pmc_id"):
         value = str(article.get(key) or "").strip()
         if value:
             return value
     return fallback
-
-
-def _reference_directory_name(article: dict[str, Any], *, fallback: str) -> str:
-    unique_id = _unique_reference_id(article, fallback=fallback)
-    return _slugify(unique_id, fallback=fallback, max_length=96)
 
 
 def _build_citation_key(article: dict[str, Any], *, fallback_id: str) -> str:
@@ -324,7 +326,7 @@ def _write_metadata_sidecar(
 
 def _metadata_payload(article: dict[str, Any], *, citation_key: str) -> dict[str, Any]:
     payload = dict(article)
-    payload["unique_id"] = _unique_reference_id(article, fallback=citation_key)
+    payload["unique_id"] = _primary_identifier(article, fallback=citation_key)
     payload["citation_key"] = citation_key
     payload["source"] = "pubmed"
     payload["data_source"] = "pubmed-search-mcp"
@@ -748,7 +750,7 @@ def _render_custom_template(
         authors="; ".join(authors),
         abstract=abstract,
         citation_key=citation_key,
-        reference_id=_unique_reference_id(article, fallback=citation_key),
+        reference_id=_primary_identifier(article, fallback=citation_key),
         note_format=note_format,
         created=created_at.isoformat(),
         pubmed_url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else "",
@@ -760,7 +762,7 @@ def _render_custom_template(
     )
     try:
         return template_text.format_map(context).rstrip() + "\n"
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, AttributeError, IndexError) as exc:
         msg = f"Template rendering failed: {exc}. Escape literal braces as '{{{{' and '}}}}'."
         raise ValueError(msg) from exc
 
@@ -785,12 +787,12 @@ def _render_medpaper_note(
 
     lines = [
         "---",
-        "# VERIFIED DATA",
+        "# RETRIEVED METADATA",
         'source: "pubmed"',
-        "verified: true",
+        "verified: false",
         'data_source: "pubmed-search-mcp"',
-        f"reference_id: {_yaml_string(_unique_reference_id(article, fallback=citation_key))}",
-        'trust_level: "verified"',
+        f"reference_id: {_yaml_string(_primary_identifier(article, fallback=citation_key))}",
+        'trust_level: "unverified"',
         f"title: {_yaml_string(title)}",
         f"citation_key: {_yaml_string(citation_key)}",
         f"aliases: {_yaml_list(aliases)}",
@@ -799,7 +801,7 @@ def _render_medpaper_note(
         'note_class: "reference"',
         'note_domain: "literature"',
         'source_kind: "pubmed"',
-        'trust_state: "verified"',
+        'trust_state: "unverified"',
         'analysis_state: "pending"',
         'fulltext_state: "missing"',
         f"pmid: {_yaml_string(pmid)}",
@@ -827,7 +829,7 @@ def _render_medpaper_note(
         "",
         f"**Journal**: {_format_journal_line(article)}",
         "",
-        f"**Reference ID**: {escape_markdown_text(_unique_reference_id(article, fallback=citation_key))}",
+        f"**Reference ID**: {escape_markdown_text(_primary_identifier(article, fallback=citation_key))}",
         f"**PMID**: {escape_markdown_text(pmid)}",
     ]
     if doi:
@@ -838,9 +840,9 @@ def _render_medpaper_note(
     if include_abstract and article.get("abstract"):
         lines.extend(["", "## Abstract", "", escape_markdown_block(article.get("abstract", ""))])
 
-    summary = _clean_text(article.get("abstract", ""))[:500]
+    summary = _clean_text(article.get("abstract", ""))[:500] if include_abstract else ""
     if summary:
-        lines.extend(["", "## Key Findings", "", escape_markdown_block(summary), "", "^key-findings"])
+        lines.extend(["", "## Abstract Excerpt", "", escape_markdown_block(summary), "", "^key-findings"])
 
     lines.extend(
         [

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.figure import ArticleFigure, ArticleFiguresResult
+from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 from pubmed_search.infrastructure.sources import unified_broker
 from pubmed_search.presentation.mcp_server import create_server
 from pubmed_search.presentation.mcp_server.server import build_asgi_app
@@ -178,7 +179,7 @@ def _article(pmid: str) -> dict[str, Any]:
     return row
 
 
-class DeterministicSearcher:
+class DeterministicSearcher(ICiteMixin):
     """Provider double implementing the LiteratureSearcher capability surface."""
 
     def __init__(self) -> None:
@@ -249,7 +250,10 @@ class DeterministicSearcher:
         _require_fixture(limit == 1, f"direct reference limit was not forwarded exactly: {limit!r}")
         return [_article("45678901")][:limit]
 
-    async def get_citation_metrics(self, pmids: list[str]) -> dict[str, dict[str, Any]]:
+    async def get_citation_metrics(
+        self, pmids: list[str], fields: list[str] | None = None
+    ) -> dict[str, dict[str, Any]]:
+        _require_fixture(fields is None, "unexpected citation field selection")
         expected_batches = [
             [PRIMARY_PMID],
             ["50000001", "50000002", "50000003"],

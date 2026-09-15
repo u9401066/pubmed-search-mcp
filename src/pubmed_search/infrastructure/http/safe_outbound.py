@@ -73,11 +73,15 @@ class SafeFetchPolicy:
     max_redirects: int = 5
 
     def __post_init__(self) -> None:
-        if self.max_bytes < 1:
+        if isinstance(self.max_bytes, bool) or not isinstance(self.max_bytes, int) or self.max_bytes < 1:
             raise ValueError("max_bytes must be positive")
-        if not 0 < self.total_timeout <= 120:
+        if isinstance(self.total_timeout, bool) or not 0 < self.total_timeout <= 120:
             raise ValueError("total_timeout must be between 0 and 120 seconds")
-        if not 0 <= self.max_redirects <= 10:
+        if (
+            isinstance(self.max_redirects, bool)
+            or not isinstance(self.max_redirects, int)
+            or not 0 <= self.max_redirects <= 10
+        ):
             raise ValueError("max_redirects must be between 0 and 10")
 
 
@@ -273,7 +277,7 @@ async def _read_bounded(response: httpx.Response, *, max_bytes: int, chain: Sequ
             redirect_chain=chain,
         )
     body = bytearray()
-    async for chunk in response.aiter_bytes():
+    async for chunk in response.aiter_bytes(min(64 * 1024, max_bytes + 1)):
         if len(body) + len(chunk) > max_bytes:
             raise OutboundResponseTooLargeError(
                 f"Outbound response exceeds the {max_bytes}-byte limit",
@@ -394,7 +398,7 @@ async def fetch_public_url(
 ) -> SafeFetchResult:
     """Fetch one public URL through the shared client under strict limits."""
     harden_http_client_logging()
-    selected_client = client or get_shared_async_client()
+    selected_client = client if client is not None else get_shared_async_client()
     try:
         return await asyncio.wait_for(
             _fetch_public_url(

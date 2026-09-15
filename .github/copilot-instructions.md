@@ -79,7 +79,7 @@ uv run pre-commit autoupdate
 - **bandit** 安全掃描 (medium+ severity, `pyproject.toml [tool.bandit]`)
 - **vulture** 死碼掃描 (`vulture_whitelist.py` 管理白名單)
 - **deptry** 依賴衛生 (`pyproject.toml [tool.deptry]`)
-- **semgrep** SAST 靜態安全分析 — **已移至 pre-push** (記憶體 300-500MB)
+- **semgrep** SAST 靜態安全分析 — **改為手動執行** (上游規則需要網路)
 - **mypy** type check — **已移至 pre-push** (記憶體 500MB-1GB)
 - **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
 - **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)，只審查**新增**路徑；已在 HEAD 的檔案當初已被接受，再擋一次只會跟自動修復型 hook 互鎖
@@ -99,13 +99,13 @@ uv run pre-commit autoupdate
 - **instruction-drift** 工具 docstring 變更偵測 (警告, 不阻擋) (`scripts/hooks/check_instruction_drift.py`)
 
 **Push 階段自動檢查：**
-- **mypy** type check (`uv run mypy src/`, 記憶體 500MB-1GB)
-- **semgrep** SAST 靜態安全分析 (`p/python` ruleset, 記憶體 300-500MB)
-- **pytest** 全套測試 (`--timeout=60 -m "not integration"`，預設單 process)，排除會打真實第三方 API 的 integration 測試；需要時明確設定 `PUBMED_RUN_LIVE_TESTS=1` 再跑 `uv run pytest -m integration`
+- **local-validation**：`uv run --frozen python scripts/check_repo.py full`，依序執行 lint、format、async consistency、mypy、完整非 live pytest（含 wheel/transport）。預設單 process，失敗即停止。
+- **semgrep** 改為 `uv run pre-commit run semgrep --all-files --hook-stage manual`。一般 CI 只跑共用 smoke profile；完整相容性矩陣以手動 extended checks 執行。
+- 測試價值、harness 安裝保留規則以 `AGENTS.md` 與 `CONTRIBUTING.md` 為準。
 
 ```bash
 # 跳過特定 hook
-SKIP=mypy git commit -m "quick fix"
+SKIP=local-validation git push  # 僅緊急略過，不代表驗證成功
 # 跳過所有 hooks（慎用）
 git commit --no-verify -m "emergency fix"
 ```
@@ -658,6 +658,8 @@ prepare_export(pmids="last", format="ris")  # Last search
 save_literature_notes(pmids="last")  # Default wiki note + Foam-compatible wikilinks + CSL JSON
 get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)  # Retrieve selected paper full text
 ```
+
+筆記的驗證狀態與摘要排除規則以 `AGENTS.md` 及 `docs/TOOLS_USAGE_GUIDE.md` 的 note export contract 為準。
 
 ---
 

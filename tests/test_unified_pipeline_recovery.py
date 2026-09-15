@@ -226,3 +226,19 @@ def test_pipeline_auto_save_persists_terminal_outcome(
         assert persisted_run.error_message is None
     else:
         assert persisted_run.error_message
+
+
+@pytest.mark.asyncio
+async def test_dry_run_is_planned_without_fabricated_execution_or_source_attempts() -> None:
+    from pubmed_search.presentation.mcp_server.tools.search_run_journal import SearchRunJournal
+
+    outcome = await _execute_pipeline_mode_outcome(
+        PIPELINE_JSON, "json", MagicMock(), pipeline_store=None, dry_run=True
+    )
+    payload = json.loads(outcome.response)
+    assert payload["summary"]["steps_executed"] == 0
+    assert payload["steps"][0]["status"] == "planned"
+    manager = MagicMock()
+    journal = SearchRunJournal(manager=manager, run_id="offline")
+    await journal.record_pipeline_outcome(outcome)
+    manager.record_search_source_attempt.assert_not_called()

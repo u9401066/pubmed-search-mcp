@@ -12,9 +12,11 @@ Supported formats:
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,8 +39,8 @@ def _normalize_author(author: Any) -> str:
             value = author.get(key)
             if value:
                 return str(value)
-        given = author.get("given_name") or author.get("given")
-        family = author.get("family_name") or author.get("family")
+        given = author.get("given_name") or author.get("given") or author.get("fore_name") or author.get("first_name")
+        family = author.get("family_name") or author.get("family") or author.get("last_name") or author.get("lastname")
         return " ".join(str(part) for part in (family, given) if part)
     return str(author) if author else ""
 
@@ -64,7 +66,14 @@ def _normalize_article_for_export(article: dict[str, Any]) -> dict[str, Any]:
     normalized["pmc_id"] = _stringify(
         article.get("pmc_id") or article.get("pmc") or identifiers.get("pmc") or identifiers.get("pmc_id")
     )
-    normalized["authors"] = [_normalize_author(author) for author in article.get("authors", [])]
+    raw_authors = article.get("authors") or []
+    if isinstance(raw_authors, (str, dict)):
+        raw_authors = [raw_authors]
+    normalized["authors"] = [
+        name
+        for author in (raw_authors if isinstance(raw_authors, (list, tuple)) else [])
+        if (name := _normalize_author(author).strip())
+    ]
     normalized["keywords"] = _normalize_string_list(article.get("keywords"))
     normalized["mesh_terms"] = _normalize_string_list(article.get("mesh_terms"))
     normalized["publication_types"] = _normalize_string_list(
@@ -93,6 +102,20 @@ def _convert_to_latex(text: str) -> str:
     else:
         return str(unicode_to_latex(text))
 
+    # Escape user text before adding accent commands; never escape generated commands twice.
+    special = {
+        "\\": r"\textbackslash{}",
+        "{": r"\{",
+        "}": r"\}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    text = "".join(special.get(char, char) for char in text)
     # Fallback: basic character mapping
     latex_char_map = {
         "ø": r"{\o}",
@@ -148,9 +171,9 @@ def _strip_html_tags(text: str) -> str:
     return re.sub(r"</?[a-zA-Z][^>]*>", "", text)  # all other tags
 
 
-def _format_author_ris(author_name: str) -> str:
+def _format_author_family_first(author_name: str) -> str:
     """
-    Format author name for RIS format (Last, First Middle).
+    Share surname-first ordering; each exporter owns its format-specific escaping.
 
     Input formats handled:
     - "Kraemer Moritz U G" -> "Kraemer, Moritz U G"
@@ -159,6 +182,9 @@ def _format_author_ris(author_name: str) -> str:
     """
     if not author_name:
         return author_name
+    author_name = author_name.strip()
+    if not author_name:
+        return ""
 
     # If already has comma, assume correct format
     if "," in author_name:
@@ -167,8 +193,6 @@ def _format_author_ris(author_name: str) -> str:
     parts = author_name.strip().split()
     if len(parts) == 1:
         return parts[0]
-    if len(parts) == 2:
-        return f"{parts[0]}, {parts[1]}"
     # First part is last name, rest are first/middle names
     return f"{parts[0]}, {' '.join(parts[1:])}"
 
@@ -225,7 +249,7 @@ def export_ris(articles: list[dict[str, Any]], include_abstract: bool = True) ->
         # Authors (one per line, Last, First format)
         authors = article.get("authors", [])
         for author in authors:
-            formatted_author = _format_author_ris(author)
+            formatted_author = _format_author_family_first(author)
             lines.append(f"AU  - {formatted_author}")
             lines.append(f"A1  - {formatted_author}")
 
@@ -258,7 +282,7 @@ def export_ris(articles: list[dict[str, Any]], include_abstract: bool = True) ->
             lines.append(f"IS  - {article['issue']}")
         if article.get("pages"):
             pages = article["pages"]
-            lines.append(f"SP  - {pages}")
+            lines.append(f"SP  - {pages.split('-', 1)[0].strip()}")
             # Split pages into start/end if possible
             if "-" in pages:
                 _sp, ep = pages.split("-", 1)
@@ -313,29 +337,8 @@ def export_ris(articles: list[dict[str, Any]], include_abstract: bool = True) ->
         lines.append("ER  - ")
         lines.append("")
 
-    return "\n".join(lines)
-
-
-def _format_author_bibtex(author_name: str) -> str:
-    """
-    Format author name for BibTeX format (Last, First Middle).
-
-    BibTeX prefers "Last, First" format for proper sorting.
-    """
-    if not author_name:
-        return author_name
-
-    # If already has comma, assume correct format
-    if "," in author_name:
-        return author_name
-
-    parts = author_name.strip().split()
-    if len(parts) == 1:
-        return parts[0]
-    if len(parts) == 2:
-        return f"{parts[0]}, {parts[1]}"
-    # First part is last name, rest are first/middle names
-    return f"{parts[0]}, {' '.join(parts[1:])}"
+    # Each list element is one field: continuation-looking provider text cannot create records.
+    return "\n".join(" ".join(line.splitlines()) for line in lines)
 
 
 def export_bibtex(articles: list[dict[str, Any]], include_abstract: bool = True) -> str:
@@ -354,112 +357,59 @@ def export_bibtex(articles: list[dict[str, Any]], include_abstract: bool = True)
         BibTeX formatted string compatible with LaTeX/BibLaTeX.
     """
     entries = []
-
+    used_keys: set[str] = set()
     for raw_article in articles:
         article = _normalize_article_for_export(raw_article)
-        # Generate citation key: FirstAuthorLastNameYear_PMID
-        authors = article.get("authors", [])
-        year = article.get("year", "")
-        pmid = article.get("pmid", "unknown")
-
+        authors = article["authors"]
+        first_author = authors[0].split(",", 1)[0].split()[0] if authors else "Unknown"
+        first_author = re.sub(r"[^A-Za-z0-9_-]", "", first_author) or "Unknown"
+        year = re.sub(r"[^0-9]", "", _stringify(article.get("year")))
+        pmid = re.sub(r"[^A-Za-z0-9_-]", "", article["pmid"])
+        identity = pmid or hashlib.sha256(json.dumps(article, sort_keys=True, default=str).encode()).hexdigest()[:12]
+        base_key = f"{first_author}{year}_{identity}"
+        cite_key = base_key
+        suffix = 2
+        while cite_key in used_keys:
+            cite_key = f"{base_key}_{suffix}"
+            suffix += 1
+        used_keys.add(cite_key)
+        fields: dict[str, str] = {}
+        for target, source in (
+            ("title", "title"),
+            ("journal", "journal"),
+            ("shortjournal", "journal_abbrev"),
+            ("year", "year"),
+            ("month", "month"),
+            ("volume", "volume"),
+            ("number", "issue"),
+            ("issn", "issn"),
+            ("doi", "doi"),
+            ("pmid", "pmid"),
+            ("pmcid", "pmc_id"),
+            ("language", "language"),
+        ):
+            if article.get(source):
+                fields[target] = _stringify(article[source])
         if authors:
-            first_author = authors[0].split()[0] if authors[0] else "Unknown"
-            # Remove special characters from cite key
-            first_author = "".join(c for c in first_author if c.isalnum() or c.isascii())
-            first_author = first_author.replace(" ", "")
-        else:
-            first_author = "Unknown"
-
-        cite_key = f"{first_author}{year}_{pmid}"
-
-        entry_lines = [f"@article{{{cite_key},"]
-
-        # Title (preserve special characters with braces, convert Unicode to LaTeX)
-        if article.get("title"):
-            title = _convert_to_latex(article["title"])
-            # Escape special LaTeX characters
-            for char in ["&", "%", "$", "#", "_"]:
-                title = title.replace(char, f"\\{char}")
-            entry_lines.append(f"  title = {{{title}}},")
-
-        # Authors (BibTeX format: "Last, First and Last, First")
-        # Convert Unicode to LaTeX for proper rendering
-        if authors:
-            bibtex_authors = " and ".join(_convert_to_latex(_format_author_bibtex(a)) for a in authors)
-            entry_lines.append(f"  author = {{{bibtex_authors}}},")
-
-        # Journal
-        if article.get("journal"):
-            entry_lines.append(f"  journal = {{{article['journal']}}},")
-
-        # Journal abbreviation (useful for some styles)
-        if article.get("journal_abbrev"):
-            entry_lines.append(f"  journaltitle = {{{article['journal']}}},")
-            entry_lines.append(f"  shortjournal = {{{article['journal_abbrev']}}},")
-
-        # Year and month
-        if year:
-            entry_lines.append(f"  year = {{{year}}},")
-        if article.get("month"):
-            entry_lines.append(f"  month = {{{article['month']}}},")
-
-        # Volume, number, pages
-        if article.get("volume"):
-            entry_lines.append(f"  volume = {{{article['volume']}}},")
-        if article.get("issue"):
-            entry_lines.append(f"  number = {{{article['issue']}}},")
+            fields["author"] = " and ".join(_format_author_family_first(author) for author in authors)
+        if article.get("journal_abbrev") and article.get("journal"):
+            fields["journaltitle"] = _stringify(article["journal"])
         if article.get("pages"):
-            # Convert "123-456" to "123--456" for LaTeX
-            pages = article["pages"].replace("-", "--") if "-" in article["pages"] else article["pages"]
-            entry_lines.append(f"  pages = {{{pages}}},")
-
-        # ISSN
-        if article.get("issn"):
-            entry_lines.append(f"  issn = {{{article['issn']}}},")
-
-        # DOI
-        if article.get("doi"):
-            entry_lines.append(f"  doi = {{{article['doi']}}},")
-
-        # PMID (custom field, widely recognized)
-        if article.get("pmid"):
-            entry_lines.append(f"  pmid = {{{article['pmid']}}},")
-            entry_lines.append(f"  eprint = {{{article['pmid']}}},")
-            entry_lines.append("  eprinttype = {pubmed},")
-
-        # PMC
-        if article.get("pmc_id"):
-            entry_lines.append(f"  pmcid = {{{article['pmc_id']}}},")
-
-        # Language
-        if article.get("language"):
-            entry_lines.append(f"  language = {{{article['language']}}},")
-
-        # Abstract (strip HTML, convert Unicode to LaTeX)
+            fields["pages"] = re.sub(r"[-–—]+", "--", _stringify(article["pages"]))
+        if pmid:
+            fields.update(eprint=pmid, eprinttype="pubmed")
         if include_abstract and article.get("abstract"):
-            abstract = _strip_html_tags(article["abstract"])
-            abstract = _convert_to_latex(abstract)
-            for char in ["&", "%", "$", "#", "_"]:
-                abstract = abstract.replace(char, f"\\{char}")
-            entry_lines.append(f"  abstract = {{{abstract}}},")
-
-        # Keywords (combine author keywords and MeSH)
-        keywords = article.get("keywords", []) + article.get("mesh_terms", [])
+            fields["abstract"] = _strip_html_tags(_stringify(article["abstract"]))
+        keywords = article["keywords"] + article["mesh_terms"]
         if keywords:
-            entry_lines.append(f"  keywords = {{{', '.join(keywords)}}},")
-
-        # URL
-        if article.get("doi"):
-            entry_lines.append(f"  url = {{https://doi.org/{article['doi']}}},")
-        elif article.get("pmid"):
-            entry_lines.append(f"  url = {{https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/}},")
-
-        # Remove trailing comma from last field
-        entry_lines[-1] = entry_lines[-1].removesuffix(",")
-
-        entry_lines.append("}")
-        entries.append("\n".join(entry_lines))
-
+            fields["keywords"] = ", ".join(keywords)
+        if article["doi"]:
+            fields["url"] = f"https://doi.org/{article['doi']}"
+        elif pmid:
+            fields["url"] = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        # All fields receive one escaping pass, including journal/DOI/author metadata.
+        rows = [f"  {name} = {{{_convert_to_latex(value)}}}" for name, value in fields.items()]
+        entries.append(f"@article{{{cite_key},\n" + ",\n".join(rows) + "\n}")
     return "\n\n".join(entries)
 
 
@@ -556,7 +506,7 @@ def export_csv(articles: list[dict[str, Any]], include_abstract: bool = True, de
             "Keywords": "; ".join(article.get("keywords", [])),
             "MeSH_Terms": "; ".join(article.get("mesh_terms", [])),
             # URLs
-            "PubMed_URL": f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
+            "PubMed_URL": f"https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/" if article.get("pmid") else "",
             "DOI_URL": f"https://doi.org/{article['doi']}" if article.get("doi") else "",
             "PMC_URL": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/"
             if article.get("pmc_id")
@@ -571,7 +521,7 @@ def export_csv(articles: list[dict[str, Any]], include_abstract: bool = True, de
     return output.getvalue()
 
 
-def export_medline(articles: list[dict[str, Any]]) -> str:
+def export_medline(articles: list[dict[str, Any]], include_abstract: bool = True) -> str:
     """
     Export articles to MEDLINE format.
 
@@ -600,9 +550,9 @@ def export_medline(articles: list[dict[str, Any]]) -> str:
             lines.append(f"AU  - {author}")
 
         # Full author info if available
-        for author_full in article.get("authors_full", []):
+        for author_full in article.get("authors_full") or []:
             if isinstance(author_full, dict):
-                full_name = f"{author_full.get('last_name', '')} {author_full.get('first_name', '')}".strip()
+                full_name = f"{author_full.get('last_name', '')} {author_full.get('fore_name') or author_full.get('first_name', '')}".strip()
                 if full_name:
                     lines.append(f"FAU - {full_name}")
 
@@ -625,7 +575,7 @@ def export_medline(articles: list[dict[str, Any]]) -> str:
             lines.append(f"PG  - {article['pages']}")
 
         # Abstract
-        if article.get("abstract"):
+        if include_abstract and article.get("abstract"):
             lines.append(f"AB  - {article['abstract']}")
 
         # DOI
@@ -647,7 +597,8 @@ def export_medline(articles: list[dict[str, Any]]) -> str:
         # Record separator
         lines.append("")
 
-    return "\n".join(lines)
+    # Each list element is one field: continuation-looking provider text cannot create records.
+    return "\n".join(" ".join(line.splitlines()) for line in lines)
 
 
 def export_json(articles: list[dict[str, Any]], include_abstract: bool = True, pretty: bool = True) -> str:
@@ -687,7 +638,7 @@ def export_json(articles: list[dict[str, Any]], include_abstract: bool = True, p
             "keywords": article.get("keywords", []),
             "mesh_terms": article.get("mesh_terms", []),
             "urls": {
-                "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
+                "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/" if article.get("pmid") else None,
                 "doi": f"https://doi.org/{article['doi']}" if article.get("doi") else None,
                 "pmc": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/"
                 if article.get("pmc_id")
@@ -732,7 +683,7 @@ def export_articles(articles: list[dict[str, Any]], fmt: str = "ris", include_ab
     if fmt == "csv":
         return export_csv(articles, include_abstract)
     if fmt == "medline":
-        return export_medline(articles)
+        return export_medline(articles, include_abstract)
     if fmt == "json":
         return export_json(articles, include_abstract)
 

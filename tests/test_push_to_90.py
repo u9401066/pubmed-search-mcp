@@ -162,7 +162,7 @@ class TestExportHelperFunctions:
         from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
 
         # Create large list > 100
-        large_pmid_list = [str(i) for i in range(150)]
+        large_pmid_list = [str(i) for i in range(1, 151)]
 
         result = _resolve_pmids(",".join(large_pmid_list))
 

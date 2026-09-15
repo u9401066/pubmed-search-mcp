@@ -123,7 +123,9 @@ class APSPipelineScheduler:
             if job is not None:
                 entry.next_run = job.next_run_time
         elif entry.enabled:
-            entry.next_run = self._build_trigger(entry.cron).get_next_fire_time(None, datetime.now(self._timezone))
+            entry.next_run = self._build_trigger(entry.cron, timezone_name=entry.timezone).get_next_fire_time(
+                None, datetime.now(self._timezone)
+            )
 
         return entry
 
@@ -136,7 +138,7 @@ class APSPipelineScheduler:
 
     def _register_live_job(self, entry: ScheduleEntry) -> None:
         """Register or update one live APScheduler job from a persisted entry."""
-        trigger = self._build_trigger(entry.cron)
+        trigger = self._build_trigger(entry.cron, timezone_name=entry.timezone)
         job = self._scheduler.add_job(
             self._execute_job,
             trigger=trigger,
@@ -150,8 +152,8 @@ class APSPipelineScheduler:
     async def _execute_job(self, pipeline_name: str) -> None:
         """Execute one scheduled pipeline and persist updated schedule status."""
         entry = self._store.get_schedule(pipeline_name)
-        if entry is None:
-            logger.warning("Skipping scheduled run for missing entry: %s", pipeline_name)
+        if entry is None or not entry.enabled:
+            logger.warning("Skipping scheduled run for missing or disabled entry: %s", pipeline_name)
             return
 
         try:
@@ -185,17 +187,24 @@ class APSPipelineScheduler:
             entry.last_error = messages[normalized.kind]
         finally:
             job = self._scheduler.get_job(self._job_id(pipeline_name))
-            entry.next_run = job.next_run_time if job is not None else None
-            self._store.save_schedule(entry)
+            self._store.record_schedule_run(
+                pipeline_name,
+                last_run=entry.last_run,
+                last_status=entry.last_status,
+                last_error=entry.last_error,
+                next_run=job.next_run_time if job is not None else None,
+            )
 
-    def _build_trigger(self, cron: str) -> CronTrigger:
+    def _build_trigger(self, cron: str, *, timezone_name: str | None = None) -> CronTrigger:
         """Build a validated cron trigger from a 5-field crontab expression."""
         cron_expr = cron.strip()
         if not cron_expr:
             msg = "Cron expression is required"
             raise ValueError(msg)
         try:
-            return CronTrigger.from_crontab(cron_expr, timezone=self._timezone)
+            return CronTrigger.from_crontab(
+                cron_expr, timezone=self._resolve_timezone(timezone_name) if timezone_name else self._timezone
+            )
         except ValueError as exc:
             msg = f"Invalid cron expression '{cron_expr}': {exc}"
             raise ValueError(msg) from exc

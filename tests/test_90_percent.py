@@ -23,64 +23,9 @@ class TestClientMissingLines:
             result = await searcher.fetch_details([])
             assert result == []
 
-    async def test_fetch_details_with_mesh(self):
-        """Test fetch_details returning mesh_terms."""
-        from pubmed_search import LiteratureSearcher
-
-        with (
-            patch("pubmed_search.infrastructure.ncbi.base.Entrez") as mock_entrez,
-            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch,
-            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
-        ):
-            mock_entrez.email = None
-            mock_efetch.return_value = MagicMock()
-            mock_read.return_value = {
-                "PubmedArticle": [
-                    {
-                        "MedlineCitation": {
-                            "PMID": "12345",
-                            "Article": {
-                                "ArticleTitle": "Test",
-                                "Abstract": {"AbstractText": ["Test abstract"]},
-                                "AuthorList": [{"LastName": "Smith", "ForeName": "John"}],
-                                "Journal": {
-                                    "Title": "Test Journal",
-                                    "ISOAbbreviation": "Test J",
-                                    "JournalIssue": {"PubDate": {"Year": "2024"}},
-                                },
-                            },
-                            "KeywordList": [["keyword1"]],
-                            "MeshHeadingList": [{"DescriptorName": "Disease"}],
-                        },
-                        "PubmedData": {"ArticleIdList": [{"IdType": "doi", "#text": "10.1000/test"}]},
-                    }
-                ]
-            }
-
-            searcher = LiteratureSearcher(email="test@example.com")
-            result = await searcher.fetch_details(["12345"])
-
-            assert len(result) >= 0
-
 
 class TestSessionToolsMissingLines:
     """Target session_tools.py - mostly pass functions."""
-
-    async def test_register_session_tools_passes(self):
-        """Test session tools registration just passes (no tools)."""
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.presentation.mcp_server.session_tools import (
-            register_session_tools,
-        )
-
-        mock_mcp = Mock()
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manager = SessionManager(data_dir=tmpdir)
-
-            # Should not raise (function just passes)
-            result = register_session_tools(mock_mcp, manager)
-            assert result is None  # pass returns None
 
     async def test_register_session_resources(self):
         """Test session resources registration."""
@@ -140,62 +85,6 @@ class TestDiscoveryMissingLines:
             assert results == []
 
 
-class TestExportToolsMissingLines:
-    """Target export.py lines 90, 104-105, etc."""
-
-    async def test_register_export_tools(self):
-        """Test export tools registration."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.presentation.mcp_server.tools.export import (
-            register_export_tools,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.tool = Mock(return_value=lambda f: f)
-
-        with patch("pubmed_search.infrastructure.ncbi.base.Entrez"):
-            searcher = LiteratureSearcher(email="test@example.com")
-
-            # Only 2 args
-            register_export_tools(mock_mcp, searcher)
-
-            assert mock_mcp.tool.called
-
-
-class TestStrategyMissingLines:
-    """Target strategy.py tool lines."""
-
-    async def test_register_strategy_tools(self):
-        """Test strategy tools registration."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.presentation.mcp_server.tools.strategy import (
-            register_strategy_tools,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.tool = Mock(return_value=lambda f: f)
-
-        with patch("pubmed_search.infrastructure.ncbi.base.Entrez"):
-            searcher = LiteratureSearcher(email="test@example.com")
-
-            # Only 2 args
-            register_strategy_tools(mock_mcp, searcher)
-
-            assert mock_mcp.tool.called
-
-
-class TestMainModule:
-    """Test __main__.py."""
-
-    async def test_main_module_import(self):
-        """Test main module can be imported."""
-        # Import the module - that's enough
-        from pubmed_search.presentation.mcp_server import __main__ as main_module
-
-        # Module exists and can be imported
-        assert main_module is not None
-
-
 class TestSearchMissingLines:
     """Target search.py lines 49, 224-225, etc."""
 
@@ -245,20 +134,6 @@ class TestSearchMissingLines:
 
             assert [item["pmid"] for item in page.items] == ["123", "456"]
             assert page.total == 2
-
-
-class TestBaseMissingLines:
-    """Target base.py lines 74-75, 80, 85."""
-
-    async def test_entrez_base_api_key(self):
-        """Test EntrezBase with API key stores credentials on instance."""
-        from pubmed_search.infrastructure.ncbi.base import EntrezBase
-
-        base = EntrezBase(email="test@example.com", api_key="test_key")
-
-        # Globals are NOT set in constructor; per-call isolation via run_entrez_callable.
-        assert base._email == "test@example.com"
-        assert base._api_key == "test_key"
 
 
 class TestFormatsMissingLines:

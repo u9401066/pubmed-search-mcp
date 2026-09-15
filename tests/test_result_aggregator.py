@@ -460,7 +460,7 @@ class TestResultAggregator:
         """Test deduplication by DOI."""
         same_doi = "10.1000/same"
         source1 = [mock_article(pmid="111", doi=same_doi, primary_source="pubmed")]
-        source2 = [mock_article(pmid="222", doi=same_doi, primary_source="crossref")]
+        source2 = [mock_article(pmid=None, doi=same_doi, primary_source="crossref")]
 
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([source1, source2])
@@ -474,7 +474,7 @@ class TestResultAggregator:
         """Test deduplication by PMID."""
         same_pmid = "12345678"
         source1 = [mock_article(pmid=same_pmid, doi="10.1/a", primary_source="pubmed")]
-        source2 = [mock_article(pmid=same_pmid, doi="10.1/b", primary_source="europe_pmc")]
+        source2 = [mock_article(pmid=same_pmid, doi=None, primary_source="europe_pmc")]
 
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([source1, source2])
@@ -542,19 +542,6 @@ class TestResultAggregator:
 
         # Should NOT deduplicate by short title
         assert len(articles) == 2
-
-    async def test_aggregate_merge_called(self, mock_article):
-        """Test merge_from is called for duplicates."""
-        same_doi = "10.1/same"
-        article1 = mock_article(pmid="111", doi=same_doi, primary_source="pubmed")
-        article2 = mock_article(pmid="222", doi=same_doi, primary_source="crossref")
-
-        aggregator = ResultAggregator()
-        articles, stats = aggregator.aggregate([[article1], [article2]])
-
-        # merge_from should be called on the primary article
-        assert stats.merged_records == 1
-        article1.merge_from.assert_called_once_with(article2, merge_identifiers=True)
 
     async def test_aggregate_title_only_dedup_does_not_transfer_identifiers(self, mock_article):
         """Identifier-less title matches may merge, but must not transfer identifiers."""

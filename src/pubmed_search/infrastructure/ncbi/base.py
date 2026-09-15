@@ -153,7 +153,7 @@ def build_ncbi_execution_policy(
     return RequestExecutionPolicy(
         service_name=service_name,
         timeout=timeout,
-        total_timeout=total_timeout or _derive_total_timeout(timeout, max_attempts),
+        total_timeout=total_timeout if total_timeout is not None else _derive_total_timeout(timeout, max_attempts),
         retry=RetryPolicy(
             max_attempts=max_attempts,
             base_delay=base_delay,

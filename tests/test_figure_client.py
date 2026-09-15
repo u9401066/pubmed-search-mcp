@@ -466,3 +466,46 @@ class TestFigureClient:
 
         result = client._handle_expected_status(FakeResp(), "http://example.com")
         assert result == {"error": "not_found"}
+
+
+async def test_namespaced_figures_preserve_inline_text_anonymous_rows_and_real_extensions():
+    client = FigureClient()
+    xml = """<article xmlns="urn:jats" xmlns:xlink="http://www.w3.org/1999/xlink"><front><article-title>A <italic>new</italic> result</article-title></front><body>
+    <fig><caption><p>A <bold>complete</bold> caption</p></caption><graphic xlink:href="one.png"/></fig>
+    <fig><caption><p>Second caption</p></caption><graphic xlink:href="two"/></fig></body></article>"""
+    figures, title = client._parse_jats_figures(xml, "PMC123")
+    assert title == "A new result"
+    assert figures is not None and len(figures) == 2
+    assert figures[0].caption_text == "A complete caption"
+    assert figures[0].image_url == "https://europepmc.org/articles/PMC123/bin/one.png"
+
+
+async def test_bioc_fallback_accepts_official_collection_array():
+    client = FigureClient()
+    from unittest.mock import AsyncMock, patch
+
+    payload = [
+        {"documents": [{"passages": [{"infons": {"section_type": "FIG", "id": "f1"}, "text": "Figure 1. Caption"}]}]}
+    ]
+    with patch.object(client, "_make_request", new_callable=AsyncMock, return_value=payload):
+        figures = await client._fetch_bioc_figures("PMC123")
+    assert len(figures) == 1
+    assert figures[0].caption_text == "Caption"
+
+
+def test_figure_context_uses_exact_references_without_counting_captions() -> None:
+    from defusedxml.ElementTree import fromstring
+
+    client = FigureClient()
+    body = fromstring("""<body><sec><title>Results</title>
+      <p>Figure 10 reports the result; <xref ref-type="fig" rid="f2">panel B</xref> confirms it.</p>
+      <fig id="f1"><label>Figure 1</label><caption><p>Figure 1 description.</p></caption></fig>
+      <sec><title>Detail</title><p>Figure 1 is discussed here.</p></sec>
+    </sec></body>""")
+    figures = [
+        ArticleFigure(figure_id="f1", label="Figure 1", caption_text=""),
+        ArticleFigure(figure_id="f2", label="Figure 2", caption_text=""),
+        ArticleFigure(figure_id="f10", label="Figure 10", caption_text=""),
+    ]
+    client._resolve_figure_references(figures, body)
+    assert [figure.mentioned_in_sections for figure in figures] == [["Detail"], ["Results"], ["Results"]]

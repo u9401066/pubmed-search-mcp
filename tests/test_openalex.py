@@ -481,3 +481,26 @@ class TestGetAbstract:
         }
         abstract = client._get_abstract(work)
         assert abstract == "the cat sat the mat"
+
+
+async def test_source_batches_cover_every_requested_journal_and_ignore_unrequested_rows(client):
+    ids = [f"S{number}" for number in range(1, 52)]
+    with patch.object(client, "_make_request", new_callable=AsyncMock) as request:
+        request.side_effect = [
+            {"results": [{"id": f"https://openalex.org/{sid}"} for sid in ids[:50]]},
+            {"results": [{"id": "https://openalex.org/S51"}, {"id": "https://openalex.org/S999"}]},
+        ]
+        result = await client.get_sources_batch([*ids, "https://openalex.org/S1"])
+    assert set(result) == set(ids)
+    assert request.await_count == 2
+
+
+async def test_metadata_does_not_invent_year_or_drop_authors_and_rejects_nonfinite_cost(client):
+    work = {"publication_year": None, "authorships": [{"author": {"display_name": f"Author {i}"}} for i in range(12)]}
+    normalized = client._normalize_work(work)
+    assert normalized["year"] == ""
+    assert len(normalized["authors"]) == 12
+    for invalid in [float("nan"), float("inf"), -1]:
+        warnings = []
+        assert client._coerce_cost(invalid, warnings) is None
+        assert warnings

@@ -23,7 +23,7 @@ from pubmed_search.application.pipeline.config_parser import (
     MAX_PIPELINE_CONFIG_CHARS,
     parse_pipeline_config_text,
 )
-from pubmed_search.application.pipeline.store import PipelineHistoryError
+from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
 from pubmed_search.application.pipeline.validator import (
     MAX_PIPELINE_TAGS,
     PIPELINE_NAME_PATTERN,
@@ -262,7 +262,7 @@ def _load_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, source:
 
     import yaml
 
-    config_dict = _config_to_display_dict(config)
+    config_dict = _config_to_dict(config, include_output_defaults=True)
     yaml_str = yaml.safe_dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     parts: list[str] = []
@@ -327,7 +327,7 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
     parts = [f'🗑️ Pipeline "{name}" deleted.']
     parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
     parts.append(f"  - {run_count} execution history record(s) permanently removed")
-    if scheduled_entry is not None:
+    if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:
         parts.append("  - ⚠️ Configuration was deleted, but live schedule cleanup failed; restart the scheduler")
@@ -592,7 +592,7 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
     ) -> str:
         """Load a pipeline configuration for review or editing.
 
-        Loads from one of three sources:
+        Loads from either source:
         - Saved name: "weekly_remimazolam" or "saved:weekly_remimazolam"
         - Local-only file: "file:path/to/pipeline.yaml" (disabled for authenticated service callers)
 
@@ -702,41 +702,3 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
             Removed schedule metadata, or a native MCP error when none exists.
         """
         return _unschedule_pipeline_impl(runtime=runtime, tool_name="unschedule_pipeline", name=name)
-
-
-def _config_to_display_dict(config) -> dict:
-    """Convert PipelineConfig to a display-friendly dict."""
-    data: dict = {}
-
-    if config.name:
-        data["name"] = config.name
-
-    if config.template:
-        data["template"] = config.template
-        if config.template_params:
-            data["template_params"] = config.template_params
-    elif config.steps:
-        data["steps"] = [
-            {
-                "id": s.id,
-                "action": s.action,
-                **({"params": s.params} if s.params else {}),
-                **({"inputs": s.inputs} if s.inputs else {}),
-                **({"on_error": s.on_error} if s.on_error != "skip" else {}),
-            }
-            for s in config.steps
-        ]
-
-    if getattr(config, "globals", None):
-        data["globals"] = config.globals
-    if getattr(config, "variables", None):
-        data["variables"] = config.variables
-
-    output = config.output
-    data["output"] = {
-        **({"format": output.format} if output.format != "markdown" else {}),
-        "limit": output.limit,
-        "ranking": output.ranking,
-    }
-
-    return data

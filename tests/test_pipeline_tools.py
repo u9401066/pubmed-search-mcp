@@ -25,11 +25,10 @@ from pubmed_search.application.pipeline import (
     ScheduleEntry,
     ValidationResult,
 )
-from pubmed_search.application.pipeline.store import PipelineHistoryError
+from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
 from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
 from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
     PipelineToolRuntime,
-    _config_to_display_dict,
     register_pipeline_tools,
 )
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
@@ -536,32 +535,32 @@ class TestSchedulePipeline:
 
 
 class TestConfigToDisplayDict:
-    """Tests for _config_to_display_dict helper."""
+    """Display uses the canonical config serializer with explicit defaults."""
 
     def test_step_config_display(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test"})],
             output=PipelineOutput(limit=10, ranking="impact"),
         )
-        d = _config_to_display_dict(config)
+        d = _config_to_dict(config, include_output_defaults=True)
         assert "steps" in d
-        assert d["output"] == {"limit": 10, "ranking": "impact"}
+        assert d["output"] == {"format": "markdown", "limit": 10, "ranking": "impact"}
 
     def test_template_config_display(self):
         config = PipelineConfig(
             template="pico",
             template_params={"query": "test"},
         )
-        d = _config_to_display_dict(config)
+        d = _config_to_dict(config, include_output_defaults=True)
         assert d["template"] == "pico"
         assert "steps" not in d
 
     def test_always_includes_output(self):
-        """_config_to_display_dict always includes output (unlike _config_to_dict)."""
+        """Display mode includes defaults omitted from compact stored config."""
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
         )
-        d = _config_to_display_dict(config)
+        d = _config_to_dict(config, include_output_defaults=True)
         assert "output" in d
 
     def test_display_includes_json_format_globals_and_variables(self):
@@ -571,7 +570,7 @@ class TestConfigToDisplayDict:
             globals={"sources": ["pubmed"]},
             variables={"topic": "remimazolam"},
         )
-        d = _config_to_display_dict(config)
+        d = _config_to_dict(config, include_output_defaults=True)
         assert d["output"] == {"format": "json", "limit": 10, "ranking": "impact"}
         assert d["globals"] == {"sources": ["pubmed"]}
         assert d["variables"] == {"topic": "remimazolam"}

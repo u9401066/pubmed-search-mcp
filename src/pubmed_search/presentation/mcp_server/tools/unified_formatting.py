@@ -4,7 +4,7 @@ Unified Search — Result Formatting Module.
 Contains functions that format UnifiedArticle results into human-readable
 Markdown or machine-readable JSON output.
 
-Extracted from unified.py to keep each module under 400 lines.
+Shared by the structured and Markdown result renderers.
 """
 
 from __future__ import annotations
@@ -181,7 +181,8 @@ def _build_next_actions(
             expanded_limit = max(min(current_returned * 2, 50), 20)
             add_action(
                 "unified_search",
-                f"{source_name} reports more matches than were sampled here; expand the highest-yield source before pivoting.",
+                f"{source_name} reports more matches than were sampled here. This is a new search example; "
+                "restore any original filters and options from the search-run replay before expanding it.",
                 (
                     f'unified_search(query="{escaped_query}", sources="{source_name}", '
                     f'limit={expanded_limit}, options="counts_first", output_format="{structured_output_format}")'
@@ -637,14 +638,14 @@ async def _format_unified_results(
         from pubmed_search.domain.entities.article import ArticleType
 
         if article.article_type and article.article_type != ArticleType.UNKNOWN:
-            # Evidence level badge based on study type
+            # Publication type does not establish evidence quality or a clinical grade.
             type_badges = {
-                ArticleType.META_ANALYSIS: "🟢 Meta-Analysis (1a)",
-                ArticleType.SYSTEMATIC_REVIEW: "🟢 Systematic Review (1a)",
-                ArticleType.RANDOMIZED_CONTROLLED_TRIAL: "🟢 RCT (1b)",
-                ArticleType.CLINICAL_TRIAL: "🟡 Clinical Trial (1b-2b)",
+                ArticleType.META_ANALYSIS: "🟢 Meta-Analysis",
+                ArticleType.SYSTEMATIC_REVIEW: "🟢 Systematic Review",
+                ArticleType.RANDOMIZED_CONTROLLED_TRIAL: "🟢 RCT",
+                ArticleType.CLINICAL_TRIAL: "🟡 Clinical Trial",
                 ArticleType.REVIEW: "⚪ Review",
-                ArticleType.CASE_REPORT: "🟠 Case Report (4)",
+                ArticleType.CASE_REPORT: "🟠 Case Report",
             }
             badge = type_badges.get(article.article_type, f"📄 {article.article_type.value}")
             output_parts.append(f"**Type**: {badge}")
@@ -709,7 +710,7 @@ async def _format_unified_results(
             jm = article.journal_metrics
             jm_parts = []
             if jm.two_year_mean_citedness is not None:
-                jm_parts.append(f"IF≈{jm.two_year_mean_citedness:.2f}")
+                jm_parts.append(f"2-year mean citedness: {jm.two_year_mean_citedness:.2f}")
             if jm.h_index is not None:
                 jm_parts.append(f"h-index: {jm.h_index}")
             if jm.impact_tier and jm.impact_tier != "unknown":
@@ -770,6 +771,10 @@ async def _format_unified_results(
     if reproducibility_score:
         output_parts.append("\n---")
         output_parts.append("\n## 🔄 Reproducibility Score\n")
+        output_parts.append(
+            "Heuristic diagnostics; determinism applies to local algorithms. "
+            "Provider results may change. This is not measured replay accuracy.\n"
+        )
         rs = reproducibility_score
         output_parts.append(f"**Grade**: {rs.grade} ({rs.overall_score:.0%})")
         det_icon = "✅" if rs.deterministic else "⚠️"

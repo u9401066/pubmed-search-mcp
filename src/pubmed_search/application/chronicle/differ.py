@@ -7,9 +7,9 @@ can explain what is new without mistaking a changed search scope for retirement.
 
 from __future__ import annotations
 
-import unicodedata
 from typing import TYPE_CHECKING, Any
 
+from .assembler import canonical_topic_key
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
@@ -22,11 +22,6 @@ if TYPE_CHECKING:
         EvidenceArticle,
         EvidenceBundle,
     )
-
-
-def _normalize_topic(topic: str) -> str:
-    """Return a normalization key suitable for continuity checks."""
-    return " ".join(unicodedata.normalize("NFC", topic).split()).casefold()
 
 
 def _mapping_changes(before: dict[str, Any], after: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -211,7 +206,7 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
     if before.chronicle_id != after.chronicle_id:
         msg = f"Cannot diff different chronicles: {before.chronicle_id} vs {after.chronicle_id}"
         raise ValueError(msg)
-    if _normalize_topic(before.topic) != _normalize_topic(after.topic):
+    if canonical_topic_key(before.topic) != canonical_topic_key(after.topic):
         msg = f"Cannot diff a topic discontinuity: {before.topic!r} vs {after.topic!r}"
         raise ValueError(msg)
     if before.revision >= after.revision:
@@ -227,8 +222,8 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
     after_index = after.entry_index
     added_ids = after_index.keys() - before_index.keys()
     absent_ids = before_index.keys() - after_index.keys()
-    added = [_entry_summary(after_index[key]) for key in added_ids]
-    not_observed = [_entry_summary(before_index[key]) for key in absent_ids]
+    added = [_entry_summary(entry) for entry in after.entries if entry.entry_id in added_ids]
+    not_observed = [_entry_summary(entry) for entry in before.entries if entry.entry_id in absent_ids]
 
     updated: list[dict[str, Any]] = []
     for key in before_index.keys() & after_index.keys():

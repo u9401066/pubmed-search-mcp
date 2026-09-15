@@ -102,6 +102,9 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 
 已有 seed PMID 後使用這條路徑。它涵蓋 `fetch_article_details`、`find_related_articles`、`find_citing_articles`、`get_article_references`、`build_citation_tree` 與 `get_citation_metrics`。
 
+`fetch_article_details` 支援 Markdown、JSON、TOON。引用指標描述影響力；
+論文類型與期刊引用均值不能直接當成證據品質。明確設定零門檻時，缺少該指標的文章不會被當成零值通過。
+
 ### 引用驗證
 
 ![引用驗證流程](images/reference-verification-workflow.svg)
@@ -210,6 +213,11 @@ Resolver base 不得含 query parameter 或 embedded credential。PMID 診斷會
 
 這條路徑涵蓋 `prepare_export` 與 `save_literature_notes`。Citation exports 供 reference manager 使用；local notes 則是帶有 machine-readable metadata、可被人與 agent 後續編輯的 literature-review artifacts。
 認證 service 回應會把所有 host path 改為 tenant-relative logical locator。
+
+`pmids="last"` 使用完整的已儲存 PMID 選集，仍受 1,000 筆批次上限約束，
+不再靜默只取前 100 篇。要排除引用匯出的摘要，請選本機格式並使用
+`prepare_export(..., source="local", include_abstract=False)`。
+官方 payload 保持原樣，因此 `source="official"` 搭配關閉摘要會在取得匯出內容前明確拒絕。
 
 ## 大型輸出的持久化 Query Memory
 
@@ -367,7 +375,13 @@ aliases: ["smith2024_12345678", "Article title", "12345678", "Smith 2024"]
 - Smith J; Doe J. Article title. Journal name. 2024. doi:10.xxxx/example
 ```
 
-frontmatter 和 sidecar 放 verified metadata；正文區塊留給摘要、判讀、限制、後續問題。
+frontmatter 和 sidecar 放 retrieved metadata；正文區塊留給摘要、判讀、限制、後續問題。
+
+匯出不代表已完成書目或論述支持度驗證。MedPaper 筆記使用 `verified: false`、
+`trust_state: "unverified"`，摘要節錄標為 Abstract Excerpt。
+`include_abstract=False` 會從新寫入的筆記、模板、sidecar 與 CSL JSON 排除摘要；
+既有檔案只有在 `overwrite=True` 才會更新。每個檔案原子發布，但整批失敗時可能保留已完成檔案。
+
 
 ## 自訂 Template
 

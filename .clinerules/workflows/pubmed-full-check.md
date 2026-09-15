@@ -1,48 +1,26 @@
 # Full Check: PubMed Search MCP
 
-Run the local verification gates for PubMed Search MCP.
-
-## Step 1: Lint and format
+Run the same complete local gate used before push:
 
 <execute_command>
-<command>uv run ruff check .</command>
+<command>uv run --frozen python scripts/check_repo.py full</command>
 </execute_command>
 
-<execute_command>
-<command>uv run ruff format --check .</command>
-</execute_command>
+This runs lint, format, async consistency, types, and all non-live tests,
+including the fresh-wheel and real MCP transport checks. A failure stops the
+gate. Use focused tests first for a narrow change; see `CONTRIBUTING.md` for
+explicit Mermaid, container, and live-provider checks.
 
-If any step fails, stop and report the failures.
-
-## Step 2: Type check
-
-<execute_command>
-<command>uv run mypy src/ tests/</command>
-</execute_command>
-
-If it fails, stop and report the failures.
-
-## Step 3: Tests
-
-<execute_command>
-<command>uv run pytest</command>
-</execute_command>
-
-If it fails, stop and report the failures.
-
-## Step 4: Tool and skill sync
+When changing tool or skill contracts, regenerate the relevant assets and
+inspect the diff before repeating affected checks:
 
 <execute_command>
 <command>uv run python scripts/count_mcp_tools.py --update-docs</command>
 </execute_command>
 
 <execute_command>
-<command>python3 scripts/check_cline_skills.py</command>
+<command>uv run python scripts/check_cline_skills.py</command>
 </execute_command>
-
-If either step changes files, inspect the diff before continuing.
-
-## Step 5: Diff hygiene
 
 <execute_command>
 <command>git diff --check</command>

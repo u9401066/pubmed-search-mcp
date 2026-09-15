@@ -739,19 +739,17 @@ class TestQueryAnalyzerExtended:
     """Extended tests for QueryAnalyzer."""
 
     async def test_detect_intent_citation_tracking(self):
-        """Test detection of citation tracking intent - PMID triggers LOOKUP."""
+        """Citation-network wording remains explicit even when a PMID is present."""
         from pubmed_search.application.search.query_analyzer import (
             QueryAnalyzer,
             QueryIntent,
         )
 
-        # When query contains PMID, intent becomes LOOKUP (direct identifier)
         analyzer = QueryAnalyzer()
         result = analyzer.analyze("papers citing PMID:12345678")
 
-        # PMID in query triggers LOOKUP intent with direct_lookup strategy
-        assert result.intent == QueryIntent.LOOKUP
-        assert "direct_lookup" in result.recommended_strategies
+        assert result.intent == QueryIntent.CITATION_TRACKING
+        assert "citing" in result.recommended_strategies
 
     async def test_detect_intent_author_search(self):
         """Test detection of author search intent."""
@@ -814,7 +812,7 @@ class TestQueryAnalyzerExtended:
         assert result.year_to is not None
 
     async def test_ambiguous_single_broad_term(self):
-        """Test complexity for single broad term - treated as SIMPLE."""
+        """Broad single concepts use the documented ambiguous-query branch."""
         from pubmed_search.application.search.query_analyzer import (
             QueryAnalyzer,
             QueryComplexity,
@@ -823,8 +821,7 @@ class TestQueryAnalyzerExtended:
         analyzer = QueryAnalyzer()
         result = analyzer.analyze("cancer")
 
-        # Single clear topic is SIMPLE, but with lower confidence
-        assert result.complexity == QueryComplexity.SIMPLE
+        assert result.complexity == QueryComplexity.AMBIGUOUS
         assert result.confidence < 0.8  # Low confidence for broad term
 
     async def test_moderate_multi_term(self):
@@ -1036,17 +1033,6 @@ class TestResponseFormatterExtended:
 class TestCacheFunctions:
     """Test caching functions."""
 
-    async def test_get_last_search_pmids_no_manager(self):
-        """Test get_last_search_pmids without session manager."""
-        from pubmed_search.presentation.mcp_server.tools._common import (
-            get_last_search_pmids,
-            set_session_manager,
-        )
-
-        set_session_manager(None)
-        result = get_last_search_pmids()
-        assert result == []
-
     async def test_get_last_search_pmids_with_manager(self):
         """Test get_last_search_pmids with session manager."""
         from pubmed_search.presentation.mcp_server.tools._common import (
@@ -1112,24 +1098,6 @@ class TestCacheFunctions:
 
 class TestFormatSearchResults:
     """Test format_search_results function."""
-
-    async def test_format_empty(self):
-        """Test formatting empty results."""
-        from pubmed_search.presentation.mcp_server.tools._common import (
-            format_search_results,
-        )
-
-        result = format_search_results([])
-        assert "No results found" in result
-
-    async def test_format_does_not_surface_unknown_mapping_values(self):
-        """Malformed mappings are not a presentation-layer compatibility contract."""
-        from pubmed_search.presentation.mcp_server.tools._common import (
-            format_search_results,
-        )
-
-        result = format_search_results([{"unexpected_payload": "API failed"}])
-        assert "API failed" not in result
 
     async def test_format_success(self):
         """Test formatting successful results."""

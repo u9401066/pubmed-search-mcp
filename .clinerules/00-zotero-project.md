@@ -1,3 +1,10 @@
+---
+paths:
+  - "mcp-server/**"
+  - "external/pubmed-search-mcp/**"
+  - "vscode-extension/**"
+---
+
 # Zotero Keeper Project Rules
 
 These rules are meant for Cline usage in the Zotero Keeper repository.

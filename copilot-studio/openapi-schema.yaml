@@ -11,7 +11,7 @@ info:
     Recommended runtime modes:
     - Full schema mode: pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible
     - Local-only canonical schema smoke: run_copilot.py (never publish or tunnel)
-  version: 0.7.2
+  version: 0.7.3
   contact:
     name: PubMed Search MCP
     url: https://github.com/u9401066/pubmed-search-mcp

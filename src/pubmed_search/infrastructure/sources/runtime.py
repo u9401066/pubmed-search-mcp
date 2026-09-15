@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pubmed_search.shared.async_utils import SharedAsyncClientRuntime
 
+from .contact import _normalize_contact_email
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
@@ -30,13 +32,6 @@ logger = logging.getLogger(__name__)
 
 ClientKey = tuple[object, ...]
 OwnedValue = TypeVar("OwnedValue")
-
-
-def _normalize_contact_email(email: str | None) -> str | None:
-    if not isinstance(email, str):
-        return None
-    normalized = email.strip()
-    return normalized or None
 
 
 @dataclass(slots=True)

@@ -127,3 +127,153 @@ def test_rrf_emits_each_document_once():
 def test_rrf_rejects_negative_k():
     with pytest.raises(ValueError, match="non-negative"):
         reciprocal_rank_fusion([], {}, k=-1)
+
+
+@pytest.mark.parametrize("value", [-1, "²", "token=private-value"])
+def test_invalid_source_totals_remain_unknown_without_echoing_payload(value):
+    from pubmed_search.application.search.source_models import coerce_optional_total
+
+    total, warnings = coerce_optional_total(value)
+    assert total is None and warnings
+    assert "private-value" not in " ".join(warnings)
+
+
+def test_icd_expansion_preserves_each_original_occurrence_once():
+    from pubmed_search.application.unified.helpers import detect_and_expand_icd_codes
+    from pubmed_search.application.unified.planning import _build_provider_neutral_icd_query
+
+    query = "E11 OR E11.9 OR E11"
+    expanded, matches = detect_and_expand_icd_codes(query)
+    assert len(matches) == 2
+    assert expanded.count("[MeSH]") == 3
+    neutral = _build_provider_neutral_icd_query(query, matches, semantic=False)
+    assert neutral.count("Diabetes Mellitus") == 3
+    assert ").9" not in neutral
+
+
+@pytest.mark.parametrize(
+    "query,intent",
+    [
+        ("corticosteroid treatment", "exploration"),
+        ("systematic review of treatment and complications", "systematic"),
+    ],
+)
+def test_query_intent_does_not_match_operator_substrings(query, intent):
+    from pubmed_search.application.search.query_analyzer import QueryAnalyzer
+
+    assert QueryAnalyzer().analyze(query).intent.value == intent
+
+
+def test_analyzer_keeps_identifier_namespaces_and_explicit_relative_years():
+    from datetime import datetime, timezone
+
+    from pubmed_search.application.search.query_analyzer import QueryAnalyzer
+
+    analyzer = QueryAnalyzer()
+    parsed = analyzer.analyze("PMC12345678")
+    assert [(item.type, item.value) for item in parsed.identifiers] == [("pmc", "PMC12345678")]
+    assert analyzer.analyze("doi:10.2020/example").year_from is None
+    assert analyzer.analyze("last 2 years of sepsis research").year_from == datetime.now(timezone.utc).year - 2
+
+
+def test_conflicting_identifiers_do_not_merge_evidence():
+    from pubmed_search.application.search.result_aggregator import ResultAggregator
+
+    left = article("1", "Study A", "Evidence A")
+    left.doi = "10.1000/a"
+    right = article("1", "Study B", "Evidence B")
+    right.doi = "10.1000/b"
+    results, stats = ResultAggregator().aggregate([[left, right]])
+    assert len(results) == 2 and stats.duplicates_removed == 0
+    assert {paper.abstract for paper in results} == {"Evidence A", "Evidence B"}
+
+
+def test_aggregate_and_rank_uses_the_override_deduplication_policy():
+    from pubmed_search.application.search.result_aggregator import (
+        DeduplicationStrategy,
+        RankingConfig,
+        ResultAggregator,
+    )
+
+    papers = [
+        UnifiedArticle(title="A long shared study title without identifiers", primary_source="pubmed") for _ in range(2)
+    ]
+    ranked, stats = ResultAggregator().aggregate_and_rank(
+        [papers], RankingConfig(dedup_strategy=DeduplicationStrategy.STRICT)
+    )
+    assert len(ranked) == 2 and stats.duplicates_removed == 0
+
+
+def test_zero_weight_dimensions_cannot_break_relevance_ties():
+    from pubmed_search.application.search.result_aggregator import RankingConfig, ResultAggregator
+    from pubmed_search.domain.entities.article import CitationMetrics
+
+    papers = [article("1", "Sepsis"), article("2", "Sepsis")]
+    papers[1].citation_metrics = CitationMetrics(citation_count=1000)
+    config = RankingConfig(
+        relevance_weight=1,
+        quality_weight=0,
+        recency_weight=0,
+        impact_weight=0,
+        source_trust_weight=0,
+        entity_match_weight=0,
+    )
+    ranked = ResultAggregator(config).rank(papers, query="sepsis")
+    assert ranked[0].ranking_score == ranked[1].ranking_score
+
+
+def test_mmr_zero_limit_returns_no_selection():
+    from pubmed_search.application.search.ranking_algorithms import mmr_diversify
+
+    assert mmr_diversify([article("1", "Sepsis"), article("2", "Asthma")], "sepsis", top_k=0).articles == []
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -0.1, 1.1])
+def test_mmr_rejects_invalid_selection_weights(value):
+    from pubmed_search.application.search.ranking_algorithms import mmr_diversify
+
+    with pytest.raises(ValueError, match="MMR lambda"):
+        mmr_diversify([article("1", "Sepsis"), article("2", "Asthma")], "sepsis", lambda_param=value)
+
+
+def test_reproducibility_does_not_count_unqueried_sources_or_claim_measured_replay():
+    from pubmed_search.application.search.reproducibility import calculate_reproducibility
+
+    report = calculate_reproducibility("sepsis", ["pubmed", "openalex"], ["pubmed", "pubmed", "unqueried"], [])
+    assert report.source_coverage == 0.5
+    assert report.to_dict()["measurement_type"] == "heuristic"
+    assert report.to_dict()["provider_results_may_change"] is True
+
+
+def test_analyzer_preserves_citation_intent_and_broad_topic_branch():
+    from pubmed_search.application.search.query_analyzer import QueryAnalyzer
+
+    analyzer = QueryAnalyzer()
+    assert analyzer.analyze("papers citing PMID:12345678").intent.value == "citation_tracking"
+    assert analyzer.analyze("cancer").complexity.value == "ambiguous"
+    assert analyzer.analyze("RA and IL-6").keywords == ["RA", "IL-6"]
+
+
+def test_ranking_retains_conflicting_records_with_the_same_canonical_key():
+    from pubmed_search.application.search.result_aggregator import ResultAggregator
+    from pubmed_search.domain.entities.article import CitationMetrics
+
+    first, second = article("1", "Sepsis evidence"), article("2", "Asthma evidence")
+    first.doi = second.doi = "10.1000/conflict"
+    second.citation_metrics = CitationMetrics(citation_count=1000, relative_citation_ratio=-2.0)
+    ranked, _stats = ResultAggregator().aggregate_and_rank([[first, second]], query="sepsis")
+    assert len(ranked) == 2
+    assert first.relevance_score > second.relevance_score
+
+
+def test_mesh_variant_preserves_boolean_constraints_and_entity_boundaries():
+    from pubmed_search.application.search.result_aggregator import RankingConfig, ResultAggregator
+    from pubmed_search.application.search.semantic_enhancer import ResolvedEntity, SemanticEnhancer
+
+    entities = [ResolvedEntity(word, word.title(), "chemical", word, mesh_id="D1") for word in ("aspirin", "stroke")]
+    query = SemanticEnhancer(entity_resolver=None)._build_mesh_query("aspirin AND stroke", entities)
+    assert "(aspirin AND stroke)" in query
+    score = ResultAggregator()._calculate_entity_match(
+        article("1", "Therapy for trauma"), RankingConfig(matched_entities=["RA"])
+    )
+    assert score == 0.3

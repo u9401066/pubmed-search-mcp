@@ -1590,3 +1590,26 @@ class TestIsPreprint:
             article_type=ArticleType.UNKNOWN,
         )
         assert is_preprint(a, ArticleType) is False
+
+
+async def test_markdown_does_not_assign_evidence_grades_or_impact_factor():
+    from pubmed_search.domain.entities.article import ArticleType, JournalMetrics
+
+    article = UnifiedArticle(
+        title="A trial",
+        primary_source="pubmed",
+        pmid="12345",
+        article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL,
+        journal_metrics=JournalMetrics(two_year_mean_citedness=2.5),
+    )
+    result = await _format_unified_results(
+        [article],
+        MagicMock(spec=AnalyzedQuery, original_query="trial", intent=QueryIntent.EXPLORATION),
+        AggregationStats(),
+        include_analysis=False,
+        include_trials=False,
+    )
+    assert "RCT" in result
+    assert "(1b)" not in result
+    assert "IF≈" not in result
+    assert "2-year mean citedness: 2.50" in result

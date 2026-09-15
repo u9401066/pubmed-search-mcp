@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.7.2"
+version = "0.7.3"
 description = "MCP SDK v2 server for PubMed and multi-source biomedical literature research"
 readme = "README.md"
 license = "Apache-2.0"
@@ -96,7 +96,7 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # Default pytest runs stay single-process to avoid uv/xdist OOM in agent sandboxes.
-# Pre-push pytest may pass an explicit -n value when enough RAM is available.
+# The shared pre-push gate is also single-process; opt into -n only for manual runs.
 addopts = "--timeout=60"
 markers = [
     "integration: marks tests as integration tests (may make real API calls)",

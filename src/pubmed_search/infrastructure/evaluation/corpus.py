@@ -12,6 +12,8 @@ import re
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.shared.file_io import atomic_write_text
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -20,8 +22,8 @@ class FrozenCorpus:
     """Independent lexical backend shared by basic tools and the repo arm."""
 
     def __init__(self, corpus_path: Path, audit_path: Path, *, search_budget: int = 6, document_budget: int = 120):
-        if search_budget <= 0 or document_budget <= 0:
-            raise ValueError("Budgets must be positive")
+        if any(type(budget) is not int or budget <= 0 for budget in (search_budget, document_budget)):
+            raise ValueError("Budgets must be positive integers")
         self.audit_path = audit_path
         self.search_budget = search_budget
         self.document_budget = document_budget
@@ -32,31 +34,41 @@ class FrozenCorpus:
         raw = corpus_path.read_bytes()
         self.sha256 = hashlib.sha256(raw).hexdigest()
         rows = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("_id"), str) or not row["_id"].strip():
+                raise ValueError("Corpus document IDs must be nonempty strings")
+            if any(not isinstance(row.get(key, ""), str) for key in ("title", "text")):
+                raise ValueError("Corpus title and text must be strings when provided")
         if not rows or len({row["_id"] for row in rows}) != len(rows):
             raise ValueError("Corpus must contain unique document IDs")
         self.documents: dict[str, dict[str, Any]] = {}
         self.original_ids: dict[str, str] = {}
         self.connection = sqlite3.connect(":memory:")
-        self.connection.execute("CREATE VIRTUAL TABLE papers USING fts5(id UNINDEXED, title, abstract)")
-        for index, row in enumerate(sorted(rows, key=lambda row: str(row["_id"]))):
-            transport_id = str(80000000 + index)
-            original_id = str(row["_id"])
-            self.original_ids[transport_id] = original_id
-            self.documents[transport_id] = {
-                "pmid": transport_id,
-                "title": row.get("title", ""),
-                "abstract": row.get("text", ""),
-                "authors": [],
-                "benchmark_id": original_id,
-            }
-            self.connection.execute(
-                "INSERT INTO papers VALUES (?, ?, ?)",
-                (transport_id, row.get("title", ""), row.get("text", "")),
-            )
-        self.save_audit()
+        try:
+            self.connection.execute("CREATE VIRTUAL TABLE papers USING fts5(id UNINDEXED, title, abstract)")
+            for index, row in enumerate(sorted(rows, key=lambda row: row["_id"])):
+                transport_id = str(80000000 + index)
+                original_id = row["_id"]
+                self.original_ids[transport_id] = original_id
+                self.documents[transport_id] = {
+                    "pmid": transport_id,
+                    "title": row.get("title", ""),
+                    "abstract": row.get("text", ""),
+                    "authors": [],
+                    "benchmark_id": original_id,
+                }
+                self.connection.execute(
+                    "INSERT INTO papers VALUES (?, ?, ?)",
+                    (transport_id, row.get("title", ""), row.get("text", "")),
+                )
+            self.save_audit()
+        except BaseException:
+            self.connection.close()
+            raise
 
     def save_audit(self) -> None:
-        self.audit_path.write_text(
+        atomic_write_text(
+            self.audit_path,
             json.dumps(
                 {
                     "corpus_sha256": self.sha256,
@@ -87,6 +99,10 @@ class FrozenCorpus:
         return [dict(self.documents[doc_id]) for doc_id in ids]
 
     async def search(self, query: str, limit: int = 10, **_kwargs: Any) -> list[dict[str, Any]]:
+        if not isinstance(query, str):
+            raise TypeError("Query must be a string")
+        if type(limit) is not int or limit <= 0:
+            raise ValueError("Search limit must be a positive integer")
         if self.search_calls >= self.search_budget or self.document_exposures >= self.document_budget:
             self.events.append({"operation": "budget_exhausted", "query": query})
             self.save_audit()
@@ -98,7 +114,7 @@ class FrozenCorpus:
         rows = (
             self.connection.execute(
                 "SELECT id FROM papers WHERE papers MATCH ? ORDER BY bm25(papers), id LIMIT ?",
-                (expression, min(max(int(limit), 1), 100)),
+                (expression, min(limit, 100)),
             ).fetchall()
             if terms
             else []

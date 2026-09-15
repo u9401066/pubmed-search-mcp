@@ -10,6 +10,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-15
+
+### Fixed
+
+- Preserve article identity, zero-valued citation metrics, nullable metadata,
+  structured author order, and valid publication dates across source mapping,
+  deduplication, ranking, timelines, and citation exports.
+- Keep provider outages, partial coverage, rejected payloads, and successful
+  empty results distinct through application execution and MCP error responses;
+  verify returned identifiers before trusting reference or figure metadata.
+- Harden pipeline replay, report serialization, session/artifact persistence,
+  Chronicle lineage, and diagram escaping. Dry runs report planned steps without
+  claiming execution; metric heuristics no longer imply clinical evidence grades.
+- Bound browser retrieval by deadlines and file limits, clean up cancelled
+  workers' listeners, and restrict institutional resolver mutations to trusted
+  local identities. Preserve export limits and reject unsupported official
+  abstract suppression explicitly.
+- Validate frozen-corpus IDs and integer budgets before execution, atomically
+  publish evaluation audits, verify checkpoint traces during resource accounting,
+  and reject unknown completion states or mismatched cross-revision adapters.
+  Hide SDK API keys from configuration repr output.
+- Include concurrency-slot and cooldown-lock waits in the transport's total
+  timeout; avoid constructing work after its deadline. Caller cancellation no
+  longer trips circuit breakers or consumes half-open recovery capacity.
+- Reject corrupt cache timestamps and negative capacities, enforce capacity on
+  reload, and reuse unique-temp atomic persistence. Reject nonfinite rate/retry
+  delays and invalid batch sizes; preserve explicit zero-second retry guidance.
+- Ignore empty credential values during extraction/redaction so unrelated text
+  cannot expand into per-character redaction markers.
+- Normalize cache envelope metadata while preserving original article payloads;
+  integer years, null optional fields, and structured authors now survive memory
+  and disk round trips. Preserve explicitly injected empty article caches.
+- Handle blank/null authors and single author strings in citation exports; share
+  family-first author formatting between RIS and BibTeX.
+- Convert malformed DOI URLs into the domain validation error, so optional DOI
+  normalization returns no match instead of leaking a URL parser exception.
+- Reject invalid complexity samples, unknown benchmark targets, and cache misses
+  in the cache-hit benchmark. Recognize installed CLI entrypoints in import audits.
+- Use one publication date parser for timeline ordering and milestone/event
+  construction; reject booleans as months instead of interpreting `true` as January.
+- Add an explicit research-skill installer that preserves existing whole skills
+  and user settings; repeated installs add missing skills without mixing versions.
+- Route generic Cline validation/project rules to PubMed's own workflows and
+  scope sibling-project guidance away from this repository's Python scripts.
+
+### Changed
+
+- Complete all ten core-review phases: 223 source files, 456 classes and 2,445
+  functions/methods/nested functions, with 2,901 authored decisions and current
+  file hashes. No core entries are pending, stale, or follow-up. This records
+  self-review and local regression evidence, not a new public benchmark score.
+- Reuse application query-material fallback, pipeline config serialization,
+  iCite filtering/sorting, and shared atomic file persistence instead of parallel
+  implementations in MCP wrappers or evaluation helpers.
+- Share NCBI's optional-string setting normalization and use dataclass context
+  replacement in specialized exceptions instead of copying every context field.
+- Move the final PDF fallback from the MCP tool into the fulltext application
+  service. Standard and extended policies share download/coverage/cleanup logic,
+  preserve acquired text after cleanup failures, and honor policy opt-out.
+- Add a Git-visible symbol inventory and hash-bound review ledger. Local full
+  validation regenerates counts; explicit review completion rejects pending or
+  stale entries instead of equating static analysis with semantic review.
+- Install both commit and push hooks by default. The shared full local gate runs
+  lint, format, async checks, types, and all non-live tests before push, using one
+  pytest process. Keep upstream Semgrep rule downloads explicitly manual.
+- Run one independent cloud smoke job by default; move the full compatibility
+  matrix, Mermaid rendering, and container smoke to opt-in extended CI. Keep
+  complete tag-publication verification and all-tool fresh-wheel acceptance.
+- Remove duplicate and ineffective coverage-driven tests while retaining stronger
+  contract suites; replace test-generation guidance with focused regressions.
+
 ## [0.7.2] - 2026-09-09
 
 ### Fixed
@@ -2856,7 +2927,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...v0.6.3

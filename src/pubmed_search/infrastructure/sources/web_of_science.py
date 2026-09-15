@@ -28,7 +28,7 @@ from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
 
-WEB_OF_SCIENCE_API_BASE = "https://api.clarivate.com"
+WEB_OF_SCIENCE_API_BASE = "https://api.clarivate.com/apis/wos-starter/v1"
 WEB_OF_SCIENCE_SEARCH_PATH = "/apis/wos-starter/v1/documents"
 
 
@@ -74,13 +74,13 @@ class WebOfScienceClient(BaseAPIClient):
         if isinstance(page, bool) or not isinstance(page, int) or page < 1:
             raise ValueError("Web of Science page must be a positive integer")
 
+        wos_query = self.compile_query(
+            query,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+        )
         try:
-            wos_query = self.compile_query(
-                query,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-            )
             request = WebOfScienceSearchRequest(
                 q=wos_query,
                 limit=limit,
@@ -144,6 +144,8 @@ class WebOfScienceClient(BaseAPIClient):
         max_year: int | None,
         open_access_only: bool,
     ) -> str:
+        if open_access_only:
+            raise ValueError("Web of Science Starter does not support open_access_only")
         terms = [f"TS=({query})"]
         if min_year and max_year:
             terms.append(f"PY=({min_year}-{max_year})")
@@ -151,8 +153,6 @@ class WebOfScienceClient(BaseAPIClient):
             terms.append(f"PY=({min_year}-9999)")
         elif max_year:
             terms.append(f"PY=(1000-{max_year})")
-        if open_access_only:
-            terms.append("OA=(Y)")
         return " AND ".join(terms)
 
     def _normalize_hit(self, hit: dict[str, Any]) -> dict[str, Any]:
@@ -177,7 +177,7 @@ class WebOfScienceClient(BaseAPIClient):
             elif isinstance(author, str):
                 authors.append(author)
 
-        year_raw = source.get("publishedBiblioYear") or hit.get("publishedYear")
+        year_raw = source.get("publishYear") or source.get("publishedBiblioYear") or hit.get("publishedYear")
         year = int(year_raw) if isinstance(year_raw, (int, str)) and str(year_raw).isdigit() else None
 
         cited_by_count = 0
@@ -205,6 +205,7 @@ class WebOfScienceClient(BaseAPIClient):
             "journal": source.get("sourceTitle", ""),
             "journal_abbrev": source.get("sourceTitle", ""),
             "doi": identifiers.get("doi"),
+            "pmid": identifiers.get("pmid"),
             "year": year,
             "wos_id": hit.get("uid"),
             "link": links.get("record"),

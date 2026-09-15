@@ -814,7 +814,7 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path) -> None:
         assert result.content[1].type == "text"
         assert "Medical Image Analysis" in result.content[1].text
         assert "Offline acceptance fixture" in result.content[1].text
-        assert "IMMEDIATELY search for related literature" in result.content[1].text
+        assert "search hypotheses" in result.content[1].text
         assert "search_biomedical_images()" in result.content[1].text
         assert "unified_search()" in result.content[1].text
 

@@ -9,6 +9,11 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      run_extended_checks:
+        description: Run the full compatibility matrix, Mermaid rendering, and container smoke
+        required: false
+        default: false
+        type: boolean
       run_live_integrations:
         description: Run opt-in external API integration probes
         required: false
@@ -24,6 +29,7 @@ concurrency:
 
 jobs:
   mermaid-rendering:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_extended_checks }}
     name: Mermaid parse and SVG rendering
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -84,7 +90,7 @@ jobs:
             tests/test_all_tools_mcp_acceptance.py::test_all_tools_through_real_stdio_mcp
 
   quality-and-package:
-    name: Quality, docs, and wheel smoke
+    name: Public contracts, docs, and wheel smoke
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -105,44 +111,14 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --dev --python 3.13
 
-      - name: Ruff lint
-        run: uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py
-
-      - name: Ruff format
-        run: uv run ruff format --check src/ tests/ scripts/ run_server.py run_copilot.py
-
-      - name: Async test consistency
-        run: uv run python scripts/check_async_tests.py
-
-      - name: Mypy
-        run: uv run mypy src/ tests/
-
-      - name: Documentation integrity
-        run: uv run pytest -q tests/test_docs_site_sync.py tests/test_documentation_integrity.py tests/test_github_wiki_build.py
-
-      - name: MCP protocol acceptance (source stdio and Streamable HTTP)
-        run: |
-          uv run pytest -q \
-            tests/test_release_transport_smoke.py \
-            tests/test_all_tools_mcp_acceptance.py \
-            -m "not slow"
-
-      - name: Fresh-wheel complete MCP protocol acceptance
-        run: |
-          uv run pytest -q \
-            tests/test_all_tools_mcp_acceptance.py::test_all_tools_from_freshly_installed_wheel_through_stdio_mcp
-
-      - name: Build distributions
-        run: uv build
-
-      - name: Install and smoke-test wheel
-        run: |
-          uv venv --python 3.13 .wheel-smoke
-          uv pip install --python .wheel-smoke/bin/python dist/*.whl
-          .wheel-smoke/bin/python -c "import pubmed_search; from pubmed_search.api import PubMedSearchClient"
-          .wheel-smoke/bin/pubmed-search-mcp-http --help
+      # Full validation belongs to the local pre-push gate. Keep an independent
+      # clean-environment public-contract check for bypassed hooks and packaging.
+      # The smoke profile already includes the fresh-wheel acceptance test once.
+      - name: Shared smoke gate
+        run: uv run --frozen python scripts/check_repo.py smoke
 
   test-matrix:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_extended_checks }}
     name: ${{ matrix.os }} / py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -184,6 +160,7 @@ jobs:
         run: uv run pytest -q -m "not integration and not slow"
 
   container-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_extended_checks }}
     name: Container build and entrypoint smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20

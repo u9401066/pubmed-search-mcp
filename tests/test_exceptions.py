@@ -26,6 +26,12 @@ from pubmed_search.shared.exceptions import (
 
 
 class TestPubMedSearchError:
+    def test_zero_retry_after_is_preserved_in_public_error_guidance(self):
+        error = RateLimitError(retry_after=0)
+        assert error.to_dict()["retry_after_seconds"] == 0
+        assert "0.0 seconds" in error.to_agent_message()
+        assert get_retry_delay(error, 0) == 0
+
     async def test_basic_creation(self):
         e = PubMedSearchError("test error")
         assert str(e) == "test error"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,13 +27,11 @@ from pubmed_search.application.pipeline.templates import (
     build_pipeline_from_template,
 )
 from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
 from pubmed_search.presentation.mcp_server.tools.unified_pipeline import (
     _execute_pipeline_mode_outcome,
 )
 from pubmed_search.shared.source_contracts import SourceAdapterResult
-
-if TYPE_CHECKING:
-    from pubmed_search.domain.entities.article import UnifiedArticle
 
 # =========================================================================
 # Fixtures
@@ -41,17 +39,17 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class FakeArticle:
+class FakeArticle(UnifiedArticle):
     """Minimal article-like object for pipeline tests."""
 
     title: str = "Test Article"
     pmid: str | None = "12345678"
-    doi: str | None = "10.1234/test"
+    doi: str | None = None
     year: int | None = 2024
     journal: str | None = "Test Journal"
     abstract: str | None = "Test abstract content."
     primary_source: str = "pubmed"
-    article_type: Any = None
+    article_type: Any = ArticleType.UNKNOWN
     ranking_score: float = 0.5
     relevance_score: float = 0.5
     quality_score: float = 0.5
@@ -1294,7 +1292,7 @@ output:
         data = json.loads(outcome.response)
         assert data["type"] == "pipeline_result"
         assert data["summary"]["article_count"] == 1
-        assert data["articles"][0]["pmid"] == "123"
+        assert data["articles"][0]["identifiers"]["pmid"] == "123"
 
     async def test_pipeline_dry_run_preview(self, mock_searcher):
         """Dry-run validates and previews steps without executing searches."""

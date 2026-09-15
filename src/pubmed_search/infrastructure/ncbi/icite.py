@@ -13,6 +13,8 @@ API Documentation: https://icite.od.nih.gov/api
 from __future__ import annotations
 
 import logging
+import math
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from cachetools import TTLCache
@@ -123,7 +125,7 @@ class ICiteMixin:
 
         # Check cache first
         cache = self._get_icite_cache()
-        cached, missing = self._get_cached_metrics(cache, pmids)
+        cached, missing = self._get_cached_metrics(cache, list(dict.fromkeys(pmids)), fields)
         if not missing:
             logger.debug(f"iCite cache hit: all {len(pmids)} PMIDs cached")
             return cached
@@ -137,9 +139,12 @@ class ICiteMixin:
         for i in range(0, len(missing), MAX_PMIDS_PER_REQUEST):
             batch = missing[i : i + MAX_PMIDS_PER_REQUEST]
             batch_results = await self._fetch_icite_batch(batch, fields)
-            results.update(batch_results)
-            # Cache the new results
-            cache.update(batch_results)
+            for pmid, record in batch_results.items():
+                if pmid not in batch:
+                    continue
+                merged = {**cache.get(pmid, {}), **record}
+                cache[pmid] = deepcopy(merged)
+                results[pmid] = deepcopy(merged)
 
         return results
 
@@ -147,13 +152,18 @@ class ICiteMixin:
         self,
         cache: TTLCache[str, dict[str, Any]],
         pmids: list[str],
+        fields: list[str] | None = None,
     ) -> tuple[dict[str, dict[str, Any]], list[str]]:
         """Get cached metrics for multiple PMIDs using cachetools TTLCache."""
         cached: dict[str, dict[str, Any]] = {}
         missing: list[str] = []
         for pmid in pmids:
             try:
-                cached[pmid] = cache[pmid]
+                record = cache[pmid]
+                if fields is not None and not all(field in record for field in fields):
+                    missing.append(pmid)
+                else:
+                    cached[pmid] = deepcopy(record)
             except KeyError:
                 missing.append(pmid)
         return cached, missing
@@ -254,12 +264,18 @@ class ICiteMixin:
         """
 
         def get_metric(article):
-            icite = article.get("icite", {})
+            icite = article.get("icite") or {}
             value = icite.get(metric)
             # Handle None/missing values - put at end
             if value is None:
                 return float("-inf") if descending else float("inf")
-            return value
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError):
+                numeric = float("nan")
+            if isinstance(value, bool) or not math.isfinite(numeric) or numeric < 0:
+                return float("-inf") if descending else float("inf")
+            return numeric
 
         return sorted(articles, key=get_metric, reverse=descending)
 
@@ -285,7 +301,22 @@ class ICiteMixin:
         filtered = []
 
         for article in articles:
-            icite = article.get("icite", {})
+            icite = article.get("icite") or {}
+            thresholds = {
+                "citation_count": min_citations,
+                "relative_citation_ratio": min_rcr,
+                "nih_percentile": min_percentile,
+            }
+            if any(
+                threshold is not None
+                and (
+                    isinstance(icite.get(key), bool)
+                    or not isinstance(icite.get(key), (int, float))
+                    or not math.isfinite(icite[key])
+                )
+                for key, threshold in thresholds.items()
+            ):
+                continue
 
             # Check citation count
             if min_citations is not None:
