@@ -250,6 +250,10 @@ def create_server(
         Configured MCPServer instance. Transport-level options are recorded on the
         instance and replayed by :func:`build_asgi_app`.
     """
+    settings = load_settings()
+    effective_mode = settings.server_mode if mode is None else mode
+    if effective_mode not in {"local", "service"}:
+        raise ValueError("mode must be 'local' or 'service'")
     logger.info("Initializing PubMed Search MCP Server...")
 
     from pubmed_search.infrastructure.sources.runtime import SourceRuntime
@@ -272,9 +276,6 @@ def create_server(
 
     logger.info("Strategy generator initialized (ESpell + MeSH)")
     logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
-
-    settings = load_settings()
-    effective_mode: ServerMode = mode or settings.server_mode
 
     # ── Authentication ──────────────────────────────────────────────────
     token_verifier, auth_settings = build_auth(settings)

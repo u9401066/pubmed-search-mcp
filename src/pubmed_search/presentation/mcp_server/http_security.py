@@ -46,7 +46,7 @@ def _matches_allowed_value(value: str, allowed_values: list[str]) -> bool:
         if not normalized.startswith(prefix):
             continue
         port = normalized[len(prefix) :]
-        if port.isdigit() and 0 < int(port) <= 65535:
+        if port.isascii() and port.isdecimal() and len(port) <= 5 and 0 < int(port) <= 65535:
             return True
     return False
 

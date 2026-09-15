@@ -39,3 +39,17 @@ class TestCopilotStudioCompatibilityMiddleware:
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
+
+
+async def test_streamed_202_emits_one_complete_json_body():
+    async def streaming(scope, receive, send):
+        await send({"type": "http.response.start", "status": 202, "headers": [(b"content-type", b"text/plain")]})
+        await send({"type": "http.response.body", "body": b"first", "more_body": True})
+        await send({"type": "http.response.body", "body": b"last", "more_body": False})
+
+    async with AsyncClient(
+        transport=ASGITransport(app=wrap_copilot_compatibility(streaming)), base_url="http://local"
+    ) as client:
+        response = await client.get("/")
+    assert response.json() == {}
+    assert response.headers["content-type"] == "application/json"

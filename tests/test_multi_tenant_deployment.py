@@ -933,3 +933,23 @@ class TestTenantIdBoundaries:
         resolved = tenant_data_dir(root, "../../etc/passwd")
         assert resolved is not None
         assert Path(resolved).resolve().is_relative_to(root)
+
+
+def test_static_token_cannot_identify_two_different_tenants():
+    with pytest.raises(ValueError, match="multiple principals"):
+        StaticTokenVerifier(parse_static_tokens("alice:shared-secret,bob:shared-secret"))
+
+
+def test_invalid_programmatic_server_mode_fails_closed(tmp_path):
+    from pubmed_search.presentation.mcp_server.server import create_server
+
+    with pytest.raises(ValueError, match="mode"):
+        create_server(data_dir=str(tmp_path), mode="servcie")
+
+
+def test_host_wildcard_rejects_non_ascii_or_overlong_ports():
+    from pubmed_search.presentation.mcp_server.http_security import _matches_allowed_value
+
+    assert not _matches_allowed_value("localhost:²", ["localhost:*"])
+    assert not _matches_allowed_value("localhost:" + "9" * 5000, ["localhost:*"])
+    assert _matches_allowed_value("localhost:8765", ["localhost:*"])

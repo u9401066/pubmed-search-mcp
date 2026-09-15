@@ -6,11 +6,13 @@ import argparse
 import asyncio
 import base64
 import ipaddress
+import json
 import os
 import secrets
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
@@ -33,7 +35,7 @@ class BrokerConfig:
 
     host: str
     port: int
-    token: str
+    token: str = field(repr=False)
     headless: bool
     user_data_dir: Path
     download_dir: Path
@@ -43,6 +45,13 @@ class BrokerConfig:
     def __post_init__(self) -> None:
         """Reject missing, weak, or whitespace-bearing bearer tokens."""
         _require_broker_token(self.token)
+        for name, value, maximum in (
+            ("port", self.port, 65535),
+            ("timeout_seconds", self.timeout_seconds, 300),
+            ("max_bytes", self.max_bytes, 100 * 1024 * 1024),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 < value <= maximum:
+                raise ValueError(f"{name} must be a positive integer no larger than {maximum}")
 
 
 def _env_bool(name: str, *, default: bool) -> bool:
@@ -83,7 +92,7 @@ def _is_loopback_authority(authority: str | None) -> bool:
         return False
     try:
         parsed = urlsplit(f"//{authority}")
-        if parsed.username is not None or parsed.password is not None or parsed.path:
+        if parsed.username is not None or parsed.password is not None or parsed.path or parsed.query or parsed.fragment:
             return False
         # Accessing ``port`` also rejects malformed and out-of-range ports.
         _ = parsed.port
@@ -114,6 +123,10 @@ def _require_broker_token(explicit_token: str | None) -> str:
     if any(character.isspace() for character in explicit_token):
         msg = "browser broker token must not contain whitespace"
         raise ValueError(msg)
+    if not explicit_token.isascii() or any(
+        ord(character) < 0x21 or ord(character) == 0x7F for character in explicit_token
+    ):
+        raise ValueError("browser broker token must contain only printable ASCII characters")
     if len(explicit_token) < MIN_BROKER_TOKEN_CHARS:
         msg = f"browser broker token must contain at least {MIN_BROKER_TOKEN_CHARS} characters"
         raise ValueError(msg)
@@ -179,6 +192,8 @@ def _ensure_size(content: bytes, *, max_bytes: int) -> bytes:
     if len(content) > max_bytes:
         msg = f"PDF exceeds max_bytes ({len(content)} > {max_bytes})"
         raise HTTPException(status_code=413, detail=msg)
+    if not content.startswith(b"%PDF-"):
+        raise HTTPException(status_code=502, detail="Downloaded response is not a PDF")
     return content
 
 
@@ -188,16 +203,29 @@ async def _response_pdf_bytes(response: Any, *, max_bytes: int) -> bytes | None:
     content_type = (response.headers or {}).get("content-type", "")
     if "application/pdf" not in content_type.lower():
         return None
+    declared_length = (response.headers or {}).get("content-length", "")
+    if str(declared_length).isascii() and str(declared_length).isdecimal() and int(declared_length) > max_bytes:
+        raise HTTPException(status_code=413, detail="PDF exceeds max_bytes")
+    # Playwright buffers response bodies internally; this caps returned bytes,
+    # not Chromium's own network allocation.
     return _ensure_size(await response.body(), max_bytes=max_bytes)
+
+
+def _read_pdf_file(path: str, max_bytes: int) -> bytes:
+    """Read at most one bounded PDF payload off the event loop."""
+    with Path(path).open("rb") as handle:
+        return _ensure_size(handle.read(max_bytes + 1), max_bytes=max_bytes)
 
 
 async def _download_pdf_bytes(download: Any, *, max_bytes: int) -> bytes:
     path = await download.path()
-    if not path:
-        target = Path(download.suggested_filename or "download.pdf")
+    if path:
+        return await asyncio.to_thread(_read_pdf_file, str(path), max_bytes)
+    # A publisher-controlled suggested_filename must never select a local path.
+    with TemporaryDirectory(prefix="pubmed-browser-download-") as directory:
+        target = Path(directory) / "download.pdf"
         await download.save_as(str(target))
-        path = str(target)
-    return _ensure_size(Path(path).read_bytes(), max_bytes=max_bytes)
+        return await asyncio.to_thread(_read_pdf_file, str(target), max_bytes)
 
 
 async def _find_pdf_links(page: Any) -> list[str]:
@@ -212,33 +240,38 @@ async def _find_pdf_links(page: Any) -> list[str]:
     )
     links = [link for link in raw_links if isinstance(link, dict)]
     ranked = sorted(links, key=_candidate_score, reverse=True)
-    return [str(link.get("href")) for link in ranked if _candidate_score(link) > 0 and link.get("href")]
+    return list(
+        dict.fromkeys(
+            str(link["href"])
+            for link in ranked
+            if _candidate_score(link) > 0 and str(link.get("href", "")).startswith(("https://", "http://"))
+        )
+    )[:5]
 
 
 async def _goto_with_download_capture(
     page: Any, url: str, *, timeout_ms: int, max_bytes: int
 ) -> tuple[bytes | None, str]:
     download_task = asyncio.create_task(page.wait_for_event("download", timeout=timeout_ms))
-    response = None
     try:
-        response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-    except Exception:
-        with suppress(Exception):
+        try:
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        except Exception:
             download = await download_task
             return await _download_pdf_bytes(download, max_bytes=max_bytes), getattr(download, "url", url)
-        raise
 
-    with suppress(Exception):
-        download = await asyncio.wait_for(download_task, timeout=1.0)
-        return await _download_pdf_bytes(download, max_bytes=max_bytes), getattr(download, "url", url)
-
-    if not download_task.done():
-        download_task.cancel()
+        try:
+            download = await asyncio.wait_for(download_task, timeout=1.0)
+        except Exception:
+            download = None
+        if download is not None:
+            return await _download_pdf_bytes(download, max_bytes=max_bytes), getattr(download, "url", url)
+        return await _response_pdf_bytes(response, max_bytes=max_bytes), page.url
+    finally:
+        if not download_task.done():
+            download_task.cancel()
         with suppress(asyncio.CancelledError, Exception):
             await download_task
-
-    pdf_bytes = await _response_pdf_bytes(response, max_bytes=max_bytes)
-    return pdf_bytes, page.url
 
 
 async def _fetch_pdf_with_browser(app: FastAPI, payload: dict[str, Any]) -> dict[str, Any]:
@@ -248,7 +281,12 @@ async def _fetch_pdf_with_browser(app: FastAPI, payload: dict[str, Any]) -> dict
     if not url.startswith(("https://", "http://")):
         raise HTTPException(status_code=400, detail="Payload must include an http(s) url")
 
-    max_bytes = min(int(payload.get("max_bytes") or config.max_bytes), config.max_bytes)
+    requested_max = payload.get("max_bytes", config.max_bytes)
+    if isinstance(requested_max, bool) or not isinstance(requested_max, int) or requested_max <= 0:
+        raise HTTPException(status_code=400, detail="max_bytes must be a positive integer")
+    if not isinstance(payload.get("follow_pdf_links", True), bool):
+        raise HTTPException(status_code=400, detail="follow_pdf_links must be a boolean")
+    max_bytes = min(requested_max, config.max_bytes)
     timeout_ms = config.timeout_seconds * 1000
     page = await context.new_page()
     try:
@@ -279,7 +317,8 @@ async def _fetch_pdf_with_browser(app: FastAPI, payload: dict[str, Any]) -> dict
             "status_code": 200,
         }
     finally:
-        await page.close()
+        with suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(page.close(), timeout=5.0)
 
 
 def create_app(config: BrokerConfig) -> FastAPI:
@@ -302,18 +341,20 @@ def create_app(config: BrokerConfig) -> FastAPI:
         config.user_data_dir.mkdir(parents=True, exist_ok=True)
         config.download_dir.mkdir(parents=True, exist_ok=True)
         playwright = await async_playwright().start()
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=str(config.user_data_dir),
-            headless=config.headless,
-            accept_downloads=True,
-            downloads_path=str(config.download_dir),
-        )
-        app.state.playwright = playwright
-        app.state.browser_context = context
         try:
-            yield
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir=str(config.user_data_dir),
+                headless=config.headless,
+                accept_downloads=True,
+                downloads_path=str(config.download_dir),
+            )
+            app.state.playwright = playwright
+            app.state.browser_context = context
+            try:
+                yield
+            finally:
+                await context.close()
         finally:
-            await context.close()
             await playwright.stop()
 
     app = FastAPI(title="PubMed Search Browser Fetch Broker", lifespan=lifespan)
@@ -342,13 +383,26 @@ def create_app(config: BrokerConfig) -> FastAPI:
         if not secrets.compare_digest(auth_header, f"Bearer {config.token}"):
             raise HTTPException(status_code=401, detail="Invalid bearer token")
 
-        payload = await request.json()
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 16384:
+                raise HTTPException(status_code=413, detail="Request payload is too large")
+        try:
+            payload = json.loads(body)
+        except (ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="Invalid JSON payload") from None
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="JSON object payload required")
         if payload.get("mode", "pdf") != "pdf":
             raise HTTPException(status_code=400, detail='Only mode="pdf" is supported')
 
-        result = await _fetch_pdf_with_browser(request.app, payload)
+        try:
+            result = await asyncio.wait_for(
+                _fetch_pdf_with_browser(request.app, payload), timeout=config.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Browser fetch deadline exceeded") from None
         status_code = 200 if result.get("success") else 502
         return JSONResponse(result, status_code=status_code)
 

@@ -747,24 +747,24 @@ class TestImageSearchService:
             _image_search_service()._resolve_sources(sources)
 
     async def test_deduplicate(self):
-        from pubmed_search.application.image_search import ImageSearchService
-
         images = [
             ImageResult(image_url="url1", pmid="123", source_id="a"),
             ImageResult(image_url="url2", pmid="123", source_id="a"),  # duplicate
             ImageResult(image_url="url3", pmid="456", source_id="b"),
         ]
-        result = ImageSearchService._deduplicate(images)
+        from pubmed_search.application.image_search.aggregation_kernel import ImageAggregationKernel
+
+        result, _ = ImageAggregationKernel.deduplicate(images)
         assert len(result) == 2
 
     async def test_deduplicate_by_url(self):
-        from pubmed_search.application.image_search import ImageSearchService
-
         images = [
             ImageResult(image_url="same_url"),
             ImageResult(image_url="same_url"),  # duplicate by URL
         ]
-        result = ImageSearchService._deduplicate(images)
+        from pubmed_search.application.image_search.aggregation_kernel import ImageAggregationKernel
+
+        result, _ = ImageAggregationKernel.deduplicate(images)
         assert len(result) == 1
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1128,3 +1128,11 @@ class TestSearchBiomedicalImagesTool:
         parameters = inspect.signature(tool_fn).parameters
         assert "sources" not in parameters
         assert "open_access_only" not in parameters
+
+
+async def test_image_advisor_does_not_infer_ct_from_effectiveness_or_pet_from_competition():
+    from pubmed_search.application.image_search import ImageQueryAdvisor
+
+    advice = ImageQueryAdvisor().advise("treatment effectiveness and competition")
+    assert advice.recommended_image_type is None
+    assert not advice.is_suitable

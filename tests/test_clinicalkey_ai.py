@@ -550,3 +550,15 @@ async def test_client_does_not_close_injected_http_client() -> None:
 
     assert http_client.is_closed is False
     await http_client.aclose()
+
+
+async def test_missing_reference_collection_is_not_a_successful_empty_retrieval():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url == httpx.URL(CLINICALKEY_AI_OAUTH_URL):
+            return _token_response()
+        return httpx.Response(200, json={"unexpected": "schema drift"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = ClinicalKeyAIClient(_enabled_config(), http_client=http_client)
+        with pytest.raises(ClinicalKeyAIResponseError):
+            await client.fetch_citations(_request())

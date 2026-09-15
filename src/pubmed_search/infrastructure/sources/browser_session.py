@@ -33,10 +33,12 @@ Expected broker response forms:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -72,8 +74,9 @@ def _coerce_bool(value: Any, *, default: bool) -> bool:
 def _coerce_float(value: Any, *, default: float) -> float:
     """Convert env/config values to float with a safe default."""
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+        return number if math.isfinite(number) and number > 0 else default
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -81,7 +84,7 @@ def _coerce_int(value: Any, *, default: int) -> int:
     """Convert env/config values to int with a safe default."""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -189,12 +192,31 @@ class BrowserSessionConfig:
     @property
     def is_configured(self) -> bool:
         """Return True when the feature is explicitly and safely configured."""
-        return bool(self.enabled and self.broker_url and self.token and self.allowed_hosts)
+        return bool(
+            self.enabled
+            and self.broker_url
+            and self.token
+            and self.allowed_hosts
+            and type(self.max_bytes) is int
+            and 0 < self.max_bytes <= 100 * 1024 * 1024
+            and isinstance(self.timeout_seconds, (int, float))
+            and not isinstance(self.timeout_seconds, bool)
+            and math.isfinite(self.timeout_seconds)
+            and 0 < self.timeout_seconds <= 300
+        )
 
     def broker_is_local(self) -> bool:
         """Return True when the broker endpoint resolves to a local host."""
-        parsed = urlparse(self.broker_url)
-        return (parsed.hostname or "").lower() in _LOCAL_BROKER_HOSTS
+        try:
+            parsed = urlparse(self.broker_url)
+            return (
+                parsed.scheme in {"http", "https"}
+                and not parsed.username
+                and not parsed.password
+                and (parsed.hostname or "").lower() in _LOCAL_BROKER_HOSTS
+            )
+        except ValueError:
+            return False
 
     @property
     def auto_mode_enabled(self) -> bool:
@@ -250,10 +272,12 @@ class BrowserSessionFetcher:
 
     def allows_target(self, url: str) -> bool:
         """Check whether a target URL satisfies scheme and host allow-list rules."""
-        parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
-
-        if parsed.scheme != "https":
+        try:
+            parsed = urlparse(url)
+            hostname = (parsed.hostname or "").lower()
+            if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in {None, 443}:
+                return False
+        except ValueError:
             return False
         if not hostname:
             return False
@@ -320,23 +344,33 @@ class BrowserSessionFetcher:
 
         content_type = response.headers.get("Content-Type", "")
         if "application/pdf" in content_type.lower():
-            if response.content[:4] != b"%PDF":
+            if len(response.content) > self._config.max_bytes:
+                return BrowserFetchResult(success=False, error="Broker PDF exceeds the configured byte limit")
+            if response.content[:5] != b"%PDF-":
                 return BrowserFetchResult(
                     success=False,
                     error="Broker response content is not a PDF",
-                    final_url=str(response.url),
+                    final_url=None,
                     status_code=response.status_code,
                 )
             return BrowserFetchResult(
                 success=True,
                 content=response.content,
                 content_type=content_type,
-                final_url=str(response.url),
+                final_url=None,
                 status_code=response.status_code,
             )
 
-        data = response.json()
-        if not data.get("success"):
+        try:
+            data = response.json()
+        except (ValueError, UnicodeDecodeError):
+            return BrowserFetchResult(success=False, error="Browser broker returned invalid JSON")
+        if not isinstance(data, dict):
+            return BrowserFetchResult(success=False, error="Browser broker returned invalid JSON object")
+        final_url = data.get("final_url")
+        if final_url is not None and (not isinstance(final_url, str) or not self.allows_target(final_url)):
+            return BrowserFetchResult(success=False, error="Broker resolved a non-allow-listed target")
+        if data.get("success") is not True:
             return BrowserFetchResult(
                 success=False,
                 error="Browser broker reported failure",
@@ -345,18 +379,22 @@ class BrowserSessionFetcher:
             )
 
         encoded = data.get("content_b64") or data.get("pdf_b64")
-        if not encoded:
+        if not isinstance(encoded, str) or not encoded:
             return BrowserFetchResult(success=False, error="Broker response missing content_b64")
+        if len(encoded) > 4 * ((self._config.max_bytes + 2) // 3):
+            return BrowserFetchResult(success=False, error="Broker PDF exceeds the configured byte limit")
 
         try:
-            content = base64.b64decode(encoded)
+            content = base64.b64decode(encoded, validate=True)
         except Exception:
             return BrowserFetchResult(success=False, error="Browser broker returned invalid base64 content")
-        if content[:4] != b"%PDF":
+        if len(content) > self._config.max_bytes:
+            return BrowserFetchResult(success=False, error="Broker PDF exceeds the configured byte limit")
+        if content[:5] != b"%PDF-":
             return BrowserFetchResult(
                 success=False,
                 error="Broker response content is not a PDF",
-                final_url=data.get("final_url") or str(response.url),
+                final_url=final_url,
                 status_code=data.get("status_code", response.status_code),
             )
 
@@ -364,15 +402,36 @@ class BrowserSessionFetcher:
             success=True,
             content=content,
             content_type=data.get("content_type", content_type or "application/pdf"),
-            final_url=data.get("final_url") or str(response.url),
+            final_url=final_url,
             status_code=data.get("status_code", response.status_code),
         )
 
     async def _post_to_broker(self, payload: dict[str, Any], headers: dict[str, str]) -> httpx.Response:
         """Send a single request to the local broker."""
         timeout = httpx.Timeout(self._config.timeout_seconds, connect=min(self._config.timeout_seconds, 10.0))
-        async with httpx.AsyncClient(timeout=timeout, verify=self._config.verify_tls) as client:
-            return await client.post(self._config.broker_url, json=payload, headers=headers)
+        # Base64 needs 4/3 of the binary budget; allow a bounded JSON envelope.
+        max_response_bytes = 4 * ((self._config.max_bytes + 2) // 3) + 16_384
+
+        async def _perform_request() -> httpx.Response:
+            async with (
+                httpx.AsyncClient(timeout=timeout, verify=self._config.verify_tls) as client,
+                client.stream("POST", self._config.broker_url, json=payload, headers=headers) as response,
+            ):
+                chunks = bytearray()
+                async for chunk in response.aiter_bytes(65_536):
+                    if len(chunks) + len(chunk) > max_response_bytes:
+                        raise ValueError("Broker response exceeds byte limit")
+                    chunks.extend(chunk)
+                decoded_headers = {
+                    key: value
+                    for key, value in response.headers.items()
+                    if key not in {"content-encoding", "content-length", "transfer-encoding"}
+                }
+                return httpx.Response(
+                    response.status_code, headers=decoded_headers, content=bytes(chunks), request=response.request
+                )
+
+        return await asyncio.wait_for(_perform_request(), timeout=self._config.timeout_seconds)
 
     def _host_matches(self, hostname: str, pattern: str) -> bool:
         """Match exact hosts and wildcard subdomain patterns."""

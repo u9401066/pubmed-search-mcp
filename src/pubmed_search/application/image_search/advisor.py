@@ -208,67 +208,6 @@ class ImageQueryAdvisor:
             diagnostics=diagnostics,
         )
 
-    def _score_image_suitability(self, query_lower: str) -> float:
-        """
-        Score how suitable a query is for image search.
-
-        Returns:
-            Score from -1.0 (definitely NOT image) to 1.0 (definitely image).
-            Threshold for suitability: >= 0.3
-        """
-        score, _ = score_image_suitability(query_lower)
-        return score
-
-    def _recommend_image_type(self, query_lower: str) -> tuple[str | None, str]:
-        """
-        Recommend the best image_type based on query content.
-
-        Covers all 10 valid Open-i `it` values:
-        xg, x, xm (radiology), mc, m (microscopy),
-        ph, p (photo), g (graphics), u (ultrasound), c (CT).
-
-        Strategy:
-        - Score each of the 5 keyword groups
-        - Map winner to the best specific `it` value
-        - CT and ultrasound have their own dedicated types
-
-        Returns:
-            (image_type, reason) tuple
-        """
-        recommended_type, reason, _coarse_category, _scores, _hits = recommend_image_type(query_lower)
-        return recommended_type, reason
-
-    def _recommend_collection(self, query_lower: str) -> tuple[str | None, str]:
-        """
-        Recommend the best collection based on query content.
-
-        Valid collections: pmc, cxr, mpx, hmd, usc
-
-        Returns:
-            (collection, reason) tuple. None means all collections.
-        """
-        recommended_collection, reason, _scores, _hits = recommend_collection(query_lower)
-        return recommended_collection, reason
-
-    def _check_temporal_relevance(self, query_lower: str) -> str | None:
-        """
-        Check if the query targets content newer than Open-i's index (~2020).
-
-        Returns:
-            Warning message string, or None if no temporal issue
-        """
-        warning, _hit = check_temporal_relevance(query_lower)
-        return warning
-
-    def _enhance_query(self, query_lower: str, recommended_type: str | None) -> str:
-        """
-        Optionally enhance the query for better image search results.
-
-        Removes non-image-relevant terms that might reduce results.
-        """
-        enhanced, _hits = enhance_query(query_lower)
-        return enhanced
-
     def _detect_non_english(self, query: str) -> dict:
         """
         Detect non-English (CJK/Cyrillic/Arabic/Thai) characters in query.
