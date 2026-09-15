@@ -1,0 +1,106 @@
+{
+  "version": "0.7.3",
+  "branch_head": "63c55e01443eb5c00d74cdc8b6c4009d3d2d5da1",
+  "release_commit": "fbbaacaba150afbc24bdbc07eb41c77c564017e6",
+  "pr": "https://github.com/u9401066/pubmed-search-mcp/pull/16",
+  "segmented_commits": 16,
+  "max_paths_per_commit": 29,
+  "core_counts": {
+    "python_files": 223,
+    "functions": 2445,
+    "module_functions": 928,
+    "async_functions": 480,
+    "classes": 456,
+    "methods": 1339,
+    "nested_functions": 178
+  },
+  "core_reviewed": 2901,
+  "source_inventory_snapshot": "2ca58fec4c110642bdafd7ebce8afa057a843248414928faf08fa6646fc69ac6",
+  "local_validation": {
+    "python313_full": {
+      "passed": 4736,
+      "skipped": 23,
+      "deselected": 30,
+      "seconds": 108.0,
+      "mcp_mermaid_rendering_required": true
+    },
+    "python310_pre_push": "passed",
+    "standalone_svg_diagrams": 121,
+    "installed_wheel_version": "0.7.3",
+    "local_docker": "unavailable"
+  },
+  "local_distributions": {
+    "pubmed_search_mcp-0.7.3-py3-none-any.whl": "21c4b3aa9ae044226e3fc650b14d8a3bf2f92b694addeab55a595fb6020a0ca0",
+    "pubmed_search_mcp-0.7.3.tar.gz": "c74ecb3bccb499b1f6660e4d91c1cd504c22ab74c83cc121fc0fd62205e01b35"
+  },
+  "verified_at_utc": "2026-09-15T08:20:49.627635+00:00",
+  "publication": "verified",
+  "publication_run": {
+    "id": 34945446025,
+    "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/34945446025",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Verify tag, tests, and distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified GitHub Release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.3",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.3/",
+  "artifacts": [
+    {
+      "filename": "pubmed_search_mcp-0.7.3-py3-none-any.whl",
+      "bytes": 854728,
+      "sha256": "21c4b3aa9ae044226e3fc650b14d8a3bf2f92b694addeab55a595fb6020a0ca0",
+      "pypi_url": "https://files.pythonhosted.org/packages/1d/d7/d1ce02563b6e6d15d3428c5fc653a2e9f1d1edebefb9021c798b4fdd56b6/pubmed_search_mcp-0.7.3-py3-none-any.whl",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.3/pubmed_search_mcp-0.7.3-py3-none-any.whl",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.3.tar.gz",
+      "bytes": 747107,
+      "sha256": "c74ecb3bccb499b1f6660e4d91c1cd504c22ab74c83cc121fc0fd62205e01b35",
+      "pypi_url": "https://files.pythonhosted.org/packages/6a/58/c492b50062ab9a4f1a93d4ce4b759da1a72334e1913d8b5af77691ca97cc/pubmed_search_mcp-0.7.3.tar.gz",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.3/pubmed_search_mcp-0.7.3.tar.gz",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    }
+  ],
+  "documentation": {
+    "website": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/?release=v0.7.3",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "642d79d68834d0e3b1b1c85c5b1be7fb0db9f5fb07ec9eefd35dd2f3d88b428d"
+    },
+    "website_content": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site-content.js?v=20260915-v073",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "448d98f6fe6185d4d70e4fe722af836a9b1aec7d4fc43bda3f94088de8ac318a"
+    },
+    "wiki_benchmark": {
+      "url": "https://raw.githubusercontent.com/wiki/u9401066/pubmed-search-mcp/Academic-Retrieval-Benchmarks.md",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "caadcf23f7a72ab3a5d8feaed4e926e85ff2627a74612021c27b7f7cef71edab"
+    }
+  },
+  "ci_runs": {
+    "release_branch": 34945109097,
+    "pull_request": 34945126614,
+    "release_master": 34945287627,
+    "website": 34945287702,
+    "wiki": 34945287760
+  }
+}

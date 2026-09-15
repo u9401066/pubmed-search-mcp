@@ -1,6 +1,6 @@
 # Progress (Updated: 2026-09-09)
 
-## v0.7.3 Core Review and Reliability — Release Prepared
+## v0.7.3 Core Review and Reliability — Published and Verified
 
 - Completed all ten core phases: 223 source files, 456 classes, 2,445 functions/
   methods/nested functions; all 2,901 definitions have authored review evidence.
@@ -9,9 +9,15 @@
 - Consolidated duplicate policy, fixed reproduced source/runtime/persistence/
   export/evaluation failures, preserved user-owned harness directories, and moved
   routine full validation before push with independent cloud smoke.
-- User authorized segmented commits and publication. Release branch and metadata
-  are prepared; completion requires verified PR/master, tag workflow, PyPI assets,
-  GitHub Release, website and Wiki. No paid model benchmark has been started.
+- PR #16 merged 16 focused commits at `fbbaaca`, tagged v0.7.3 after branch/PR/
+  master CI passed. Run `34945446025` verified tests, wheel and container before
+  successful PyPI/GitHub publication. Both published distribution hashes match.
+- Public website and Wiki content were fetched and verified. Python 3.13 full
+  local gate passed 4,736 tests with MCP SVG rendering required; Python 3.10
+  pre-push passed, and 121 standalone diagrams rendered. No paid model benchmark
+  has been started.
+- [Publication verification](../docs/reports/release_v073_2026-09-15.json) records
+  workflow IDs, published URLs and downloaded artifact SHA-256 values.
 - Review evidence: [core report](../docs/reports/core_review_2026-09-15.md) and
   [ledger](../docs/reports/code_review_ledger.json).
 
