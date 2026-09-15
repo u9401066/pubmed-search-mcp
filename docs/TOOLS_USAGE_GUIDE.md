@@ -110,6 +110,10 @@ the structured rows. Response and artifact both carry the same versioned
 
 Use this path once you have one or more seed PMIDs. It covers `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`, and `get_citation_metrics`.
 
+`fetch_article_details` supports Markdown, JSON, and TOON. Citation metrics describe
+impact; publication types and journal citation means do not establish evidence
+quality. Unknown metrics do not pass an explicitly requested zero threshold.
+
 ### Reference Verification
 
 ![Reference verification workflow](images/reference-verification-workflow.svg)
@@ -225,6 +229,12 @@ the distinction between a confirmed missing DOI and a PubMed failure.
 ![Export and local notes workflow](images/export-notes-workflow.svg)
 
 Use this path for `prepare_export` and `save_literature_notes`. Citation exports are for reference managers; local notes are editable literature-review artifacts with machine-readable metadata.
+
+`pmids="last"` uses the complete stored PMID selection within the 1,000-ID batch
+limit; it does not silently keep only the first 100. To omit citation abstracts,
+use `prepare_export(..., source="local", include_abstract=False)` with a local
+format. Official payloads remain unmodified, so requesting abstract suppression
+with `source="official"` returns an explicit error before fetching the export.
 
 ## Persistent Query Memory For Large Outputs
 
@@ -361,7 +371,7 @@ and stay below the current principal's isolated `references/` directory.
 
 ## Good Markdown Note Shape
 
-A good literature note should separate verified bibliographic data from human or agent interpretation:
+A good literature note should separate retrieved bibliographic data from human or agent interpretation:
 
 ```markdown
 ---
@@ -408,7 +418,14 @@ aliases: ["smith2024_12345678", "Article title", "12345678", "Smith 2024"]
 - Smith J; Doe J. Article title. Journal name. 2024. doi:10.xxxx/example
 ```
 
-Keep verified metadata machine-readable in frontmatter and sidecars. Keep interpretation editable in body sections.
+Keep retrieved metadata machine-readable in frontmatter and sidecars. Keep interpretation editable in body sections.
+
+Exporting does not verify bibliographic identity or claim support. MedPaper notes use
+`verified: false` and `trust_state: "unverified"`; abstract excerpts are labeled as
+excerpts. `include_abstract=False` omits abstracts from new notes, templates, sidecars,
+and CSL JSON. Existing files remain untouched unless `overwrite=True`. Each file is
+published atomically; a failed batch may leave already completed files.
+
 
 ## Custom Templates
 

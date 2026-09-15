@@ -152,6 +152,10 @@ service callers:
 | Institutional settings | Local user may configure the current server's access settings | Authenticated callers cannot mutate the server-owned, deployment-wide institutional configuration |
 | Server-local paths | May be exposed explicitly to a trusted local client | Redacted by default; remote clients retrieve artifacts through `read_session` |
 
+Institutional settings also reject mutations from anonymous HTTP and transport
+session identities. Only the trusted default local operator may change the
+deployment-wide resolver; remote callers may inspect its current configuration.
+
 The word `workspace` never means a shared team directory in service mode. A
 tenant-derived pipeline store intentionally drops the process-wide workspace
 root so one principal cannot read another principal's repository files.
@@ -715,6 +719,41 @@ Recommended first-run sequence:
 ```
 
 Then restart VS Code, confirm Cline sees the workspace rules/workflows, and confirm Copilot Chat lists the `pubmed-search` MCP server from `.vscode/mcp.json`.
+
+---
+
+### Installing research skills without replacing user customizations
+
+Installing/running the Python package does not install agent instructions.
+`scripts/setup-vscode-ai-harness.sh` installs VS Code extensions only; it does
+not copy or regenerate workspace config. In a source checkout, research skills
+can be installed into an explicitly chosen client skills directory:
+
+```bash
+# Preview; no destination files/directories are created:
+uv run python scripts/install_research_skills.py --skills-dir /path/to/project/.claude/skills --dry-run
+# Install only missing research skills:
+uv run python scripts/install_research_skills.py --skills-dir /path/to/project/.claude/skills
+```
+
+The installer selects `pubmed-*` and `pipeline-persistence`, including bundled
+references. It excludes contributor skills and does not copy `AGENTS.md`,
+Copilot/Cline rules, hooks, or MCP settings into another project. Choose a
+skills directory supported by your client; the script does not configure MCP.
+
+**Existing skill directories, files, and symlinks are preserved.** The entire
+existing skill is skipped, even when incomplete or identical to an older
+bundle, so references from different versions are never mixed automatically.
+For upgrades, compare with the printed source path and merge intentionally;
+there is no `--force`, automatic reset, deletion, or duplicate backup skill.
+Destination paths through symlinks are rejected. If copying is interrupted,
+an incomplete new skill is preserved on retry for manual review.
+
+Downstream extension installers must adopt the same preserve-by-default
+contract; using this helper here does not change a separately distributed VSIX.
+Git updates to tracked repository assets remain normal version-control merges,
+not installer operations. Keep personal cross-project rules in client user
+configuration and review tracked project-rule updates normally.
 
 ---
 

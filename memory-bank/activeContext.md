@@ -1,25 +1,51 @@
 # Active Context
 
-## Current Focus
+## Current Focus — v0.7.3 release preparation (2026-09-15)
 
-- v0.7.2 is published from upstream v0.7.1 plus the retrieval/reliability work. Keep
-  the 41-tool strict contracts, server-scoped containers, typed search pages,
-  `source_unavailable` reporting, and complete MCP acceptance gates intact.
-- PR #14 merged nine focused commits at `c331ac5`, tagged as `v0.7.2`.
-  README, benchmark/audit pages, the generated website, and Wiki are published.
-  Release workflow `34331096208` passed verification, PyPI publication, and
-  GitHub Release creation. Wheel/sdist SHA-256 values match across PyPI and
-  GitHub; the public website and Wiki expose the updated pages. See
-  [publication verification](../docs/reports/release_v072_2026-09-09.json).
-- Local release checks pass: 4,562 tests with 53 intentional skips, all three
-  41-tool MCP acceptance paths, Ruff, 461-file formatting, 426-file mypy,
-  async/DDD/skill audits, Bandit, deptry, vulture, and wheel/sdist builds.
-  Both branch/PR CI runs and master CI pass, including Windows, macOS,
-  Linux/Python 3.10–3.13, container smoke, and actual MCP Mermaid rendering.
-- Academic evaluation remains setup-only: do not launch the 5,000-question
-  model run without a new execution budget. Preserve the original `dbcf0c8`
-  source snapshot and historical reports. A release lockfile or evaluator
-  change requires a new manifest, never editing an existing experiment.
+- Completed all ten core-review phases in order. Scope: every Python file in
+  `src/pubmed_search/`, including package roots, wrappers, models and evaluation
+  support. Current inventory: **223 files, 456 classes, 2,445 functions/methods/
+  nested functions = 2,901 definitions**, all reviewed with authored reasons,
+  evidence and current file SHA-256. No core pending/follow-up/stale/orphan entries.
+  Tests/scripts are inventoried but are not all semantically reviewed.
+- Canonical evidence: [core review report](../docs/reports/core_review_2026-09-15.md)
+  and [per-definition ledger](../docs/reports/code_review_ledger.json).
+  `uv run python scripts/perf/symbol_inventory.py --require-reviewed src/` passes.
+  Source changes expire affected reviews; re-read changed behavior before updating
+  hashes. AST inventories and test success are not authored semantic review.
+- Final full local gate: **4,736 passed, 23 skipped, 30 deselected** (111.85 s),
+  including real source stdio, HTTP and fresh-wheel acceptance for all 41 tools.
+  Lint, formatting, async consistency and mypy pass. After docs/site generation,
+  smoke passes **165 tests** (13.78 s). DDD, vulture, deptry, Bandit medium/high
+  and diff whitespace checks pass; see the core report for scope and minor tool notices.
+- The review fixed reproduced identity, ranking, source-failure, persistence,
+  cancellation, tenant, fulltext, export and diagram issues; phase 9 repaired
+  native MCP failure reporting and presentation guidance. Phase 10 validates
+  benchmark budgets/IDs/checkpoints, uses shared atomic persistence, hides SDK
+  credentials from repr and rejects differing frozen adapters before execution.
+  The report preserves each phase's findings and regression evidence.
+- Consolidated duplicate policy in application/shared layers and removed weak
+  declaration/coverage mirrors while keeping meaningful failure, cancellation,
+  tenant, persistence and all-tool protocol tests. Product scope remains academic
+  search/evidence integration; autonomous planning belongs to the host.
+- Local pre-push uses one full shared gate; ordinary CI has one independent smoke
+  job. Extended platform/container/rendering checks remain opt-in or release gates.
+  Research-skill installation preserves existing whole user skill directories and
+  settings; no automatic overwrite of user harness customizations.
+- User authorized documentation/MEM updates, segmented commits, push and release.
+  Preparing **v0.7.3** on `release/v0.7.3`, with no more than 30 files per commit,
+  full local pre-push validation, PR checks, merge to master, then an annotated tag.
+  Publication is pending until the tag workflow, PyPI and GitHub assets are verified.
+  README, source docs, generated website and changelog reflect the release; earlier
+  maintenance/renovation measurements stay historical.
+- Academic evaluation remains setup/validation-only. Do not launch the 5,000-query
+  model run without a new execution budget. Retain the `dbcf0c8` product snapshot
+  and historical reports; evaluator/lockfile changes require a new manifest.
+  Local regression success is not a measured product retrieval-score improvement.
+- Latest published release remains v0.7.2: PR #14, merge `c331ac5`, release workflow
+  `34331096208`, with publication evidence in
+  [release verification](../docs/reports/release_v072_2026-09-09.json).
+  Earlier published-boundary sections below are historical contracts.
 
 ## Previous Published Boundary
 
@@ -53,7 +79,7 @@
   socket/DNS guard blocks and records any missed outbound dependency; the parent
   test fails on the sentinel even if the application catches the provider error.
 - MCP-returned Mermaid source is checked against its declared digest and size.
-  CI passes those exact Chronicle and citation sources to pinned Mermaid 11.16.1
+  Opt-in extended CI and release gates pass those exact Chronicle and citation sources to pinned Mermaid 11.16.1
   and requires successful SVG rendering.
 - A separate real-stdio rejection pass protects the intentional breaking
   boundary: retired tool names, flat action bags, wrong scalar types, and
@@ -270,7 +296,7 @@
   eliminated duplicate surfaces, and remaining architectural opportunities.
 - Preserve unrelated user workspace files and changes during release commits.
 
-## Release Status
+## Historical Release Status — v0.7.0 / v0.7.1
 
 - v0.7.0 is merged at `459eb28`, tagged, and published from the canonical
   `origin/master` history.
@@ -288,4 +314,4 @@
 
 ---
 
-*Last updated: 2026-09-01 — v0.7.1 protocol gate published and verified*
+*Last updated: 2026-09-15 — ten-phase core review complete; v0.7.3 publication in progress*

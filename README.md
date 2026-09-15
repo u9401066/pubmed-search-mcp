@@ -28,6 +28,10 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Core review and reliability — v0.7.3
+
+Completed the [ten-phase core review](docs/reports/core_review_2026-09-15.md): 223 source files and 2,901 definitions with authored decisions and current file hashes. This release repairs source-failure handling, article identity, persistence, cancellation, exports, and evaluation checkpoints while keeping all 41 tools. Harness installation preserves user customizations; contributors run the full local gate before push, with an independent smoke gate in ordinary CI. See the [changelog](CHANGELOG.md#073---2026-09-15) for behavior changes. Local regression results do not establish a new public benchmark gain.
+
 ## Research quality and evaluation — v0.7.2
 
 This release improves query-aware ranking and fusion, cross-source article
@@ -1250,6 +1254,10 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 > Do not mirror or split repo skills into `.github/skills/`.
 > These repo skills are project-scoped and should remain version-controlled. Personal cross-project skills belong in a user directory such as `~/.copilot/skills/` or `~/.claude/skills/`, not in this repository.
 
+Research skill installation preserves existing customizations. See the [installation and upgrade policy](docs/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations). Contributors run the [full local gate](CONTRIBUTING.md#what-the-hooks-check) before push; ordinary CI runs a smaller independent smoke gate.
+
+The [completed ten-phase core review](docs/reports/core_review_2026-09-15.md) covers all 223 Python files in `src/pubmed_search/`: 456 classes and 2,445 functions/methods/nested functions. Each of the 2,901 definitions has a recorded decision, evidence, and current file SHA-256; none are pending or stale. This is an authored self-review, separate from test results. Recheck the current tree with `uv run python scripts/perf/symbol_inventory.py --require-reviewed src/`; subsequent source edits invalidate affected reviews. Tests and scripts are inventoried but are outside this complete core-review claim.
+
 ### Real MCP Regression Gate
 
 Every one of the 41 public tools is called through the MCP protocol over
@@ -1259,7 +1267,7 @@ environment; the external fixture supplies only deterministic provider seams.
 The deterministic child server replaces external-provider boundaries; registry,
 schemas, application services, persistence, artifacts, Chronicle revisions,
 pipelines, and scheduling remain real.
-CI also renders the exact Chronicle and citation Mermaid sources returned over
+The opt-in extended CI also renders the exact Chronicle and citation Mermaid sources returned over
 MCP with pinned Mermaid 11.16.1, so presentation-layer syntax damage fails the
 gate.
 An additional real-stdio rejection pass confirms that retired tool names,

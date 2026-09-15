@@ -339,6 +339,13 @@ repo 組接原版 unified_search、讀文與 session。真實 Codex 自主決定
 不預寫搜尋軌跡；每題限制六次底層 search、120 次文件 exposure（重讀也計入）。
 server 封鎖外部 socket，模型無 web／shell 工具；qrels 不交給工具端。
 
+2026-09-15 的審查補強了評測完整性：corpus 要求唯一的非空字串 ID，避免數字／字串
+轉換產生 ID 碰撞；budget／limit 必須為正整數，非法查詢參數不先扣額度。
+audit 沿用共用原子寫檔工具。跨版本執行前會比對兩邊的 corpus adapter，內容不同就拒絕
+啟動；請在隔離的評測 checkout 放置相同 adapter，再比較產品 source hash。
+線上配對 runner 的 resume 同時驗證 protocol 型別、已知執行狀態與每次 trace hash，
+資源統計也套用相同檢查。這些是離線可靠性驗證，沒有產生新的模型評分或 benchmark 增益。
+
 這個診斷 profile 明確關閉 OA enrichment、自動放寬與 deep expansion，且只留 PubMed
 adapter 可實作的搜尋、讀文和 session 工具，所以**不能以它回答「完整套件比原生 Codex 好多少」**。
 數字 transport IDs 為合成 ID，並非真正 PMID；scorer 還原至 NFCorpus ID。

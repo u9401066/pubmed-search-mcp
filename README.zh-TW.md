@@ -26,7 +26,16 @@
 
 **📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](docs/USER_GUIDE.zh-TW.md) | [進階研究工作流](docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) | [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [Unified Search 架構](docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md) | [41 工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md) | [60 個學術檢索參考 Repo](docs/reference-repositories/README.md) | [Provider 資料平面](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP 架構分析](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
+研究 skill 安裝會保留既有自訂內容；請見[安裝與更新規則](docs/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations)。開發者應在 push 前執行[本機完整驗證](CONTRIBUTING.md#what-the-hooks-check)，一般 CI 僅保留獨立 smoke 檢查。
+
+[十階段核心審查](docs/reports/core_review_2026-09-15.md)已完成 `src/pubmed_search/` 全部 223 個 Python 檔案：456 個 class、2,445 個 function／method／nested function，合計 2,901 個定義。每項都有人工撰寫的自審理由、證據及目前檔案 SHA-256，沒有 pending 或過期紀錄。可執行 `uv run python scripts/perf/symbol_inventory.py --require-reviewed src/` 重新核對；後續修改會使受影響的審查失效。測試通過與語意審查分開計算，tests／scripts 不包含在這項核心全量完成宣告內。
+
+
 ---
+
+## 核心審查與可靠性 — v0.7.3
+
+已完成[十階段核心審查](docs/reports/core_review_2026-09-15.md)：223 個原始碼檔案、2,901 個定義都有逐項理由與有效檔案雜湊。本版修正來源錯誤、文章識別、持久化、取消、匯出與評測 checkpoint，維持 41 個工具。安裝 harness 保留使用者自訂內容；push 前執行本機完整驗證，一般 CI 提供獨立 smoke。行為變更見 [CHANGELOG](CHANGELOG.md#073---2026-09-15)；本機測試結果不代表新的公開 benchmark 增益。
 
 ## 研究品質與量化評測 — v0.7.2
 

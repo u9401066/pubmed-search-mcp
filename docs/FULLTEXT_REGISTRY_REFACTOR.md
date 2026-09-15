@@ -8,26 +8,35 @@ The immediate objective is not to add more sources. The objective is to make the
 
 ## Current Status
 
-As of 2026-08-31, the orchestration and phase split are complete:
+The phase split was introduced on 2026-08-31. The 2026-09-15 audit found and
+removed a remaining PDF fallback orchestrator in the MCP tool:
 
 - `get_fulltext` keeps input normalization, progress/log bridging, and output formatting
 - `application/fulltext/service.py` owns identifier-aware source orchestration
 - `application/fulltext/registry.py` defines the policy/source metadata surface
 - `fulltext_download.py` coordinates separate discovery, fetch, and extract phase objects
 - historical infrastructure re-export modules and downloader pass-through methods are removed
+- standard fallback and extended discovery now use the same application collector;
+  one request does not run the downloader twice
+- default policies include `pdf_retrieval_fallback`; custom policies can omit that
+  source to disable it, including for direct application-service consumers
+- acquired text survives downloader cleanup failures; download facts are formatted
+  by the MCP layer, and shared artifact metadata serves both output branches
 
 New behavior must be added through those authoritative application or phase modules; there is no parallel compatibility surface.
 
 ## Problem Statement
 
-The current fulltext path already has meaningful source coverage, but the architecture is still uneven:
+The remaining constraints and original design motivation are:
 
 1. Application policy and infrastructure phases have explicit owners.
    - `application/fulltext/service.py` owns policy resolution and high-level orchestration.
    - `fulltext_discovery.py`, `fulltext_fetch.py`, and `fulltext_extract.py` own their respective phase behavior.
 
 2. Structured fulltext is still over-coupled to Europe PMC.
-   - Structured XML is treated as a special-case branch in the tool instead of a pluggable structured source policy.
+   - Structured XML parsing is coordinated in the application service but still
+     relies on the Europe PMC source; direct PMC structured retrieval remains a
+     separate proposed enhancement.
 
 3. `extended_sources` is a transport flag, not a retrieval policy.
    - The current boolean mixes user intent, discovery breadth, and fallback behavior into one switch.
