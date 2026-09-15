@@ -30,14 +30,18 @@ _MAX_PUBLIC_ERROR_CHARS = 600
 
 
 def _redact_url(url: str) -> str:
-    """Remove credentials, query, and fragment from a URL in an error."""
+    """Keep only network origin for URL diagnostics; paths may contain secrets."""
     try:
         parsed = urlsplit(url)
         host = parsed.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
         if parsed.port is not None:
             host = f"{host}:{parsed.port}"
-        redacted = urlunsplit((parsed.scheme, host, parsed.path, "", ""))
-        return f"{redacted}?[REDACTED]" if parsed.query or parsed.fragment or parsed.username else redacted
+        redacted = urlunsplit((parsed.scheme, host, "", "", ""))
+        return (
+            f"{redacted}?[REDACTED]" if parsed.path or parsed.query or parsed.fragment or parsed.username else redacted
+        )
     except (TypeError, ValueError):
         return "[REDACTED URL]"
 
@@ -128,7 +132,7 @@ class ResponseFormatter:
                 result["example"] = _safe_public_message(example)
             if retryable:
                 result["retryable"] = True
-                if retry_delay:
+                if retry_delay is not None:
                     result["retry_after"] = retry_delay
             return serialize_structured_payload(result, output_format)
 
@@ -141,7 +145,7 @@ class ResponseFormatter:
         if example:
             parts.append(f"\n📝 **Example**: `{safe_markdown.escape_markdown_code(_safe_public_message(example))}`")
         if retryable:
-            if retry_delay:
+            if retry_delay is not None:
                 parts.append(f"\n🔄 Retryable: Wait {retry_delay:.1f}s and try again")
             else:
                 parts.append("\n🔄 Retryable: This error may be transient")

@@ -38,6 +38,7 @@ from pubmed_search.application.visualization import (
     validate_mermaid_source,
 )
 from pubmed_search.domain.value_objects import IdentifierValidationError, normalize_pmid
+from pubmed_search.shared.markdown import escape_markdown_text
 
 from ._common import ResponseFormatter
 from .tool_session import get_tool_session_runtime
@@ -227,6 +228,15 @@ def _to_d3(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     return {"nodes": d3_nodes, "links": d3_links}
 
 
+def _vis_identifier(value: str) -> int | str:
+    """Keep legacy numeric IDs only when JavaScript can represent them exactly."""
+    if value.isascii() and value.isdecimal() and len(value) <= 16:
+        number = int(value)
+        if number <= 2**53 - 1:
+            return number
+    return value
+
+
 def _to_vis(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     """
     Convert to vis-network format.
@@ -240,7 +250,7 @@ def _to_vis(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
         color = "#ff6b6b" if node["level"] == 0 else "#4ecdc4" if node["direction"] == "citing" else "#95e1d3"
         vis_nodes.append(
             {
-                "id": int(node["pmid"]) if node["pmid"].isdigit() else node["pmid"],
+                "id": _vis_identifier(node["pmid"]),
                 "label": node["label"],
                 "title": node["title"],  # tooltip
                 "color": color,
@@ -253,8 +263,8 @@ def _to_vis(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     for edge in edges:
         vis_edges.append(
             {
-                "from": int(edge["source"]) if edge["source"].isdigit() else edge["source"],
-                "to": int(edge["target"]) if edge["target"].isdigit() else edge["target"],
+                "from": _vis_identifier(edge["source"]),
+                "to": _vis_identifier(edge["target"]),
                 "arrows": "to",
                 "title": edge["edge_type"],
             }
@@ -281,7 +291,7 @@ def _to_graphml(nodes: list[dict], edges: list[dict], root_title: str) -> str:
         '  <key id="direction" for="node" attr.name="direction" attr.type="string"/>',
         '  <key id="edge_type" for="edge" attr.name="edge_type" attr.type="string"/>',
         '  <graph id="citation_tree" edgedefault="directed">',
-        f"    <!-- Citation tree for: {_escape_xml(root_title[:80])} -->",
+        f"    <desc>{_escape_xml(root_title[:80])}</desc>",
     ]
 
     for node in nodes:
@@ -425,8 +435,8 @@ def _format_citation_response(
     summary_status = "Built with partial source coverage" if network.partial else "Built with complete source coverage"
     summary = f"""🌳 **Citation Tree {summary_status}**
 
-📄 **Root Paper**: {root_title[:80]}...
-   PMID: {pmid} | Year: {root_article.get("year", "?")}
+📄 **Root Paper**: {escape_markdown_text(root_title[:80])}...
+   PMID: {pmid} | Year: {escape_markdown_text(root_article.get("year", "?"))}
 
 📊 **Statistics**:
    - Total Nodes: {stats["total_nodes"]}
@@ -505,7 +515,7 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                    - "mermaid": Mermaid diagram (preview in VS Code Markdown)
 
         Returns:
-            JSON string with graph data in the requested format.
+            Markdown summary followed by JSON with graph data in the requested format.
             Includes metadata and statistics regardless of format.
 
         Example usage:

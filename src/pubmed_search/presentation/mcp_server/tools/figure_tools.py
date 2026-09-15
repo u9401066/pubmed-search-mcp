@@ -161,7 +161,7 @@ def register_figure_tools(mcp: MCPServer):
 
 
 async def _resolve_pmid_to_pmcid(pmid: str) -> str | None:
-    """Resolve PMID to PMCID using NCBI ID converter."""
+    """Resolve PMID to PMCID through an exact Europe PMC record query."""
     from pubmed_search.infrastructure.sources import get_europe_pmc_client
 
     client = get_europe_pmc_client()
@@ -171,6 +171,8 @@ async def _resolve_pmid_to_pmcid(pmid: str) -> str | None:
         result_type="lite",
     )
     articles = result.get("results", [])
+    if articles and str(articles[0].get("pmid") or "") != pmid:
+        raise RuntimeError("Europe PMC response did not match the requested PMID")
     if articles and articles[0].get("pmc_id"):
         try:
             return normalize_pmcid(str(articles[0]["pmc_id"]))

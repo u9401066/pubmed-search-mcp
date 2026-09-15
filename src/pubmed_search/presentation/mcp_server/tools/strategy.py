@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
+from pubmed_search.application.search.query_materials import build_fallback_query_materials
+
 from ._common import InputNormalizer, ResponseFormatter, get_strategy_generator
 
 if TYPE_CHECKING:
@@ -73,13 +75,13 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         Step 3: Combine materials using Boolean logic:
                 High precision: (P_terms) AND (I_terms) AND (C_terms) AND (O_terms)
-                High recall:    (P_terms) AND (I_terms OR C_terms) AND (O_terms)
+                Recall-oriented: (P_terms) AND (I_terms OR C_terms); validate against eligible seed papers
 
         Step 4: Add Clinical Query filter if appropriate:
-                - therapy[filter]   → 治療效果比較
-                - diagnosis[filter] → 診斷相關
-                - prognosis[filter] → 預後相關
-                - etiology[filter]  → 病因相關
+                - filters="clinical_query:therapy"   → 治療效果比較
+                - filters="clinical_query:diagnosis" → 診斷相關
+                - filters="clinical_query:prognosis" → 預後相關
+                - filters="clinical_query:etiology"  → 病因相關
 
             Step 5: Validate the final query with analyze_search_query()
             Step 6: Execute unified_search() with the final Boolean query
@@ -97,7 +99,7 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             topic: Search topic - can be a single keyword or PICO element
             strategy: Affects suggested_queries (if included)
                 - "comprehensive": Multiple angles, includes reviews (default)
-                - "focused": Adds RCT filter for high evidence
+                - "focused": Adds RCT publication-type filter; study quality still requires appraisal
                 - "exploratory": Broader search with more synonyms
             check_spelling: Whether to check/correct spelling (default: True)
             include_suggestions: Include pre-built query suggestions (default: True)
@@ -169,63 +171,10 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     type(exc).__name__,
                 )
 
-        # Fallback: basic strategy generation
-        words = topic.lower().split()
-        queries = []
-
-        queries.append(
-            {
-                "id": "q1_title",
-                "query": f"({topic})[Title]",
-                "purpose": "Exact title match",
-                "priority": 1,
-            }
+        result = build_fallback_query_materials(
+            topic,
+            strategy=strategy,
+            include_suggestions=include_suggestions,
+            fallback_reason=fallback_reason,
         )
-
-        queries.append(
-            {
-                "id": "q2_tiab",
-                "query": f"({topic})[Title/Abstract]",
-                "purpose": "Title or abstract",
-                "priority": 2,
-            }
-        )
-
-        if len(words) > 1:
-            and_query = " AND ".join(words)
-            queries.append(
-                {
-                    "id": "q3_and",
-                    "query": f"({and_query})",
-                    "purpose": "All keywords required",
-                    "priority": 2,
-                }
-            )
-
-        queries.append(
-            {
-                "id": "q4_mesh",
-                "query": f"({topic})[MeSH Terms]",
-                "purpose": "MeSH standardized",
-                "priority": 2,
-            }
-        )
-
-        result = {
-            "status": "partial",
-            "generation_mode": "basic_fallback",
-            "fallback_reason": fallback_reason,
-            "topic": topic,
-            "strategy": strategy,
-            "spelling": None,
-            "mesh_terms": [],
-            "queries_count": len(queries),
-            "suggested_queries": queries,
-            "instruction": "Build a final Boolean query, validate it with analyze_search_query, then execute unified_search",
-            "warnings": [
-                "MeSH lookup and PubMed translation analysis were not available; suggested queries are unverified."
-            ],
-            "note": "Using explicit fallback generator (MeSH lookup unavailable)",
-        }
-
         return json.dumps(result, indent=2, ensure_ascii=False)

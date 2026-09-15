@@ -175,7 +175,7 @@ def register_image_search_tools(
 
         ═══════════════════════════════════════════════════════════        SOURCES:
         ═══════════════════════════════════════════════════════════════
-        - Open-i (NLM): X-ray, microscopy, clinical images (~133K)
+        - Open-i (NLM): X-ray, microscopy, clinical images
 
         ═══════════════════════════════════════════════════════════════
         EXAMPLES:
@@ -344,7 +344,7 @@ def _format_image_results(result: ImageSearchResult) -> str:
     parts: list[str] = []
 
     # Header
-    parts.append("## 🖼️ Image Search Results")
+    parts.append("❌ Image Search Failed" if result.search_status == "failed" else "## 🖼️ Image Search Results")
     parts.append(f"**Query**: {escape_markdown_text(result.query)}")
     parts.append(f"**Search status**: `{escape_markdown_code(result.search_status)}`")
     parts.append(f"**Found**: {len(result.images)} images (total available: {result.total_count})")

@@ -124,7 +124,7 @@ def register_openurl_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None
         This tool configures OpenURL link resolver integration, allowing you to
         access paywalled articles through your institution's library subscription.
 
-        Authenticated service callers may call this tool with no configuration
+        Remote service callers may call this tool with no configuration
         arguments to inspect the operator-installed configuration, but cannot
         mutate the server-owned, deployment-wide OpenURL settings. Configure
         those at deployment time or from a trusted local server instead.
@@ -183,9 +183,11 @@ def register_openurl_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None
         """
         try:
             mutates_global_config = not enable or bool(preset) or bool(resolver_url)
-            if current_tenant().is_authenticated and mutates_global_config:
+            identity = current_tenant()
+            local_operator = identity.is_default and identity.source in {"stdio", "local_http", "explicit"}
+            if not local_operator and mutates_global_config:
                 return (
-                    "❌ Authenticated service callers cannot change the server-owned, deployment-wide "
+                    "❌ Remote service callers cannot change the server-owned, deployment-wide "
                     "institutional access settings.\n\n"
                     "Call configure_institutional_access() without arguments to inspect the current configuration, "
                     "or ask the server operator to configure OpenURL for the deployment."
@@ -546,7 +548,9 @@ Test your connection:
                     output.append(f"   Response Time: {result['response_time_ms']}ms")
                 if result["error"]:
                     output.append(f"   Note: {escape_markdown_text(result['error'])}")
-                    output.append("\n   ℹ️ HTTP 4xx/5xx is normal - resolver responded but needs valid session")
+                    output.append(
+                        "\n   ℹ️ The endpoint responded; its HTTP error does not establish subscription access."
+                    )
             else:
                 output.append("⚠️ **Not Reachable**")
                 output.append(f"   Error: {escape_markdown_text(result['error'])}")
@@ -732,7 +736,7 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
     }
 
     try:
-        start = time.time()
+        start = time.monotonic()
         fetched = await fetch_public_url(
             url,
             policy=SafeFetchPolicy(max_bytes=1024 * 1024, total_timeout=float(timeout), max_redirects=5),
@@ -742,7 +746,7 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
 
         result["reachable"] = True
         result["status_code"] = response.status_code
-        result["response_time_ms"] = int((time.time() - start) * 1000)
+        result["response_time_ms"] = int((time.monotonic() - start) * 1000)
 
         # Check if status indicates server error but still reachable
         if response.status_code >= 400:

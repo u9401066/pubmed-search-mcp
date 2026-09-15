@@ -108,16 +108,18 @@ unified_search(query="remimazolam sedation", sources="pubmed,europe_pmc", option
 
 ## 情境 6️⃣: 指定搜尋來源
 ───────────────────────────────────────────────────────────────────────────────
-unified_search 支援 6 個學術資料來源，可透過 sources 參數指定：
+unified_search 的來源依 registry 與部署設定決定，可透過 sources 指定；Crossref 用於補充 metadata：
 
 | 來源 | sources 值 | 特色 |
 |------|-----------|------|
-| PubMed | pubmed | 生物醫學金標準，30M+ 文獻 |
-| Europe PMC | europe_pmc | 歐洲文獻，33M+ 文獻，6.5M 開放取用 |
-| OpenAlex | openalex | 全球學術，250M+ works |
-| Semantic Scholar | semantic_scholar | AI 語義搜尋，200M+ 論文 |
-| CrossRef | crossref | DOI 元資料，引用計數 |
-| CORE | core | 開放取用聚合，200M+ 論文，42M+ 全文 |
+| PubMed | pubmed | 生物醫學索引與 MeSH |
+| Europe PMC | europe_pmc | 生物醫學索引與可取得的全文 XML |
+| OpenAlex | openalex | 跨領域學術 metadata |
+| Semantic Scholar | semantic_scholar | 學術檢索與引用關聯 |
+| CrossRef | crossref | DOI 元資料補充與引用計數；不是 primary search |
+| CORE | core | repository metadata 與可取得的全文 |
+| Scopus | scopus | 需設定授權與 enable flag |
+| Web of Science | web_of_science | 需設定授權與 enable flag |
 
 範例:
 ```
@@ -188,7 +190,7 @@ artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 a
 ═══════════════════════════════════════════════════════════════════════════════
 
 編年史的**主軸是時序**（線性），**分支 (lineage) 是次要組織維度**。兩者都是
-同一份 snapshot 的投影，所以 timeline 與 tree 永遠不會互相矛盾。
+同一份 snapshot 的投影，timeline 與 tree 共享來源；不同投影可能省略不同細節，應以 snapshot 與 audit 核對。
 
 ### 輸出格式 (output 參數)
 | 格式 | 說明 | 適用場景 |
@@ -253,7 +255,7 @@ build_citation_tree(pmid="12345678", depth=2, direction="both")
 | mermaid | Mermaid (NEW) | VS Code / Markdown 預覽 |
 
 ═══════════════════════════════════════════════════════════════════════════════
-�📦 匯出工具 (搜尋完成後)
+📦 匯出工具 (搜尋完成後)
 ═══════════════════════════════════════════════════════════════════════════════
 
 - prepare_export(pmids, format): 匯出引用格式；official 支援 ris/medline/csl，local 支援 ris/bibtex/csv/medline/json
@@ -421,7 +423,7 @@ search_clinvar("BRCA1", limit=10)
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 
 NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: pubmed (8/500), openalex (5)）。
-這些數字代表每個來源實際回傳的文章數和該來源的總匹配數，是評估搜尋覆蓋率的重要依據。
+這些數字是實際回傳數與可得的 provider 匹配總數。未知總數、來源失敗與部分結果須另外查看；它們不是以完整 ground truth 計算的 recall。
 
 ═══════════════════════════════════════════════════════════════════════════════
 💡 進階使用提示
@@ -430,8 +432,8 @@ NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: p
 1. **Chronicle + Citation Tree 組合**：先用 build_research_chronicle(output="tree")
    看研究脈絡，再用 build_citation_tree 深入探索關鍵論文的引用網絡。
 
-2. **多源驗證**：Landmark Detection 使用 Source Disagreement Analysis (SDA)，
-   當一篇論文出現在越多資料源中，其重要性評分越高。
+2. **多源資料核對**：比對不同來源的識別碼、日期與引用資訊；多來源收錄數不等於
+   科學重要性或研究品質，heuristic 排名仍需要人工評讀。
 
 3. **Research Lineage Tree 適合**：藥物開發歷程、技術演化追蹤、
    文獻回顧的結構化整理。

@@ -58,6 +58,8 @@ from .tool_runtime import safe_log, safe_report_progress
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
+    from pubmed_search.application.fulltext.service import FulltextDownloadNotice
+
 logger = logging.getLogger(__name__)
 
 SectionFilter = Annotated[str, Field(strict=True, min_length=1, max_length=500)]
@@ -229,6 +231,7 @@ def _format_get_fulltext_json(
 
     payload = {
         "tool": "get_fulltext",
+        "status": "failed" if coverage_status == "unavailable" else coverage_status,
         "identifiers": {
             "requested": requested_source,
             "pmcid": pmcid,
@@ -472,6 +475,23 @@ def _format_text_mined_terms_structured(
     return serialize_structured_payload(payload, output_format)
 
 
+def _format_download_notice(notice: FulltextDownloadNotice | None) -> str:
+    """Render application download facts without performing retrieval here."""
+    if notice is None:
+        return ""
+    parts: list[str] = []
+    if notice.source == "browser_session":
+        action = "fetched PDF and extracted text" if notice.has_text else "fetched PDF"
+        location = escape_markdown_text(notice.retrieved_url or "institutional access")
+        parts.append(f"🔐 Browser-session broker {action} from {location}")
+    elif notice.source_name:
+        action = "extracted text" if notice.has_text else "retrieved PDF"
+        parts.append(f"📄 PDF retrieval fallback {action} via {escape_markdown_text(notice.source_name)}")
+    if notice.error:
+        parts.append("⚠️ PDF retrieval fallback completed without usable fulltext.")
+    return "\n".join(parts)
+
+
 def register_europe_pmc_tools(mcp: MCPServer):
     """
     Register Europe PMC tools for fulltext access and text mining.
@@ -500,7 +520,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
         1. Europe PMC (if PMC ID available)
         2. Unpaywall (finds OA versions via DOI)
         3. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
-        4. CORE (200M+ open access papers)
+        4. CORE (open-access repository metadata and available text)
 
         With extended_sources=True, also searches:
         5. CrossRef (publisher links)
@@ -571,8 +591,6 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 allow_browser_session=allow_browser_session,
             )
 
-        browser_session_note = None
-
         from pubmed_search.infrastructure.sources.figure_client import get_figure_client
         from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
         from pubmed_search.infrastructure.sources.institutional_fulltext import (
@@ -621,111 +639,6 @@ def register_europe_pmc_tools(mcp: MCPServer):
             ),
         )
 
-        # Keep the main service as the primary path, then fall back to
-        # multi-source PDF retrieval only when the service has not already
-        # attempted the extended downloader path.
-        if (
-            not retrieval.fulltext_content
-            and any([resolved_pmid, resolved_pmcid, resolved_doi])
-            and not retrieval.extended_sources_attempted
-        ):
-            await _progress(5.5, 6, "Trying multi-source PDF retrieval fallback...")
-            retrieval.record_source_attempted("pdf_retrieval_fallback")
-            try:
-                from pubmed_search.infrastructure.sources.fulltext_download import (
-                    FulltextDownloader,
-                    PDFSource,
-                )
-
-                downloader = FulltextDownloader()
-                try:
-                    assisted = await downloader.get_fulltext(
-                        pmid=resolved_pmid,
-                        pmcid=resolved_pmcid,
-                        doi=resolved_doi,
-                        strategy="extract_text",
-                        allow_browser_session=allow_browser_session,
-                    )
-                finally:
-                    await downloader.close()
-
-                link_discovery = assisted.require_link_discovery()
-                for attempted_source in link_discovery.attempted_sources:
-                    retrieval.record_source_attempted(attempted_source)
-                for completed_source in link_discovery.completed_sources:
-                    retrieval.record_source_completed(completed_source)
-                for source_error in link_discovery.source_errors:
-                    retrieval.record_source_error(source_error.source)
-
-                seen_urls = {str(link.get("url") or "") for link in retrieval.pdf_links}
-                for ext_link in link_discovery.links:
-                    if not ext_link.url or ext_link.url in seen_urls:
-                        continue
-                    seen_urls.add(ext_link.url)
-                    retrieval.pdf_links.append(
-                        {
-                            "source": ext_link.source.display_name,
-                            "url": ext_link.url,
-                            "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
-                            "access": ext_link.access_type,
-                            "version": ext_link.version,
-                            "license": ext_link.license,
-                        }
-                    )
-
-                if assisted.text_content:
-                    retrieval.raw_fulltext_content = assisted.text_content
-                    extracted_text = FulltextService.truncate_extracted_text(assisted.text_content)
-                    retrieval.fulltext_content = extracted_text
-                    retrieval.content_sections = [
-                        {
-                            "title": "Extracted PDF Text",
-                            "content": extracted_text,
-                        }
-                    ]
-                    if assisted.source_used:
-                        retrieval.fulltext_source_name = assisted.source_used.display_name
-                        retrieval.fulltext_canonical_host = assisted.source_used.display_name
-                        retrieval.fulltext_provenance = "derived"
-
-                if not retrieval.title and assisted.title:
-                    retrieval.title = assisted.title
-
-                note_parts: list[str] = []
-                if assisted.source_used == PDFSource.BROWSER_SESSION:
-                    if assisted.text_content:
-                        note_parts.append(
-                            "🔐 Browser-session broker fetched PDF and extracted text from "
-                            f"{escape_markdown_text(assisted.retrieved_url or 'institutional access')}"
-                        )
-                    else:
-                        note_parts.append(
-                            "🔐 Browser-session broker fetched PDF from "
-                            f"{escape_markdown_text(assisted.retrieved_url or 'institutional access')}"
-                        )
-                elif assisted.source_used:
-                    if assisted.text_content:
-                        note_parts.append(
-                            "📄 PDF retrieval fallback extracted text via "
-                            f"{escape_markdown_text(assisted.source_used.display_name)}"
-                        )
-                    else:
-                        note_parts.append(
-                            "📄 PDF retrieval fallback retrieved PDF via "
-                            f"{escape_markdown_text(assisted.source_used.display_name)}"
-                        )
-                if assisted.error:
-                    note_parts.append("⚠️ PDF retrieval fallback completed without usable fulltext.")
-
-                if note_parts:
-                    browser_session_note = "\n".join(note_parts)
-                if link_discovery.coverage_status != "unavailable" or assisted.text_content:
-                    retrieval.record_source_completed("pdf_retrieval_fallback")
-            except Exception as e:
-                logger.warning("PDF retrieval fallback failed (%s)", type(e).__name__)
-                retrieval.record_source_error("pdf_retrieval_fallback")
-                await _log("warning", "PDF retrieval fallback source unavailable")
-
         next_tools, next_commands = _build_fulltext_next_tools(
             pmcid=resolved_pmcid,
             pmid=resolved_pmid,
@@ -769,19 +682,50 @@ def register_europe_pmc_tools(mcp: MCPServer):
             artifact_sections,
             raw_fulltext_content or retrieval.fulltext_content,
         )
-        artifact_content_sections = retrieval.content_sections
-        if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content:
-            artifact_content_sections = [{"title": "Full Text", "content": raw_fulltext_content}]
         artifact_payload_kwargs = {
             **fulltext_payload_kwargs,
             "fulltext_content": artifact_fulltext_content,
-            "content_sections": artifact_content_sections,
+            "content_sections": artifact_sections,
         }
         raw_content_files = (
             {"raw_content.txt": raw_fulltext_content}
             if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content
             else {}
         )
+
+        artifact_summary = {
+            "title": retrieval.title,
+            "pmcid": resolved_pmcid,
+            "pmid": resolved_pmid,
+            "doi": resolved_doi,
+            "fulltext_available": bool(retrieval.fulltext_content),
+            "pdf_links": len(exposed_pdf_links),
+        }
+        artifact_metadata = {
+            "output_format": normalized_output_format,
+            "include_pdf_links": include_pdf_links,
+            "include_figures": include_figures,
+            "extended_sources": extended_sources,
+            "fulltext_source": retrieval.fulltext_source_name,
+            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+            "fulltext_provenance": retrieval.fulltext_provenance,
+        }
+        artifact_provenance = {
+            "identifiers": {
+                "requested": requested_source,
+                "pmcid": resolved_pmcid,
+                "pmid": resolved_pmid,
+                "doi": resolved_doi,
+            },
+            "sources_tried": retrieval.sources_tried,
+            "sources_completed": retrieval.sources_completed,
+            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+            "coverage_status": retrieval.coverage_status,
+            "source_counts": source_counts,
+            "fulltext_source": retrieval.fulltext_source_name,
+            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+            "fulltext_provenance": retrieval.fulltext_provenance,
+        }
 
         # === BUILD OUTPUT ===
         if is_structured_output_format(normalized_output_format):
@@ -799,42 +743,12 @@ def register_europe_pmc_tools(mcp: MCPServer):
                         files={
                             primary_file: fulltext_payload,
                             "links.json": exposed_pdf_links,
-                            "provenance.json": {
-                                "identifiers": {
-                                    "requested": requested_source,
-                                    "pmcid": resolved_pmcid,
-                                    "pmid": resolved_pmid,
-                                    "doi": resolved_doi,
-                                },
-                                "sources_tried": retrieval.sources_tried,
-                                "sources_completed": retrieval.sources_completed,
-                                "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
-                                "coverage_status": retrieval.coverage_status,
-                                "source_counts": source_counts,
-                                "fulltext_source": retrieval.fulltext_source_name,
-                                "fulltext_canonical_host": retrieval.fulltext_canonical_host,
-                                "fulltext_provenance": retrieval.fulltext_provenance,
-                            },
+                            "provenance.json": artifact_provenance,
                             **raw_content_files,
                         },
                         primary_file=primary_file,
-                        summary={
-                            "title": retrieval.title,
-                            "pmcid": resolved_pmcid,
-                            "pmid": resolved_pmid,
-                            "doi": resolved_doi,
-                            "fulltext_available": bool(retrieval.fulltext_content),
-                            "pdf_links": len(exposed_pdf_links),
-                        },
-                        metadata={
-                            "output_format": normalized_output_format,
-                            "include_pdf_links": include_pdf_links,
-                            "include_figures": include_figures,
-                            "extended_sources": extended_sources,
-                            "fulltext_source": retrieval.fulltext_source_name,
-                            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
-                            "fulltext_provenance": retrieval.fulltext_provenance,
-                        },
+                        summary=artifact_summary,
+                        metadata=artifact_metadata,
                     )
                 except Exception as exc:
                     logger.warning("Failed to prepare get_fulltext artifact payload (%s)", type(exc).__name__)
@@ -851,7 +765,8 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
         if not retrieval.fulltext_content and not retrieval.pdf_links:
             if retrieval.source_errors:
-                no_results_response = "⚠️ **Fulltext retrieval incomplete**\n\n"
+                marker = "❌" if retrieval.coverage_status == "unavailable" else "⚠️"
+                no_results_response = f"{marker} **Fulltext retrieval incomplete**\n\n"
                 no_results_response += _format_source_coverage_markdown(
                     coverage_status=retrieval.coverage_status,
                     sources_completed=retrieval.sources_completed,
@@ -914,8 +829,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
             source_errors=[issue.to_dict() for issue in retrieval.source_errors],
         )
 
-        if browser_session_note:
-            output += browser_session_note + "\n\n"
+        download_note = _format_download_notice(retrieval.fallback_notice)
+        if download_note:
+            output += download_note + "\n\n"
 
         # PDF Links section
         if retrieval.pdf_links and include_pdf_links:
@@ -951,7 +867,11 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 or ""
             )
         elif retrieval.pdf_links:
-            output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+            output += (
+                "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+                if include_pdf_links
+                else "_Structured fulltext not available. Set include_pdf_links=True to inspect discovered access links._\n"
+            )
             if any(link.get("access") == "subscription" for link in retrieval.pdf_links):
                 output += "_Institutional links usually require campus IP recognition or library VPN/proxy access._\n"
 
@@ -982,42 +902,12 @@ def register_europe_pmc_tools(mcp: MCPServer):
                         "fulltext.md": output,
                         "payload.json": structured_payload,
                         "links.json": exposed_pdf_links,
-                        "provenance.json": {
-                            "identifiers": {
-                                "requested": requested_source,
-                                "pmcid": resolved_pmcid,
-                                "pmid": resolved_pmid,
-                                "doi": resolved_doi,
-                            },
-                            "sources_tried": retrieval.sources_tried,
-                            "sources_completed": retrieval.sources_completed,
-                            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
-                            "coverage_status": retrieval.coverage_status,
-                            "source_counts": source_counts,
-                            "fulltext_source": retrieval.fulltext_source_name,
-                            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
-                            "fulltext_provenance": retrieval.fulltext_provenance,
-                        },
+                        "provenance.json": artifact_provenance,
                         **raw_content_files,
                     },
                     primary_file="payload.json",
-                    summary={
-                        "title": retrieval.title,
-                        "pmcid": resolved_pmcid,
-                        "pmid": resolved_pmid,
-                        "doi": resolved_doi,
-                        "fulltext_available": bool(retrieval.fulltext_content),
-                        "pdf_links": len(exposed_pdf_links),
-                    },
-                    metadata={
-                        "output_format": normalized_output_format,
-                        "include_pdf_links": include_pdf_links,
-                        "include_figures": include_figures,
-                        "extended_sources": extended_sources,
-                        "fulltext_source": retrieval.fulltext_source_name,
-                        "fulltext_canonical_host": retrieval.fulltext_canonical_host,
-                        "fulltext_provenance": retrieval.fulltext_provenance,
-                    },
+                    summary=artifact_summary,
+                    metadata=artifact_metadata,
                 )
             except Exception as exc:
                 logger.warning("Failed to prepare get_fulltext artifact payload (%s)", type(exc).__name__)
@@ -1120,7 +1010,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             # Group by semantic type
             by_type: dict[str, list[dict[str, Any]]] = {}
             for term in terms:
-                term_type = term.get("semantic_type", "OTHER")
+                term_type = str(term.get("semantic_type") or "OTHER")
                 if term_type not in by_type:
                     by_type[term_type] = []
                 by_type[term_type].append(term)
@@ -1142,12 +1032,12 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
             for term_type, type_terms in sorted(by_type.items()):
                 emoji = type_emoji.get(term_type, "📌")
-                output += f"### {emoji} {term_type} ({len(type_terms)})\n\n"
+                output += f"### {emoji} {escape_markdown_text(term_type)} ({len(type_terms)})\n\n"
 
                 # Deduplicate and count
                 term_counts: dict[str, int] = {}
                 for t in type_terms:
-                    name = t.get("term", t.get("name", "Unknown"))
+                    name = str(t.get("term") or t.get("name") or "Unknown")
                     term_counts[name] = term_counts.get(name, 0) + 1
 
                 # Sort by frequency
@@ -1155,7 +1045,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
                 # Show top 10 per type
                 for name, count in sorted_terms[:10]:
-                    output += f"- **{name}**"
+                    output += f"- **{escape_markdown_text(name)}**"
                     if count > 1:
                         output += f" (×{count})"
                     output += "\n"

@@ -9,9 +9,11 @@ Extracted from unified.py to keep each module under 400 lines.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from pubmed_search.application.pipeline.config_parser import (
@@ -190,6 +192,7 @@ async def _execute_pipeline_mode_outcome(
         if isinstance(maybe_prepared, PipelineConfig):
             prepared_config = maybe_prepared
 
+    started_at = datetime.now(timezone.utc)
     stop_at_step = stop_at.strip() or None
     try:
         if dry_run:
@@ -215,13 +218,15 @@ async def _execute_pipeline_mode_outcome(
 
     # ── Auto-save report to workspace/global ─────────────────────────────
     if not dry_run:
-        _auto_save_pipeline_report(
+        await asyncio.to_thread(
+            _auto_save_pipeline_report,
             prepared_config,
             articles,
             report,
             pipeline_store=pipeline_store,
             status=status,
             pipeline_name_override=pipeline_name_override,
+            started_at=started_at,
         )
 
     if output_format in {"json", "toon"} or prepared_config.output.format == "json":
@@ -276,7 +281,11 @@ def _format_pipeline_json(
                 "id": step.id,
                 "action": step.action,
                 "inputs": list(step.inputs),
-                "status": "skipped" if result is None else ("ok" if result.ok else "error"),
+                "status": "skipped"
+                if result is None
+                else "planned"
+                if dry_run or result.metadata.get("dry_run") is True
+                else ("ok" if result.ok else "error"),
                 "article_count": len(result.articles) if result else 0,
                 "pmid_count": len(result.pmids) if result else 0,
                 "pmids": list(result.pmids) if result else [],
@@ -287,6 +296,7 @@ def _format_pipeline_json(
 
     data = {
         "type": "pipeline_result",
+        "status": classify_pipeline_outcome(articles, step_results),
         "pipeline": {
             "name": config.name or "",
             "template": config.template,
@@ -302,7 +312,12 @@ def _format_pipeline_json(
         },
         "summary": {
             "article_count": len(articles),
-            "steps_executed": sum(1 for result in step_results.values() if result.ok),
+            "steps_executed": sum(
+                1 for result in step_results.values() if not dry_run and result.metadata.get("dry_run") is not True
+            ),
+            "steps_planned": sum(
+                1 for result in step_results.values() if dry_run or result.metadata.get("dry_run") is True
+            ),
             "steps_failed": sum(1 for result in step_results.values() if not result.ok),
         },
         "steps": steps,
@@ -353,14 +368,13 @@ def _auto_save_pipeline_report(
     pipeline_store: PipelineStore | None,
     status: PipelineOutcomeStatus = "completed",
     pipeline_name_override: str | None = None,
+    started_at: datetime | None = None,
 ) -> None:
     """Best-effort auto-save of pipeline report and run record."""
     if not pipeline_store:
         return
 
     try:
-        from datetime import datetime, timezone
-
         from pubmed_search.domain.entities.pipeline import PipelineRun
 
         now = datetime.now(timezone.utc)
@@ -380,7 +394,7 @@ def _auto_save_pipeline_report(
             run = PipelineRun(
                 run_id=run_id,
                 pipeline_name=pipeline_name,
-                started=now,
+                started=started_at or now,
                 finished=datetime.now(timezone.utc),
                 status=pipeline_run_status(status),
                 article_count=len(articles),

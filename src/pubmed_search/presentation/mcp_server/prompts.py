@@ -9,6 +9,7 @@ Prompts are NOT executed - they return guidance that the Agent follows.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -34,12 +35,12 @@ def register_prompts(mcp: MCPServer) -> None:
 ## User's Topic: {topic}
 
 ## Steps:
-1. Call `unified_search(query="{topic}", limit=10)`
+1. Call `unified_search(query={json.dumps(topic, ensure_ascii=False)}, limit=10)`
 2. Present results with title, authors, year, journal
 3. Ask if user wants to explore any paper further
 
 ## Example Response Format:
-Found X papers on "{topic}":
+Found X papers on {json.dumps(topic, ensure_ascii=False)}:
 
 1. **[Title]** (Year)
    Authors | Journal
@@ -64,7 +65,7 @@ Found X papers on "{topic}":
 
 ### Step 1: Generate Search Materials
 ```python
-generate_search_queries(topic="{topic}")
+generate_search_queries(topic={json.dumps(topic, ensure_ascii=False)})
 ```
 This returns:
 - `corrected_topic`: Spell-corrected query
@@ -95,7 +96,7 @@ Highlight the most relevant papers and refine the query if coverage is still too
 
 ## Key Insight:
 MeSH expansion finds papers that use different terminology but same concepts.
-Example: "heart attack" → "Myocardial Infarction"[MeSH] → finds all related papers
+Example: "heart attack" → "Myocardial Infarction"[MeSH]; combine MeSH and text terms, and inspect missed or unindexed records.
 """
 
     @mcp.prompt()
@@ -115,7 +116,7 @@ Example: "heart attack" → "Myocardial Infarction"[MeSH] → finds all related 
 ### Step 1: Agent Extracts PICO, Then Validates The Handoff
 ```python
 validate_pico_plan(
-    description="{clinical_question}",
+    description={json.dumps(clinical_question, ensure_ascii=False)},
     p="<Population extracted by the agent>",
     i="<Intervention/exposure extracted by the agent>",
     c="<Comparator, optional>",
@@ -151,20 +152,20 @@ Combine with AND logic:
 ```
 
 High precision: All PICO elements required
-High recall: (P) AND (I OR C) AND (O)
+For recall-oriented screening, consider (P) AND (I OR C); making outcomes mandatory can exclude relevant reports. Validate the plan against known eligible papers.
 
 ### Step 4: Add Clinical Query Filter
 Based on question_type:
-- therapy → `AND therapy[filter]`
-- diagnosis → `AND diagnosis[filter]`
-- prognosis → `AND prognosis[filter]`
+- therapy → `filters="clinical_query:therapy"`
+- diagnosis → `filters="clinical_query:diagnosis"`
+- prognosis → `filters="clinical_query:prognosis"`
 
 ### Step 5: Validate and Search
 ```python
 analyze_search_query(query=<combined_query>)
 unified_search(query=<combined_query>, ranking="quality")
 # Or execute the structured backend pipeline returned by validate_pico_plan:
-unified_search(query="{clinical_question}", pipeline="<pipeline from validate_pico_plan>")
+unified_search(query={json.dumps(clinical_question, ensure_ascii=False)}, pipeline="<pipeline from validate_pico_plan>")
 ```
 
 ## Example Agent-Provided PICO Handoff:
@@ -195,7 +196,7 @@ Question: "Is remimazolam better than propofol for ICU sedation?"
 
 ### Path 1: Similar Topics (find_related_articles)
 ```python
-find_related_articles(pmid="{pmid}", limit=10)
+find_related_articles(pmid={json.dumps(pmid, ensure_ascii=False)}, limit=10)
 ```
 - Uses PubMed's similarity algorithm
 - Finds papers with similar MeSH terms, keywords, citation patterns
@@ -203,7 +204,7 @@ find_related_articles(pmid="{pmid}", limit=10)
 
 ### Path 2: Follow-up Research (find_citing_articles)
 ```python
-find_citing_articles(pmid="{pmid}", limit=20)
+find_citing_articles(pmid={json.dumps(pmid, ensure_ascii=False)}, limit=20)
 ```
 - Forward in time: Who cited this paper?
 - See how the field developed after this paper
@@ -211,7 +212,7 @@ find_citing_articles(pmid="{pmid}", limit=20)
 
 ### Path 3: Foundation Papers (get_article_references)
 ```python
-get_article_references(pmid="{pmid}", limit=30)
+get_article_references(pmid={json.dumps(pmid, ensure_ascii=False)}, limit=30)
 ```
 - Backward in time: What did this paper cite?
 - Find the foundational work
@@ -219,7 +220,7 @@ get_article_references(pmid="{pmid}", limit=30)
 
 ### Path 4: Full Citation Network (build_citation_tree)
 ```python
-build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mermaid")
+build_citation_tree(pmid={json.dumps(pmid, ensure_ascii=False)}, depth=2, direction="both", output_format="mermaid")
 ```
 - Builds a citation-network map around one seed paper
 - Best for: Inspecting forward/backward citation relationships
@@ -232,7 +233,7 @@ build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mer
 
 ## Get Full Text (if needed):
 ```python
-get_fulltext(source={{"kind":"pmid","value":"{pmid}"}}, extended_sources=True)
+get_fulltext(source={{"kind":"pmid","value":{json.dumps(pmid, ensure_ascii=False)}}}, extended_sources=True)
 ```
 """
 
@@ -251,7 +252,7 @@ get_fulltext(source={{"kind":"pmid","value":"{pmid}"}}, extended_sources=True)
 
 ### Step 1: Get Gene Info
 ```python
-search_gene(query="{gene_or_drug}", organism="human", limit=5)
+search_gene(query={json.dumps(gene_or_drug, ensure_ascii=False)}, organism="human", limit=5)
 ```
 Returns: gene_id, symbol, name, chromosome, aliases, summary
 
@@ -277,7 +278,7 @@ fetch_article_details(pmids="<pmid1>,<pmid2>,...")
 
 ### Step 1: Get Compound Info
 ```python
-search_compound(query="{gene_or_drug}", limit=5)
+search_compound(query={json.dumps(gene_or_drug, ensure_ascii=False)}, limit=5)
 ```
 Returns: cid, name, molecular_formula, molecular_weight, SMILES
 
@@ -294,7 +295,7 @@ Returns PMID list - curated compound-publication links!
 
 ### Step 4: Also Search PubMed Directly
 ```python
-unified_search(query="{gene_or_drug}", limit=20, ranking="quality")
+unified_search(query={json.dumps(gene_or_drug, ensure_ascii=False)}, limit=20, ranking="quality")
 ```
 
 ---
@@ -303,13 +304,12 @@ unified_search(query="{gene_or_drug}", limit=20, ranking="quality")
 
 ### Search ClinVar
 ```python
-search_clinvar(query="{gene_or_drug}", limit=10)
+search_clinvar(query={json.dumps(gene_or_drug, ensure_ascii=False)}, limit=10)
 ```
 Returns: variant info, clinical significance, associated conditions
 
 ## Key Insight:
-NCBI's curated links (gene→pubmed, compound→pubmed) are MORE PRECISE
-than keyword searches. Use both for comprehensive coverage.
+NCBI's indexed entity-publication links complement keyword searches; neither path guarantees complete recall. Inspect both against the research question.
 """
 
     # =========================================================================
@@ -373,7 +373,7 @@ get_institutional_link(source={"kind":"pmid","value":"12345678"})
 ## Strategy 1: Search for Candidate Papers
 ```python
 unified_search(
-    query="{topic}",
+    query={json.dumps(topic, ensure_ascii=False)},
     sources="pubmed,europe_pmc,openalex",
     limit=20,
     ranking="balanced",
@@ -426,7 +426,7 @@ get_fulltext(source={{"kind":"pmcid","value":"PMC7096777"}}, sections="all")
 
 ### 1.1 Generate Search Strategy
 ```python
-generate_search_queries(topic="{topic}", strategy="comprehensive")
+generate_search_queries(topic={json.dumps(topic, ensure_ascii=False)}, strategy="comprehensive")
 ```
 
 ### 1.2 Build and Validate Final Query
@@ -443,7 +443,7 @@ unified_search(
     output_format="json"
 )
 ```
-Use the highest-quality and most relevant papers as your core set.
+Screen against explicit eligibility criteria; ranking scores help prioritize reading but do not establish study quality.
 
 ## Phase 2: Deep Exploration
 
@@ -462,16 +462,16 @@ build_citation_tree(pmid="<most_important_paper>", depth=2, output_format="merma
 
 ### 3.1 Get Citation Metrics
 ```python
-get_citation_metrics(pmids="<all_key_pmids>", sort_by="rcr")
+get_citation_metrics(pmids="<all_key_pmids>", sort_by="relative_citation_ratio")
 ```
 - RCR (Relative Citation Ratio): Impact relative to field
 - Percentile: How this paper ranks
 
-### 3.2 Filter by Quality
+### 3.2 Optionally Prioritize Reading by Citation Metrics
 ```python
 get_citation_metrics(pmids="...", min_citations=10, min_rcr=1.0)
 ```
-Only keep high-impact papers.
+Citation thresholds can exclude newer or less-cited eligible studies. For a systematic review, retain all records meeting the stated inclusion criteria.
 
 ## Phase 4: Full Text Analysis
 
@@ -519,31 +519,31 @@ prepare_export(pmids="<final_list>", format="ris", include_abstract=True)
 
 ### Gene/Protein Mentions
 ```python
-get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="GENE_PROTEIN")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":{json.dumps(source_value, ensure_ascii=False)}}}, semantic_type="GENE_PROTEIN")
 ```
-Returns: Gene names, positions in text, confidence scores
+Returns available provider entity annotations; do not assume every record supplies offsets or confidence.
 
 ### Disease Mentions
 ```python
-get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="DISEASE")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":{json.dumps(source_value, ensure_ascii=False)}}}, semantic_type="DISEASE")
 ```
 Returns: Disease names with MeSH/DOID mappings
 
 ### Chemical/Drug Mentions
 ```python
-get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="CHEMICAL")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":{json.dumps(source_value, ensure_ascii=False)}}}, semantic_type="CHEMICAL")
 ```
 Returns: Chemical names with ChEBI/PubChem IDs
 
 ### Organism Mentions
 ```python
-get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="ORGANISM")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":{json.dumps(source_value, ensure_ascii=False)}}}, semantic_type="ORGANISM")
 ```
 Returns: Species names with NCBI Taxonomy IDs
 
 ### All Annotations
 ```python
-get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}})  # No filter = all types
+get_text_mined_terms(source={{"kind":"{source_kind}","value":{json.dumps(source_value, ensure_ascii=False)}}})  # No filter = all types
 ```
 
 ## Cross-Reference Workflow:

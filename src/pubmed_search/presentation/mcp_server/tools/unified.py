@@ -182,7 +182,7 @@ def register_unified_search_tools(
                 - "balanced": Default, considers all factors
                 - "impact": Prioritize high-citation papers
                 - "recency": Prioritize recent publications
-                - "quality": Prioritize high-evidence studies (RCTs, meta-analyses)
+                - "quality": Prioritize publication-type heuristics (RCTs, meta-analyses); not a quality assessment
             output_format: "markdown" (human-readable), "json", or "toon" (programmatic)
             filters: Comma-separated key:value pairs for filtering results.
                      Supported keys:

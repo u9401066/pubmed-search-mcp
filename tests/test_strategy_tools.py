@@ -113,3 +113,15 @@ class TestGenerateSearchQueries:
         ids = [q["id"] for q in queries]
         assert "q1_title" in ids
         assert "q4_mesh" in ids
+
+
+@pytest.mark.asyncio
+async def test_fallback_preserves_boolean_query_and_honors_suggestions_opt_out(setup):
+    tools, _ = setup
+    topic = "heart[Title] OR lung[Title]"
+    with patch("pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator", return_value=None):
+        result = json.loads(await tools["generate_search_queries"](topic=topic))
+        hidden = json.loads(await tools["generate_search_queries"](topic="heart failure", include_suggestions=False))
+    assert [item["query"] for item in result["suggested_queries"]] == [topic]
+    assert hidden["suggested_queries"] == []
+    assert hidden["queries_count"] == 0
