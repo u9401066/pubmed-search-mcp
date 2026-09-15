@@ -29,6 +29,7 @@ import os
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects.article_identifiers import normalize_doi
 from pubmed_search.infrastructure.sources.base_client import (
     _CONTINUE,
     BaseAPIClient,
@@ -100,12 +101,9 @@ class UnpaywallClient(BaseAPIClient):
         )
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
-        """Handle 404 (DOI not found) and 422 (invalid DOI format)."""
+        """Only a provider 404 means absent; 422 can indicate invalid contact settings."""
         if response.status_code == 404:
             logger.debug("Unpaywall: DOI not found")
-            return None
-        if response.status_code == 422:
-            logger.warning("Unpaywall: Invalid DOI format")
             return None
         return _CONTINUE  # type: ignore[return-value]
 
@@ -143,6 +141,8 @@ class UnpaywallClient(BaseAPIClient):
             return None
         if not isinstance(data, dict):
             raise_provider_schema_error(self._service_name)
+        if data.get("doi") is not None and self._normalize_doi(data["doi"]) != doi:
+            raise_provider_schema_error(self._service_name)
         return self._normalize_response(data)
 
     async def get_best_oa_link(self, doi: str) -> str | None:
@@ -177,12 +177,12 @@ class UnpaywallClient(BaseAPIClient):
             return None
 
         # Check best location first
-        best = oa_info.get("best_oa_location", {})
+        best = oa_info.get("best_oa_location") or {}
         if best.get("url_for_pdf"):
             return best["url_for_pdf"]
 
         # Check all locations for PDF
-        for loc in oa_info.get("oa_locations", []):
+        for loc in oa_info.get("oa_locations") or []:
             if loc.get("url_for_pdf"):
                 return loc["url_for_pdf"]
 
@@ -239,7 +239,7 @@ class UnpaywallClient(BaseAPIClient):
         result["oa_status"] = oa_info.get("oa_status", "unknown")
 
         # Build OA links list
-        for loc in oa_info.get("oa_locations", []):
+        for loc in oa_info.get("oa_locations") or []:
             link = {
                 "url": loc.get("url") or loc.get("url_for_landing_page"),
                 "url_for_pdf": loc.get("url_for_pdf"),
@@ -254,13 +254,24 @@ class UnpaywallClient(BaseAPIClient):
         return result
 
     def _normalize_response(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Normalize Unpaywall API response."""
+        """Normalize Unpaywall API response without fabricating an OA decision."""
+        best = data.get("best_oa_location")
+        locations = data.get("oa_locations")
+        if locations is None:
+            locations = []
+        if (
+            not isinstance(data.get("is_oa"), bool)
+            or (best is not None and not isinstance(best, dict))
+            or not isinstance(locations, list)
+            or any(not isinstance(location, dict) for location in locations)
+        ):
+            raise_provider_schema_error(self._service_name)
         return {
             "doi": data.get("doi"),
             "is_oa": data.get("is_oa", False),
             "oa_status": data.get("oa_status", "unknown"),
             "best_oa_location": data.get("best_oa_location"),
-            "oa_locations": data.get("oa_locations", []),
+            "oa_locations": locations,
             "title": data.get("title"),
             "year": data.get("year"),
             "journal_name": data.get("journal_name"),
@@ -273,11 +284,7 @@ class UnpaywallClient(BaseAPIClient):
     @staticmethod
     def _normalize_doi(doi: str) -> str:
         """Normalize DOI string."""
-        doi = doi.strip()
-        for prefix in ["https://doi.org/", "http://doi.org/", "doi:"]:
-            if doi.lower().startswith(prefix.lower()):
-                doi = doi[len(prefix) :]
-        return doi
+        return normalize_doi(doi)
 
     @staticmethod
     def get_oa_status_description(status: str) -> str:
@@ -291,7 +298,7 @@ class UnpaywallClient(BaseAPIClient):
             Description string
         """
         descriptions = {
-            "gold": "Published in an OA journal (free to read and reuse)",
+            "gold": "Published in an OA journal (check the license for reuse terms)",
             "green": "Archived in a repository (author's version)",
             "hybrid": "OA in a subscription journal (often author-paid APC)",
             "bronze": "Free to read on publisher site (no clear license)",

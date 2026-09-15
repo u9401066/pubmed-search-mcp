@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -172,18 +173,22 @@ class ClinicalTrialsClient:
 
     def _normalize_study(self, study: dict) -> dict[str, Any]:
         """Normalize API response to simplified format."""
-        protocol = study.get("protocolSection", {})
-        id_module = protocol.get("identificationModule", {})
-        status_module = protocol.get("statusModule", {})
-        design_module = protocol.get("designModule", {})
-        conditions_module = protocol.get("conditionsModule", {})
-        arms_module = protocol.get("armsInterventionsModule", {})
+        protocol = study.get("protocolSection")
+        if not isinstance(protocol, dict):
+            raise_provider_schema_error("ClinicalTrials.gov")
+        id_module = protocol.get("identificationModule") or {}
+        status_module = protocol.get("statusModule") or {}
+        design_module = protocol.get("designModule") or {}
+        conditions_module = protocol.get("conditionsModule") or {}
+        arms_module = protocol.get("armsInterventionsModule") or {}
 
         nct_id = id_module.get("nctId", "")
+        if not isinstance(nct_id, str) or not re.fullmatch(r"NCT[0-9]{8}", nct_id):
+            raise_provider_schema_error("ClinicalTrials.gov")
 
         # Extract interventions
         interventions = []
-        for interv in arms_module.get("interventions", []):
+        for interv in arms_module.get("interventions") or []:
             interventions.append(
                 {
                     "type": interv.get("type", ""),
@@ -196,11 +201,11 @@ class ClinicalTrialsClient:
         phase_str = ", ".join(phases) if phases else "N/A"
 
         # Extract enrollment
-        enrollment_info = design_module.get("enrollmentInfo", {})
+        enrollment_info = design_module.get("enrollmentInfo") or {}
         enrollment = enrollment_info.get("count")
 
         # Extract start date
-        start_date_struct = status_module.get("startDateStruct", {})
+        start_date_struct = status_module.get("startDateStruct") or {}
         start_date = start_date_struct.get("date", "")
 
         return {
@@ -213,8 +218,9 @@ class ClinicalTrialsClient:
             "interventions": interventions,
             "start_date": start_date,
             "enrollment": enrollment,
+            "enrollment_type": enrollment_info.get("type"),
             "url": f"https://clinicaltrials.gov/study/{nct_id}",
-            "sponsor": protocol.get("sponsorCollaboratorsModule", {}).get("leadSponsor", {}).get("name", ""),
+            "sponsor": ((protocol.get("sponsorCollaboratorsModule") or {}).get("leadSponsor") or {}).get("name", ""),
         }
 
     async def get_study(self, nct_id: str) -> dict[str, Any] | None:
@@ -227,12 +233,12 @@ class ClinicalTrialsClient:
         Returns:
             Study dictionary or None if not found
         """
+        nct_id = nct_id.strip().upper()
+        if not nct_id.startswith("NCT"):
+            nct_id = f"NCT{nct_id}"
+        if not re.fullmatch(r"NCT[0-9]{8}", nct_id):
+            raise ValueError("NCT ID must contain exactly eight ASCII digits")
         try:
-            # Clean NCT ID
-            nct_id = nct_id.strip().upper()
-            if not nct_id.startswith("NCT"):
-                nct_id = f"NCT{nct_id}"
-
             response = await self._execute_request(f"/studies/{nct_id}")
 
             if response.status_code == 404:
@@ -242,7 +248,10 @@ class ClinicalTrialsClient:
             data = response.json()
             if not isinstance(data, dict):
                 raise_provider_schema_error("ClinicalTrials.gov")
-            return self._normalize_study(data)
+            normalized = self._normalize_study(data)
+            if normalized["nct_id"] != nct_id:
+                raise_provider_schema_error("ClinicalTrials.gov")
+            return normalized
 
         except RetryableOperationError as exc:
             raise_sanitized_retryable_error("ClinicalTrials.gov", exc)
@@ -310,8 +319,11 @@ def format_trials_section(trials: list[dict], max_display: int = 3) -> str:
         lines.append(f"**{i + 1}. {trial_link}**{phase_str} {emoji} {escape_markdown_text(raw_status)}")
         lines.append(f"   {escape_markdown_text(trial.get('title') or 'Untitled trial')}")
 
-        if trial.get("enrollment"):
-            lines.append(f"   *Target enrollment: {escape_markdown_text(trial['enrollment'])}*")
+        if trial.get("enrollment") is not None:
+            label = {"ACTUAL": "Actual enrollment", "ESTIMATED": "Target enrollment"}.get(
+                str(trial.get("enrollment_type") or ""), "Enrollment"
+            )
+            lines.append(f"   *{label}: {escape_markdown_text(trial['enrollment'])}*")
         lines.append("")
 
     if len(trials) > max_display:

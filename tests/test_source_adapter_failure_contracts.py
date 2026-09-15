@@ -130,6 +130,7 @@ async def test_typed_preprint_adapter_outage_is_error_and_empty_is_empty(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     searcher = MagicMock()
+    searcher.close = AsyncMock()
     searcher.search = AsyncMock(side_effect=RuntimeError(f"outage for {PRIVATE_QUERY}"))
     target = "pubmed_search.infrastructure.sources.preprints.PreprintSearcher"
 
@@ -141,6 +142,7 @@ async def test_typed_preprint_adapter_outage_is_error_and_empty_is_empty(
     assert PRIVATE_QUERY not in caplog.text
     assert "strict" not in searcher.search.await_args.kwargs
 
+    searcher.close = AsyncMock()
     searcher.search = AsyncMock(return_value={"by_source": {source: []}, "errors": []})
     with patch(target, return_value=searcher):
         empty = await _gather_typed_runner(source, runner)

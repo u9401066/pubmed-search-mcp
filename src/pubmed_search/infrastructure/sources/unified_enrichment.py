@@ -322,7 +322,7 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> EnrichmentOut
 async def _enrich_with_journal_metrics(articles: list[UnifiedArticle]) -> EnrichmentOutcome:
     """Return OpenAlex journal-metric patches without shared mutation.
 
-    Fetches journal h-index, 2yr_mean_citedness (≈ Impact Factor), ISSN, DOAJ status,
+    Fetches journal h-index, 2yr_mean_citedness (OpenAlex citation metric), ISSN, DOAJ status,
     subject areas, etc. Uses batch API for efficiency.
 
     Strategy:

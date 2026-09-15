@@ -16,6 +16,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import math
 import re
 import urllib.parse
 from typing import TYPE_CHECKING, Any
@@ -98,12 +99,21 @@ def compile_semantic_scholar_bulk_query(query: str) -> str:
         raise ValueError("Semantic Scholar bulk search requires a non-empty query")
     if _PUBMED_FIELD_TAG_PATTERN.search(normalized):
         raise ValueError("PubMed field tags cannot be translated safely to Semantic Scholar bulk search")
-    if normalized.count('"') % 2:
+    segments = re.split(r'("(?:[^"\\]|\\.)*")', normalized)
+    outside_quotes = "".join(segments[::2])
+    if '"' in outside_quotes:
         raise ValueError("Semantic Scholar bulk query contains an unbalanced quote")
-    if normalized.count("(") != normalized.count(")"):
+    depth = 0
+    for character in outside_quotes:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                raise ValueError("Semantic Scholar bulk query contains unbalanced parentheses")
+    if depth:
         raise ValueError("Semantic Scholar bulk query contains unbalanced parentheses")
 
-    segments = re.split(r'("(?:[^"\\]|\\.)*")', normalized)
     for index in range(0, len(segments), 2):
         segment = segments[index]
         segment = re.sub(r"\bNOT\s+", "-", segment, flags=re.IGNORECASE)
@@ -255,14 +265,16 @@ class SemanticScholarClient(BaseAPIClient):
                 raise_provider_schema_error(self._service_name)
 
             raw_data = payload.get("data")
-            if raw_data is None:
+            if raw_data is None and payload.get("total") == 0 and not isinstance(payload.get("total"), bool):
                 raw_data = []
             raw_data = _require_result_list(raw_data)
+            if any(not isinstance(paper, dict) for paper in raw_data):
+                raise_provider_schema_error(self._service_name)
             items = [paper for paper in raw_data if isinstance(paper, dict)]
             total, warnings = coerce_optional_total(payload.get("total"))
             next_token = payload.get("token")
-            if not isinstance(next_token, str):
-                next_token = None
+            if next_token is not None and not isinstance(next_token, str):
+                raise_provider_schema_error(self._service_name)
             return SourceSearchPage(
                 source="semantic_scholar",
                 items=items,
@@ -295,9 +307,13 @@ class SemanticScholarClient(BaseAPIClient):
     ) -> SourceSearchPage[dict[str, Any]]:
         """Run a bounded S2 bulk-token traversal without approaching corpus scale."""
 
-        if not 1 <= max_results <= S2_BULK_MAX_RESULTS:
+        if (
+            isinstance(max_results, bool)
+            or not isinstance(max_results, int)
+            or not 1 <= max_results <= S2_BULK_MAX_RESULTS
+        ):
             raise ValueError(f"max_results must be between 1 and {S2_BULK_MAX_RESULTS}")
-        if not 1 <= max_pages <= S2_BULK_MAX_PAGES:
+        if isinstance(max_pages, bool) or not isinstance(max_pages, int) or not 1 <= max_pages <= S2_BULK_MAX_PAGES:
             raise ValueError(f"max_pages must be between 1 and {S2_BULK_MAX_PAGES}")
 
         items: list[dict[str, Any]] = []
@@ -306,6 +322,7 @@ class SemanticScholarClient(BaseAPIClient):
         token: str | None = None
         total: int | None = None
         pages_fetched = 0
+        truncated_page = False
 
         while pages_fetched < max_pages and len(items) < max_results:
             page = await self.bulk_search_page(
@@ -318,9 +335,17 @@ class SemanticScholarClient(BaseAPIClient):
                 sort=sort,
             )
             pages_fetched += 1
-            items.extend(page.items[: max_results - len(items)])
+            remaining = max_results - len(items)
+            items.extend(page.items[:remaining])
             warnings.extend(page.warnings)
             total = page.total if total is None else total
+            if len(page.items) > remaining:
+                truncated_page = True
+                token = None
+                warnings.append(
+                    "Semantic Scholar stopped within a bulk page; no continuation token can resume the unconsumed records. Increase max_results to retrieve the full page."
+                )
+                break
             next_token = page.next_token if isinstance(page.next_token, str) else None
             if not next_token:
                 token = None
@@ -343,7 +368,7 @@ class SemanticScholarClient(BaseAPIClient):
             query=query,
             warnings=warnings,
             mode="bulk",
-            metadata={"pages_fetched": pages_fetched, "bounded": True, "sort": sort},
+            metadata={"pages_fetched": pages_fetched, "bounded": True, "sort": sort, "truncated_page": truncated_page},
         )
 
     async def get_papers_batch(
@@ -365,7 +390,9 @@ class SemanticScholarClient(BaseAPIClient):
         payload: Any = await self._make_request(url, method="POST", data={"ids": paper_ids})
         if not isinstance(payload, list):
             raise_provider_schema_error(self._service_name)
-        if any(paper is not None and not isinstance(paper, dict) for paper in payload):
+        if len(payload) != len(paper_ids) or any(
+            paper is not None and not isinstance(paper, dict) for paper in payload
+        ):
             raise APIRequestError(self._service_name)
         return [paper if isinstance(paper, dict) else None for paper in payload]
 
@@ -618,7 +645,7 @@ class SemanticScholarClient(BaseAPIClient):
                 rec_doi = rec.get("doi", "")
 
                 # Check if paper_id2 matches any identifier
-                paper_id2_clean = paper_id2.replace("PMID:", "").replace("DOI:", "")
+                paper_id2_clean = re.sub(r"^(?:PMID|DOI):", "", paper_id2, flags=re.IGNORECASE)
                 if (
                     (rec_s2_id and rec_s2_id == paper_id2)
                     or (rec_pmid and rec_pmid == paper_id2_clean)
@@ -627,7 +654,9 @@ class SemanticScholarClient(BaseAPIClient):
                     rank_percentile = rec.get("rank_percentile")
                     if isinstance(rank_percentile, bool) or not isinstance(rank_percentile, int | float):
                         return None
-                    return float(rank_percentile)
+                    return (
+                        float(rank_percentile) if math.isfinite(rank_percentile) and 0 <= rank_percentile <= 1 else None
+                    )
 
             return None
 
@@ -675,7 +704,7 @@ class SemanticScholarClient(BaseAPIClient):
             "pmid": external_ids.get("PubMed", ""),
             "title": paper.get("title", ""),
             "abstract": paper.get("abstract", "") or "",
-            "year": str(paper.get("year", "")),
+            "year": str(paper["year"]) if paper.get("year") is not None else "",
             "month": "",
             "day": "",
             "authors": author_names,

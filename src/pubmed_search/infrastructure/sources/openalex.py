@@ -16,6 +16,8 @@ Features:
 from __future__ import annotations
 
 import logging
+import math
+import re
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
@@ -195,10 +197,10 @@ class OpenAlexClient(BaseAPIClient):
     ) -> SourceSearchPage[dict[str, Any]]:
         """Traverse keyword results with an explicitly bounded cursor loop."""
 
-        if not 1 <= max_results <= OPENALEX_CURSOR_MAX_RESULTS:
+        if type(max_results) is not int or not 1 <= max_results <= OPENALEX_CURSOR_MAX_RESULTS:
             msg = f"max_results must be between 1 and {OPENALEX_CURSOR_MAX_RESULTS}"
             raise ValueError(msg)
-        if not 1 <= max_pages <= OPENALEX_CURSOR_MAX_PAGES:
+        if type(max_pages) is not int or not 1 <= max_pages <= OPENALEX_CURSOR_MAX_PAGES:
             msg = f"max_pages must be between 1 and {OPENALEX_CURSOR_MAX_PAGES}"
             raise ValueError(msg)
 
@@ -373,7 +375,11 @@ class OpenAlexClient(BaseAPIClient):
             warnings.append(f"OpenAlex returned a non-numeric cost: {value!r}")
             return None
         try:
-            return float(value)
+            cost = float(value)
+            if not math.isfinite(cost) or cost < 0:
+                warnings.append("OpenAlex returned a nonfinite or negative cost")
+                return None
+            return cost
         except (TypeError, ValueError):
             warnings.append(f"OpenAlex returned a non-numeric cost: {value!r}")
             return None
@@ -479,7 +485,7 @@ class OpenAlexClient(BaseAPIClient):
         Get journal/source metadata from OpenAlex Sources API.
 
         Returns journal-level metrics including:
-        - 2yr_mean_citedness (≈ Impact Factor)
+        - 2yr_mean_citedness (OpenAlex citation metric)
         - h_index, i10_index
         - works_count, cited_by_count
         - ISSN, DOAJ status, subject areas
@@ -490,11 +496,10 @@ class OpenAlexClient(BaseAPIClient):
         Returns:
             Source metadata dict or None
         """
+        source_id = source_id.removeprefix("https://openalex.org/")
+        if not re.fullmatch(r"S[0-9]+", source_id):
+            raise ValueError("Invalid OpenAlex source ID")
         try:
-            # Normalize ID
-            if source_id.startswith("https://openalex.org/"):
-                source_id = source_id.replace("https://openalex.org/", "")
-
             params = dict(self._auth_params)
             url = f"{OA_API_BASE}/sources/{source_id}?{urllib.parse.urlencode(params)}"
 
@@ -529,35 +534,29 @@ class OpenAlexClient(BaseAPIClient):
         if not source_ids:
             return {}
 
+        clean_ids = list(dict.fromkeys(sid.removeprefix("https://openalex.org/") for sid in source_ids))
+        if any(not re.fullmatch(r"S[0-9]+", sid) for sid in clean_ids):
+            raise ValueError("Invalid OpenAlex source ID")
         try:
-            # OpenAlex supports batch filter: openalex_id:S1|S2|S3
-            # Max ~50 per request
-            clean_ids = []
-            for sid in source_ids[:50]:
-                clean_id = sid.replace("https://openalex.org/", "")
-                clean_ids.append(clean_id)
-
-            filter_str = "openalex:" + "|".join(clean_ids)
-            params = {
-                "filter": filter_str,
-                "per_page": str(len(clean_ids)),
-                **self._auth_params,
-            }
-
-            url = f"{OA_API_BASE}/sources?{urllib.parse.urlencode(params)}"
-            data = await self._make_request(url)
-
-            if not isinstance(data, dict):
-                raise_provider_schema_error(self._service_name)
-            raw_results = data.get("results")
-            if not isinstance(raw_results, list) or any(not isinstance(source, dict) for source in raw_results):
-                raise_provider_schema_error(self._service_name)
-
             result = {}
-            for source in raw_results:
-                oa_id = source.get("id", "").replace("https://openalex.org/", "")
-                if oa_id:
-                    result[oa_id] = self._normalize_source(source)
+            for offset in range(0, len(clean_ids), 50):
+                batch = clean_ids[offset : offset + 50]
+                params = {
+                    "filter": "openalex:" + "|".join(batch),
+                    "per_page": str(len(batch)),
+                    **self._auth_params,
+                }
+                url = f"{OA_API_BASE}/sources?{urllib.parse.urlencode(params)}"
+                data = await self._make_request(url)
+                if not isinstance(data, dict):
+                    raise_provider_schema_error(self._service_name)
+                raw_results = data.get("results")
+                if not isinstance(raw_results, list) or any(not isinstance(row, dict) for row in raw_results):
+                    raise_provider_schema_error(self._service_name)
+                for source in raw_results:
+                    oa_id = str(source.get("id") or "").removeprefix("https://openalex.org/")
+                    if oa_id in batch:
+                        result[oa_id] = self._normalize_source(source)
 
             return result
 
@@ -744,11 +743,11 @@ class OpenAlexClient(BaseAPIClient):
             pmc_id = pmc_id.split("PMC")[-1] if "PMC" in pmc_id else pmc_id
             pmc_id = f"PMC{pmc_id}" if pmc_id and not pmc_id.startswith("PMC") else pmc_id
 
-        # Extract authors (limit to avoid token explosion)
+        # Preserve complete authorship for citation export
         authorships = work.get("authorships", []) or []
         author_names = []
         authors_full = []
-        for authorship in authorships[:10]:  # Limit to 10 authors
+        for authorship in authorships:
             author = authorship.get("author", {}) or {}
             name = author.get("display_name", "")
             if name:
@@ -766,7 +765,7 @@ class OpenAlexClient(BaseAPIClient):
 
         # Extract year/date
         pub_date = work.get("publication_date", "") or ""
-        year = pub_date[:4] if pub_date else str(work.get("publication_year", ""))
+        year = pub_date[:4] if pub_date else str(work.get("publication_year") or "")
         month = pub_date[5:7] if len(pub_date) >= 7 else ""
         day = pub_date[8:10] if len(pub_date) >= 10 else ""
 

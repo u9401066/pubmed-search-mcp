@@ -280,6 +280,8 @@ class BaseAPIClient:
                 self._service_name,
             )
             raise
+        except APIRequestError:
+            raise
         except Exception as e:
             from pubmed_search.shared.exceptions import RateLimitError
 
@@ -300,7 +302,7 @@ class BaseAPIClient:
     ) -> None:
         """Handle an exhausted retryable response without noisy tracebacks."""
         if error.status_code == 429:
-            cooldown = error.retry_after or _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS
+            cooldown = error.retry_after if error.retry_after is not None else _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS
             await self._apply_rate_limit_cooldown(policy, cooldown)
             logger.warning(
                 "%s rate limited by upstream API after retries; applying a %.0fs shared cooldown before failure",
@@ -343,7 +345,9 @@ class BaseAPIClient:
         redirect chain.  This prevents both ordinary oversized payloads and
         compressed responses from exhausting process memory before parsing.
         """
-        if method == "POST" and data:
+        if method not in {"GET", "POST"}:
+            raise ValueError("Source requests support GET and POST only")
+        if method == "POST":
             request = self._client.build_request(
                 "POST",
                 url,
@@ -378,6 +382,23 @@ class BaseAPIClient:
                 response.next_request = next_request
                 return response
 
+            if (request.url.scheme, request.url.host, request.url.port) != (
+                next_request.url.scheme,
+                next_request.url.host,
+                next_request.url.port,
+            ):
+                for name in tuple(next_request.headers):
+                    if name.lower() in {
+                        "authorization",
+                        "proxy-authorization",
+                        "cookie",
+                        "x-api-key",
+                        "x-apikey",
+                        "api-key",
+                        "x-els-apikey",
+                        "x-els-insttoken",
+                    }:
+                        next_request.headers.pop(name, None)
             history.append(response)
             request = next_request
 

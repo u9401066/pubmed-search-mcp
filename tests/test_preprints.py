@@ -188,3 +188,30 @@ class TestIcdDetection:
         # Test ICD-9 codes (with decimals included)
         assert "250" in ICD9_PATTERN.findall("250 diabetes")
         assert "410.1" in ICD9_PATTERN.findall("410.1 MI")
+
+
+async def test_arxiv_error_feed_does_not_become_an_article():
+    import pytest
+
+    from pubmed_search.infrastructure.sources.base_client import APIRequestError
+
+    client = ArXivClient()
+    try:
+        with pytest.raises(APIRequestError):
+            client._parse_atom_response(
+                '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#incorrect_id_format</id><title>Error</title><summary>Invalid identifier</summary></entry></feed>'
+            )
+    finally:
+        await client.close()
+
+
+async def test_preprint_searcher_preserves_full_abstract_and_closes_owned_clients():
+    searcher = PreprintSearcher()
+    text = "Evidence beyond the first 500 characters. " * 30
+    article = PreprintArticle("2301.12345", "Paper", text, [], "2023-01-01", None, "arxiv", [], None, None)
+    with patch.object(searcher.arxiv, "search", AsyncMock(return_value=[article])):
+        result = await searcher.search("diabetes", sources=["arxiv"])
+    assert result["articles"][0]["abstract"] == text
+    await searcher.close()
+    assert searcher.arxiv._client.is_closed
+    assert searcher.rxiv._client.is_closed

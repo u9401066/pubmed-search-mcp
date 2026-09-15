@@ -150,7 +150,7 @@ class TestAlternateSourceAdapter:
         assert result.total_count == 72
         assert result.cursor == "opaque-cursor"
         assert result.provenance["physical_query"] == (
-            "cancer AND FIRST_PDATE:[2020-01-01 TO *] AND OPEN_ACCESS:y AND HAS_FT:y"
+            "(cancer) AND FIRST_PDATE:[2020-01-01 TO *] AND OPEN_ACCESS:y AND HAS_FT:y"
         )
         mock_client.search.assert_awaited_once_with(
             query="cancer",

@@ -343,6 +343,10 @@ def _validate_alternate_search_request(
         raise ValueError("min_year must be less than or equal to max_year")
     if not isinstance(open_access_only, bool) or not isinstance(has_fulltext, bool):
         raise TypeError("open_access_only and has_fulltext must be booleans")
+    if has_fulltext and source not in {"europe_pmc", "core"}:
+        raise ValueError(f"{source} does not support a fulltext availability filter")
+    if open_access_only and source == "core":
+        raise ValueError("CORE does not expose a verified open-access-only filter")
 
 
 def _page_adapter_result(
@@ -490,19 +494,19 @@ async def _run_europe_pmc_adapter(
     next_cursor = result.get("next_cursor")
     if next_cursor is not None and not isinstance(next_cursor, str):
         raise TypeError("Europe PMC returned a malformed cursor")
-    filters = [query]
-    if min_year is not None:
-        filters.append(f"FIRST_PDATE:[{min_year}-01-01 TO *]")
-    if max_year is not None:
-        filters.append(f"FIRST_PDATE:[* TO {max_year}-12-31]")
-    if open_access_only:
-        filters.append("OPEN_ACCESS:y")
-    if has_fulltext:
-        filters.append("HAS_FT:y")
+    from .europe_pmc import EuropePMCClient
+
+    physical_query = EuropePMCClient.compile_query(
+        query,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+        has_fulltext=has_fulltext,
+    )
     return _mapping_adapter_result(
         source="europe_pmc",
         logical_query=query,
-        physical_query=" AND ".join(filters),
+        physical_query=physical_query,
         items=result.get("results"),
         total_count=result.get("hit_count"),
         cursor=next_cursor,

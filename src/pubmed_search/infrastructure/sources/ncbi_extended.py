@@ -200,7 +200,7 @@ class NCBIExtendedClient(BaseAPIClient):
         separator = "&" if "?" in url else "?"
         url += f"{separator}email={urllib.parse.quote(self._email)}&tool=pubmed-search-mcp"
         if self._api_key:
-            url += f"&api_key={self._api_key}"
+            url += "&" + urllib.parse.urlencode({"api_key": self._api_key})
         return await super()._execute_request(url, method=method, data=data, params=params, headers=headers)
 
     # =========================================================================
@@ -228,7 +228,7 @@ class NCBIExtendedClient(BaseAPIClient):
             # Build query
             search_query = query
             if organism:
-                search_query += f" AND {organism}[Organism]"
+                search_query = f"({query}) AND ({organism})[Organism]"
 
             # Search
             search_url = (
@@ -267,6 +267,7 @@ class NCBIExtendedClient(BaseAPIClient):
             Gene record or None
         """
         try:
+            gene_id = _normalize_provider_ids([gene_id])[0]
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={gene_id}&retmode=json"
             result = await self._make_request(url, expect_json=True)
             gene_data = _require_summary_item(result, str(gene_id))
@@ -290,6 +291,7 @@ class NCBIExtendedClient(BaseAPIClient):
             List of PubMed IDs
         """
         try:
+            gene_id = _normalize_provider_ids([gene_id])[0]
             url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=gene&db=pubmed&id={gene_id}&retmode=json"
             result = await self._make_request(url, expect_json=True)
             return _require_pubmed_links(result, requested_id=str(gene_id), source_db="gene")[:limit]
@@ -306,8 +308,8 @@ class NCBIExtendedClient(BaseAPIClient):
             "gene_id": gene.get("uid"),
             "symbol": gene.get("name", ""),
             "name": gene.get("description", ""),
-            "organism": gene.get("organism", {}).get("scientificname", ""),
-            "tax_id": gene.get("organism", {}).get("taxid"),
+            "organism": (gene.get("organism") or {}).get("scientificname", ""),
+            "tax_id": (gene.get("organism") or {}).get("taxid"),
             "chromosome": gene.get("chromosome", ""),
             "map_location": gene.get("maplocation", ""),
             "aliases": gene.get("otheraliases", "").split(", ") if gene.get("otheraliases") else [],
@@ -371,6 +373,7 @@ class NCBIExtendedClient(BaseAPIClient):
             Compound record or None
         """
         try:
+            cid = _normalize_provider_ids([cid])[0]
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={cid}&retmode=json"
             result = await self._make_request(url, expect_json=True)
             compound_data = _require_summary_item(result, str(cid))
@@ -394,6 +397,7 @@ class NCBIExtendedClient(BaseAPIClient):
             List of PubMed IDs
         """
         try:
+            cid = _normalize_provider_ids([cid])[0]
             url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=pccompound&db=pubmed&id={cid}&retmode=json"
             result = await self._make_request(url, expect_json=True)
             return _require_pubmed_links(result, requested_id=str(cid), source_db="pccompound")[:limit]
@@ -407,7 +411,7 @@ class NCBIExtendedClient(BaseAPIClient):
     def _normalize_compound(self, compound: dict) -> dict:
         """Normalize compound data to common format."""
         # Get synonyms
-        synonyms = compound.get("synonymlist", [])
+        synonyms = compound.get("synonymlist") or []
         if isinstance(synonyms, str):
             synonyms = [synonyms]
 
@@ -481,7 +485,7 @@ class NCBIExtendedClient(BaseAPIClient):
         significance = clinical_sig.get("description", "") if isinstance(clinical_sig, dict) else str(clinical_sig)
 
         # Get genes
-        genes = variant.get("genes", [])
+        genes = variant.get("genes") or []
         gene_symbols = []
         for gene in genes:
             if isinstance(gene, dict):
@@ -498,6 +502,6 @@ class NCBIExtendedClient(BaseAPIClient):
             "chromosome": variant.get("chr", ""),
             "start": variant.get("start"),
             "stop": variant.get("stop"),
-            "conditions": [c.get("trait_name", "") for c in variant.get("trait_set", []) if isinstance(c, dict)],
+            "conditions": [c.get("trait_name", "") for c in (variant.get("trait_set") or []) if isinstance(c, dict)],
             "_source": "clinvar",
         }
