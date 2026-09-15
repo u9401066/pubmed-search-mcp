@@ -348,3 +348,21 @@ def test_withdrawal_is_a_historical_event_not_an_automatically_superseded_claim(
     entry = assemble_chronicle(topic="drug", timeline=timeline).entries[0]
 
     assert entry.status is ChronicleEntryStatus.ACTIVE
+
+
+def test_two_event_cap_preserves_boundaries_without_extra_landmark():
+    events = [_event(str(index + 1), 2020 + index) for index in range(4)]
+    selected = TimelineBuilder._select_chronological_events(events, max_events=2)
+    assert [event.pmid for event in selected] == ["1", "4"]
+
+
+def test_phase_iv_title_is_not_matched_as_phase_i():
+    event = MilestoneDetector().detect_milestone({"pmid": "123", "year": 2024, "title": "A Phase IV study"})
+    assert event is not None
+    assert event.milestone_type is MilestoneType.PHASE_4
+
+
+def test_chronicle_retains_observed_zero_citations():
+    timeline = ResearchTimeline(topic="Example", events=[_event("123", 2024)])
+    snapshot = assemble_chronicle(topic="Example", timeline=timeline)
+    assert snapshot.evidence_articles[0].citation_count == 0

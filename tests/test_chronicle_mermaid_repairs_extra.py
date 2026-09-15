@@ -278,3 +278,24 @@ def test_seeded_hostile_projections_are_deterministic_bounded_and_renderable() -
         assert len(first.source.encode("utf-8")) <= 49_000
         valid, issues = validate_mermaid_source(first.source)
         assert valid, (case_index, issues, first.source)
+
+
+def test_duplicate_branch_repair_keys_do_not_overwrite_real_ids():
+    from pubmed_search.application.chronicle.mermaid import render_chronicle_mermaid_projection
+
+    projection = {
+        "topic": "Example",
+        "branches": [
+            {"branch_id": branch_id, "name": name, "entries": [{"entry_id": f"e{index}", "title": name}]}
+            for index, (branch_id, name) in enumerate(
+                [
+                    ("a", "First"),
+                    ("a", "Second"),
+                    ("a#duplicate-2", "Third"),
+                ]
+            )
+        ],
+    }
+    result = render_chronicle_mermaid_projection(projection)
+    assert all(name in result.source for name in ("First", "Second", "Third"))
+    assert not result.omitted_counts.get("duplicate_entries")

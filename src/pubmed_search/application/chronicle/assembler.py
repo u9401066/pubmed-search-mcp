@@ -155,7 +155,7 @@ def _build_evidence_article(event: TimelineEvent) -> EvidenceArticle:
         source=str(metadata.get("source") or "pubmed"),
         journal=event.journal,
         article_type=metadata.get("publication_type") or event.milestone_label,
-        citation_count=event.citation_count or None,
+        citation_count=event.citation_count,
         rcr=rcr,
         claim_excerpt=event.description,
     )
@@ -286,6 +286,7 @@ def assemble_chronicle(
                     "milestone_detection_confidence": event.confidence_score,
                     "confidence_semantics": "milestone_detection_confidence",
                     "milestone_detection": detection_details,
+                    "evidence_level_basis": event_metadata.get("evidence_level_basis"),
                     "landmark_importance_score": event.landmark_score.overall if event.landmark_score else None,
                     "landmark_score": landmark_score,
                     "landmark_tier": event.landmark_score.tier if event.landmark_score else None,
@@ -334,7 +335,7 @@ def assemble_chronicle(
                 description=str(details.get("description") or f"{branch.label} research line for {topic}"),
                 parent_branch_id=parent_id,
                 entry_ids=branch_entry_ids,
-                confidence=float(details.get("confidence") or 0.65),
+                confidence=float(details["confidence"]) if details.get("confidence") is not None else 0.65,
                 tags=tags,
             )
         )

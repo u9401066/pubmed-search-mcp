@@ -6,6 +6,7 @@ Target: milestone_detector.py (18% → 90%), timeline_builder.py (14% → 90%)
 
 from __future__ import annotations
 
+from pubmed_search.application.timeline.dates import parse_publication_month
 from pubmed_search.application.timeline.milestone_detector import (
     LANDMARK_CITATION_THRESHOLDS,
     PUBTYPE_PATTERNS,
@@ -599,52 +600,46 @@ class TestMilestoneDetectorMonthParsing:
 
     async def test_parse_month_int(self):
         """Test month parsing with integer."""
-        detector = MilestoneDetector()
-        assert detector._parse_month(6) == 6
+        assert parse_publication_month(6) == 6
 
     async def test_parse_month_int_string(self):
         """Test month parsing with numeric string."""
-        detector = MilestoneDetector()
-        assert detector._parse_month("06") == 6
-        assert detector._parse_month("12") == 12
+        assert parse_publication_month("06") == 6
+        assert parse_publication_month("12") == 12
 
     async def test_parse_month_name_full(self):
         """Test month parsing with full month name."""
-        detector = MilestoneDetector()
-        assert detector._parse_month("January") == 1
-        assert detector._parse_month("December") == 12
+        assert parse_publication_month("January") == 1
+        assert parse_publication_month("December") == 12
 
     async def test_parse_month_name_short(self):
         """Test month parsing with short month name."""
-        detector = MilestoneDetector()
-        assert detector._parse_month("Jan") == 1
-        assert detector._parse_month("Feb") == 2
-        assert detector._parse_month("Mar") == 3
-        assert detector._parse_month("Apr") == 4
-        assert detector._parse_month("May") == 5
-        assert detector._parse_month("Jun") == 6
-        assert detector._parse_month("Jul") == 7
-        assert detector._parse_month("Aug") == 8
-        assert detector._parse_month("Sep") == 9
-        assert detector._parse_month("Sept") == 9
-        assert detector._parse_month("Oct") == 10
-        assert detector._parse_month("Nov") == 11
-        assert detector._parse_month("Dec") == 12
+        assert parse_publication_month("Jan") == 1
+        assert parse_publication_month("Feb") == 2
+        assert parse_publication_month("Mar") == 3
+        assert parse_publication_month("Apr") == 4
+        assert parse_publication_month("May") == 5
+        assert parse_publication_month("Jun") == 6
+        assert parse_publication_month("Jul") == 7
+        assert parse_publication_month("Aug") == 8
+        assert parse_publication_month("Sep") == 9
+        assert parse_publication_month("Sept") == 9
+        assert parse_publication_month("Oct") == 10
+        assert parse_publication_month("Nov") == 11
+        assert parse_publication_month("Dec") == 12
 
     async def test_parse_month_case_insensitive(self):
         """Test month parsing is case insensitive."""
-        detector = MilestoneDetector()
-        assert detector._parse_month("JANUARY") == 1
-        assert detector._parse_month("january") == 1
+        assert parse_publication_month("JANUARY") == 1
+        assert parse_publication_month("january") == 1
 
     async def test_parse_month_invalid(self):
         """Test month parsing with invalid values."""
-        detector = MilestoneDetector()
-        assert detector._parse_month(0) is None
-        assert detector._parse_month(13) is None
-        assert detector._parse_month("invalid") is None
-        assert detector._parse_month(None) is None
-        assert detector._parse_month("") is None
+        assert parse_publication_month(0) is None
+        assert parse_publication_month(13) is None
+        assert parse_publication_month("invalid") is None
+        assert parse_publication_month(None) is None
+        assert parse_publication_month("") is None
 
 
 # =============================================================================

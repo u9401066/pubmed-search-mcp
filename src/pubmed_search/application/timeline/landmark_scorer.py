@@ -1,36 +1,8 @@
-"""
-Landmark Scorer - Multi-Signal Importance Scoring for Research Papers
+"""Heuristic prioritization from citation, retrieval and publication metadata.
 
-Identifies landmark papers from large search results using composite scoring
-that combines five complementary signals:
-
-1. Citation Impact: Field-normalized via RCR/NIH percentile (not raw count)
-2. Multi-Source Agreement: Cross-database validation (found in N sources)
-3. Milestone Patterns: Regex-based milestone detection confidence
-4. Evidence Quality: Publication type and evidence level
-5. Citation Velocity: Citations per year growth rate
-
-This replaces simple citation-count sorting with a principled multi-signal
-approach. The key insight: a paper with moderate citations but high RCR
-(top 1% in its field) + found in 3 databases is more important than a
-paper with many raw citations but low RCR from a single source.
-
-Default weights:
-    citation_impact:     0.35 (most reliable signal)
-    milestone_confidence: 0.20 (domain-specific patterns)
-    source_agreement:    0.15 (cross-validation)
-    evidence_quality:    0.15 (study type hierarchy)
-    citation_velocity:   0.15 (growth momentum)
-
-Example:
-    >>> scorer = LandmarkScorer()
-    >>> score = scorer.score_article(
-    ...     article={"pmid": "12345", "year": 2018},
-    ...     icite_metrics={"relative_citation_ratio": 4.2, "nih_percentile": 95},
-    ...     source_count=3,
-    ... )
-    >>> print(f"Landmark: {score.overall:.2f} ({score.tier})")
-    Landmark: 0.78 (landmark)
+Weights and thresholds are local heuristics, not calibrated scientific quality
+or benchmark performance. Database overlap measures retrieval coverage rather
+than independent verification, and RCR alone does not establish a percentile.
 """
 
 from __future__ import annotations
@@ -77,7 +49,7 @@ class LandmarkScorer:
     Compute composite landmark scores for identifying important papers.
 
     Uses a weighted combination of five signals to produce a single
-    0-1 score that captures paper importance better than raw citation count.
+    0-1 prioritization score whose usefulness requires task-specific evaluation.
 
     Thread-safe: stateless computation, can be used concurrently.
     """
@@ -92,10 +64,18 @@ class LandmarkScorer:
                      Default: citation_impact=0.35, milestone=0.20,
                      source=0.15, evidence=0.15, velocity=0.15
         """
-        raw_weights = weights or DEFAULT_WEIGHTS.copy()
-        # Normalize weights to sum to 1.0
+        raw_weights = DEFAULT_WEIGHTS.copy() if weights is None else dict(weights)
+        if not raw_weights or any(key not in DEFAULT_WEIGHTS for key in raw_weights):
+            raise ValueError("weights must contain known landmark components")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
+            for value in raw_weights.values()
+        ):
+            raise ValueError("weights must be finite and non-negative")
         total = sum(raw_weights.values())
-        self.weights = {k: v / total for k, v in raw_weights.items()} if total > 0 else raw_weights
+        if not math.isfinite(total) or total <= 0:
+            raise ValueError("weights must have a finite positive sum")
+        self.weights = {key: value / total for key, value in raw_weights.items()}
 
     def score_article(
         self,
@@ -119,6 +99,8 @@ class LandmarkScorer:
             LandmarkScore with composite and per-component scores
         """
         metrics = icite_metrics or {}
+        milestone_confidence = min(1.0, self._nonnegative_number(milestone_confidence) or 0.0)
+        evidence_level_score = min(1.0, self._nonnegative_number(evidence_level_score) or 0.0)
 
         # Compute each component
         citation_impact, citation_impact_diag = self._compute_citation_impact(article, metrics)
@@ -225,9 +207,6 @@ class LandmarkScorer:
         2. RCR (field-normalized, log-scaled)
         3. Raw citation count (fallback, log-scaled)
 
-        This is the key improvement over raw citation count: a niche paper
-        with RCR=4.2 (top 1% in its small field) scores higher than a
-        popular review with 200 citations but RCR=0.8 (below field average).
         """
         for policy in CITATION_IMPACT_POLICIES:
             raw_value = metrics.get(policy.metric_key)
@@ -240,8 +219,8 @@ class LandmarkScorer:
             if raw_value is None:
                 continue
 
-            numeric = float(raw_value)
-            if numeric <= 0:
+            numeric = self._nonnegative_number(raw_value)
+            if numeric is None:
                 continue
 
             if policy.mode == "percentile":
@@ -263,10 +242,10 @@ class LandmarkScorer:
         """
         Compute source agreement score (0-1).
 
-        Articles found in more independent sources are more likely
-        to be genuinely important. This provides cross-validation
-        that pure citation metrics cannot.
+        Database overlap is a retrieval heuristic, not independent validation.
         """
+        if isinstance(source_count, bool) or not isinstance(source_count, int) or source_count <= 0:
+            return 0.0, {"policy": "source_agreement_lookup", "raw_value": 0, "reason": "No known source coverage"}
         if source_count >= 5:
             return 1.0, {
                 "policy": "source_agreement_lookup",
@@ -294,8 +273,8 @@ class LandmarkScorer:
             raw_value = metrics.get(policy.metric_key)
             if raw_value is None:
                 continue
-            numeric = float(raw_value)
-            if numeric <= 0:
+            numeric = self._nonnegative_number(raw_value)
+            if numeric is None:
                 continue
             if policy.max_value is None:
                 continue
@@ -306,22 +285,34 @@ class LandmarkScorer:
             }
 
         # Fallback: estimate from total citations and publication age
-        citations = metrics.get("citation_count") or article.get("citation_count", 0)
-        year = article.get("year") or article.get("pub_year")
-        if citations and year:
-            try:
-                current_year = datetime.now(tz=timezone.utc).year
+        raw_citations = metrics.get("citation_count")
+        if raw_citations is None:
+            raw_citations = article.get("citation_count")
+        citations = self._nonnegative_number(raw_citations)
+        year = self._nonnegative_number(article.get("year") or article.get("pub_year"))
+        if citations is not None and year is not None and year.is_integer():
+            current_year = datetime.now(tz=timezone.utc).year
+            if 1000 <= year <= current_year:
                 age = max(1, current_year - int(year))
-                estimated_velocity = float(int(citations)) / age
+                estimated_velocity = citations / age
                 return self._normalize_log_score(estimated_velocity, MAX_VELOCITY_FOR_NORMALIZATION), {
                     "policy": "estimated_from_citations_and_age",
                     "raw_value": round(estimated_velocity, 3),
-                    "reason": "用引用數與論文年齡估算 citations_per_year",
+                    "reason": "Estimated citations per year from publication age",
                 }
-            except (ValueError, TypeError):
-                pass
 
         return 0.0, {"policy": "none", "raw_value": 0.0, "reason": "沒有可用的 velocity 指標"}
+
+    @staticmethod
+    def _nonnegative_number(value: Any) -> float | None:
+        """Treat malformed/nonfinite provider metrics as unavailable, preserving zero."""
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return number if math.isfinite(number) and number >= 0 else None
 
     def _normalize_log_score(self, value: float, max_value: float) -> float:
         """Normalize a positive metric with log scaling."""

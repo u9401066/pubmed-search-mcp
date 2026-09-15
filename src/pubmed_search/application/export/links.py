@@ -15,6 +15,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects.article_identifiers import (
+    normalize_pmid,
+    try_normalize_doi,
+    try_normalize_pmcid,
+    try_normalize_pmid,
+)
+
 if TYPE_CHECKING:
     from pubmed_search.application.client import LiteratureSearcher
 
@@ -34,9 +41,9 @@ def get_fulltext_links(article: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Dictionary with available links and access info.
     """
-    pmid = article.get("pmid", "")
-    doi = article.get("doi", "")
-    pmc_id = article.get("pmc_id", "")
+    pmid = try_normalize_pmid(article.get("pmid"))
+    doi = try_normalize_doi(article.get("doi"))
+    pmc_id = try_normalize_pmcid(article.get("pmc_id") or article.get("pmcid"))
 
     links = {
         "pmid": pmid,
@@ -57,8 +64,8 @@ def get_fulltext_links(article: dict[str, Any]) -> dict[str, Any]:
         links["has_free_fulltext"] = True
         links["access_type"] = "open_access"
     elif doi:
-        # DOI available but no PMC - likely paywalled
-        links["access_type"] = "subscription"
+        # A DOI identifies a work; it does not establish access or licence status.
+        links["access_type"] = "unknown"
 
     return links
 
@@ -77,15 +84,8 @@ async def get_fulltext_links_with_lookup(pmid: str, searcher: LiteratureSearcher
     Returns:
         Dictionary with available links and access info.
     """
-    links = {
-        "pmid": pmid,
-        "pubmed_url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-        "doi_url": None,
-        "pmc_url": None,
-        "pmc_pdf_url": None,
-        "has_free_fulltext": False,
-        "access_type": "abstract_only",
-    }
+    pmid = normalize_pmid(pmid)
+    links = get_fulltext_links({"pmid": pmid})
 
     try:
         # Use existing PDFMixin method
@@ -116,7 +116,7 @@ def get_batch_fulltext_links(articles: list[dict[str, Any]]) -> list[dict[str, A
 
     for article in articles:
         links = get_fulltext_links(article)
-        links["title"] = article.get("title", "")[:100]  # Truncate for display
+        links["title"] = str(article.get("title") or "")[:100]  # Truncate for display
         results.append(links)
 
     return results
@@ -134,7 +134,7 @@ def summarize_access(articles: list[dict[str, Any]]) -> dict[str, Any]:
     """
     total = len(articles)
     open_access = 0
-    subscription = 0
+    unknown = 0
     abstract_only = 0
 
     pmc_available = []
@@ -148,16 +148,16 @@ def summarize_access(articles: list[dict[str, Any]]) -> dict[str, Any]:
             pmc_available.append(
                 {
                     "pmid": article.get("pmid"),
-                    "title": article.get("title", "")[:80],
+                    "title": str(article.get("title") or "")[:80],
                     "pmc_pdf_url": links["pmc_pdf_url"],
                 }
             )
-        elif links["access_type"] == "subscription":
-            subscription += 1
+        elif links["access_type"] == "unknown":
+            unknown += 1
             no_fulltext.append(
                 {
                     "pmid": article.get("pmid"),
-                    "title": article.get("title", "")[:80],
+                    "title": str(article.get("title") or "")[:80],
                     "doi_url": links["doi_url"],
                 }
             )
@@ -166,7 +166,7 @@ def summarize_access(articles: list[dict[str, Any]]) -> dict[str, Any]:
             no_fulltext.append(
                 {
                     "pmid": article.get("pmid"),
-                    "title": article.get("title", "")[:80],
+                    "title": str(article.get("title") or "")[:80],
                     "doi_url": links["doi_url"],
                 }
             )
@@ -174,7 +174,8 @@ def summarize_access(articles: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total": total,
         "open_access": open_access,
-        "subscription": subscription,
+        "subscription": 0,  # Retained compatibility count; metadata alone cannot establish paywall status.
+        "unknown": unknown,
         "abstract_only": abstract_only,
         "pmc_available": pmc_available[:20],  # Limit for display
         "no_fulltext": no_fulltext[:20],  # Limit for display

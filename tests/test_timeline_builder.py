@@ -220,6 +220,20 @@ class TestBuildTimeline:
 
 
 class TestBuildTimelineFromPmids:
+    async def test_ordering_and_event_dates_use_the_same_month_policy(self, builder, mock_searcher):
+        mock_searcher.fetch_details.return_value = [
+            {"pmid": "3", "title": "March background", "year": "2024", "month": "+3"},
+            {"pmid": "2", "title": "January background", "year": "2024", "month": "Jan"},
+            {"pmid": "1", "title": "Randomized controlled trial", "year": "2024", "month": True},
+        ]
+
+        timeline = await builder.build_timeline_from_pmids(["3", "2", "1"], auto_periods=False)
+
+        assert [(event.pmid, event.month) for event in timeline.events] == [("1", None), ("2", 1), ("3", 3)]
+        # Earliest-in-scope selection happens before event construction. A
+        # different parser there used to choose the March paper as the first.
+        assert timeline.events[2].metadata.get("earliest_observed_in_scope") is not True
+
     @pytest.mark.asyncio
     async def test_empty_pmids(self, builder):
         timeline = await builder.build_timeline_from_pmids([])
@@ -518,39 +532,6 @@ class TestCreateGenericEvent:
         }
         event = builder._create_generic_event(article)
         assert event.journal == "JAMA"
-
-
-# ============================================================
-# _parse_month
-# ============================================================
-
-
-class TestParseMonth:
-    async def test_int(self, builder):
-        assert builder._parse_month(6) == 6
-
-    async def test_int_out_of_range(self, builder):
-        assert builder._parse_month(13) is None
-        assert builder._parse_month(0) is None
-
-    async def test_string_number(self, builder):
-        assert builder._parse_month("3") == 3
-
-    async def test_month_name(self, builder):
-        assert builder._parse_month("Jan") == 1
-        assert builder._parse_month("february") == 2
-        assert builder._parse_month("mar") == 3
-        assert builder._parse_month("sept") == 9
-        assert builder._parse_month("December") == 12
-
-    async def test_none(self, builder):
-        assert builder._parse_month(None) is None
-
-    async def test_invalid(self, builder):
-        assert builder._parse_month("xyz") is None
-
-    async def test_string_number_out_of_range(self, builder):
-        assert builder._parse_month("15") is None
 
 
 # ============================================================

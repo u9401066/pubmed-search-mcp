@@ -557,3 +557,14 @@ class TestLandmarkScoreIntegration:
         # Fallback to citation count (no landmark_score filter)
         all_events = timeline.get_landmark_events(min_citations=0)
         assert len(all_events) == 3
+
+
+@pytest.mark.parametrize("metric", ["N/A", float("nan"), float("inf")])
+def test_malformed_metrics_do_not_abort_or_become_maximum_scores(metric):
+    scorer = LandmarkScorer()
+    score = scorer.score_article(
+        {"pmid": "123", "year": 2020}, {"nih_percentile": metric, "citations_per_year": metric}
+    )
+    assert score.citation_impact == 0
+    assert score.citation_velocity == 0
+    assert 0 <= score.overall < 0.1

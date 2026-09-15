@@ -536,3 +536,24 @@ def test_diff_rejects_topic_discontinuity_even_with_same_id() -> None:
             _snapshot(chronicle_id, 1, topic="Topic Alpha"),
             _snapshot(chronicle_id, 2, topic="Topic Beta"),
         )
+
+
+def test_store_ignores_revision_directories_and_external_symlink_chronicles(tmp_path):
+    store = ChronicleStore(tmp_path / "store")
+    store.save(_snapshot("example", 1))
+    (store.root_dir / "example" / "revision-999.json").mkdir()
+    assert store.latest_revision("example") == 1
+    outside = ChronicleStore(tmp_path / "outside")
+    outside.save(_snapshot("external", 1))
+    (store.root_dir / "external").symlink_to(outside.root_dir / "external", target_is_directory=True)
+    assert [row["chronicle_id"] for row in store.list_chronicles()] == ["example"]
+
+
+def test_store_validates_revision_payload_identity_on_direct_load(tmp_path):
+    store = ChronicleStore(tmp_path)
+    path = store.save(_snapshot("example", 1))
+    payload = json.loads(path.read_text())
+    payload["chronicle_id"] = "other"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="identity"):
+        store.load("example", 1)

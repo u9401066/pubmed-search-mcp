@@ -29,6 +29,7 @@ from pubmed_search.domain.entities.timeline import (
     TimelineEvent,
 )
 
+from .dates import parse_publication_month, parse_publication_year
 from .milestone_policy import (
     DEFAULT_CITATION_THRESHOLD_POLICIES,
     DEFAULT_PUBTYPE_POLICIES,
@@ -76,8 +77,8 @@ class MilestoneDetector:
             pubtype_patterns: Custom publication type patterns
             min_confidence: Minimum confidence threshold for detection
         """
-        self.title_patterns = title_patterns or TITLE_PATTERNS
-        self.pubtype_patterns = pubtype_patterns or PUBTYPE_PATTERNS
+        self.title_patterns = TITLE_PATTERNS if title_patterns is None else title_patterns
+        self.pubtype_patterns = PUBTYPE_PATTERNS if pubtype_patterns is None else pubtype_patterns
         self.min_confidence = min_confidence
         self._title_pattern_policies = self._build_title_policies(title_patterns)
         self._pubtype_policies = self._build_pubtype_policies(pubtype_patterns)
@@ -104,7 +105,7 @@ class MilestoneDetector:
         year = article.get("year") or article.get("pub_year")
         abstract = str(article.get("abstract") or "")
 
-        if not pmid or self._parse_year(year) is None:
+        if not pmid or parse_publication_year(year) is None:
             return None
 
         # Earliest-in-scope is provenance, not a scientific milestone type.
@@ -163,7 +164,7 @@ class MilestoneDetector:
         sorted_articles = sorted(
             articles,
             key=lambda a: (
-                self._parse_year(a.get("year") or a.get("pub_year")) or 9999,
+                parse_publication_year(a.get("year") or a.get("pub_year")) or 9999,
                 str(a.get("pmid", "")),
             ),
         )
@@ -184,7 +185,7 @@ class MilestoneDetector:
         include_unphased_rct: bool = True,
     ) -> TimelineEvent | None:
         """Detect milestone from publication type."""
-        pub_types = article.get("publication_types", [])
+        pub_types = article.get("publication_types") or []
         if isinstance(pub_types, str):
             pub_types = [pub_types]
 
@@ -246,13 +247,15 @@ class MilestoneDetector:
 
     def _detect_from_citations(self, article: dict[str, Any]) -> TimelineEvent | None:
         """Detect landmark based on citation count."""
-        citations = article.get("citation_count") or article.get("citations", 0)
+        citations = article.get("citation_count")
+        if citations is None:
+            citations = article.get("citations", 0)
         if not citations:
             return None
 
         try:
             citation_count = int(citations)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
         for policy in self._citation_threshold_policies:
             if citation_count < policy.minimum_citations or not policy.emit_event:
@@ -290,10 +293,10 @@ class MilestoneDetector:
 
         # Ensure year and month are int (BioPython may return StringElement)
         raw_year = article.get("year") or article.get("pub_year")
-        year = self._parse_year(raw_year) or 0
+        year = parse_publication_year(raw_year) or 0
 
         raw_month = article.get("month") or article.get("pub_month")
-        month = self._parse_month(raw_month)
+        month = parse_publication_month(raw_month)
 
         # Extract author info
         authors = article.get("authors", [])
@@ -349,6 +352,7 @@ class MilestoneDetector:
             "mesh_terms": _strings(article.get("mesh_terms")),
             "keywords": _strings(article.get("keywords")),
             "publication_types": publication_types,
+            "evidence_level_basis": "publication_type_heuristic_not_quality_assessment",
             "publication_type": publication_types[0] if publication_types else None,
             "pmcid": article.get("pmc_id") or article.get("pmcid"),
         }
@@ -387,73 +391,13 @@ class MilestoneDetector:
             for index, (publication_type, (milestone_type, label, confidence)) in enumerate(pubtype_patterns.items())
         )
 
-    def _parse_month(self, raw_month: Any) -> int | None:
-        """Parse month from various formats (int, string name, string number)."""
-        if not raw_month:
-            return None
-
-        # If already int
-        if isinstance(raw_month, int):
-            return raw_month if 1 <= raw_month <= 12 else None
-
-        # Convert to string
-        month_str = str(raw_month).strip()
-
-        # Try numeric
-        try:
-            month_int = int(month_str)
-            return month_int if 1 <= month_int <= 12 else None
-        except ValueError:
-            pass
-
-        # Month name mapping
-        month_names = {
-            "jan": 1,
-            "january": 1,
-            "feb": 2,
-            "february": 2,
-            "mar": 3,
-            "march": 3,
-            "apr": 4,
-            "april": 4,
-            "may": 5,
-            "jun": 6,
-            "june": 6,
-            "jul": 7,
-            "july": 7,
-            "aug": 8,
-            "august": 8,
-            "sep": 9,
-            "sept": 9,
-            "september": 9,
-            "oct": 10,
-            "october": 10,
-            "nov": 11,
-            "november": 11,
-            "dec": 12,
-            "december": 12,
-        }
-
-        return month_names.get(month_str.lower())
-
-    @staticmethod
-    def _parse_year(raw_year: Any) -> int | None:
-        """Parse a plausible four-digit publication year without raising."""
-        if isinstance(raw_year, bool) or raw_year is None:
-            return None
-        text = str(raw_year).strip()
-        if len(text) != 4 or not text.isdecimal():
-            return None
-        year = int(text)
-        return year if 1000 <= year <= 9999 else None
-
     def infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
         """Infer evidence level from publication type."""
         return self._infer_evidence_level(article)
 
     def _infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
         """Infer evidence level from publication type."""
-        pub_types = article.get("publication_types", [])
+        pub_types = article.get("publication_types") or []
         if isinstance(pub_types, str):
             pub_types = [pub_types]
 

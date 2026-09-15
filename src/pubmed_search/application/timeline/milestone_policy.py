@@ -75,7 +75,7 @@ DEFAULT_TITLE_PATTERN_POLICIES: tuple[RegexMilestonePolicy, ...] = (
     ),
     RegexMilestonePolicy(
         name="phase_3_trial",
-        pattern=r"\b(phase\s*(?:III|3)|pivotal\s+trial)",
+        pattern=r"\b(phase\s*(?:III|3)\b|pivotal\s+trial)",
         milestone_type=MilestoneType.PHASE_3,
         label="Phase 3 Trial",
         confidence=0.9,
@@ -83,7 +83,7 @@ DEFAULT_TITLE_PATTERN_POLICIES: tuple[RegexMilestonePolicy, ...] = (
     ),
     RegexMilestonePolicy(
         name="phase_2_trial",
-        pattern=r"\b(phase\s*(?:II|2)|dose[- ]?find)",
+        pattern=r"\b(phase\s*(?:II|2)\b|dose[- ]?find)",
         milestone_type=MilestoneType.PHASE_2,
         label="Phase 2 Trial",
         confidence=0.85,
@@ -91,7 +91,7 @@ DEFAULT_TITLE_PATTERN_POLICIES: tuple[RegexMilestonePolicy, ...] = (
     ),
     RegexMilestonePolicy(
         name="phase_1_trial",
-        pattern=r"\b(phase\s*(?:I|1)|first[- ]?in[- ]?human|FIH)",
+        pattern=r"\b(phase\s*(?:I|1)\b|first[- ]?in[- ]?human|FIH)",
         milestone_type=MilestoneType.PHASE_1,
         label="Phase 1 Trial",
         confidence=0.85,
@@ -99,7 +99,7 @@ DEFAULT_TITLE_PATTERN_POLICIES: tuple[RegexMilestonePolicy, ...] = (
     ),
     RegexMilestonePolicy(
         name="phase_4_study",
-        pattern=r"\b(phase\s*(?:IV|4)|post[- ]?market)",
+        pattern=r"\b(phase\s*(?:IV|4)\b|post[- ]?market)",
         milestone_type=MilestoneType.PHASE_4,
         label="Phase 4 Study",
         confidence=0.85,
