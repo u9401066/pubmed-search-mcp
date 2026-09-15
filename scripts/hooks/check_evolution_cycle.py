@@ -134,7 +134,7 @@ def check_hooks_documented(report: ValidationReport) -> None:
             "commit-size-guard",
             "tool-count-sync",
             "skills-frontmatter",
-            "pytest",
+            "local-validation",
             "future-annotations",
             "no-print-in-src",
             "ddd-layer-imports",
@@ -263,7 +263,7 @@ def check_pyproject_addopts(report: ValidationReport) -> None:
             "error",
             "config-sync",
             ".pre-commit-config.yaml missing pre-push stage (tests not running on push)",
-            fix_hint="Add a pytest hook with stages: [pre-push]",
+            fix_hint="Add the local-validation hook with stages: [pre-push]",
         )
 
 

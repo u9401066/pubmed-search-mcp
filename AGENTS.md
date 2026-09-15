@@ -28,6 +28,8 @@ tool-native locations such as `.github/copilot-instructions.md` or
 - Update relevant docs when behavior, tool surface, or setup instructions change.
 - When MCP tools are added, removed, or renamed, keep registry, docs, and
   generated artifacts in sync.
+- Note export alone does not verify bibliography or claim support. Preserve the
+  unverified status and abstract opt-out semantics documented in `docs/TOOLS_USAGE_GUIDE.md`.
 - When note export behavior changes, keep skills, Copilot instructions, Cline
   rules, generated docs, and packaged references aligned.
 - The `unicode-mojibake` pre-commit hook scans newly staged diff lines for
@@ -53,6 +55,19 @@ tool-native locations such as `.github/copilot-instructions.md` or
   - `uv run pytest -q`
   - `uv run mypy src/ tests/`
   - `uv run python scripts/check_async_tests.py`
+
+## Installation and Test Ownership
+
+- Installing/upgrading harness assets must preserve existing user-owned files
+  and whole skill directories by default. Never reset MCP settings, hooks,
+  `AGENTS.md`, or customized instructions during activation or reinstall.
+  Use `scripts/install_research_skills.py` for explicit research-skill copies;
+  review updates manually rather than mixing files from different versions.
+- Prefer regression and public-contract tests over coverage-only assertions.
+  Remove a duplicate only after identifying the stronger retained coverage.
+- Before push, run `uv run --frozen python scripts/check_repo.py full`.
+  Ordinary CI provides an independent smaller smoke gate; extended platform,
+  Mermaid, and container checks remain explicit. See `CONTRIBUTING.md`.
 
 ## Shared Constraints
 

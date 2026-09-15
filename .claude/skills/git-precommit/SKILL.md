@@ -89,7 +89,7 @@ description: "Orchestrate pre-commit workflow including Memory Bank sync, README
 │  ✅ name-tests-test  │                                      │
 │ ── Pre-push ──────── │                                      │
 │  ✅ mypy (pre-push)  │                                      │
-│  ✅ semgrep (pre-push)│                                     │
+│  ✅ semgrep (manual)│                                     │
 │  ✅ pytest (pre-push) │                                     │
 ├──────────────────────┼──────────────────────────────────────┤
 │  🔧 自動修復：       │  🔧 自動修復：                        │
@@ -170,7 +170,7 @@ uv run python scripts/hooks/check_evolution_cycle.py  # 手動執行一致性檢
 └─────────────────────────────────────────────────┘
 ```
 
-> Step 2 會執行 `uv run pre-commit run --all-files`，涵蓋 ruff、file hygiene、tool docs sync 等所有自動化檢查。mypy 和 semgrep 已移至 pre-push 階段以防 OOM。
+> Step 2 會執行 `uv run pre-commit run --all-files`，涵蓋 ruff、file hygiene、tool docs sync 等所有自動化檢查。pre-push 使用 local-validation 共用完整檢查（含 mypy、pytest）；semgrep 需要上游網路規則，改為 manual 階段。
 
 ## 必要步驟：MCP 工具數量同步
 
@@ -208,7 +208,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 ## 跳過特定 Hook
 
 ```bash
-SKIP=mypy git commit -m "quick fix"         # 跳過 mypy (較慢)
+SKIP=local-validation git push             # 緊急略過，不代表驗證通過
 git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 ```
 

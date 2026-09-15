@@ -10,7 +10,7 @@
 # Usage:
 #   git commit                     # hooks run automatically
 #   uv run pre-commit run --all-files  # run on all files manually
-#   SKIP=mypy git commit           # skip a slow hook
+#   uv run python scripts/check_repo.py full  # full validation before push
 #
 # Auto-evolution (update hook versions):
 #   uv run pre-commit autoupdate   # bump all hooks to latest version
@@ -19,6 +19,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   # ─────────────────────────────────────────────────────────────
@@ -37,6 +38,9 @@ repos:
         exclude: ^(htmlcov/|\.vscode/)
       - id: check-added-large-files
         args: ['--maxkb=500']
+        # Authored per-definition review evidence (2,901 core entries); this
+        # reviewed JSON ledger is intentionally larger than a typical source file.
+        exclude: ^docs/reports/code_review_ledger\.json$
       - id: check-merge-conflict
       - id: debug-statements
       - id: detect-private-key
@@ -125,7 +129,7 @@ repos:
         files: ^(src/|pyproject\.toml)
         # Config in [tool.deptry] in pyproject.toml
 
-  # semgrep moved to pre-push (see section 5) — too heavy for commit-time (~300-500MB)
+  # semgrep is manual (see section 5); its upstream rules require network access.
 
   # ─────────────────────────────────────────────────────────────
   # 4. Local hooks — project-specific checks
@@ -298,7 +302,7 @@ repos:
         #   Instructions → Skills → Hooks → Validate → Feedback
         # Only runs when relevant config/doc files are modified
   # ─────────────────────────────────────────────────────────────
-  # 5. Pre-push hooks — heavier analysis (mypy, semgrep, pytest)
+  # 5. Local validation — complete pre-push gate and opt-in network scan
   #    These are too memory-intensive for pre-commit (~1-2GB total)
   #    but essential before pushing to remote.
   # ─────────────────────────────────────────────────────────────
@@ -308,25 +312,18 @@ repos:
       - id: semgrep
         name: semgrep security analysis
         args: [--config, p/python, --error, --quiet]
-        stages: [pre-push]
+        stages: [manual]
+        # Downloads upstream rules; run explicitly when auditing security:
+        # uv run pre-commit run semgrep --all-files --hook-stage manual
 
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy type check (src/)
-        entry: uv run mypy src/
-        language: system
-        types: [python]
-        pass_filenames: false
-        stages: [pre-push]
-
-      - id: pytest
-        name: pytest (multi-core)
-        entry: uv run pytest tests/ -n 4 --timeout=60 -q --no-header -m "not integration"
+      - id: local-validation
+        name: complete local validation (lint, format, async, types, tests)
+        entry: uv run --frozen python scripts/check_repo.py full
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-        # Integration tests call live third-party APIs, so they would make
-        # pushing depend on someone else's uptime. Run them on demand with
-        # `uv run pytest -m integration`.
+        # Single process by default: no forced four-worker memory multiplier.
+        # Includes slow wheel/transport tests. External API probes stay opt-in.

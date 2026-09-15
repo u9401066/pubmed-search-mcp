@@ -12,6 +12,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
 
+def test_console_scripts_are_runtime_roots_in_the_import_audit() -> None:
+    from scripts.perf.import_surface_audit import build_audit
+
+    modules = {module["module"]: module for module in build_audit()["modules"]}
+    assert modules["pubmed_search.presentation.mcp_server.http_cli"]["status"] == "root_or_package"
+
+
 def _probe(code: str) -> dict[str, Any]:
     env = os.environ.copy()
     pythonpath = str(SRC_ROOT)
