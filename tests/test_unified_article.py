@@ -550,7 +550,7 @@ class TestUnifiedArticleCitation:
         assert ", & " in citation
 
     async def test_cite_apa_many_authors(self):
-        """Test cite_apa with more than 7 authors."""
+        """APA 7 retains up to twenty authors."""
         article = UnifiedArticle(
             title="Large Team Research",
             primary_source="pubmed",
@@ -558,7 +558,8 @@ class TestUnifiedArticleCitation:
             year=2024,
         )
         citation = article.cite_apa()
-        assert "..." in citation
+        assert "..." not in citation
+        assert "Author9, X. (2024)." in citation
 
     async def test_cite_apa_no_year(self):
         """Test cite_apa without year."""

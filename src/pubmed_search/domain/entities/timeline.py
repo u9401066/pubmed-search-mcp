@@ -11,7 +11,7 @@ Key Entities:
 
 Architecture:
     Uses dataclasses for consistency with UnifiedArticle.
-    All entities are immutable and serializable.
+    Events are frozen records; timeline collections remain mutable while building.
 
 Example:
     >>> event = TimelineEvent(
@@ -29,12 +29,32 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
+from html import escape
 from typing import Any
 
 # Landmark tier thresholds
 LANDMARK_TIER_THRESHOLD = 0.75
 NOTABLE_TIER_THRESHOLD = 0.50
 MINOR_TIER_THRESHOLD = 0.25
+
+
+_TIMELINE_TRANSLATION: dict[int, str] = {
+    ord(":"): " -",
+    ord("%"): "％",
+    ord("<"): "‹",
+    ord(">"): "›",
+    ord("{"): "(",
+    ord("}"): ")",
+    ord(";"): ",",
+    ord("`"): "'",
+    ord("#"): "＃",
+    ord("&"): "＆",
+}
+
+
+def _timeline_text(value: str) -> str:
+    """Keep text on one timeline grammar line, without HTML or directives."""
+    return " ".join(value.split()).translate(_TIMELINE_TRANSLATION)
 
 
 class MilestoneType(Enum):
@@ -369,7 +389,7 @@ class ResearchTimeline:
         Returns:
             Mermaid timeline syntax for visualization.
         """
-        lines = ["timeline", f"    title {self.topic} Research Timeline"]
+        lines = ["timeline", f"    title {_timeline_text(self.topic)} Research Timeline"]
 
         # Group events by year
         events_by_year: dict[int, list[TimelineEvent]] = {}
@@ -384,7 +404,7 @@ class ResearchTimeline:
             lines.append(f"    section {year if year > 0 else 'Undated'}")
             for event in year_events:
                 # Escape special characters in label
-                label = event.milestone_label.replace(":", " -")
+                label = _timeline_text(event.milestone_label) or "Event"
                 lines.append(f"        {label}")
 
         return "\n".join(lines)
@@ -405,8 +425,9 @@ class ResearchTimeline:
                         "month": event.month or 1,
                     },
                     "text": {
-                        "headline": event.milestone_label,
-                        "text": f"<p>{event.title}</p>" + (f"<p><em>{event.journal}</em></p>" if event.journal else ""),
+                        "headline": escape(event.milestone_label),
+                        "text": f"<p>{escape(event.title)}</p>"
+                        + (f"<p><em>{escape(event.journal)}</em></p>" if event.journal else ""),
                     },
                     "group": event.milestone_type.value,
                     "unique_id": event.pmid,
@@ -416,7 +437,7 @@ class ResearchTimeline:
         return {
             "title": {
                 "text": {
-                    "headline": f"{self.topic} Research Timeline",
+                    "headline": f"{escape(self.topic)} Research Timeline",
                     "text": f"<p>{self.total_events} events from {self.year_range[0] if self.year_range else 'N/A'} to {self.year_range[1] if self.year_range else 'N/A'}</p>",
                 }
             },

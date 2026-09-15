@@ -30,40 +30,47 @@ from pubmed_search.domain.entities.article import (
 )
 
 
+def _authors(value: Any) -> list[Author]:
+    """Normalize optional author lists and single author records consistently."""
+    if isinstance(value, (str, dict)):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [Author.from_dict(item) for item in value if isinstance(item, (str, dict)) and item]
+
+
 def article_from_pubmed(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from PubMed search/detail data."""
-    authors: list[Author] = []
-    if "authors" in data:
-        for author_str in data["authors"]:
-            if isinstance(author_str, str):
-                authors.append(Author(full_name=author_str))
-            elif isinstance(author_str, dict):
-                authors.append(Author.from_dict(author_str))
+    authors = _authors(data.get("authors"))
 
     pub_date = None
     year = None
     if data.get("pub_date"):
         year, pub_date = _parse_pubmed_date(data["pub_date"])
     if not year and data.get("year"):
-        year = int(data["year"])
+        with contextlib.suppress(ValueError, TypeError):
+            year = int(data["year"])
 
     article_type = ArticleType.UNKNOWN
     if data.get("article_type"):
         type_map = {
-            "Journal Article": ArticleType.JOURNAL_ARTICLE,
-            "Review": ArticleType.REVIEW,
             "Meta-Analysis": ArticleType.META_ANALYSIS,
             "Systematic Review": ArticleType.SYSTEMATIC_REVIEW,
-            "Clinical Trial": ArticleType.CLINICAL_TRIAL,
             "Randomized Controlled Trial": ArticleType.RANDOMIZED_CONTROLLED_TRIAL,
+            "Clinical Trial": ArticleType.CLINICAL_TRIAL,
             "Case Reports": ArticleType.CASE_REPORT,
             "Letter": ArticleType.LETTER,
             "Editorial": ArticleType.EDITORIAL,
             "Comment": ArticleType.COMMENT,
+            "Review": ArticleType.REVIEW,
+            "Journal Article": ArticleType.JOURNAL_ARTICLE,
         }
-        for pub_type in data.get("article_type", []):
-            if pub_type in type_map:
-                article_type = type_map[pub_type]
+        pub_types = data["article_type"]
+        if isinstance(pub_types, str):
+            pub_types = [pub_types]
+        for pub_type, mapped_type in type_map.items():
+            if pub_type in pub_types:
+                article_type = mapped_type
                 break
 
     oa_status = OpenAccessStatus.UNKNOWN
@@ -110,11 +117,11 @@ def article_from_pubmed(data: dict[str, Any]) -> UnifiedArticle:
 
 def article_from_crossref(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from CrossRef work metadata."""
-    authors = [Author.from_dict(author_data) for author_data in data.get("author", [])]
+    authors = _authors(data.get("author"))
 
     year = None
     pub_date = None
-    date_parts = data.get("published", {}).get("date-parts", [[]])
+    date_parts = (data.get("published") or {}).get("date-parts", [[]])
     if date_parts and date_parts[0]:
         parts = date_parts[0]
         if len(parts) >= 1:
@@ -149,21 +156,11 @@ def article_from_crossref(data: dict[str, Any]) -> UnifiedArticle:
             pmc = alt_id
             break
 
-    oa_links: list[OpenAccessLink] = []
-    for link in data.get("link", []):
-        if link.get("content-type") == "application/pdf":
-            oa_links.append(
-                OpenAccessLink(
-                    url=link["URL"],
-                    version="publishedVersion" if "publisher" in link.get("intended-application", "") else "unknown",
-                    host_type="publisher",
-                )
-            )
-
+    # Crossref full-text/TDM URLs can require subscriptions. Preserve them in
+    # raw_data; only OA resolvers may promote access links to oa_links.
     return UnifiedArticle(
-        title=data.get("title", ["Unknown Title"])[0]
-        if isinstance(data.get("title"), list)
-        else data.get("title", "Unknown Title"),
+        title=(data["title"][0] if isinstance(data.get("title"), list) and data["title"] else data.get("title"))
+        or "Unknown Title",
         primary_source="crossref",
         doi=data.get("DOI"),
         pmc=pmc,
@@ -178,9 +175,8 @@ def article_from_crossref(data: dict[str, Any]) -> UnifiedArticle:
         publication_date=pub_date,
         publisher=data.get("publisher"),
         article_type=article_type,
-        oa_links=oa_links,
         citation_metrics=CitationMetrics(citation_count=data.get("is-referenced-by-count"))
-        if data.get("is-referenced-by-count")
+        if data.get("is-referenced-by-count") is not None
         else None,
         sources=[SourceMetadata(source="crossref", raw_data=data)],
     )
@@ -314,7 +310,7 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
         oa_status=oa_status,
         oa_links=oa_links,
         citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
-        if data.get("cited_by_count")
+        if data.get("cited_by_count") is not None
         else None,
         sources=[SourceMetadata(source="openalex", raw_data=data)],
     )
@@ -372,7 +368,7 @@ def article_from_semantic_scholar(data: dict[str, Any]) -> UnifiedArticle:
             citation_count=data.get("citationCount"),
             influential_citation_count=data.get("influentialCitationCount"),
         )
-        if data.get("citationCount")
+        if data.get("citationCount") is not None
         else None,
         sources=[SourceMetadata(source="semantic_scholar", raw_data=data)],
     )
@@ -380,12 +376,7 @@ def article_from_semantic_scholar(data: dict[str, Any]) -> UnifiedArticle:
 
 def article_from_core(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from CORE normalized response."""
-    authors: list[Author] = []
-    for author in data.get("authors", []):
-        if isinstance(author, str):
-            authors.append(Author(full_name=author))
-        elif isinstance(author, dict):
-            authors.append(Author(full_name=author.get("name", "")))
+    authors = _authors(data.get("authors"))
 
     oa_links: list[OpenAccessLink] = []
     for url_key in ("download_url", "pdf_url", "reader_url"):
@@ -409,20 +400,15 @@ def article_from_core(data: dict[str, Any]) -> UnifiedArticle:
         is_open_access=bool(data.get("has_fulltext") or data.get("download_url")),
         oa_links=oa_links,
         citation_metrics=CitationMetrics(citation_count=data.get("citation_count"))
-        if data.get("citation_count")
+        if data.get("citation_count") is not None
         else None,
         sources=[SourceMetadata(source="core", raw_data=data)],
     )
 
 
-def article_from_scopus(data: dict[str, Any]) -> UnifiedArticle:
-    """Create UnifiedArticle from Scopus normalized response."""
-    authors: list[Author] = []
-    for author in data.get("authors", []):
-        if isinstance(author, str):
-            authors.append(Author(full_name=author))
-        elif isinstance(author, dict):
-            authors.append(Author(full_name=author.get("name", "")))
+def _article_from_commercial_index(data: dict[str, Any], source: str) -> UnifiedArticle:
+    """Map the shared normalized Scopus/WoS bibliographic contract."""
+    authors = _authors(data.get("authors"))
 
     oa_links: list[OpenAccessLink] = []
     link = data.get("link")
@@ -431,7 +417,7 @@ def article_from_scopus(data: dict[str, Any]) -> UnifiedArticle:
 
     return UnifiedArticle(
         title=data.get("title") or "Unknown Title",
-        primary_source="scopus",
+        primary_source=source,
         doi=data.get("doi"),
         authors=authors,
         abstract=data.get("abstract"),
@@ -440,41 +426,20 @@ def article_from_scopus(data: dict[str, Any]) -> UnifiedArticle:
         is_open_access=bool(data.get("is_open_access")),
         oa_links=oa_links,
         citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
-        if data.get("cited_by_count")
+        if data.get("cited_by_count") is not None
         else None,
-        sources=[SourceMetadata(source="scopus", raw_data=data)],
+        sources=[SourceMetadata(source=source, raw_data=data)],
     )
+
+
+def article_from_scopus(data: dict[str, Any]) -> UnifiedArticle:
+    """Create UnifiedArticle from Scopus normalized response."""
+    return _article_from_commercial_index(data, "scopus")
 
 
 def article_from_web_of_science(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from Web of Science normalized response."""
-    authors: list[Author] = []
-    for author in data.get("authors", []):
-        if isinstance(author, str):
-            authors.append(Author(full_name=author))
-        elif isinstance(author, dict):
-            authors.append(Author(full_name=author.get("name", "")))
-
-    oa_links: list[OpenAccessLink] = []
-    link = data.get("link")
-    if data.get("is_open_access") and link:
-        oa_links.append(OpenAccessLink(url=link, is_best=True))
-
-    return UnifiedArticle(
-        title=data.get("title") or "Unknown Title",
-        primary_source="web_of_science",
-        doi=data.get("doi"),
-        authors=authors,
-        abstract=data.get("abstract"),
-        journal=data.get("journal") or data.get("journal_abbrev"),
-        year=data.get("year"),
-        is_open_access=bool(data.get("is_open_access")),
-        oa_links=oa_links,
-        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
-        if data.get("cited_by_count")
-        else None,
-        sources=[SourceMetadata(source="web_of_science", raw_data=data)],
-    )
+    return _article_from_commercial_index(data, "web_of_science")
 
 
 def article_from_europe_pmc(data: dict[str, Any]) -> UnifiedArticle:
@@ -506,7 +471,7 @@ def article_from_preprint(data: dict[str, Any]) -> UnifiedArticle:
     }
     journal_label = journal_map.get(source_key, "Preprint Server")
 
-    authors = [Author(full_name=name) for name in data.get("authors", []) if name]
+    authors = _authors(data.get("authors"))
 
     year: int | None = None
     pub_date: date | None = None

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
@@ -64,11 +65,11 @@ _CITATION_MEDIUM = 10
 
 # Author display limits
 _AUTHOR_DISPLAY_MAX = 3
-_APA_AUTHOR_MAX = 7
+_APA_AUTHOR_MAX = 20
 _CROSSREF_AUTHOR_BATCH = 2  # Min date-parts for full date
 
 # APA citation formatting
-_APA_AUTHOR_TRUNCATE = 6  # Show first 6 authors before "..."
+_APA_AUTHOR_TRUNCATE = 19  # First 19 and the final author for groups larger than 20
 _APA_DUAL_AUTHOR = 2  # When exactly 2 authors, join with "&"
 
 # CrossRef date parsing: minimum date parts for full date
@@ -110,7 +111,7 @@ def _parse_pubmed_month(token: str) -> int | None:
     if normalized in _PUBMED_MONTHS:
         return _PUBMED_MONTHS[normalized]
 
-    if normalized.isdigit():
+    if normalized.isdecimal():
         month = int(normalized)
         if 1 <= month <= MONTHS_PER_YEAR:
             return month
@@ -151,7 +152,7 @@ def _parse_pubmed_date(value: Any) -> tuple[int | None, date | None]:
             continue
 
         for day_token in tokens[index + 1 :]:
-            if day_token.isdigit():
+            if day_token.isdecimal():
                 day = int(day_token)
                 break
         break
@@ -259,15 +260,22 @@ class Author:
         return self.display_name
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Author:
+    def from_dict(cls, data: dict[str, Any] | str) -> Author:
         """Create Author from various source formats."""
+        if isinstance(data, str):
+            return cls(full_name=data)
         # CrossRef format
         if "family" in data:
             return cls(
                 family_name=data.get("family"),
                 given_name=data.get("given"),
                 orcid=data.get("ORCID"),
-                affiliation="; ".join(aff.get("name", "") for aff in data.get("affiliation", [])) or None,
+                affiliation="; ".join(
+                    aff["name"]
+                    for aff in data.get("affiliation") or []
+                    if isinstance(aff, dict) and isinstance(aff.get("name"), str) and aff["name"]
+                )
+                or None,
             )
         # OpenAlex format
         if "display_name" in data:
@@ -275,9 +283,6 @@ class Author:
                 full_name=data.get("display_name"),
                 orcid=data.get("orcid"),
             )
-        # Simple string
-        if isinstance(data, str):
-            return cls(full_name=data)
         # Generic dict
         return cls(
             family_name=data.get("family_name"),
@@ -602,16 +607,21 @@ class UnifiedArticle:
         # Authors in APA format: "Last, F. M., & Last, F. M."
         if self.authors:
             apa_names = []
-            for _i, author in enumerate(self.authors[:_APA_AUTHOR_MAX]):
+            selected = (
+                self.authors[:_APA_AUTHOR_TRUNCATE] + self.authors[-1:]
+                if len(self.authors) > _APA_AUTHOR_MAX
+                else self.authors
+            )
+            for author in selected:
                 if author.family_name and author.given_name:
                     initials = ". ".join(w[0].upper() for w in author.given_name.split() if w) + "."
                     apa_names.append(f"{author.family_name}, {initials}")
                 else:
                     apa_names.append(author.display_name)
             if len(self.authors) > _APA_AUTHOR_MAX:
-                author_str = ", ".join(apa_names[:_APA_AUTHOR_TRUNCATE]) + ", ... " + apa_names[-1]
+                author_str = ", ".join(apa_names[:_APA_AUTHOR_TRUNCATE]) + ", . . . " + apa_names[-1]
             elif len(apa_names) == _APA_DUAL_AUTHOR:
-                author_str = " & ".join(apa_names)
+                author_str = ", & ".join(apa_names)
             elif len(apa_names) > _APA_DUAL_AUTHOR:
                 author_str = ", ".join(apa_names[:-1]) + ", & " + apa_names[-1]
             else:
@@ -622,7 +632,7 @@ class UnifiedArticle:
 
         # Year
         year_str = f"({self.year})" if self.year else "(n.d.)"
-        parts.append(year_str)
+        parts[0] += f" {year_str}"
 
         # Title (sentence case, italicized in real APA)
         parts.append(self.title)
@@ -819,28 +829,25 @@ class UnifiedArticle:
         # Merge citation metrics
         if other.citation_metrics:
             if not self.citation_metrics:
-                self.citation_metrics = other.citation_metrics
+                self.citation_metrics = deepcopy(other.citation_metrics)
             else:
                 # Prefer higher citation count (more recent data)
                 if (other.citation_metrics.citation_count or 0) > (self.citation_metrics.citation_count or 0):
                     self.citation_metrics.citation_count = other.citation_metrics.citation_count
                 # Fill missing metrics
-                if not self.citation_metrics.relative_citation_ratio and other.citation_metrics.relative_citation_ratio:
+                if self.citation_metrics.relative_citation_ratio is None:
                     self.citation_metrics.relative_citation_ratio = other.citation_metrics.relative_citation_ratio
-                if not self.citation_metrics.nih_percentile and other.citation_metrics.nih_percentile:
+                if self.citation_metrics.nih_percentile is None:
                     self.citation_metrics.nih_percentile = other.citation_metrics.nih_percentile
-                if not self.citation_metrics.apt and other.citation_metrics.apt:
+                if self.citation_metrics.apt is None:
                     self.citation_metrics.apt = other.citation_metrics.apt
-                if (
-                    not self.citation_metrics.influential_citation_count
-                    and other.citation_metrics.influential_citation_count
-                ):
+                if self.citation_metrics.influential_citation_count is None:
                     self.citation_metrics.influential_citation_count = other.citation_metrics.influential_citation_count
 
         # Merge journal metrics
         if other.journal_metrics:
             if not self.journal_metrics:
-                self.journal_metrics = other.journal_metrics
+                self.journal_metrics = deepcopy(other.journal_metrics)
             else:
                 # Fill missing fields
                 if not self.journal_metrics.issn and other.journal_metrics.issn:
@@ -972,35 +979,33 @@ class UnifiedArticle:
 
         Used for deduplication.
         """
-        # DOI match (most reliable)
-        left_doi = self._normalize_doi(self.doi or "")
-        right_doi = self._normalize_doi(other.doi or "")
-        if left_doi and right_doi:
-            return left_doi == right_doi
-
-        # PMID match
-        left_pmid = str(self.pmid or "").strip()
-        right_pmid = str(other.pmid or "").strip()
-        if left_pmid and right_pmid:
-            return left_pmid == right_pmid
-
-        # Provider identifiers are equally strong within their own namespaces.
-        # Normalize URLs/case/arXiv versions before comparing.
         from pubmed_search.shared.article_identity import normalize_article_identifier
 
+        matched = False
         for attr, kind in (
+            ("doi", "doi"),
+            ("pmid", "pmid"),
             ("pmc", "pmc"),
             ("openalex_id", "openalex"),
             ("s2_id", "s2"),
             ("core_id", "core"),
             ("arxiv_id", "arxiv"),
         ):
-            left = normalize_article_identifier(kind, getattr(self, attr))
-            right = normalize_article_identifier(kind, getattr(other, attr))
+            left = (
+                self._normalize_doi(self.doi or "")
+                if kind == "doi"
+                else normalize_article_identifier(kind, getattr(self, attr))
+            )
+            right = (
+                self._normalize_doi(other.doi or "")
+                if kind == "doi"
+                else normalize_article_identifier(kind, getattr(other, attr))
+            )
             if left and right:
-                return left == right
-
-        return False
+                if left != right:
+                    return False
+                matched = True
+        return matched
 
     @staticmethod
     def _normalize_doi(doi: str) -> str:

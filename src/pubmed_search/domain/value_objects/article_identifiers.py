@@ -99,10 +99,14 @@ def normalize_doi(value: object) -> str:
     if lowered.startswith("doi:"):
         text = text[4:].strip()
     elif "://" in text:
-        parsed = urlsplit(text)
+        try:
+            parsed = urlsplit(text)
+            port = parsed.port
+        except ValueError:
+            raise IdentifierValidationError("DOI URL is malformed") from None
         if parsed.scheme.lower() not in {"http", "https"}:
             raise IdentifierValidationError("DOI URL must use HTTP or HTTPS")
-        if parsed.username or parsed.password or parsed.port is not None:
+        if parsed.username is not None or parsed.password is not None or port is not None:
             raise IdentifierValidationError("DOI URL must not contain credentials or a port")
         if (parsed.hostname or "").lower() not in {"doi.org", "dx.doi.org"}:
             raise IdentifierValidationError("DOI URL host must be doi.org")

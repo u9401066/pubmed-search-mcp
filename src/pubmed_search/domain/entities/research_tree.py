@@ -4,7 +4,7 @@ Research Tree Entities - Branching Research Lineage Model
 A Research Tree captures how a research field evolves into sub-topics over time.
 Unlike a flat timeline (single line) or a Knowledge Graph (over-connected),
 a tree preserves:
-- Temporal ordering (parent ??child in time)
+- Temporal ordering (parent to child in time)
 - Natural branching into sub-fields (Clinical, Safety, Guidelines, etc.)
 - Hierarchical organization without cross-linkage noise
 
@@ -15,13 +15,13 @@ Key Entities:
 Architecture:
     Dataclasses for consistency with other domain entities.
     ResearchBranch can have sub_branches for deeper nesting (e.g.,
-    Clinical Dev ??Phase I, Phase II, Phase III).
+    Clinical Dev: Phase I, Phase II, Phase III).
 
 Example:
     >>> branch = ResearchBranch(
     ...     branch_id="clinical",
     ...     label="Clinical Development",
-    ...     icon="?",
+    ...     icon="Clinical",
     ...     events=[event1, event2],
     ... )
     >>> tree = ResearchTree(topic="remimazolam", branches=[branch])
@@ -166,21 +166,7 @@ class ResearchTree:
         }
 
     def to_text_tree(self) -> str:
-        """
-        Format as a human-readable ASCII tree.
-
-        Example output:
-            ## Research Tree: remimazolam
-            **Period**: 2010 - 2024 | **Branches**: 5 | **Events**: 23
-            ??? ? Discovery & Mechanism (2010-2016) [3 events]
-            ??  ??? 2010: First synthesis (PMID: 123) 潃?潃?            ??  ??? 2016: Metabolism pathway (PMID: 456)
-            ??? ? Clinical Development (2014-2023) [8 events]
-            ??  ??? Phase I/II (2014-2019) [3 events]
-            ??  ??  ??? 2014: First-in-human (PMID: 789)
-            ??  ??? Phase III/IV (2020-2023) [5 events]
-            ??      ??? 2020: Pivotal trial (PMID: 012) 潃?潃?            ??? ?? Safety (2018-2024) [4 events]
-                ??? 2024: Post-marketing meta-analysis (PMID: 345)
-        """
+        """Render every nested branch and direct event as a Unicode text tree."""
         lines: list[str] = []
 
         # Header
@@ -201,72 +187,24 @@ class ResearchTree:
 
         lines.append("")
 
-        # Branches
+        def append_branch(branch: ResearchBranch, indent: str, last: bool) -> None:
+            connector = "└── " if last else "├── "
+            child_indent = indent + ("    " if last else "│   ")
+            year_range = branch.year_range
+            year_label = f"({year_range[0]}-{year_range[1]})" if year_range else ""
+            label = " ".join(f"{branch.icon} {branch.label}".split())
+            lines.append(f"{indent}{connector}{label} {year_label} [{branch.total_events} events]")
+            children = [child for child in branch.sub_branches if not child.is_empty]
+            for index, child in enumerate(children):
+                append_branch(child, child_indent, index == len(children) - 1 and not branch.events)
+            for index, event in enumerate(branch.events):
+                connector = "└── " if index == len(branch.events) - 1 else "├── "
+                stars = f" {event.landmark_score.stars}" if event.landmark_score and event.landmark_score.stars else ""
+                title = " ".join(event.title.split())
+                title = title[:_TITLE_MAX_LEN] + ("..." if len(title) > _TITLE_MAX_LEN else "")
+                lines.append(f"{child_indent}{connector}{event.date_label}: {title} (PMID: {event.pmid}){stars}")
+
         active = self.active_branches
-        for i, branch in enumerate(active):
-            is_last_branch = i == len(active) - 1
-            prefix = "??? " if is_last_branch else "??? "
-            child_prefix = "    " if is_last_branch else "??  "
-
-            yr_range = branch.year_range
-            yr_str = f"({yr_range[0]}-{yr_range[1]})" if yr_range else ""
-            lines.append(f"{prefix}{branch.icon} {branch.label} {yr_str} [{branch.total_events} events]")
-
-            # Sub-branches
-            if branch.sub_branches:
-                non_empty_subs = [s for s in branch.sub_branches if not s.is_empty]
-                for j, sub in enumerate(non_empty_subs):
-                    is_last_sub = j == len(non_empty_subs) - 1
-                    sub_prefix = "??? " if is_last_sub else "??? "
-                    sub_child = "    " if is_last_sub else "??  "
-
-                    sub_yr = sub.year_range
-                    sub_yr_str = f"({sub_yr[0]}-{sub_yr[1]})" if sub_yr else ""
-                    lines.append(f"{child_prefix}{sub_prefix}{sub.label} {sub_yr_str} [{sub.total_events} events]")
-
-                    # Events in sub-branch
-                    for k, event in enumerate(sub.events):
-                        is_last_ev = k == len(sub.events) - 1
-                        ev_prefix = "??? " if is_last_ev else "??? "
-                        stars = (
-                            f" {event.landmark_score.stars}"
-                            if event.landmark_score and event.landmark_score.stars
-                            else ""
-                        )
-                        title_short = event.title[:_TITLE_MAX_LEN] + (
-                            "..." if len(event.title) > _TITLE_MAX_LEN else ""
-                        )
-                        lines.append(
-                            f"{child_prefix}{sub_child}{ev_prefix}"
-                            f"{event.year}: {title_short} "
-                            f"(PMID: {event.pmid}){stars}"
-                        )
-
-                # Events directly on branch (not in any sub-branch)
-                if branch.events:
-                    for k, event in enumerate(branch.events):
-                        is_last_ev = k == len(branch.events) - 1
-                        ev_prefix = "??? " if is_last_ev else "??? "
-                        stars = (
-                            f" {event.landmark_score.stars}"
-                            if event.landmark_score and event.landmark_score.stars
-                            else ""
-                        )
-                        title_short = event.title[:_TITLE_MAX_LEN] + (
-                            "..." if len(event.title) > _TITLE_MAX_LEN else ""
-                        )
-                        lines.append(
-                            f"{child_prefix}{ev_prefix}{event.year}: {title_short} (PMID: {event.pmid}){stars}"
-                        )
-            else:
-                # No sub-branches, show events directly
-                for k, event in enumerate(branch.events):
-                    is_last_ev = k == len(branch.events) - 1
-                    ev_prefix = "??? " if is_last_ev else "??? "
-                    stars = (
-                        f" {event.landmark_score.stars}" if event.landmark_score and event.landmark_score.stars else ""
-                    )
-                    title_short = event.title[:_TITLE_MAX_LEN] + ("..." if len(event.title) > _TITLE_MAX_LEN else "")
-                    lines.append(f"{child_prefix}{ev_prefix}{event.year}: {title_short} (PMID: {event.pmid}){stars}")
-
+        for index, branch in enumerate(active):
+            append_branch(branch, "", index == len(active) - 1)
         return "\n".join(lines)

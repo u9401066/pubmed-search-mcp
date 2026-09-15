@@ -11,7 +11,7 @@ Key entities:
     - :class:`ChronicleBranch`: a readable research line grouping entries.
     - :class:`ChronicleGraph`: typed, auditable provenance graph.
     - :class:`ChronicleAudit`: completeness/integrity findings.
-    - :class:`ChronicleSnapshot`: one immutable chronicle revision.
+    - :class:`ChronicleSnapshot`: one persisted chronicle revision.
 
 All entities round-trip through ``to_dict()`` / ``from_dict()`` so revisions can
 be persisted as JSON artifacts and re-read by remote agents.
@@ -184,7 +184,7 @@ class EvidenceArticle:
             return f"doi:{self.doi}"
         if self.pmcid:
             return f"pmcid:{self.pmcid}"
-        return f"title:{self.title[:80]}"
+        return f"title:{self.title}"
 
     @property
     def has_identifier(self) -> bool:
@@ -226,7 +226,7 @@ class EvidenceArticle:
             pmid=data.get("pmid"),
             doi=data.get("doi"),
             pmcid=data.get("pmcid"),
-            year=int(year) if isinstance(year, (int, float, str)) and str(year).isdigit() else None,
+            year=int(year) if isinstance(year, (int, float, str)) and str(year).isdecimal() else None,
             source=str(data.get("source") or "pubmed"),
             journal=data.get("journal"),
             article_type=data.get("article_type"),
@@ -335,7 +335,7 @@ class ChronicleEntry:
         if (
             len(parts) not in _VALID_DATE_PART_COUNTS
             or len(parts[0]) != _YEAR_DIGITS
-            or not all(part.isdigit() for part in parts)
+            or not all(part.isdecimal() for part in parts)
         ):
             return None
         year = int(parts[0])
@@ -692,7 +692,7 @@ class ChronicleAudit:
 
 @dataclass
 class ChronicleSnapshot:
-    """One immutable chronicle revision - the chronicle source of truth.
+    """One chronicle revision; mutable while building, immutable once persisted.
 
     Attributes:
         chronicle_id: Stable identifier shared by every revision of a topic.
