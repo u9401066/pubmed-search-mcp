@@ -6,6 +6,7 @@ Dataclasses for PubTator3 API responses.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -38,9 +39,8 @@ class EntityMatch:
     @property
     def mesh_id(self) -> str | None:
         """Extract MeSH ID if identifier is a MeSH term."""
-        if self.identifier and self.identifier.startswith(("D", "C")):
-            return self.identifier
-        return None
+        match = re.fullmatch(r"(?:MESH:)?([DC][0-9]+)", self.identifier or "", re.IGNORECASE)
+        return match.group(1).upper() if match else None
 
     def to_pubmed_query(self) -> str:
         """Convert to PubMed search query format."""
@@ -74,6 +74,8 @@ class RelationMatch:
 
     def get_evidence_pmids(self, limit: int = 5) -> list[str]:
         """Get top PMIDs as evidence."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            raise ValueError("limit must be a non-negative integer")
         return self.pmids[:limit]
 
 

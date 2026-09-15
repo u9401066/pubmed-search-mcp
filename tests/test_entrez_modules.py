@@ -141,7 +141,7 @@ class TestCitationMixin:
                     "LinkSetDb": [
                         {
                             "LinkName": "pubmed_pubmed_refs",
-                            "Link": [{"Id": "ref1"}, {"Id": "ref2"}],
+                            "Link": [{"Id": "111"}, {"Id": "222"}],
                         }
                     ]
                 }
@@ -483,3 +483,33 @@ class TestSearchMixin:
 
             with pytest.raises(NCBIInfrastructureError, match="NCBI history_fetch failed"):
                 await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
+
+
+async def test_icite_cache_respects_fields_and_isolates_returned_records():
+    from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
+
+    searcher = ICiteMixin()
+    fetch = AsyncMock(
+        side_effect=[
+            {"123": {"pmid": 123, "citation_count": 2}},
+            {"123": {"pmid": 123, "relative_citation_ratio": 1.5}},
+        ]
+    )
+    with patch.object(searcher, "_fetch_icite_batch", fetch):
+        first = await searcher.get_citation_metrics(["123"], fields=["citation_count"])
+        first["123"]["citation_count"] = 999
+        second = await searcher.get_citation_metrics(["123"], fields=["relative_citation_ratio"])
+        third = await searcher.get_citation_metrics(["123"], fields=["citation_count"])
+    assert second["123"]["relative_citation_ratio"] == 1.5
+    assert third["123"]["citation_count"] == 2
+    assert fetch.await_count == 2
+
+
+async def test_search_keeps_boolean_topic_grouped_when_adding_filters():
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+    searcher = LiteratureSearcher()
+    with patch.object(searcher, "_search_ids", AsyncMock(return_value=([], 0, "", ""))) as fetch:
+        page = await searcher.search_page("asthma OR diabetes", language="english")
+    assert page.query == "(asthma OR diabetes) AND eng[la]"
+    assert fetch.await_args.args[0] == page.query

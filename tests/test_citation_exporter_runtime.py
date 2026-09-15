@@ -75,3 +75,38 @@ async def test_citation_exporter_never_exposes_upstream_failure_details(
     assert result.error == expected_error
     assert "secret" not in (result.error or "")
     assert "/srv/private" not in (result.error or "")
+
+
+async def test_citation_export_reports_actual_records_and_rejects_html() -> None:
+    exporter = NCBICitationExporter()
+    with patch.object(
+        exporter._transport_kernel,
+        "execute",
+        AsyncMock(side_effect=["TY  - JOUR\nER  -\n", "<html>maintenance</html>"]),
+    ):
+        partial = await exporter.export_citations(["1", "2"])
+        broken = await exporter.export_citations(["1"])
+    assert partial.success and partial.pmid_count == 1
+    assert not broken.success and broken.pmid_count == 0
+
+
+async def test_related_links_do_not_spend_limit_on_seed_or_duplicates() -> None:
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+    searcher = LiteratureSearcher()
+    handle = AsyncMock()
+    # The handle close contract is synchronous.
+    from unittest.mock import MagicMock
+
+    handle.close = MagicMock()
+    record = [{"LinkSetDb": [{"LinkName": "pubmed_pubmed", "Link": [{"Id": item} for item in ("1", "2", "2", "3")]}]}]
+
+    async def details(pmids):
+        return [{"pmid": pmid} for pmid in pmids]
+
+    with (
+        patch.object(searcher, "_rate_limited_call", AsyncMock(return_value=handle)),
+        patch.object(searcher, "fetch_details", details),
+        patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read", return_value=record),
+    ):
+        assert await searcher.get_related_articles("1", limit=2) == [{"pmid": "2"}, {"pmid": "3"}]

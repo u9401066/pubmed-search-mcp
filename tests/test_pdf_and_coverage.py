@@ -68,13 +68,13 @@ class TestPDFMixin:
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.return_value.response = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
-                return_value=mock_client,
+                "pubmed_search.infrastructure.http.safe_outbound.fetch_public_url",
+                new=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -99,13 +99,13 @@ class TestPDFMixin:
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/html"}
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.return_value.response = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
-                return_value=mock_client,
+                "pubmed_search.infrastructure.http.safe_outbound.fetch_public_url",
+                new=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -117,13 +117,13 @@ class TestPDFMixin:
         output_path = tmp_path / "test.pdf"
 
         mock_client = AsyncMock()
-        mock_client.get.side_effect = Exception("Network Error")
+        mock_client.side_effect = Exception("Network Error")
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
-                return_value=mock_client,
+                "pubmed_search.infrastructure.http.safe_outbound.fetch_public_url",
+                new=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -137,13 +137,13 @@ class TestPDFMixin:
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.return_value.response = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
-                return_value=mock_client,
+                "pubmed_search.infrastructure.http.safe_outbound.fetch_public_url",
+                new=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pdf("12345")
@@ -167,13 +167,13 @@ class TestPDFMixin:
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
         mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
+        mock_client.return_value.response = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
-                return_value=mock_client,
+                "pubmed_search.infrastructure.http.safe_outbound.fetch_public_url",
+                new=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pdf("12345", str(output_path))
@@ -320,3 +320,19 @@ class TestMainModule:
         # Check if module exists without importing
         spec = importlib.util.find_spec("pubmed_search.presentation.mcp_server.__main__")
         assert spec is not None or spec is None  # Module may or may not exist
+
+
+async def test_pdf_mime_without_pdf_signature_does_not_overwrite_file(tmp_path):
+    from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
+
+    searcher = PDFMixin()
+    path = tmp_path / "existing.pdf"
+    path.write_bytes(b"preserve")
+    response = MagicMock(status_code=200, headers={"Content-Type": "application/pdf"}, content=b"<html>blocked</html>")
+    with (
+        patch.object(searcher, "_get_pmc_id", AsyncMock(return_value="123")),
+        patch("pubmed_search.infrastructure.http.safe_outbound.fetch_public_url") as getter,
+    ):
+        getter.return_value.response = response
+        assert await searcher.download_pdf("1", str(path)) is None
+    assert path.read_bytes() == b"preserve"

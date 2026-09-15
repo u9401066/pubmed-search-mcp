@@ -16,8 +16,11 @@ from typing import Any
 
 from Bio import Entrez
 
+from pubmed_search.domain.value_objects.article_identifiers import try_normalize_pmid
+
 from .base import (
     DEFAULT_ENTREZ_TOOL,
+    NCBIProviderSchemaError,
     execute_entrez_operation,
     raise_ncbi_infrastructure_error,
     run_entrez_callable,
@@ -86,6 +89,8 @@ class UtilsMixin:
 
             summaries = await self._execute_entrez(_do_summary, service_name="ncbi-utils:esummary")
 
+            if not isinstance(summaries, list):
+                raise_ncbi_infrastructure_error("summary_fetch", NCBIProviderSchemaError("summary_fetch"))
             results = []
             for summary in summaries:
                 # ESummary returns DictionaryElement but hasattr check is safer
@@ -109,7 +114,12 @@ class UtilsMixin:
                         }
                     )
 
-            return results
+            by_pmid = {row["pmid"]: row for row in results}
+            if len(by_pmid) != len(summaries) or any(
+                try_normalize_pmid(pmid) is None or pmid not in id_list for pmid in by_pmid
+            ):
+                raise_ncbi_infrastructure_error("summary_fetch", NCBIProviderSchemaError("summary_fetch"))
+            return [by_pmid[pmid] for pmid in dict.fromkeys(id_list) if pmid in by_pmid]
         except Exception as exc:
             raise_ncbi_infrastructure_error("summary_fetch", exc)
 
@@ -239,6 +249,8 @@ class UtilsMixin:
         Returns:
             PMID if found, None otherwise.
         """
+        if any(any(char in value for char in "|\r\n\t") for value in (journal, year, volume, first_page, author)):
+            raise ValueError("Citation fields cannot contain record delimiters")
         try:
             citation_string = f"{journal}|{year}|{volume}|{first_page}|{author}||"
 
@@ -258,12 +270,13 @@ class UtilsMixin:
 
             result = await self._execute_entrez(_do_citation_match, service_name="ncbi-utils:ecitmatch")
 
-            if result and "\t" in result:
-                parts = result.split("\t")
-                if len(parts) > 1 and parts[1].isdigit():
-                    return parts[1]
-
-            return None
+            # ECitMatch appends the PMID to the pipe-delimited citation.
+            # Multiple/ambiguous rows must never resolve to a guessed article.
+            lines = result.splitlines()
+            if len(lines) != 1:
+                return None
+            fields = lines[0].split("|")
+            return try_normalize_pmid(fields[-1].strip()) if len(fields) == 7 else None
         except Exception as exc:
             raise_ncbi_infrastructure_error("citation_match", exc)
 

@@ -62,20 +62,6 @@ class TestCOREClient:
         assert normalized["citation_count"] == 42
         assert normalized["_source"] == "core"
 
-    async def test_search_method_exists(self):
-        """Test search methods exist."""
-        from pubmed_search.infrastructure.sources.core import COREClient
-
-        client = COREClient()
-
-        # Test that search methods structure is correct
-        assert hasattr(client, "search")
-        assert hasattr(client, "search_fulltext")
-        assert hasattr(client, "get_work")
-        assert hasattr(client, "get_fulltext")
-        assert hasattr(client, "search_by_doi")
-        assert hasattr(client, "search_by_pmid")
-
 
 # =============================================================================
 # NCBI Extended Client Tests
@@ -326,3 +312,26 @@ class TestServerIntegration:
         assert "unified_search" in tool_names
         assert "search_gene" in tool_names
         assert "search_compound" in tool_names
+
+
+async def test_core_available_fulltext_survives_nullable_optional_metadata():
+    from pubmed_search.infrastructure.sources.core import COREClient
+
+    client = COREClient()
+    try:
+        result = client._normalize_work(
+            {
+                "id": 123,
+                "title": "Paper",
+                "fullText": "Complete body",
+                "authors": None,
+                "identifiers": None,
+                "links": None,
+                "dataProviders": None,
+            }
+        )
+        assert result["fulltext_available"] is True
+        assert result["authors"] == []
+        assert result["full_text"] == "Complete body"
+    finally:
+        await client.close()

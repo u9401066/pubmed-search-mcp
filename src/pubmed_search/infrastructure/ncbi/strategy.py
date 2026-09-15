@@ -422,7 +422,6 @@ class SearchStrategyGenerator:
             "to",
             "a",
             "an",
-            "icu",
         }
 
         if use_mesh:
@@ -507,7 +506,7 @@ class SearchStrategyGenerator:
         all_synonyms = []
         for mesh in result["mesh_terms"]:
             all_synonyms.extend(mesh.get("synonyms", []))
-        result["all_synonyms"] = list(set(all_synonyms))[:15]  # Dedupe, limit
+        result["all_synonyms"] = list(dict.fromkeys(all_synonyms))[:15]  # Dedupe, limit
 
         # Step 3: Generate suggested queries (optional - Agent can ignore or use as reference)
         if not include_suggestions:
@@ -612,7 +611,7 @@ class SearchStrategyGenerator:
                 {
                     "id": f"q{query_id}_rct",
                     "query": f"({working_topic}) AND (randomized controlled trial[pt])",
-                    "purpose": "RCT only - highest evidence",
+                    "purpose": "Randomized controlled trial publication type; quality not assessed",
                     "priority": 1,
                 }
             )
@@ -662,7 +661,10 @@ class SearchStrategyGenerator:
         result: dict[str, Any] = {"topic": topic, "expansion_type": "mesh_based", "queries": []}
 
         existing_set = set(existing_queries)
-        query_id = len(existing_set) + 1
+        query_id = 1
+        # Reserve both generated suffixes before allocating the next numeric ID.
+        while any(f"q{query_id}_{suffix}" in existing_set for suffix in ("exp_syn", "exp_word")):
+            query_id += 1
 
         # Get MeSH info
         mesh_info = await self.get_mesh_info(topic)
@@ -670,6 +672,8 @@ class SearchStrategyGenerator:
         if mesh_info:
             # Use remaining synonyms
             for syn in mesh_info.get("synonyms", [])[5:10]:
+                while f"q{query_id}_exp_syn" in existing_set:
+                    query_id += 1
                 qid = f"q{query_id}_exp_syn"
                 if qid not in existing_set:
                     result["queries"].append(
@@ -690,6 +694,8 @@ class SearchStrategyGenerator:
                 if word_mesh:
                     for syn in word_mesh.get("synonyms", [])[:2]:
                         new_topic = topic.replace(word, syn)
+                        while f"q{query_id}_exp_word" in existing_set:
+                            query_id += 1
                         qid = f"q{query_id}_exp_word"
                         if qid not in existing_set:
                             result["queries"].append(

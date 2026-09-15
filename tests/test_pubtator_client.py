@@ -116,7 +116,7 @@ class TestRequest:
         mock_http.get.return_value = mock_resp
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         result = await client._request("test/endpoint", {"key": "val"})
         assert result == {"result": "ok"}
 
@@ -125,6 +125,7 @@ class TestRequest:
         """429 triggers retry."""
         mock_resp_429 = MagicMock()
         mock_resp_429.status_code = 429
+        mock_resp_429.headers = {"Retry-After": "0"}
 
         mock_resp_ok = MagicMock()
         mock_resp_ok.status_code = 200
@@ -135,7 +136,7 @@ class TestRequest:
         mock_http.get.side_effect = [mock_resp_429, mock_resp_ok]
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await client._request("test")
         assert result == {"ok": True}
@@ -149,7 +150,7 @@ class TestRequest:
         mock_http.get.side_effect = httpx.TimeoutException("timeout")
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         with pytest.raises(APIRequestError, match="PubTator3 request failed"):
             await client._request("test")
         assert mock_http.get.call_count == client._MAX_RETRIES + 1
@@ -168,7 +169,7 @@ class TestRequest:
         mock_http.get.return_value = mock_resp
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         with patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RetryableOperationError, match="PubTator3 request failed") as caught:
                 await client._request("test")
@@ -189,7 +190,7 @@ class TestRequest:
         mock_http.get.return_value = mock_resp
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         with pytest.raises(APIRequestError, match="PubTator3 request failed with HTTP 400") as caught:
             await client._request("test")
         assert caught.value.status_code == 400
@@ -205,7 +206,7 @@ class TestRequest:
         mock_http.get.return_value = mock_resp
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
 
         first = await client.find_entity("propofol", concept="chemical")
         second = await client.find_entity("midazolam", concept="chemical")
@@ -221,7 +222,7 @@ class TestRequest:
         mock_http.get.side_effect = ValueError("unexpected")
         mock_http.is_closed = False
 
-        client._client = mock_http
+        client._execute_request = mock_http.get
         with pytest.raises(APIRequestError, match="PubTator3 request failed"):
             await client._request("test")
 
@@ -376,8 +377,17 @@ class TestGetAnnotations:
             "_request",
             return_value={
                 "PubTator3": [
-                    {"type": "chemicals", "text": "Propofol", "identifier": "C12345"},
-                    {"type": "genes", "text": "BRCA1", "identifier": "672"},
+                    {
+                        "id": "12345678",
+                        "passages": [
+                            {
+                                "annotations": [
+                                    {"text": "Propofol", "infons": {"type": "Chemical", "identifier": "C12345"}},
+                                    {"text": "BRCA1", "infons": {"type": "Gene", "identifier": "672"}},
+                                ]
+                            }
+                        ],
+                    }
                 ]
             },
         ):
@@ -446,3 +456,38 @@ class TestRuntimeOwnership:
         with bind_source_runtime(runtime):
             await close_pubtator_client()
         assert runtime.cached_clients() == ()
+
+
+async def test_pubtator_real_http_path_and_bioc_annotations(client):
+    import httpx
+
+    def respond(request):
+        assert request.url.path == "/research/pubtator3-api/publications/export/biocjson"
+        return httpx.Response(
+            200,
+            json={
+                "PubTator3": [
+                    {
+                        "id": "123",
+                        "passages": [
+                            {
+                                "annotations": [
+                                    {"text": "BRCA1", "infons": {"type": "Gene", "identifier": "672"}},
+                                    {"text": "cancer", "infons": {"type": "Disease", "identifier": "D009369"}},
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    await client.close()
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    try:
+        result = await client.get_annotations("123")
+        assert result["genes"] == [{"text": "BRCA1", "id": "672"}]
+        assert result["diseases"] == [{"text": "cancer", "id": "D009369"}]
+    finally:
+        await client.close()
+        await client.close()
