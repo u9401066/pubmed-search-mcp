@@ -19,6 +19,7 @@ import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects import normalize_doi, normalize_pmid
 from pubmed_search.infrastructure.sources.base_client import (
     _CONTINUE,
     APIRequestError,
@@ -120,7 +121,7 @@ class COREClient(BaseAPIClient):
             query_parts.append(f'yearPublished<="{year_to}"')
         if has_fulltext:
             query_parts.append("_exists_:fullText")
-        return " AND ".join(query_parts) if len(query_parts) > 1 else query
+        return " AND ".join([f"({query})", *query_parts[1:]]) if len(query_parts) > 1 else query
 
     async def search(
         self,
@@ -245,7 +246,7 @@ class COREClient(BaseAPIClient):
             Work details or None
         """
         try:
-            url = f"{CORE_API_BASE}/works/{work_id}"
+            url = f"{CORE_API_BASE}/works/{urllib.parse.quote(str(work_id), safe='')}"
             data = await self._make_request(url)
 
             if data is None:
@@ -276,7 +277,7 @@ class COREClient(BaseAPIClient):
             Output details or None
         """
         try:
-            url = f"{CORE_API_BASE}/outputs/{output_id}"
+            url = f"{CORE_API_BASE}/outputs/{urllib.parse.quote(str(output_id), safe='')}"
             data = await self._make_request(url)
 
             if data is None:
@@ -319,6 +320,7 @@ class COREClient(BaseAPIClient):
         Returns:
             Work details or None
         """
+        doi = normalize_doi(doi)
         result = await self.search(f'doi:"{doi}"', limit=1)
         if result.get("results"):
             return result["results"][0]
@@ -334,6 +336,7 @@ class COREClient(BaseAPIClient):
         Returns:
             Work details or None
         """
+        pmid = normalize_pmid(pmid)
         result = await self.search(f"pubmedId:{pmid}", limit=1)
         if result.get("results"):
             return result["results"][0]
@@ -343,21 +346,23 @@ class COREClient(BaseAPIClient):
         """Normalize CORE work to common format."""
         # Extract authors
         authors = []
-        for author in work.get("authors", []):
+        for author in work.get("authors") or []:
             if isinstance(author, dict):
-                authors.append(author.get("name", ""))
+                name = author.get("name")
+                if isinstance(name, str) and name.strip():
+                    authors.append(name.strip())
             elif isinstance(author, str):
                 authors.append(author)
 
         # Extract identifiers
-        identifiers = work.get("identifiers", [])
+        identifiers = work.get("identifiers") or []
         doi = None
         pmid = None
         arxiv_id = None
 
         for ident in identifiers:
             if isinstance(ident, dict):
-                ident_type = ident.get("type", "").upper()
+                ident_type = str(ident.get("type") or "").upper()
                 ident_value = ident.get("identifier", "")
                 if ident_type == "DOI":
                     doi = ident_value
@@ -384,7 +389,7 @@ class COREClient(BaseAPIClient):
         download_url = work.get("downloadUrl")
 
         # Get links
-        links = work.get("links", [])
+        links = work.get("links") or []
         pdf_url = None
         reader_url = None
         for link in links:
@@ -410,14 +415,16 @@ class COREClient(BaseAPIClient):
             "language": work.get("language", {}).get("name") if isinstance(work.get("language"), dict) else None,
             "document_type": work.get("documentType", []),
             "has_fulltext": bool(work.get("fullText")),
-            "fulltext_available": "_exists_:fullText" in str(work) or work.get("downloadUrl") is not None,
+            "fulltext_available": bool(
+                work.get("fullText") or download_url or pdf_url or work.get("sourceFulltextUrls")
+            ),
             "full_text": work.get("fullText"),
             "download_url": download_url,
             "source_fulltext_urls": work.get("sourceFulltextUrls", []),
             "pdf_url": pdf_url,
             "reader_url": reader_url,
             "citation_count": work.get("citationCount"),
-            "data_providers": [dp.get("name") for dp in work.get("dataProviders", []) if isinstance(dp, dict)],
+            "data_providers": [dp.get("name") for dp in work.get("dataProviders") or [] if isinstance(dp, dict)],
             "_source": "core",
         }
 

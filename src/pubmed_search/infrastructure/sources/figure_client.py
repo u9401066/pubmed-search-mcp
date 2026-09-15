@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from defusedxml import ElementTree
 
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
 from pubmed_search.domain.entities.figure import ArticleFigure, ArticleFiguresResult
+from pubmed_search.domain.value_objects import normalize_pmcid
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,12 @@ def validate_image_url(url: str) -> bool:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
-        return parsed.hostname in ALLOWED_IMAGE_DOMAINS
+        return (
+            parsed.hostname in ALLOWED_IMAGE_DOMAINS
+            and not parsed.username
+            and not parsed.password
+            and parsed.port in {None, 443 if parsed.scheme == "https" else 80}
+        )
     except Exception:
         return False
 
@@ -219,9 +226,15 @@ class FigureClient(BaseAPIClient):
         url = f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{pmcid}/unicode"
         try:
             data = await self._make_request(url)
-            if not isinstance(data, dict):
+            collections = data if isinstance(data, list) else [data]
+            if any(not isinstance(collection, dict) for collection in collections):
                 return []
-            return self._parse_bioc_figures(data)
+            return [
+                figure
+                for collection in collections
+                if isinstance(collection, dict)
+                for figure in self._parse_bioc_figures(collection)
+            ]
         except Exception:
             return []
 
@@ -250,6 +263,10 @@ class FigureClient(BaseAPIClient):
             logger.warning("JATS figure XML parsing failed (%s)", type(e).__name__)
             return None, None
 
+        for element in root.iter():
+            element.tag = element.tag.rsplit("}", 1)[-1]
+        if root.tag not in {"article", "pmc-articleset"}:
+            return None, None
         title_elem = root.find(".//article-title")
         title = self._get_element_text(title_elem) if title_elem is not None else None
 
@@ -281,8 +298,9 @@ class FigureClient(BaseAPIClient):
         seen_ids: set[str] = set()
         unique_figures: list[ArticleFigure] = []
         for fig in figures:
-            if fig.figure_id not in seen_ids:
-                seen_ids.add(fig.figure_id)
+            if not fig.figure_id or fig.figure_id not in seen_ids:
+                if fig.figure_id:
+                    seen_ids.add(fig.figure_id)
                 unique_figures.append(fig)
 
         # Find section references for each figure
@@ -377,19 +395,16 @@ class FigureClient(BaseAPIClient):
         if not graphic_href:
             return None
 
-        # Europe PMC CDN pattern (most reliable, deterministic)
-        # Try common extensions
-        for ext in ("jpg", "gif", "png"):
-            url = f"{EPMC_IMAGE_BASE}/{pmcid}/bin/{graphic_href}.{ext}"
-            if validate_image_url(url):
-                return url
-
-        # Fallback: PMC figure page URL (always valid as landing page)
-        figure_page = f"{PMC_ARTICLE_BASE}/{pmcid}/"
-        if validate_image_url(figure_page):
-            return figure_page
-
-        return None
+        if graphic_href.startswith(("https://", "http://")):
+            return graphic_href if validate_image_url(graphic_href) else None
+        # Relative graphic names are candidates; exact PMC HTML URLs take precedence.
+        parsed = urlparse(graphic_href)
+        if parsed.scheme or parsed.netloc or ".." in PurePosixPath(unquote(parsed.path)).parts:
+            return None
+        suffix = PurePosixPath(parsed.path).suffix.lower().lstrip(".")
+        filename = graphic_href if suffix in IMAGE_EXTENSIONS else f"{graphic_href}.jpg"
+        url = f"{EPMC_IMAGE_BASE}/{pmcid}/bin/{filename}"
+        return url if validate_image_url(url) else None
 
     async def resolve_image_urls_from_html(self, pmcid: str, figures: list[ArticleFigure]) -> list[ArticleFigure]:
         """Resolve accurate image URLs by scraping the PMC article page.
@@ -419,7 +434,7 @@ class FigureClient(BaseAPIClient):
                 if not fig.graphic_href:
                     continue
                 for cdn_url in cdn_urls:
-                    if fig.graphic_href in cdn_url:
+                    if PurePosixPath(unquote(urlparse(cdn_url).path)).stem == PurePosixPath(fig.graphic_href).stem:
                         if validate_image_url(cdn_url):
                             fig.image_url = cdn_url
                         break
@@ -446,9 +461,31 @@ class FigureClient(BaseAPIClient):
             if not sec_title:
                 continue
 
-            sec_text = self._get_element_text(sec)
+            # Captions describe a figure but are not body citations. Nested
+            # sections receive their own context rather than inheriting titles.
+            text_parts: list[str] = []
+            referenced_ids: set[str] = set()
+            pending = [sec]
+            while pending:
+                element = pending.pop()
+                if element is not sec and element.tag in {"sec", "fig", "fig-group", "table-wrap", "title"}:
+                    if element.tail:
+                        text_parts.append(element.tail)
+                    continue
+                if element.text:
+                    text_parts.append(element.text)
+                if element.tail:
+                    text_parts.append(element.tail)
+                if element.tag == "xref" and element.get("ref-type") == "fig":
+                    referenced_ids.update((element.get("rid") or "").split())
+                pending.extend(reversed(list(element)))
+            sec_text = " ".join(" ".join(text_parts).split())
             for fig in figures:
-                if fig.label and fig.label.lower() in sec_text.lower() and sec_title not in fig.mentioned_in_sections:
+                label_pattern = r"(?<!\w)" + r"\s+".join(re.escape(part) for part in fig.label.split()) + r"(?!\w)"
+                mentioned = fig.figure_id in referenced_ids or bool(
+                    fig.label and re.search(label_pattern, sec_text, re.IGNORECASE)
+                )
+                if mentioned and sec_title not in fig.mentioned_in_sections:
                     fig.mentioned_in_sections.append(sec_title)
 
     # =========================================================================
@@ -488,12 +525,7 @@ class FigureClient(BaseAPIClient):
     @staticmethod
     def _get_element_text(elem: Element) -> str:
         """Recursively extract all text from an XML element."""
-        text = elem.text or ""
-        for child in elem:
-            text += FigureClient._get_element_text(child)
-            if child.tail:
-                text += child.tail
-        return text.strip()
+        return "".join(elem.itertext()).strip()
 
     def _handle_expected_status(self, response: Any, url: str) -> dict[str, Any] | str | None:
         """Handle 404 (article not found) as expected."""
@@ -504,10 +536,7 @@ class FigureClient(BaseAPIClient):
 
 def _normalize_pmcid(pmcid: str) -> str:
     """Normalize PMCID to 'PMC{numbers}' format."""
-    pmcid = str(pmcid).strip()
-    if not pmcid.upper().startswith("PMC"):
-        pmcid = f"PMC{pmcid}"
-    return pmcid.upper()
+    return normalize_pmcid(pmcid)
 
 
 def get_figure_client() -> FigureClient:

@@ -368,9 +368,7 @@ class TestGetPdfLinks:
             )
         else:
             response = httpx.Response(503, request=request)
-            client = AsyncMock()
-            client.get.return_value = response
-            monkeypatch.setattr(phase, "_get_client", AsyncMock(return_value=client))
+            monkeypatch.setattr(phase, "_request_metadata", AsyncMock(return_value=response))
 
         caplog.set_level(logging.WARNING)
         identifiers = {identifier_kind: "12345678" if identifier_kind == "pmid" else "10.1000/test"}
@@ -466,10 +464,7 @@ class TestCrossrefLinks:
             }
         }
 
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-
-        with patch.object(d._discovery_phase, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+        with patch.object(d._discovery_phase, "_request_metadata", new_callable=AsyncMock, return_value=mock_response):
             links = await d._discovery_phase.get_crossref_links("10.1001/jama.2025.27019")
 
         assert len(links) == 1
@@ -482,13 +477,12 @@ class TestCrossrefLinks:
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.json.return_value = {"message": {}}
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-
-        with patch.object(d._discovery_phase, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+        with patch.object(
+            d._discovery_phase, "_request_metadata", new_callable=AsyncMock, return_value=mock_response
+        ) as request:
             await d._discovery_phase.get_crossref_links("https://doi.org/10.1001/jama.2025.27019")
 
-        requested_url = mock_client.get.await_args.args[0]
+        requested_url = request.await_args.args[0]
         assert requested_url.startswith("https://api.crossref.org/works/10.1001%2Fjama.2025.27019?")
         assert "https://doi.org" not in requested_url
 
@@ -501,13 +495,12 @@ class TestCrossrefLinks:
             mock_response = MagicMock()
             mock_response.status_code = 404
             mock_response.json.return_value = {"message": {}}
-            mock_client = AsyncMock()
-            mock_client.get.return_value = mock_response
-
-            with patch.object(d._discovery_phase, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+            with patch.object(
+                d._discovery_phase, "_request_metadata", new_callable=AsyncMock, return_value=mock_response
+            ) as request:
                 await d._discovery_phase.get_crossref_links("10.1001/jama.2025.27019")
 
-            requested_url = mock_client.get.await_args.args[0]
+            requested_url = request.await_args.args[0]
             assert "mailto=runtime%40example.com" in requested_url
 
 

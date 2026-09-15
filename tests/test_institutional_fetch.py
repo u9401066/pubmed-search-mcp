@@ -122,7 +122,7 @@ class TestClassifyContent:
         assert classify_content("text/html", b"") == "empty"
 
     def test_pdf_by_content_type(self):
-        assert classify_content("application/pdf", b"any") == "pdf"
+        assert classify_content("application/pdf", b"any") == "unknown"
 
     def test_pdf_by_magic_bytes(self):
         assert classify_content("application/octet-stream", b"%PDF-1.4\nfoo") == "pdf"
@@ -304,7 +304,7 @@ class TestProbeEzproxy:
     async def test_success_with_cookies(self, tmp_path):
         cookies_file = tmp_path / "c.json"
         cookies_file.write_text(
-            json.dumps([{"name": "session", "value": "abc"}]),
+            json.dumps([{"name": "session", "value": "abc", "domain": ".ez.x.edu", "path": "/"}]),
             encoding="utf-8",
         )
         cfg = EZProxyConfig(
@@ -512,7 +512,7 @@ class TestFetchDirect:
 class TestFetchEzproxy:
     async def test_returns_body_on_success(self, tmp_path):
         cookie_file = tmp_path / "cookies.json"
-        cookie_file.write_text(json.dumps([{"name": "EZP", "value": "abc"}]))
+        cookie_file.write_text(json.dumps([{"name": "EZP", "value": "abc", "domain": ".ezp.example.edu", "path": "/"}]))
         cfg = EZProxyConfig(
             proxy_host="ezp.example.edu",
             cookie_file=str(cookie_file),
@@ -631,7 +631,7 @@ class TestInstitutionalFulltextClient:
         )
 
         cookie_file = tmp_path / "cookies.json"
-        cookie_file.write_text(json.dumps([{"name": "EZP", "value": "abc"}]))
+        cookie_file.write_text(json.dumps([{"name": "EZP", "value": "abc", "domain": ".ezp.example.edu", "path": "/"}]))
         cfg = EZProxyConfig(
             proxy_host="ezp.example.edu",
             cookie_file=str(cookie_file),
@@ -706,3 +706,30 @@ class TestExtractFulltext:
         )
 
         assert extract_fulltext(b"", "https://x") is None
+
+
+async def test_ezproxy_cookie_file_scopes_browser_entries_to_target(tmp_path):
+    import time
+
+    cookie_file = tmp_path / "cookies.json"
+    cookie_file.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "session", "value": "proxy", "domain": ".proxy.lib.edu", "path": "/", "secure": True},
+                    {"name": "private", "value": "unrelated", "domain": ".example.com", "path": "/"},
+                    {
+                        "name": "expired",
+                        "value": "old",
+                        "domain": ".proxy.lib.edu",
+                        "path": "/",
+                        "expires": time.time() - 100,
+                    },
+                    {"name": "elsewhere", "value": "wrong path", "domain": ".proxy.lib.edu", "path": "/admin"},
+                ]
+            }
+        )
+    )
+    assert load_cookies(cookie_file=str(cookie_file), target_url="https://www-nature-com.proxy.lib.edu/article") == {
+        "session": "proxy"
+    }

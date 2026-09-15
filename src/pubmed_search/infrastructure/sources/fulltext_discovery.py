@@ -22,6 +22,11 @@ from typing import TYPE_CHECKING
 
 from defusedxml import ElementTree
 
+from pubmed_search.domain.value_objects import normalize_doi, normalize_pmcid, normalize_pmid
+from pubmed_search.infrastructure.http.safe_outbound import SafeFetchPolicy, fetch_public_url
+from pubmed_search.infrastructure.provider_payload import is_provider_error_envelope
+from pubmed_search.infrastructure.sources.base_client import raise_provider_schema_error
+
 from .contact import first_contact_email, get_source_contact_email
 from .fulltext_models import PDFLink, PDFSource
 
@@ -34,15 +39,6 @@ PMC_LINK_LOOKUP_TIMEOUT_SECONDS = 15.0
 NCBI_ELINK_ENDPOINT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
 DEFAULT_CROSSREF_MAILTO = "pubmed-search@example.com"
 EXPECTED_ABSENCE_STATUS_CODES = frozenset({204, 404})
-
-
-def _normalize_crossref_doi(doi: str) -> str:
-    normalized = doi.strip()
-    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"):
-        if normalized.lower().startswith(prefix):
-            normalized = normalized[len(prefix) :]
-            break
-    return normalized.strip()
 
 
 def _response_is_expected_absence(response: httpx.Response) -> bool:
@@ -67,7 +63,7 @@ def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
     params = {
         "dbfrom": "pubmed",
         "db": "pmc",
-        "id": pmid,
+        "id": normalize_pmid(pmid),
         "linkname": "pubmed_pmc",
         "retmode": "xml",
         "tool": "pubmed-search-mcp",
@@ -78,9 +74,13 @@ def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
     with urllib.request.urlopen(  # noqa: S310  # nosec B310
         request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS
     ) as response:
-        payload = response.read()
+        payload = response.read(1024 * 1024 + 1)
+        if len(payload) > 1024 * 1024:
+            raise_provider_schema_error("NCBI PMC links")
 
     root = ElementTree.fromstring(payload)
+    if root.tag != "eLinkResult" or root.find(".//ERROR") is not None:
+        raise_provider_schema_error("NCBI PMC links")
     for linkset in root.findall("./LinkSet/LinkSetDb"):
         link_name = linkset.findtext("LinkName", default="")
         if link_name != "pubmed_pmc":
@@ -91,7 +91,7 @@ def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
                 continue
             links.append(
                 PDFLink(
-                    url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/",
+                    url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/{normalize_pmcid(pmc_id)}/pdf/",
                     source=PDFSource.PMC,
                     access_type="open_access",
                     version="published",
@@ -109,11 +109,25 @@ class FulltextDiscoveryPhase:
     def __init__(self, client_getter: Callable[[], Awaitable[httpx.AsyncClient]]) -> None:
         self._get_client = client_getter
 
+    async def _request_metadata(self, url: str) -> httpx.Response:
+        """Bound provider metadata transfers with the common outbound policy."""
+        fetched = await fetch_public_url(
+            url,
+            client=await self._get_client(),
+            policy=SafeFetchPolicy(max_bytes=8 * 1024 * 1024, total_timeout=15.0),
+        )
+        response = fetched.response
+        if response.status_code == 200:
+            payload = response.json()
+            if not isinstance(payload, dict) or is_provider_error_envelope(payload):
+                raise_provider_schema_error("Fulltext link discovery")
+        return response
+
     async def get_pmc_links(self, pmid: str | None, pmcid: str | None) -> list[PDFLink]:
         links: list[PDFLink] = []
 
         if pmcid:
-            pmc_num = pmcid.replace("PMC", "").replace("pmc", "")
+            pmc_num = normalize_pmcid(pmcid).removeprefix("PMC")
             links.append(
                 PDFLink(
                     url=f"https://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC{pmc_num}&blobtype=pdf",
@@ -157,7 +171,7 @@ class FulltextDiscoveryPhase:
         oa_info = await client.get_oa_status(doi)
 
         if oa_info and oa_info.get("is_oa"):
-            best = oa_info.get("best_oa_location", {})
+            best = oa_info.get("best_oa_location") or {}
             if best.get("url_for_pdf"):
                 host_type = best.get("host_type", "unknown")
                 source = PDFSource.UNPAYWALL_PUBLISHER if host_type == "publisher" else PDFSource.UNPAYWALL_REPOSITORY
@@ -173,7 +187,7 @@ class FulltextDiscoveryPhase:
                     )
                 )
 
-            for loc in oa_info.get("oa_locations", [])[:3]:
+            for loc in (oa_info.get("oa_locations") or [])[:3]:
                 if loc != best and loc.get("url_for_pdf"):
                     links.append(
                         PDFLink(
@@ -281,7 +295,7 @@ class FulltextDiscoveryPhase:
         ]
 
     async def get_doi_redirect_link(self, doi: str) -> list[PDFLink]:
-        doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+        doi_clean = normalize_doi(doi)
         if not doi_clean:
             return []
 
@@ -354,8 +368,7 @@ class FulltextDiscoveryPhase:
     async def get_crossref_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        client = await self._get_client()
-        encoded_doi = urllib.parse.quote(_normalize_crossref_doi(doi), safe="")
+        encoded_doi = urllib.parse.quote(normalize_doi(doi), safe="")
         mailto = first_contact_email(
             os.environ.get("CROSSREF_EMAIL"),
             get_source_contact_email(),
@@ -363,12 +376,14 @@ class FulltextDiscoveryPhase:
             DEFAULT_CROSSREF_MAILTO,
         )
         url = f"https://api.crossref.org/works/{encoded_doi}?mailto={urllib.parse.quote(mailto or DEFAULT_CROSSREF_MAILTO)}"
-        resp = await client.get(url)
+        resp = await self._request_metadata(url)
         if _response_is_expected_absence(resp):
             return links
 
-        message = resp.json().get("message", {})
-        for link in message.get("link", []):
+        message = resp.json().get("message")
+        if not isinstance(message, dict):
+            raise_provider_schema_error("Crossref link discovery")
+        for link in message.get("link") or []:
             content_type = link.get("content-type", "")
             link_url = link.get("URL", "")
             if not link_url:
@@ -407,11 +422,8 @@ class FulltextDiscoveryPhase:
     async def get_pubmed_linkout(self, pmid: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        client = await self._get_client()
-        url = (
-            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&id={pmid}&cmd=llinks&retmode=json"
-        )
-        resp = await client.get(url)
+        url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&id={normalize_pmid(pmid)}&cmd=llinks&retmode=json"
+        resp = await self._request_metadata(url)
         if _response_is_expected_absence(resp):
             return links
 
@@ -440,9 +452,8 @@ class FulltextDiscoveryPhase:
     async def get_doaj_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        client = await self._get_client()
-        url = f"https://doaj.org/api/search/articles/doi:{doi}"
-        resp = await client.get(url)
+        url = f"https://doaj.org/api/search/articles/{urllib.parse.quote('doi:' + normalize_doi(doi), safe='')}"
+        resp = await self._request_metadata(url)
         if _response_is_expected_absence(resp):
             return links
 
@@ -468,14 +479,15 @@ class FulltextDiscoveryPhase:
     async def get_zenodo_links(self, doi: str) -> list[PDFLink]:
         links: list[PDFLink] = []
 
-        client = await self._get_client()
         if "10.5281/zenodo" in doi:
             record_id = doi.rsplit(".", maxsplit=1)[-1]
-            url = f"https://zenodo.org/api/records/{record_id}"
+            url = f"https://zenodo.org/api/records/{urllib.parse.quote(record_id, safe='')}"
         else:
-            url = f"https://zenodo.org/api/records?q=doi:{doi}&size=1"
+            url = "https://zenodo.org/api/records?" + urllib.parse.urlencode(
+                {"q": f'doi:"{normalize_doi(doi)}"', "size": 1}
+            )
 
-        resp = await client.get(url)
+        resp = await self._request_metadata(url)
         if _response_is_expected_absence(resp):
             return links
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 import time
 from dataclasses import replace
@@ -72,6 +73,15 @@ class FulltextDownloader:
         max_retries: int = MAX_RETRIES,
         max_concurrent: int = MAX_CONCURRENT_REQUESTS,
     ):
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("Fulltext timeout must be finite and positive")
+        if type(max_retries) is not int or max_retries < 0 or type(max_concurrent) is not int or max_concurrent < 1:
+            raise ValueError("Fulltext retry and concurrency budgets must be valid integers")
         self._timeout = timeout
         self._max_retries = max_retries
         self._max_concurrent = max_concurrent
@@ -117,6 +127,8 @@ class FulltextDownloader:
     def _build_deadline(total_timeout: float | None) -> float | None:
         if total_timeout is None:
             return None
+        if isinstance(total_timeout, bool) or not math.isfinite(total_timeout) or total_timeout <= 0:
+            raise ValueError("Fulltext total_timeout must be finite and positive")
         return time.monotonic() + total_timeout
 
     @staticmethod
@@ -144,7 +156,7 @@ class FulltextDownloader:
 
     async def _await_with_deadline(
         self,
-        awaitable: Any,
+        operation: Callable[[], Awaitable[Any]],
         *,
         deadline: float | None,
         total_timeout: float | None,
@@ -154,10 +166,10 @@ class FulltextDownloader:
 
         remaining = self._remaining_budget(deadline)
         if remaining is None:
-            return await awaitable
+            return await operation()
 
         try:
-            return await asyncio.wait_for(awaitable, timeout=remaining)
+            return await asyncio.wait_for(operation(), timeout=remaining)
         except asyncio.TimeoutError as exc:
             raise asyncio.TimeoutError(self._budget_message(phase, total_timeout)) from exc
 
@@ -317,7 +329,7 @@ class FulltextDownloader:
             per_call_timeout = max(0.05, min(per_call_timeout, remaining))
 
         source_results = await self._await_with_deadline(
-            gather_source_adapter_calls(
+            lambda: gather_source_adapter_calls(
                 self._build_link_source_calls(pmid, pmcid, doi),
                 per_call_timeout=per_call_timeout,
             ),
@@ -493,6 +505,8 @@ class FulltextDownloader:
         *,
         total_timeout: float | None = None,
     ) -> FulltextResult:
+        if strategy not in {"links_only", "download_best", "extract_text", "try_all"}:
+            raise ValueError("Unsupported fulltext strategy")
         result = FulltextResult(pmid=pmid, pmcid=pmcid, doi=doi)
         effective_total_timeout = total_timeout if total_timeout is not None else self._derive_end_to_end_timeout()
         deadline = self._build_deadline(effective_total_timeout)
@@ -510,7 +524,7 @@ class FulltextDownloader:
 
             if strategy == "try_all" and pmcid:
                 xml_result = await self._await_with_deadline(
-                    self._extract_phase.get_structured_fulltext(pmcid),
+                    lambda: self._extract_phase.get_structured_fulltext(pmcid),
                     deadline=deadline,
                     total_timeout=effective_total_timeout,
                     phase="structured fulltext retrieval",
@@ -581,7 +595,7 @@ class FulltextDownloader:
                     best_pdf_download = download
 
                 text = await self._await_with_deadline(
-                    self._extract_phase.extract_pdf_text(download.content),
+                    partial(self._extract_phase.extract_pdf_text, download.content),
                     deadline=deadline,
                     total_timeout=effective_total_timeout,
                     phase="pdf text extraction",
@@ -626,7 +640,7 @@ class FulltextDownloader:
 
         if link.is_direct_pdf and link.access_type != "institutional":
             result = await self._await_with_deadline(
-                self._fetch_phase.download_with_retry(link.url, link.source, headers=request_headers),
+                lambda: self._fetch_phase.download_with_retry(link.url, link.source, headers=request_headers),
                 deadline=deadline,
                 total_timeout=total_timeout,
                 phase=f"direct PDF download from {link.source.display_name}",
@@ -638,7 +652,7 @@ class FulltextDownloader:
                 return result
         elif not link.is_direct_pdf:
             result = await self._await_with_deadline(
-                self._fetch_phase.download_with_retry(link.url, link.source, headers=request_headers),
+                lambda: self._fetch_phase.download_with_retry(link.url, link.source, headers=request_headers),
                 deadline=deadline,
                 total_timeout=total_timeout,
                 phase=f"landing-page PDF resolution from {link.source.display_name}",
@@ -656,7 +670,7 @@ class FulltextDownloader:
             )
 
         browser_result = await self._await_with_deadline(
-            self._download_with_browser_session(link, article_metadata),
+            lambda: self._download_with_browser_session(link, article_metadata),
             deadline=deadline,
             total_timeout=total_timeout,
             phase=f"browser-session fallback for {link.source.display_name}",
@@ -758,9 +772,8 @@ class FulltextDownloader:
                 links[index] = replace(link, is_direct_pdf=True)
                 result.link_discovery = replace(discovery, links=tuple(links))
                 return
-            if link.source == download.source:
+            if link.source == download.source and access_type == "unknown":
                 access_type = link.access_type
-                break
 
         if access_type == "unknown" and download.source in {
             PDFSource.INSTITUTIONAL_RESOLVER,

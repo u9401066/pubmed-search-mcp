@@ -14,14 +14,18 @@ full manuscripts yet.
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.shared.article_identity import normalize_article_doi, normalize_article_title
+from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 ReferenceStatus = Literal[
@@ -43,10 +47,11 @@ MAX_SOURCE_NAME_BYTES = 512
 MAX_REFERENCES = 200
 DEFAULT_MAX_CONCURRENCY = 8
 DEFAULT_TOTAL_TIMEOUT_SECONDS = 60.0
+_T = TypeVar("_T")
 
 _REFERENCE_MARKER_RE = re.compile(r"^\s*(?:\[\d+\]|\d+[.)])\s*")
 _DOI_RE = re.compile(r"\b(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.\d{4,9}/[-._;()/:A-Z0-9]+)\b", re.IGNORECASE)
-_PMID_RE = re.compile(r"\bPMID\s*:?\s*(\d{5,9})\b", re.IGNORECASE)
+_PMID_RE = re.compile(r"\bPMID\s*:?\s*([1-9][0-9]{0,19})\b", re.IGNORECASE)
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _FIRST_PAGE_RE = re.compile(r":\s*([A-Za-z]?\d+)")
 _VOLUME_RE = re.compile(r";\s*([A-Za-z0-9][A-Za-z0-9 .-]{0,20}?)(?:\(|:|;)")
@@ -133,13 +138,23 @@ class ReferenceVerificationService:
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
         total_timeout_seconds: float = DEFAULT_TOTAL_TIMEOUT_SECONDS,
     ):
-        if not 1 <= max_concurrency <= MAX_REFERENCES:
+        if (
+            isinstance(max_concurrency, bool)
+            or not isinstance(max_concurrency, int)
+            or not 1 <= max_concurrency <= MAX_REFERENCES
+        ):
             raise ReferenceVerificationInputError(f"max_concurrency must be between 1 and {MAX_REFERENCES}")
-        if total_timeout_seconds <= 0:
-            raise ReferenceVerificationInputError("total_timeout_seconds must be greater than zero")
+        if (
+            isinstance(total_timeout_seconds, bool)
+            or not isinstance(total_timeout_seconds, (int, float))
+            or not math.isfinite(total_timeout_seconds)
+            or total_timeout_seconds <= 0
+        ):
+            raise ReferenceVerificationInputError("total_timeout_seconds must be finite and greater than zero")
         self._searcher = searcher
         self._max_concurrency = max_concurrency
         self._total_timeout_seconds = total_timeout_seconds
+        self._task_supervisor = BoundedTaskSupervisor(max_pending=MAX_REFERENCES * 2)
 
     def extract_references(self, reference_text: str, *, limit: int = 100) -> list[str]:
         """Split a plain-text reference block into individual entries.
@@ -153,33 +168,7 @@ class ReferenceVerificationService:
         """
         self._validate_limit(limit)
         self._validate_reference_text(reference_text)
-        normalized_lines = [line.strip() for line in reference_text.splitlines() if line.strip()]
-        if not normalized_lines:
-            return []
-
-        has_numbered_entries = any(_REFERENCE_MARKER_RE.match(line) for line in normalized_lines)
-        if not has_numbered_entries:
-            limited_entries = normalized_lines[:limit]
-            self._validate_entries(limited_entries)
-            return limited_entries
-
-        entries: list[str] = []
-        current: list[str] = []
-        for line in normalized_lines:
-            if _REFERENCE_MARKER_RE.match(line):
-                if current:
-                    entries.append(" ".join(current).strip())
-                    if len(entries) >= limit:
-                        self._validate_entries(entries)
-                        return entries
-                current = [_REFERENCE_MARKER_RE.sub("", line, count=1).strip()]
-                continue
-            current.append(line)
-
-        if current and len(entries) < limit:
-            entries.append(" ".join(current).strip())
-
-        entries = entries[:limit]
+        entries = self._split_references(reference_text)[:limit]
         self._validate_entries(entries)
         return entries
 
@@ -284,11 +273,11 @@ class ReferenceVerificationService:
         timed_out = False
 
         try:
-            prefetched_citation_pmids = await asyncio.wait_for(
+            prefetched_citation_pmids = await self._await_owned(
                 self._prefetch_citation_matches(parsed_entries),
                 timeout=self._remaining_seconds(deadline),
             )
-            prefetched_articles = await asyncio.wait_for(
+            prefetched_articles = await self._await_owned(
                 self._prefetch_articles(
                     {
                         *{parsed.pmid for parsed in parsed_entries if parsed.pmid},
@@ -303,11 +292,11 @@ class ReferenceVerificationService:
             timed_out = True
 
         results_by_index: dict[int, dict[str, Any]] = {}
-        tasks: dict[asyncio.Task[dict[str, Any]], ParsedReference] = {}
+        tasks: dict[asyncio.Future[Any], ParsedReference] = {}
         if not timed_out:
             semaphore = asyncio.Semaphore(self._max_concurrency)
             for parsed in parsed_entries:
-                task = asyncio.create_task(
+                task = self._task_supervisor.schedule(
                     self._verify_with_semaphore(
                         parsed,
                         semaphore=semaphore,
@@ -315,32 +304,33 @@ class ReferenceVerificationService:
                         article_cache=prefetched_articles,
                     )
                 )
-                tasks[task] = parsed
+                if task is None:
+                    results_by_index[parsed.index] = self._not_checked_row(
+                        parsed, reason="Verification task capacity was exhausted"
+                    )
+                else:
+                    tasks[task] = parsed
 
             try:
-                done, pending = await asyncio.wait(
-                    tasks,
-                    timeout=max(0.0, deadline - loop.time()),
+                done, pending = (
+                    await asyncio.wait(tasks, timeout=max(0.0, deadline - loop.time())) if tasks else (set(), set())
                 )
-            except asyncio.CancelledError:
+                timed_out = bool(pending)
+                for task in done:
+                    parsed = tasks[task]
+                    if task.cancelled():
+                        results_by_index[parsed.index] = self._source_unavailable_row(parsed, ("PubMed verification",))
+                        continue
+                    try:
+                        results_by_index[parsed.index] = task.result()
+                    except Exception:
+                        results_by_index[parsed.index] = self._source_unavailable_row(parsed, ("PubMed verification",))
+            finally:
                 for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-            timed_out = bool(pending)
-            for task in done:
-                parsed = tasks[task]
-                try:
-                    results_by_index[parsed.index] = task.result()
-                except Exception:
-                    results_by_index[parsed.index] = self._source_unavailable_row(
-                        parsed,
-                        ("PubMed verification",),
-                    )
-            for task in pending:
-                task.cancel()
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
+                    if not task.done():
+                        task.cancel()
+                # The shared supervisor retains and reaps cancellation-resistant work.
+                await asyncio.sleep(0)
 
         for parsed in parsed_entries:
             if parsed.index not in results_by_index:
@@ -415,7 +405,7 @@ class ReferenceVerificationService:
         self._validate_reference_entry(reference_text, index=index)
         parsed = self.parse_reference(reference_text, index=index)
         try:
-            return await asyncio.wait_for(
+            return await self._await_owned(
                 self._verify_parsed_reference(parsed),
                 timeout=self._total_timeout_seconds,
             )
@@ -424,6 +414,21 @@ class ReferenceVerificationService:
                 parsed,
                 reason="The reference verification time budget was exhausted",
             )
+
+    async def _await_owned(self, awaitable: Awaitable[_T], *, timeout: float) -> _T:
+        """Bound the response deadline while retaining unfinished provider work."""
+        task = self._task_supervisor.schedule(awaitable)
+        if task is None:
+            raise asyncio.TimeoutError("Verification task capacity was exhausted")
+        try:
+            done, _pending = await asyncio.wait({task}, timeout=max(0.0, timeout))
+            if not done:
+                raise asyncio.TimeoutError
+            return cast("_T", task.result())
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.sleep(0)
 
     async def _verify_parsed_reference(
         self,
@@ -608,6 +613,10 @@ class ReferenceVerificationService:
             raise ReferenceVerificationInputError(f"reference index must be an integer between 1 and {MAX_REFERENCES}")
         if not isinstance(reference_text, str):
             raise ReferenceVerificationInputError(f"reference entry {index} must be a string")
+        if _UNSAFE_REFERENCE_TEXT_RE.search(reference_text):
+            raise ReferenceVerificationInputError(
+                f"reference entry {index} contains forbidden NUL or bidi override characters"
+            )
         if len(reference_text) > MAX_REFERENCE_CHARS:
             raise ReferenceVerificationInputError(
                 f"reference entry {index} must not exceed {MAX_REFERENCE_CHARS} characters"
@@ -975,6 +984,8 @@ class ReferenceVerificationService:
         except Exception:
             return {}
 
+        if not isinstance(matches, list):
+            return {}
         prefetched: dict[int, str] = {}
         for parsed, match in zip(ecitmatch_candidates, matches, strict=False):
             if not isinstance(match, dict):
@@ -996,12 +1007,14 @@ class ReferenceVerificationService:
         except Exception:
             return {}
 
+        if not isinstance(details, list):
+            return {}
         cache: dict[str, dict[str, Any]] = {}
         for article in details:
             if not isinstance(article, dict):
                 continue
             pmid = str(article.get("pmid", "") or "")
-            if pmid:
+            if pmid in pmids:
                 cache[pmid] = article
         return cache
 
@@ -1077,13 +1090,7 @@ class ReferenceVerificationService:
             journal_candidates = [article.get("journal", ""), article.get("journal_abbrev", "")]
             normalized_journal = self._normalize_text(parsed.journal)
             comparisons["journal"] = any(
-                normalized_journal
-                and self._normalize_text(candidate)
-                and (
-                    normalized_journal == self._normalize_text(candidate)
-                    or normalized_journal in self._normalize_text(candidate)
-                    or self._normalize_text(candidate) in normalized_journal
-                )
+                normalized_journal and normalized_journal == self._normalize_text(candidate)
                 for candidate in journal_candidates
             )
         if parsed.volume:
@@ -1166,7 +1173,7 @@ class ReferenceVerificationService:
         if status == "verified":
             notes.append("PubMed bibliographic evidence matches this reference; claim support has not been assessed")
         elif status == "partial_match":
-            notes.append("A close PubMed candidate was found, but some provided fields disagree")
+            notes.append("A PubMed candidate was found, but bibliographic evidence is insufficient or conflicting")
         else:
             notes.append("A PubMed candidate was found, but evidence is too weak to verify")
 
@@ -1216,7 +1223,7 @@ class ReferenceVerificationService:
             return ""
         leading = authors_segment.split(",", 1)[0].strip()
         tokens = re.sub(r"[^A-Za-z\s-]", " ", leading).split()
-        while tokens and len(tokens[-1]) == 1:
+        while len(tokens) > 1 and (len(tokens[-1]) == 1 or (tokens[-1].isupper() and len(tokens[-1]) <= 4)):
             tokens.pop()
         return " ".join(tokens).strip()
 
