@@ -140,6 +140,34 @@ class TestResearchSession:
 class TestArticleCache:
     """Tests for ArticleCache class."""
 
+    @pytest.mark.parametrize("persist", [False, True])
+    @pytest.mark.parametrize("authors", [None, "Smith J", [{"name": "Smith J", "orcid": "0000-0001"}]])
+    def test_provider_metadata_survives_cache_round_trip(self, tmp_path, persist, authors):
+        """Canonical cache fields must accept provider metadata without losing it."""
+        data = {
+            "pmid": "12345",
+            "title": "Trial",
+            "year": 2024,
+            "abstract": None,
+            "journal": None,
+            "doi": None,
+            "pmc_id": None,
+            "authors": authors,
+            "identifiers": {"pmid": "12345"},
+        }
+        cache_dir = str(tmp_path) if persist else None
+        cache = ArticleCache(cache_dir=cache_dir)
+        assert cache.put_many([data]) == 1
+        if persist:
+            cache = ArticleCache(cache_dir=cache_dir)
+        article = cache.get("12345")
+        assert article is not None
+        assert article.year == "2024"
+        assert article.doi == article.abstract == article.journal == article.pmc_id == ""
+        assert article.authors == ([] if authors is None else ["Smith J"])
+        assert {key: article.as_article_dict()[key] for key in data} == data
+        assert "cached_at" not in data
+
     def test_retired_legacy_payload_warmup_is_not_exposed(self):
         assert not hasattr(ArticleCache(), "warmup")
 
@@ -245,6 +273,14 @@ class TestArticleCache:
 
 class TestSessionManager:
     """Tests for SessionManager class."""
+
+    def test_injected_empty_cache_remains_shared(self):
+        cache = ArticleCache()
+        manager = SessionManager(article_cache=cache)
+        manager.add_to_cache([{"pmid": "12345", "title": "Shared cache"}])
+        article = cache.get("12345")
+        assert article is not None
+        assert article.title == "Shared cache"
 
     async def test_create_session_manager(self, temp_dir):
         """Test creating SessionManager."""

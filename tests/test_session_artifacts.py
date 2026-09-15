@@ -336,3 +336,20 @@ def test_read_artifact_file_failure_does_not_leak_host_path_or_credentials(tmp_p
     assert str(private_dir) not in rendered
     assert "private-read" not in caplog.text
     assert str(private_dir) not in caplog.text
+
+
+@pytest.mark.parametrize("filename", ["manifest.json", "result.txt\n"])
+def test_artifact_save_rejects_reserved_or_incomplete_file_names(tmp_path, filename):
+    store = ArtifactStore(tmp_path)
+    with pytest.raises(ValueError, match="file name"):
+        store.save(
+            session_id="session", tool="search", kind="results", files={filename: "payload"}, primary_file=filename
+        )
+    assert not list(tmp_path.rglob("manifest.json"))
+
+
+def test_artifact_lookup_has_no_recent_history_cutoff():
+    manager = SessionManager()
+    session = manager._get_or_create_session()
+    session.artifacts = [{"artifact_id": str(index)} for index in range(10_001)]
+    assert manager.get_artifact_manifest("0") == {"artifact_id": "0"}

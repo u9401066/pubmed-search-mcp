@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -57,7 +58,11 @@ PipelineBudgetReason = Literal["deadline_exhausted", "external_call_quota_exhaus
 
 @dataclass(frozen=True)
 class PipelineExecutionPolicy:
-    """Server-owned aggregate limits for one complete pipeline run."""
+    """Server-owned deadline and logical provider-operation quota.
+
+    One operation may issue multiple physical HTTP requests inside its adapter;
+    max_external_calls is not a wire-level HTTP request counter.
+    """
 
     run_timeout_seconds: float = DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS
     max_external_calls: int = DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS
@@ -65,8 +70,8 @@ class PipelineExecutionPolicy:
     def __post_init__(self) -> None:
         if isinstance(self.run_timeout_seconds, bool) or not isinstance(self.run_timeout_seconds, (int, float)):
             raise TypeError("Pipeline run timeout must be a number")
-        if self.run_timeout_seconds <= 0:
-            raise ValueError("Pipeline run timeout must be positive")
+        if not math.isfinite(self.run_timeout_seconds) or self.run_timeout_seconds <= 0:
+            raise ValueError("Pipeline run timeout must be positive and finite")
         if isinstance(self.max_external_calls, bool) or not isinstance(self.max_external_calls, int):
             raise TypeError("Pipeline external-call quota must be an integer")
         if self.max_external_calls < 1:
@@ -122,6 +127,7 @@ class PipelineRunBudget:
             "run_timeout_seconds": float(self.policy.run_timeout_seconds),
             "max_external_calls": self.policy.max_external_calls,
             "external_calls_used": self._external_calls_used,
+            "call_measurement_unit": "provider_operations",
             "external_calls_remaining": max(0, self.policy.max_external_calls - self._external_calls_used),
             "deadline_remaining_seconds": self.remaining_seconds(),
             "exhausted_reason": self._exhausted_reason,

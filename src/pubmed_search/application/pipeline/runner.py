@@ -65,7 +65,7 @@ class StoredPipelineRunner:
 
         started = datetime.now(timezone.utc)
         run_id = self._store.create_run_id(meta.name, started)
-        previous_run = self._store.get_latest_run(meta.name)
+        previous_run = self._store.get_latest_run(meta.name, successful_only=True)
         previous_pmids = set(previous_run.pmids) if previous_run else set()
 
         try:

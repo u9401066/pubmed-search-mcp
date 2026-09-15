@@ -19,6 +19,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.pipeline.executor import classify_pipeline_outcome
 from pubmed_search.shared.markdown import (
     escape_markdown_block,
     escape_markdown_code,
@@ -110,7 +111,8 @@ def _section_executive_summary(
     parts.append(
         f"| Steps executed | {ok_steps}/{total_steps}{' (' + str(error_steps) + ' errors)' if error_steps else ''} |"
     )
-    parts.append(f"| Total unique articles | {len(articles)} |")
+    parts.append(f"| Outcome | {classify_pipeline_outcome(articles, step_results)} |")
+    parts.append(f"| Returned articles | {len(articles)} |")
     parts.append(f"| Output limit | {config.output.limit} |")
     if config.output.ranking:
         parts.append(f"| Ranking | {escape_markdown_text(config.output.ranking)} |")
@@ -324,7 +326,7 @@ def _section_evidence_distribution(articles: list[UnifiedArticle]) -> str:
     if non_unknown == 0:
         return ""
 
-    # Evidence level ordering
+    # Display ordering of publication types; metadata alone cannot grade evidence.
     evidence_order = {
         "meta-analysis": 1,
         "systematic-review": 2,
@@ -339,17 +341,17 @@ def _section_evidence_distribution(articles: list[UnifiedArticle]) -> str:
     }
 
     parts: list[str] = ["## Evidence Distribution\n"]
-    parts.append("| Study Type | Count | Evidence Level |")
+    parts.append("| Study Type | Count | Metadata category |")
     parts.append("|------------|-------|----------------|")
 
     level_labels = {
-        "meta-analysis": "🟢 Level 1a",
-        "systematic-review": "🟢 Level 1a",
-        "randomized-controlled-trial": "🟢 Level 1b",
-        "clinical-trial": "🟡 Level 1b-2b",
-        "review": "⚪ Narrative",
-        "case-report": "🟠 Level 4",
-        "preprint": "🔴 Not peer-reviewed",
+        "meta-analysis": "Evidence synthesis",
+        "systematic-review": "Evidence synthesis",
+        "randomized-controlled-trial": "Randomized trial",
+        "clinical-trial": "Clinical trial",
+        "review": "Narrative review",
+        "case-report": "Case report",
+        "preprint": "Preprint metadata",
     }
 
     sorted_types = sorted(
@@ -423,12 +425,12 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
     # Study type badge
     if article.article_type and article.article_type != ArticleType.UNKNOWN:
         _type_badges: dict[Any, str] = {
-            ArticleType.META_ANALYSIS: "🟢 Meta-Analysis (1a)",
-            ArticleType.SYSTEMATIC_REVIEW: "🟢 Systematic Review (1a)",
-            ArticleType.RANDOMIZED_CONTROLLED_TRIAL: "🟢 RCT (1b)",
-            ArticleType.CLINICAL_TRIAL: "🟡 Clinical Trial (1b-2b)",
+            ArticleType.META_ANALYSIS: "🟢 Meta-Analysis",
+            ArticleType.SYSTEMATIC_REVIEW: "🟢 Systematic Review",
+            ArticleType.RANDOMIZED_CONTROLLED_TRIAL: "🟢 RCT",
+            ArticleType.CLINICAL_TRIAL: "🟡 Clinical Trial",
             ArticleType.REVIEW: "⚪ Review",
-            ArticleType.CASE_REPORT: "🟠 Case Report (4)",
+            ArticleType.CASE_REPORT: "🟠 Case Report",
         }
         badge = _type_badges.get(article.article_type, f"📄 {escape_markdown_text(article.article_type.value)}")
         parts.append(f"**Type**: {badge}")
@@ -480,7 +482,7 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
     if _jm is not None:
         jm_parts: list[str] = []
         if _jm.two_year_mean_citedness is not None:
-            jm_parts.append(f"IF≈{_jm.two_year_mean_citedness:.2f}")
+            jm_parts.append(f"2-year mean citedness: {_jm.two_year_mean_citedness:.2f}")
         if _jm.h_index is not None:
             jm_parts.append(f"h-index: {_jm.h_index}")
         if _jm.impact_tier and _jm.impact_tier != "unknown":
@@ -557,6 +559,14 @@ def _section_methodology_notes(
     no_abstract = sum(1 for a in articles[: config.output.limit] if not a.abstract)
     if no_abstract > 0:
         suggestions.append(f"{no_abstract} articles have no abstract. Use `fetch_article_details()` for full metadata.")
+
+    for step_id, result in step_results.items():
+        if result.metadata.get("source_errors"):
+            suggestions.append(
+                f"Source failures in {escape_markdown_identifier(step_id)} reduced retrieval coverage; inspect the saved step diagnostics."
+            )
+        if result.metadata.get("warning"):
+            suggestions.append(escape_markdown_text(result.metadata["warning"]))
 
     if suggestions:
         parts.append("\n### 💡 Suggestions\n")

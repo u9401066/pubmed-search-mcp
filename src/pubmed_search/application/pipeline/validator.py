@@ -49,7 +49,11 @@ def compute_config_hash(config: PipelineConfig) -> str:
 
     # Deterministic serialization for hashing
     data: dict[str, Any] = {
-        "steps": [{"id": s.id, "action": s.action, "params": s.params, "inputs": s.inputs} for s in config.steps],
+        "steps": [
+            {"id": s.id, "action": s.action, "params": s.params, "inputs": s.inputs, "on_error": s.on_error}
+            for s in config.steps
+        ],
+        "output": {"format": config.output.format, "limit": config.output.limit, "ranking": config.output.ranking},
         "globals": config.globals,
         "variables": config.variables,
         "template": config.template,

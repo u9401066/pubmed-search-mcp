@@ -521,7 +521,7 @@ class TestSectionEvidenceDistribution:
 
         assert "meta-analysis" in result
         assert "randomized-controlled-trial" in result
-        assert "🟢" in result
+        assert "Evidence synthesis" in result
 
     def test_empty_when_no_articles(self) -> None:
         result = _section_evidence_distribution([])
@@ -597,7 +597,7 @@ class TestFormatArticle:
         )
         result = _format_article(1, article)
 
-        assert "IF≈5.20" in result
+        assert "2-year mean citedness: 5.20" in result
         assert "h-index: 120" in result
         assert "High-tier" in result
 
@@ -642,7 +642,7 @@ class TestFormatArticle:
 
         article = FakeArticle(article_type=ArticleType.META_ANALYSIS)
         result = _format_article(1, article)
-        assert "🟢 Meta-Analysis (1a)" in result
+        assert "🟢 Meta-Analysis" in result
 
 
 # ═══════════════════════════════════════════════════════════════════════════

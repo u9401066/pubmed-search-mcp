@@ -241,6 +241,11 @@ def _strategy_result_payload(strategy_result: Any) -> dict[str, Any]:
         "source": str(getattr(strategy_result, "source", "") or ""),
         "articles_found": int(getattr(strategy_result, "articles_count", 0) or 0),
         "execution_time_ms": float(getattr(strategy_result, "execution_time_ms", 0.0) or 0.0),
+        "status": str(getattr(strategy_result, "status", "unknown")),
+        "allocated_limit": int(getattr(strategy_result, "allocated_limit", 0) or 0),
+        "total_available": getattr(strategy_result, "total_available", None),
+        "physical_query": getattr(strategy_result, "physical_query", None),
+        "query_executed": bool(getattr(strategy_result, "query_executed", False)),
     }
 
 
@@ -318,12 +323,16 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
     pubmed_query = str(getattr(plan, "query", "") or getattr(request, "query", ""))
     provider_query = str(getattr(plan, "provider_neutral_query", "") or pubmed_query)
     deep_strategy_queries: dict[str, list[str]] = {}
+    deep_strategy_sources: set[str] = set()
     deep_metrics = getattr(execution, "deep_search_metrics", None)
     for strategy in _list_attr(deep_metrics, "strategy_results"):
         source = str(getattr(strategy, "source", "") or "")
         query = str(getattr(strategy, "query", "") or "")
-        if source and query:
-            deep_strategy_queries.setdefault(source, []).append(query)
+        if source:
+            deep_strategy_sources.add(source)
+        if source and query and getattr(strategy, "query_executed", False):
+            physical = getattr(strategy, "physical_query", None) or query
+            deep_strategy_queries.setdefault(source, []).append(str(physical))
     source_counts = dict(getattr(execution, "source_api_counts", {}) or {})
     source_statuses = dict(getattr(execution, "source_statuses", {}) or {})
     attempted_sources = list(source_counts)
@@ -348,6 +357,8 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
             physical_query = None
         elif "physical_query" in metadata:
             physical_query = metadata["physical_query"]
+        elif source in deep_strategy_sources:
+            physical_query = None
         else:
             physical_query = metadata.get("canonical_query") or logical_query
         source_query: dict[str, Any] = {
@@ -456,6 +467,14 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
                 "requested_limit": requested_limit,
                 "expected_returned_count": expected_returned_count,
             },
+        )
+    elif expected_returned_count is None:
+        _add_check(
+            checks,
+            check="result_count_consistency",
+            severity="info",
+            message="Expected returned count is unavailable; consistency was not assessed.",
+            details={"ranked_count": len(ranked)},
         )
     else:
         _add_check(

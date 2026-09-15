@@ -219,11 +219,11 @@ class ArtifactStore:
         # The fixed tool/kind/artifact hierarchy avoids following arbitrary
         # recursive layouts while still supporting every current artifact.
         for manifest_path in sorted(session_root.glob("*/*/*/manifest.json")):
-            resolved_manifest = manifest_path.resolve()
-            self._assert_under(resolved_manifest, session_root)
             try:
+                resolved_manifest = manifest_path.resolve()
+                self._assert_under(resolved_manifest, session_root)
                 raw = json.loads(resolved_manifest.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
+            except (OSError, UnicodeError, ValueError):
                 continue
             if not isinstance(raw, dict) or raw.get("session_id") != session_id:
                 continue
@@ -283,7 +283,7 @@ class ArtifactStore:
 
     @staticmethod
     def _validate_file_name(file_name: str) -> None:
-        if not _SAFE_FILE_RE.match(file_name):
+        if not _SAFE_FILE_RE.fullmatch(file_name) or file_name.casefold() == "manifest.json":
             msg = f"Unsafe artifact file name: {file_name}"
             raise ValueError(msg)
 

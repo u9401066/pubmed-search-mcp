@@ -95,6 +95,7 @@ def _execution() -> SimpleNamespace:
         source="pubmed",
         articles_count=1,
         execution_time_ms=12.5,
+        query_executed=True,
     )
     deep_metrics = SimpleNamespace(
         strategies_generated=2,
@@ -509,3 +510,28 @@ def test_artifact_locator_exposes_remote_safe_read_hints(tmp_path: Path):
 )
 def test_artifact_locator_rejects_unverifiable_manifests(manifest: dict[str, object]) -> None:
     assert artifact_locator(manifest) is None
+
+
+def test_deep_artifact_does_not_report_skipped_strategy_as_executed():
+    from pubmed_search.application.session.artifact_envelope import build_unified_search_query_strategy
+    from pubmed_search.application.unified.helpers import StrategyResult
+
+    request = _request()
+    execution = _execution()
+    execution.deep_search_metrics.strategy_results = [
+        StrategyResult(
+            strategy_name="skipped",
+            query="sepsis",
+            source="pubmed",
+            articles_count=0,
+            expected_precision=0.5,
+            expected_recall=0.5,
+            status="skipped",
+            allocated_limit=0,
+            query_executed=False,
+        )
+    ]
+    strategy = build_unified_search_query_strategy(request=request, plan=_plan(request), execution=execution)
+    assert strategy["source_queries"]["pubmed"]["executed"] is False
+    assert strategy["source_queries"]["pubmed"]["physical_query"] is None
+    assert strategy["deep_search"]["strategy_results"][0]["status"] == "skipped"
