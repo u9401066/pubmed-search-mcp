@@ -3,7 +3,6 @@ paths:
   - "mcp-server/**/*.py"
   - "mcp-server/pyproject.toml"
   - "mcp-server/uv.lock"
-  - "scripts/**/*.py"
 ---
 
 # Zotero Python Rules

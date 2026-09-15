@@ -129,6 +129,10 @@ fetch_article_details(pmids="12345678,87654321")
 ## 實務建議
 
 - 不確定時，先用 `format="ris"`, `source="official"`
-- 只有 BibTeX 需要 `source="local"`
+- BibTeX、CSV 與本機 JSON 使用 `source="local"`
 - 若要保留摘要，維持 `include_abstract=True`
+- 排除摘要需選 `source="local"` 搭配 `include_abstract=False`；官方 payload 不支援此選項，工具會明確拒絕。
 - 若只要少數重點文章，不要直接匯出整個 `last`，改傳明確 PMID 清單
+
+筆記匯出另用 `save_literature_notes`；驗證狀態、摘要排除與保留既有檔案的行為，
+依 `AGENTS.md` 與 `docs/TOOLS_USAGE_GUIDE.md` 的共用 note export contract。
