@@ -9,6 +9,40 @@ from pubmed_search.shared.cache_substrate import CacheStore, JsonFileCacheBacken
 
 
 class TestCacheStore:
+    def test_persistence_does_not_overwrite_a_shared_fixed_temp_filename(self, tmp_path):
+        path = tmp_path / "cache.json"
+        other_writer = tmp_path / "cache.json.tmp"
+        other_writer.write_text("another writer's pending data", encoding="utf-8")
+        store = CacheStore[str](JsonFileCacheBackend(path))
+        store.set("paper", "content")
+        assert other_writer.read_text(encoding="utf-8") == "another writer's pending data"
+        assert CacheStore[str](JsonFileCacheBackend(path)).get("paper") == "content"
+
+    @pytest.mark.parametrize("field,value", [("expires_at", "not-a-date"), ("expires_at", ""), ("cached_at", "bad")])
+    def test_corrupt_timestamps_do_not_poison_other_cached_articles(self, tmp_path, field, value):
+        good = StoredCacheEntry(value="good").to_dict()
+        broken = {**good, field: value}
+        path = tmp_path / "cache.json"
+        path.write_text(json.dumps({"broken": broken, "good": good}), encoding="utf-8")
+        store = CacheStore[str](JsonFileCacheBackend(path))
+        assert store.get("broken") is None
+        assert store.keys() == ["good"]
+        assert store.get("good") == "good"
+
+    def test_reloaded_json_cache_applies_its_capacity(self, tmp_path):
+        path = tmp_path / "cache.json"
+        original = CacheStore[str](JsonFileCacheBackend(path))
+        original.warmup({"old": "1", "middle": "2", "new": "3"})
+        reloaded = CacheStore[str](JsonFileCacheBackend(path, max_entries=2))
+        assert reloaded.keys() == ["middle", "new"]
+        assert reloaded.get("old") is None
+
+    @pytest.mark.parametrize("backend_type", [MemoryCacheBackend, JsonFileCacheBackend])
+    def test_negative_cache_capacity_is_rejected_before_mutation(self, tmp_path, backend_type):
+        args = (tmp_path / "cache.json",) if backend_type is JsonFileCacheBackend else ()
+        with pytest.raises(ValueError, match="max_entries"):
+            backend_type(*args, max_entries=-1)
+
     async def test_warmup_invalidate_and_stats(self, tmp_path):
         store = CacheStore[str](
             MemoryCacheBackend(max_entries=10),

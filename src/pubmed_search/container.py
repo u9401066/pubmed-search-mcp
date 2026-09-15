@@ -1,7 +1,8 @@
 """
 Application DI container.
 
-Centralizes service creation and lifecycle management.
+Centralizes service creation during single-owner server setup. The server owns
+resource shutdown; providers do not close instances when reset or overridden.
 Replaces scattered manual instantiation and ``mcp._xxx`` private attribute access.
 
 Usage::
@@ -145,10 +146,13 @@ def _create_session_manager_with_cache(data_dir: str, article_cache: Any) -> obj
 class ApplicationContainer:
     """Central DI container for PubMed Search MCP application.
 
-    Manages creation and lifecycle of all core services:
+    Creates shared core services during server setup:
     - ``searcher``: NCBI Entrez literature search
     - ``strategy_generator``: MeSH / ESpell query intelligence
     - ``session_manager``: Session cache and persistence
+
+    Configure before first resolution. Changes to configuration do not rebuild
+    existing instances; explicit reset affects future resolution only.
     """
 
     def __init__(self) -> None:

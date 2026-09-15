@@ -293,3 +293,11 @@ async def test_institutional_soft_redirect_to_private_address_is_blocked(
     assert error and "non-public" in error
     assert requested == ["doi.org", "linkinghub.elsevier.com"]
     assert all("127.0.0.1" not in item for item in chain)
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"max_bytes": float("nan")}, {"max_bytes": True}, {"max_bytes": 12, "max_redirects": 1.5}]
+)
+def test_outbound_limits_reject_non_integral_budgets(kwargs):
+    with pytest.raises((ValueError, TypeError)):
+        SafeFetchPolicy(**kwargs)

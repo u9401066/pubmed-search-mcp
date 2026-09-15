@@ -4,8 +4,9 @@ The MCP SDK expects a ``TokenVerifier``. Full OAuth is overkill for a team that
 just wants a few trusted agents to reach a private server, so this verifier maps
 pre-shared tokens to principals through configuration.
 
-Tokens are compared with :func:`hmac.compare_digest` and are only ever kept as
-digests, so a memory dump or an accidental log of this object cannot leak them.
+Configured secrets are retained as digests and compared with
+:func:`hmac.compare_digest`. The presented token still exists transiently in the
+request and the SDK AccessToken; do not log either object.
 
 For anything beyond a handful of agents, plug a real OAuth resource-server
 verifier into ``MCPServer(token_verifier=...)`` instead - this class is
@@ -56,6 +57,11 @@ class StaticTokenVerifier:
         Args:
             principals: Configured callers. An empty list rejects every token.
         """
+        identities: dict[str, str] = {}
+        for entry in principals:
+            previous = identities.setdefault(entry.token_digest, entry.principal)
+            if previous != entry.principal:
+                raise ValueError("A bearer token cannot identify multiple principals")
         self._principals = list(principals)
 
     def __len__(self) -> int:

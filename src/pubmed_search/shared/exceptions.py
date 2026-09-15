@@ -25,7 +25,7 @@ Exception Hierarchy:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 from typing import Any
 
@@ -123,7 +123,7 @@ class PubMedSearchError(Exception):
             result["suggestion"] = self.context.suggestion
         if self.context.example:
             result["example"] = self.context.example
-        if self.context.retry_after:
+        if self.context.retry_after is not None:
             result["retry_after_seconds"] = self.context.retry_after
         return result
 
@@ -136,7 +136,7 @@ class PubMedSearchError(Exception):
         if self.context.example:
             parts.append(f"📝 **Example**: `{escape_markdown_code(self.context.example)}`")
         if self.retryable:
-            if self.context.retry_after:
+            if self.context.retry_after is not None:
                 parts.append(f"🔄 Retry after {self.context.retry_after:.1f} seconds")
             else:
                 parts.append("🔄 This error is retryable")
@@ -180,15 +180,10 @@ class RateLimitError(APIError):
     ) -> None:
         ctx = context or ErrorContext()
         # Merge retry_after into context
-        ctx = ErrorContext(
-            tool_name=ctx.tool_name,
-            operation=ctx.operation,
-            input_value=ctx.input_value,
+        ctx = replace(
+            ctx,
             suggestion=ctx.suggestion or "Wait and retry the request",
-            example=ctx.example,
             retry_after=retry_after,
-            related_errors=ctx.related_errors,
-            metadata=ctx.metadata,
         )
         super().__init__(message, context=ctx, retryable=True)
         self.severity = ErrorSeverity.TRANSIENT
@@ -253,15 +248,11 @@ class InvalidPMIDError(ValidationError):
         context: ErrorContext | None = None,
     ) -> None:
         ctx = context or ErrorContext()
-        ctx = ErrorContext(
-            tool_name=ctx.tool_name,
-            operation=ctx.operation,
+        ctx = replace(
+            ctx,
             input_value=pmid,
             suggestion="PMID should be a numeric string (e.g., '12345678')",
             example='fetch_article_details(pmids="12345678")',
-            retry_after=ctx.retry_after,
-            related_errors=ctx.related_errors,
-            metadata=ctx.metadata,
         )
         super().__init__(f"Invalid PMID format: {pmid!r}", context=ctx)
 
@@ -277,15 +268,11 @@ class InvalidQueryError(ValidationError):
         context: ErrorContext | None = None,
     ) -> None:
         ctx = context or ErrorContext()
-        ctx = ErrorContext(
-            tool_name=ctx.tool_name,
-            operation=ctx.operation,
+        ctx = replace(
+            ctx,
             input_value=query,
             suggestion=ctx.suggestion or "Provide a valid search query",
             example=ctx.example or 'unified_search(query="diabetes treatment")',
-            retry_after=ctx.retry_after,
-            related_errors=ctx.related_errors,
-            metadata=ctx.metadata,
         )
         super().__init__(f"Invalid query: {reason}", context=ctx)
 
@@ -302,15 +289,10 @@ class InvalidParameterError(ValidationError):
         context: ErrorContext | None = None,
     ) -> None:
         ctx = context or ErrorContext()
-        ctx = ErrorContext(
-            tool_name=ctx.tool_name,
-            operation=ctx.operation,
+        ctx = replace(
+            ctx,
             input_value=value,
             suggestion=f"Expected {expected}",
-            example=ctx.example,
-            retry_after=ctx.retry_after,
-            related_errors=ctx.related_errors,
-            metadata=ctx.metadata,
         )
         super().__init__(
             f"Invalid parameter '{param_name}': {value!r} (expected {expected})",
@@ -356,15 +338,10 @@ class NotFoundError(DataError):
             msg = f"{resource} not found: {identifier}"
 
         ctx = context or ErrorContext()
-        ctx = ErrorContext(
-            tool_name=ctx.tool_name,
-            operation=ctx.operation,
+        ctx = replace(
+            ctx,
             input_value=identifier,
             suggestion=ctx.suggestion or "Check the identifier and try again",
-            example=ctx.example,
-            retry_after=ctx.retry_after,
-            related_errors=ctx.related_errors,
-            metadata=ctx.metadata,
         )
         super().__init__(msg, context=ctx)
 
@@ -469,7 +446,7 @@ def get_retry_delay(error: Exception, attempt: int) -> float:
     base_delay = 1.0
 
     # Check for specific retry-after in error
-    if isinstance(error, PubMedSearchError) and error.context.retry_after:
+    if isinstance(error, PubMedSearchError) and error.context.retry_after is not None:
         base_delay = float(error.context.retry_after)
 
     # Exponential backoff with jitter

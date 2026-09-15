@@ -50,12 +50,12 @@ def extract_credential_values(text: str) -> frozenset[str]:
     values: set[str] = set()
     for match in _AUTHORIZATION_HEADER_RE.finditer(text):
         value = next((match.group(name) for name in ("double", "single", "bare") if match.group(name)), "")
-        if value:
+        if value.strip():
             values.add(value.strip())
     for pattern in (_ASSIGNMENT_RE, _CLI_CREDENTIAL_RE, _KNOWN_SPACE_CREDENTIAL_RE):
         for match in pattern.finditer(text):
             value = next((group for group in match.groups() if group), "")
-            if value:
+            if value.strip():
                 values.add(value)
     values.update(match.group(1) for match in _BEARER_RE.finditer(text) if match.group(1))
     return frozenset(values)
@@ -106,7 +106,7 @@ def redact_known_credential_values(value: Any, secrets: frozenset[str]) -> Any:
         return [redact_known_credential_values(item, secrets) for item in value]
     if isinstance(value, str):
         redacted = value
-        for secret in sorted(secrets, key=len, reverse=True):
+        for secret in sorted((secret for secret in secrets if secret.strip()), key=len, reverse=True):
             redacted = redacted.replace(secret, "[REDACTED]")
         return redacted
     return value

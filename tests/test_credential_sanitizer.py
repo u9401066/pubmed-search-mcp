@@ -9,7 +9,15 @@ from pubmed_search.shared.credential_sanitizer import (
     extract_credential_values,
     is_credential_field,
     redact_credential_assignments,
+    redact_known_credential_values,
 )
+
+
+def test_empty_credentials_cannot_expand_or_damage_unrelated_payloads() -> None:
+    secrets = extract_credential_values("Authorization:   ")
+    assert secrets == frozenset()
+    payload = {"query": "cancer treatment", "results": ["research notes"]}
+    assert redact_known_credential_values(payload, frozenset({"", " "})) == payload
 
 
 @pytest.mark.parametrize(
