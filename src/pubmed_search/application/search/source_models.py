@@ -60,13 +60,13 @@ def coerce_optional_total(value: object) -> tuple[int | None, list[str]]:
         return None, []
     if isinstance(value, bool):
         return None, ["Provider returned an invalid boolean total"]
-    if isinstance(value, int):
+    if isinstance(value, int) and value >= 0:
         return value, []
     if isinstance(value, str):
         normalized = value.strip().replace(",", "")
-        if normalized.isdigit():
+        if normalized.isascii() and normalized.isdecimal():
             return int(normalized), []
-    return None, [f"Provider returned a non-numeric total: {value!r}"]
+    return None, ["Provider returned an invalid non-negative integer total"]
 
 
 __all__ = ["SourceSearchPage", "coerce_optional_total"]

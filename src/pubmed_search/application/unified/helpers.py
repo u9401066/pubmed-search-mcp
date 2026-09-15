@@ -4,7 +4,7 @@ Unified Search — Query Helpers Module.
 Contains ICD code detection, dispatch strategy, composite parameter parsers,
 search depth metrics dataclasses, and relaxation step generation.
 
-Extracted from unified.py to keep each module under 400 lines.
+Application-owned query policy shared by the planner and source broker.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # ICD-10 pattern: Letter + 2-3 digits + optional dot + more digits
-ICD10_PATTERN = re.compile(r"\b([A-Z]\d{2}(?:\.\d{1,4})?)\b", re.IGNORECASE)
+ICD10_PATTERN = re.compile(r"(?<![\w.])([A-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?)(?![\w.])", re.IGNORECASE)
 # A bare three-digit number is commonly a dose, count, or measurement. Numeric
 # ICD-9-CM codes are therefore detected only when the whole query is a code or
 # when an explicit ICD-9/code marker precedes it.
@@ -46,6 +46,25 @@ ICD9_CONTEXT_PATTERN = re.compile(
     r"\b(?:ICD(?:-?9(?:-CM)?)?|diagnosis\s+code|dx\s+code)\s*[:#]?\s*(\d{3}(?:\.\d{1,2})?)\b",
     re.IGNORECASE,
 )
+
+
+def expand_icd_matches(query: str, matches: list[dict], *, dialect: Literal["pubmed", "boolean", "semantic"]) -> str:
+    """Replace original code occurrences once, avoiding nested re-expansion."""
+    by_code = {item["code"].upper(): item["mesh"] for item in matches}
+    if not by_code:
+        return query
+    alternatives = "|".join(re.escape(code) for code in sorted(by_code, key=len, reverse=True))
+    pattern = re.compile(rf"(?<![\w.])({alternatives})(?![\w.])", re.IGNORECASE)
+
+    def replace(match: re.Match[str]) -> str:
+        code = match.group(1).upper()
+        mesh = by_code[code]
+        if dialect == "semantic":
+            return f"{mesh} ({code})"
+        tag = "[MeSH]" if dialect == "pubmed" else ""
+        return f'("{mesh}"{tag} OR {code})'
+
+    return pattern.sub(replace, query)
 
 
 def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
@@ -65,6 +84,8 @@ def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
     # Detect ICD-10 codes
     for match in ICD10_PATTERN.finditer(query):
         code = match.group(1).upper()
+        if any(item["code"] == code for item in icd_matches):
+            continue
         result = lookup_icd_to_mesh(code)
         mesh_term = (result.get("mesh_term") or result.get("mesh")) if result else None
         if isinstance(mesh_term, str) and mesh_term:
@@ -107,18 +128,7 @@ def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
     if not icd_matches:
         return query, []
 
-    # Build expanded query
-    # Replace ICD codes with MeSH terms in the query
-    expanded_query = query
-    for icd in icd_matches:
-        mesh_term = icd["mesh"]
-        # Replace or augment the ICD code with MeSH
-        expanded_query = re.sub(
-            rf"\b{re.escape(icd['code'])}\b",
-            f'("{mesh_term}"[MeSH] OR {icd["code"]})',
-            expanded_query,
-            flags=re.IGNORECASE,
-        )
+    expanded_query = expand_icd_matches(query, icd_matches, dialect="pubmed")
 
     # Queries and diagnosis codes may be sensitive in a multi-user service.
     # Operational logs retain only cardinality; exact query provenance belongs

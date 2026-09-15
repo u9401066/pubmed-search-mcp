@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import re
 import string
@@ -25,6 +26,8 @@ def summarize_product_comparison(
     Invalid answers and task timeouts remain scored outcomes. Infrastructure
     failures must remain pending in the caller rather than becoming zero scores.
     """
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < 1:
+        raise ValueError("repeats must be a positive integer")
     complete = {
         qid: runs
         for qid, runs in results.items()
@@ -102,6 +105,8 @@ def paired_comparison(
         raise ValueError("Non-empty, matching query IDs are required")
     if samples < 100:
         raise ValueError("At least 100 bootstrap samples are required")
+    if any(not math.isfinite(value) for arm in (baseline, treatment) for value in arm.values()):
+        raise ValueError("Paired metric values must be finite")
     differences = [treatment[key] - baseline[key] for key in sorted(baseline)]
     rng = random.Random(seed)  # noqa: S311 - reproducible statistical resampling, not cryptography
     bootstrapped = sorted(sum(rng.choices(differences, k=len(differences))) / len(differences) for _ in range(samples))

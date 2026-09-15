@@ -40,7 +40,7 @@ class _SearchMixinHarness(SearchMixin):
 @pytest.mark.asyncio
 async def test_pubmed_filtered_compiled_query_reaches_unified_source_metadata() -> None:
     searcher = _SearchMixinHarness()
-    compiled_query = f'{PRIVATE_QUERY} AND 2020/01/01:2100/12/31[dp] AND "Female"[MeSH]'
+    compiled_query = f'({PRIVATE_QUERY}) AND 2020/01/01:2100/12/31[dp] AND "Female"[MeSH]'
 
     result = await run_unified_search(
         searcher=searcher,  # type: ignore[arg-type]
@@ -64,7 +64,7 @@ async def test_pubmed_failure_preserves_attempted_query_without_logging_it(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     searcher = _SearchMixinHarness(failure=RuntimeError(f"upstream failed for {PRIVATE_QUERY}"))
-    expected_query = f'{PRIVATE_QUERY} AND 2021/01/01:2100/12/31[dp] AND "Male"[MeSH]'
+    expected_query = f'({PRIVATE_QUERY}) AND 2021/01/01:2100/12/31[dp] AND "Male"[MeSH]'
 
     result = await _search_pubmed_adapter(
         searcher,  # type: ignore[arg-type]
@@ -131,6 +131,7 @@ async def test_core_year_filters_use_provider_compiled_physical_query() -> None:
 @pytest.mark.asyncio
 async def test_arxiv_records_rewritten_query_and_local_year_filter() -> None:
     searcher = MagicMock()
+    searcher.close = AsyncMock()
     searcher.search = AsyncMock(return_value={"by_source": {"arxiv": []}})
 
     with patch(
@@ -156,6 +157,7 @@ async def test_arxiv_records_rewritten_query_and_local_year_filter() -> None:
 @pytest.mark.asyncio
 async def test_rxiv_records_date_request_and_explicit_local_filters() -> None:
     searcher = MagicMock()
+    searcher.close = AsyncMock()
     searcher.search = AsyncMock(return_value={"by_source": {"medrxiv": []}})
 
     with (

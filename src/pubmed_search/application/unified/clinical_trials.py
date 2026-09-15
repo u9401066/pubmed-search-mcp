@@ -15,7 +15,7 @@ ClinicalTrialsRetrievalStatus = Literal["not_requested", "pending", "complete", 
 ClinicalTrialsFormatStatus = Literal["not_requested", "pending", "complete", "not_applicable", "error"]
 ClinicalTrialsStatus = Literal["not_requested", "pending", "complete", "empty", "timeout", "error", "format_error"]
 
-_NCT_ID_RE = re.compile(r"^NCT\d{8}$")
+_NCT_ID_RE = re.compile(r"^NCT[0-9]{8}$")
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 

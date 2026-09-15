@@ -31,6 +31,20 @@ from enum import Enum
 from typing import Any, Literal
 
 
+def _keyword_matches(query: str, keywords: set[str]) -> list[str]:
+    """Match whole English keywords while retaining Chinese phrase detection."""
+    lowered = query.lower()
+    return [
+        keyword
+        for keyword in sorted(keywords)
+        if (
+            re.search(r"(?<!\w)" + re.escape(keyword.lower()) + r"(?!\w)", lowered)
+            if keyword.isascii()
+            else keyword.lower() in lowered
+        )
+    ]
+
+
 class QueryComplexity(Enum):
     """
     Query complexity levels determining search strategy.
@@ -246,14 +260,14 @@ class QueryAnalyzer:
     """
 
     # Identifier patterns
-    PMID_PATTERN = re.compile(r"(?:PMID[:\s]?)?(\d{7,8})\b", re.IGNORECASE)
+    PMID_PATTERN = re.compile(r"(?<![\w./])(?:PMID[:\s]+([1-9][0-9]{0,19})|([1-9][0-9]{6,7}))(?![\w.])", re.IGNORECASE)
     DOI_PATTERN = re.compile(r"(?:doi[:\s]?)?(10\.\d{4,}/[^\s]+)", re.IGNORECASE)
-    PMC_PATTERN = re.compile(r"PMC\s?(\d{6,8})\b", re.IGNORECASE)
+    PMC_PATTERN = re.compile(r"(?<!\w)PMC\s?([1-9][0-9]{0,19})(?!\w)", re.IGNORECASE)
     ARXIV_PATTERN = re.compile(r"(?:arxiv[:\s]?)?([\d]{4}\.[\d]{4,5}(?:v\d+)?)", re.IGNORECASE)
 
     # Year patterns
     YEAR_PATTERN = re.compile(r"\b(19\d{2}|20[0-3]\d)\b")
-    YEAR_RANGE_PATTERN = re.compile(r"\b(19\d{2}|20[0-3]\d)\s*[-–to]+\s*(19\d{2}|20[0-3]\d)\b", re.IGNORECASE)
+    YEAR_RANGE_PATTERN = re.compile(r"\b(19\d{2}|20[0-3]\d)\s*(?:[-–]|to)\s*(19\d{2}|20[0-3]\d)\b", re.IGNORECASE)
     RECENT_PATTERN = re.compile(r"\b(recent|last\s+\d+\s+years?|past\s+\d+\s+years?)\b", re.IGNORECASE)
 
     # Comparison keywords
@@ -426,9 +440,6 @@ class QueryAnalyzer:
         "clinical trial": "Clinical Trial",
     }
 
-    def __init__(self) -> None:
-        """Initialize QueryAnalyzer."""
-
     def analyze(self, query: str) -> AnalyzedQuery:
         """
         Analyze a search query.
@@ -505,54 +516,31 @@ class QueryAnalyzer:
 
     def _extract_identifiers(self, query: str) -> list[ExtractedIdentifier]:
         """Extract identifiers (PMID, DOI, etc.) from query."""
-        identifiers = []
-
-        # Check for PMID
-        for match in self.PMID_PATTERN.finditer(query):
-            identifiers.append(
-                ExtractedIdentifier(
-                    type="pmid",
-                    value=match.group(1),
-                    confidence=1.0,
-                )
-            )
-
-        # Check for DOI
-        for match in self.DOI_PATTERN.finditer(query):
-            identifiers.append(
-                ExtractedIdentifier(
-                    type="doi",
-                    value=match.group(1),
-                    confidence=1.0,
-                )
-            )
-
-        # Check for PMC
-        for match in self.PMC_PATTERN.finditer(query):
-            identifiers.append(
-                ExtractedIdentifier(
-                    type="pmc",
-                    value=f"PMC{match.group(1)}",
-                    confidence=1.0,
-                )
-            )
-
-        # Check for arXiv
-        for match in self.ARXIV_PATTERN.finditer(query):
-            identifiers.append(
-                ExtractedIdentifier(
-                    type="arxiv",
-                    value=match.group(1),
-                    confidence=1.0,
-                )
-            )
-
-        return identifiers
+        found: list[tuple[int, ExtractedIdentifier]] = []
+        occupied: list[tuple[int, int]] = []
+        patterns: list[tuple[Literal["pmid", "doi", "pmc", "arxiv", "title"], re.Pattern[str]]] = [
+            ("doi", self.DOI_PATTERN),
+            ("pmc", self.PMC_PATTERN),
+            ("arxiv", self.ARXIV_PATTERN),
+            ("pmid", self.PMID_PATTERN),
+        ]
+        for kind, pattern in patterns:
+            for match in pattern.finditer(query):
+                if any(match.start() < end and match.end() > start for start, end in occupied):
+                    continue
+                value = match.group(1) or match.group(2)
+                if kind == "pmc":
+                    value = f"PMC{value}"
+                found.append((match.start(), ExtractedIdentifier(type=kind, value=value)))
+                occupied.append(match.span())
+        return [identifier for _, identifier in sorted(found, key=lambda item: item[0])]
 
     def _extract_year_constraints(self, query: str) -> tuple[int | None, int | None]:
         """Extract year constraints from query."""
         year_from = None
         year_to = None
+        for pattern in (self.DOI_PATTERN, self.PMC_PATTERN, self.ARXIV_PATTERN, self.PMID_PATTERN):
+            query = pattern.sub(" ", query)
 
         # Check for year range
         range_match = self.YEAR_RANGE_PATTERN.search(query)
@@ -568,7 +556,9 @@ class QueryAnalyzer:
             import datetime
 
             current_year = datetime.datetime.now(tz=datetime.timezone.utc).year
-            year_from = current_year - 5
+            count = re.search(r"[0-9]+", recent_match.group(0))
+            years_back = int(count.group(0)) if count else 5
+            year_from = max(1, current_year - years_back)
             year_to = current_year
             return year_from, year_to
 
@@ -591,25 +581,18 @@ class QueryAnalyzer:
         """Detect user's search intent."""
         query_lower = query.lower()
 
-        # LOOKUP: Has specific identifiers
+        if _keyword_matches(query_lower, {"citing", "cited by", "related to", "引用"}):
+            return QueryIntent.CITATION_TRACKING
         if identifiers:
             return QueryIntent.LOOKUP
-
-        # CITATION_TRACKING: Mentions citing/related
-        if any(kw in query_lower for kw in ["citing", "cited by", "related to", "引用"]):
-            return QueryIntent.CITATION_TRACKING
-
-        # AUTHOR_SEARCH: Mentions author/publications by
-        if any(kw in query_lower for kw in ["author", "publications by", "papers by", "作者"]):
+        if _keyword_matches(query_lower, {"author", "publications by", "papers by", "作者"}):
             return QueryIntent.AUTHOR_SEARCH
 
-        # COMPARISON: Has comparison keywords
-        if any(kw in query_lower for kw in self.COMPARISON_KEYWORDS):
-            return QueryIntent.COMPARISON
-
-        # SYSTEMATIC: Has PICO-like structure or mentions systematic
-        if any(kw in query_lower for kw in ["systematic", "meta-analysis", "pico", "系統性"]):
+        # Explicit systematic intent takes precedence over comparison wording.
+        if _keyword_matches(query_lower, {"systematic", "meta-analysis", "pico", "系統性"}):
             return QueryIntent.SYSTEMATIC
+        if _keyword_matches(query_lower, self.COMPARISON_KEYWORDS):
+            return QueryIntent.COMPARISON
 
         # Default: EXPLORATION
         return QueryIntent.EXPLORATION
@@ -672,10 +655,11 @@ class QueryAnalyzer:
         }
 
         # Tokenize (simple word split)
-        words = re.findall(r"\b[a-zA-Z\u4e00-\u9fff]{2,}\b", query)
+        query = re.sub(r"\[[^\]]*\]", " ", query)
+        words = re.findall(r"\b[a-zA-Z\u4e00-\u9fff][\w-]*\b", query)
 
         # Filter stop words and short words
-        keywords = [word for word in words if word.lower() not in stop_words and len(word) > 2]
+        keywords = [word for word in words if word.lower() not in stop_words and len(word) >= 2]
 
         return keywords[:10]  # Limit to top 10
 
@@ -690,7 +674,7 @@ class QueryAnalyzer:
         query_lower = query.lower()
 
         # Quick check: Does it look like a clinical question?
-        has_comparison = any(kw in query_lower for kw in self.COMPARISON_KEYWORDS)
+        has_comparison = bool(_keyword_matches(query_lower, self.COMPARISON_KEYWORDS))
         has_clinical = any(
             kw in query_lower for kw in self.CLINICAL_THERAPY_KEYWORDS | self.CLINICAL_DIAGNOSIS_KEYWORDS
         )
@@ -755,6 +739,21 @@ class QueryAnalyzer:
         if identifiers and len(keywords) < 3:
             return QueryComplexity.SIMPLE
 
+        # AMBIGUOUS: Very broad single term
+        if len(keywords) == 1 and keywords[0].lower() in {
+            "cancer",
+            "diabetes",
+            "heart",
+            "brain",
+            "treatment",
+            "癌症",
+            "糖尿病",
+            "心臟",
+            "大腦",
+            "治療",
+        }:
+            return QueryComplexity.AMBIGUOUS
+
         # SIMPLE: Very short query (1-2 words) without comparison
         if len(keywords) <= 2 and not pico:
             # Check if it's a genuine comparison (e.g., "A vs B")
@@ -779,21 +778,6 @@ class QueryAnalyzer:
             stopwords = {"the", "this", "that", "with", "and", "for", "from"}
             if left not in stopwords and right not in stopwords:
                 return QueryComplexity.COMPLEX
-
-        # AMBIGUOUS: Very broad single term
-        if len(keywords) == 1 and keywords[0].lower() in {
-            "cancer",
-            "diabetes",
-            "heart",
-            "brain",
-            "treatment",
-            "癌症",
-            "糖尿病",
-            "心臟",
-            "大腦",
-            "治療",
-        }:
-            return QueryComplexity.AMBIGUOUS
 
         # MODERATE: Default for multi-term queries (3+ keywords)
         if len(keywords) >= 3:
@@ -838,6 +822,9 @@ class QueryAnalyzer:
         if intent == QueryIntent.LOOKUP:
             return ["direct_lookup"]
 
+        if intent == QueryIntent.CITATION_TRACKING:
+            return ["citing", "references", "related"]
+
         # COMPARISON: Need comparison-focused search
         if intent == QueryIntent.COMPARISON:
             strategies = ["pico_search", "comparison_filter"]
@@ -875,12 +862,12 @@ class QueryAnalyzer:
         reasons: list[str] = []
 
         # Check explicit image keywords
-        image_hits = [kw for kw in self.IMAGE_INTENT_KEYWORDS if kw in query_lower]
+        image_hits = _keyword_matches(query_lower, self.IMAGE_INTENT_KEYWORDS)
         if image_hits:
             reasons.append(f"影像關鍵字: {', '.join(image_hits[:3])}")
 
         # Check visual anatomy keywords (weaker signal)
-        anatomy_hits = [kw for kw in self.VISUAL_ANATOMY_KEYWORDS if kw in query_lower]
+        anatomy_hits = _keyword_matches(query_lower, self.VISUAL_ANATOMY_KEYWORDS)
         if anatomy_hits:
             reasons.append(f"視覺解剖關鍵字: {', '.join(anatomy_hits[:3])}")
 

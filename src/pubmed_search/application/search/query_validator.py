@@ -144,6 +144,17 @@ _BOOL_OPS = {"AND", "OR", "NOT"}
 _BOOL_PATTERN = re.compile(r"\b(AND|OR|NOT)\b", re.IGNORECASE)
 
 
+def pubmed_field_tags(query: str) -> list[str]:
+    """Return known PubMed field tags for planning and fallback dialect checks."""
+    return sorted(
+        {
+            match.group(1).strip()
+            for match in _FIELD_TAG_CAPTURE.finditer(query)
+            if match.group(1).strip().lower() in VALID_FIELD_TAGS
+        }
+    )
+
+
 @dataclass
 class QueryValidationResult:
     """Result of query syntax validation."""
@@ -307,7 +318,7 @@ class QueryValidator:
                 continue
 
             # Check common misspellings
-            close_matches = [t for t in VALID_FIELD_TAGS if _is_close_match(tag_lower, t)]
+            close_matches = sorted(t for t in VALID_FIELD_TAGS if _is_close_match(tag_lower, t))
             if close_matches:
                 errors.append(f"Invalid field tag [{tag}]. Did you mean [{close_matches[0]}]?")
             else:
