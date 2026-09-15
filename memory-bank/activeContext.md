@@ -1,6 +1,6 @@
 # Active Context
 
-## Current Focus — v0.7.3 release preparation (2026-09-15)
+## Current Focus — v0.7.3 published and verified (2026-09-15)
 
 - Completed all ten core-review phases in order. Scope: every Python file in
   `src/pubmed_search/`, including package roots, wrappers, models and evaluation
@@ -32,20 +32,26 @@
   job. Extended platform/container/rendering checks remain opt-in or release gates.
   Research-skill installation preserves existing whole user skill directories and
   settings; no automatic overwrite of user harness customizations.
-- User authorized documentation/MEM updates, segmented commits, push and release.
-  Preparing **v0.7.3** on `release/v0.7.3`, with no more than 30 files per commit,
-  full local pre-push validation, PR checks, merge to master, then an annotated tag.
-  Publication is pending until the tag workflow, PyPI and GitHub assets are verified.
-  README, source docs, generated website and changelog reflect the release; earlier
-  maintenance/renovation measurements stay historical.
+- **v0.7.3 is published and verified.** PR #16 merged all 16 focused commits
+  (maximum 29 paths each) at `fbbaaca`; the annotated tag points to that tested
+  master commit. Branch, PR and master CI passed. Release run `34945446025`
+  passed verification (including container smoke), PyPI publication and GitHub
+  Release creation. Wheel/sdist were downloaded from both services and SHA-256
+  values match. Website and Wiki content were fetched and verified.
+- Release-local validation: Python 3.13 full gate **4,736 passed, 23 skipped,
+  30 deselected**, with real MCP Mermaid rendering required; Python 3.10 full
+  pre-push gate passed. 121 standalone diagrams rendered to SVG. An independent
+  wheel environment imported v0.7.3 and ran the HTTP CLI without Git requirements.
+- Publication evidence: [release verification](../docs/reports/release_v073_2026-09-15.json).
+  README, source docs, generated website, changelog and review reports are shipped.
+  The subsequent documentation-only commit records verified publication; it does
+  not move the release tag or change the published artifacts.
 - Academic evaluation remains setup/validation-only. Do not launch the 5,000-query
   model run without a new execution budget. Retain the `dbcf0c8` product snapshot
   and historical reports; evaluator/lockfile changes require a new manifest.
   Local regression success is not a measured product retrieval-score improvement.
-- Latest published release remains v0.7.2: PR #14, merge `c331ac5`, release workflow
-  `34331096208`, with publication evidence in
-  [release verification](../docs/reports/release_v072_2026-09-09.json).
-  Earlier published-boundary sections below are historical contracts.
+- Previous v0.7.2 publication records remain historical; the published release
+  for this review is v0.7.3. Earlier boundary sections below preserve contracts.
 
 ## Previous Published Boundary
 
@@ -314,4 +320,4 @@
 
 ---
 
-*Last updated: 2026-09-15 — ten-phase core review complete; v0.7.3 publication in progress*
+*Last updated: 2026-09-15 — v0.7.3 published; artifact, CI, website and Wiki verification recorded*
