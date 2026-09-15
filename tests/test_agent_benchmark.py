@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
 from mcp.client import Client
+from scripts import benchmark_agent_harness as runner
 from scripts.benchmark_agent_harness import agent_command, source_fingerprint
 from scripts.benchmark_agent_server import _block_network, build_server
 
@@ -170,3 +172,78 @@ def test_revision_fingerprint_detects_source_changes(tmp_path: Path):
     assert source_fingerprint(tmp_path) == before
     product.write_text("changed")
     assert source_fingerprint(tmp_path) != before
+
+
+def test_corpus_rejects_ids_that_would_collide_after_normalization(tmp_path: Path):
+    path = tmp_path / "corpus.jsonl"
+    path.write_text("\n".join(json.dumps({"_id": doc_id}) for doc_id in [1, "1"]))
+    with pytest.raises(ValueError, match="string"):
+        FrozenCorpus(path, tmp_path / "audit.json")
+
+
+@pytest.mark.parametrize("budget", [True, 1.5])
+def test_corpus_rejects_non_integer_budgets(tmp_path: Path, budget):
+    path = tmp_path / "corpus.jsonl"
+    path.write_text('{"_id": "one"}')
+    with pytest.raises(ValueError, match="positive integers"):
+        FrozenCorpus(path, tmp_path / "audit.json", search_budget=budget)
+
+
+@pytest.mark.parametrize("limit", [0, True, 1.5])
+async def test_invalid_search_limit_does_not_consume_budget(frozen_corpus: FrozenCorpus, limit):
+    with pytest.raises(ValueError, match="positive integer"):
+        await frozen_corpus.search("sepsis", limit=limit)
+    assert frozen_corpus.search_calls == 0
+    assert frozen_corpus.document_exposures == 0
+
+
+def test_corpus_audit_preserves_previous_file_on_replace_failure(frozen_corpus: FrozenCorpus, monkeypatch):
+    from pubmed_search.shared import file_io
+
+    before = frozen_corpus.audit_path.read_bytes()
+
+    def fail_replace(*_args):
+        raise OSError("injected disk failure")
+
+    monkeypatch.setattr(file_io.os, "replace", fail_replace)
+    frozen_corpus.events.append({"operation": "new"})
+    with pytest.raises(OSError, match="injected disk failure"):
+        frozen_corpus.save_audit()
+    assert frozen_corpus.audit_path.read_bytes() == before
+    assert not list(frozen_corpus.audit_path.parent.glob(".audit.json.*.tmp"))
+
+
+def test_revision_fingerprint_requires_product_code(tmp_path: Path):
+    adapter = tmp_path / "src/pubmed_search/infrastructure/evaluation"
+    adapter.mkdir(parents=True)
+    (adapter / "corpus.py").write_text("shared adapter only")
+    with pytest.raises(ValueError, match="No PubMed Search sources"):
+        source_fingerprint(tmp_path)
+
+
+def test_cross_revision_run_rejects_different_backend_before_starting(tmp_path: Path, monkeypatch, capsys):
+    source = tmp_path / "old/src/pubmed_search"
+    adapter = source / "infrastructure/evaluation/corpus.py"
+    adapter.parent.mkdir(parents=True)
+    (source / "server.py").write_text("product code")
+    adapter.write_text("different evaluation backend")
+    output = tmp_path / "results"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark",
+            str(tmp_path / "data"),
+            "--repo-root",
+            str(tmp_path / "old"),
+            "--output-dir",
+            str(output),
+            "--model",
+            "offline-test-only",
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        runner.main()
+    assert error.value.code == 2
+    assert "same frozen-corpus adapter" in capsys.readouterr().err
+    assert not output.exists()

@@ -218,6 +218,12 @@ def main() -> None:
         parser.error("query-limit and timeout must be positive")
     dataset, repo_root = args.dataset.resolve(), args.repo_root.resolve()
     source_hash = source_fingerprint(repo_root)
+    adapter_path = Path("src/pubmed_search/infrastructure/evaluation/corpus.py")
+    revision_adapter = repo_root / adapter_path
+    if not revision_adapter.is_file() or revision_adapter.read_bytes() != (ROOT / adapter_path).read_bytes():
+        parser.error(
+            "Both arms must use the same frozen-corpus adapter; align evaluation code before comparing revisions"
+        )
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
     queries = {
@@ -265,7 +271,9 @@ def main() -> None:
                 Path(__file__).resolve(),
                 SERVER,
                 ROOT / "src/pubmed_search/infrastructure/evaluation/corpus.py",
+                ROOT / "src/pubmed_search/infrastructure/evaluation/provenance.py",
                 ROOT / "src/pubmed_search/application/search/agent_benchmark.py",
+                ROOT / "uv.lock",
             )
         },
         "status_counts": {

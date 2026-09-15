@@ -161,6 +161,37 @@ def test_store_rejects_changed_protocol_and_concurrent_writer(tmp_path: Path):
         ExperimentStore(tmp_path, {"model": "changed"}, resume=True)
 
 
+def test_resume_distinguishes_boolean_and_integer_protocol_values(tmp_path: Path):
+    store = ExperimentStore(tmp_path, {"repeats": True})
+    store.close()
+    with pytest.raises(ValueError, match="protocol mismatch"):
+        ExperimentStore(tmp_path, {"repeats": 1}, resume=True)
+
+
+@pytest.mark.parametrize("corruption", ["status", "trace", "arm", "repeat"])
+def test_accounting_validates_every_persisted_attempt(tmp_path: Path, monkeypatch, corruption):
+    rows = [question("one")]
+    manifest = protocol(rows)
+    fake_executor(monkeypatch)
+    store = ExperimentStore(tmp_path, manifest)
+    try:
+        runner.execute_experiment(store, manifest, rows, settings(tmp_path))
+        result_path = next((tmp_path / "cases").glob("*/*/attempt-*/result.json"))
+        result = json.loads(result_path.read_text())
+        if corruption == "trace":
+            (result_path.parent / "events.jsonl").write_text("Changed")
+        else:
+            result[corruption] = {"status": "unknown_success", "arm": "invalid", "repeat": False}[corruption]
+            write_json(result_path, result)
+        with pytest.raises(ValueError):
+            store.attempts()
+        if corruption == "status":
+            with pytest.raises(ValueError, match="status"):
+                store.outcome(result["query_id"], result["repeat"], result["arm"])
+    finally:
+        store.close()
+
+
 def test_store_preserves_interrupted_attempt_and_detects_changed_trace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     rows = [question("one")]
     manifest = protocol(rows)

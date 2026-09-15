@@ -6,19 +6,20 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.shared.file_io import atomic_write_text
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 # These statuses measure execution infrastructure, not research ability. Keep
 # every attempt but leave its arm pending until a later, explicitly resumed run.
 PENDING_STATUSES = frozenset({"provider_limited", "process_failed", "invalid_trace", "interrupted"})
+TERMINAL_STATUSES = frozenset({"completed", "invalid_answer", "timeout"})
 
 
 def write_json(path: Path, value: Any) -> None:
     """Publish whole JSON files atomically; never expose a half-written result."""
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    atomic_write_text(path, json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
 
 
 class ExperimentStore:
@@ -38,14 +39,15 @@ class ExperimentStore:
         except BaseException:
             self._lock.close()
             raise
-        self.fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+        self.fingerprint = hashlib.sha256(json.dumps(manifest, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
     def _validate_manifest(self, manifest: dict[str, Any], resume: bool) -> None:
         path = self.root / "manifest.json"
         if path.exists():
             if not resume:
                 raise ValueError("Experiment exists; use --resume with the same protocol")
-            if json.loads(path.read_text()) != manifest:
+            previous = json.dumps(json.loads(path.read_text(encoding="utf-8")), sort_keys=True, allow_nan=False)
+            if previous != json.dumps(manifest, sort_keys=True, allow_nan=False):
                 raise ValueError("Resume protocol mismatch: dataset, revision, model, or evaluator changed")
         else:
             if resume:
@@ -55,9 +57,9 @@ class ExperimentStore:
             write_json(path, manifest)
 
     def case_root(self, qid: str, repeat: int, arm: str) -> Path:
-        if len(qid) != 64 or any(char not in "0123456789abcdef" for char in qid):
+        if not isinstance(qid, str) or len(qid) != 64 or any(char not in "0123456789abcdef" for char in qid):
             raise ValueError("Query IDs must be SHA-256 hex digests")
-        if repeat < 0 or arm not in {"native", "package"}:
+        if type(repeat) is not int or repeat < 0 or arm not in ("native", "package"):
             raise ValueError("Invalid repeat or arm")
         return self.root / "cases" / qid / f"r{repeat:03d}-{arm}"
 
@@ -68,19 +70,31 @@ class ExperimentStore:
             path = attempt / "result.json"
             if not path.exists():
                 continue
-            result: dict[str, Any] = json.loads(path.read_text())
-            if result.get("experiment_fingerprint") != self.fingerprint:
-                raise ValueError("Checkpoint belongs to a different experiment")
-            if result.get("arm") != arm:
-                raise ValueError("Checkpoint arm mismatch")
-            if result.get("query_id") != qid or result.get("repeat") != repeat:
-                raise ValueError("Checkpoint question or repeat mismatch")
-            events = attempt / "events.jsonl"
-            if hashlib.sha256(events.read_bytes()).hexdigest() != result["events_sha256"]:
-                raise ValueError("Checkpoint trace fingerprint mismatch")
-            if result["status"] not in PENDING_STATUSES:
+            result = self._read_attempt(path)
+            if result["status"] in TERMINAL_STATUSES:
                 return result
         return None
+
+    def _read_attempt(self, path: Path) -> dict[str, Any]:
+        """Apply the same integrity checks to scoring and resource accounting."""
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(result, dict):
+            raise ValueError("Checkpoint must be a JSON object")  # noqa: TRY004 - malformed persisted JSON
+        if result.get("experiment_fingerprint") != self.fingerprint:
+            raise ValueError("Checkpoint belongs to a different experiment")
+        qid, repeat, arm = result.get("query_id"), result.get("repeat"), result.get("arm")
+        if not isinstance(qid, str) or type(repeat) is not int or not isinstance(arm, str):
+            raise ValueError("Invalid checkpoint question, repeat, or arm")
+        case = self.case_root(qid, repeat, arm)
+        if case != path.parent.parent:
+            raise ValueError("Checkpoint question, repeat, or arm mismatch")
+        status = result.get("status")
+        if not isinstance(status, str) or status not in PENDING_STATUSES | TERMINAL_STATUSES:
+            raise ValueError("Unknown checkpoint status")
+        events = path.parent / "events.jsonl"
+        if hashlib.sha256(events.read_bytes()).hexdigest() != result.get("events_sha256"):
+            raise ValueError("Checkpoint trace fingerprint mismatch")
+        return result
 
     def next_attempt(self, qid: str, repeat: int, arm: str) -> Path:
         case = self.case_root(qid, repeat, arm)
@@ -90,7 +104,7 @@ class ExperimentStore:
 
     def attempts(self) -> list[dict[str, Any]]:
         """Include failed attempts in resource accounting, without re-running them."""
-        return [json.loads(path.read_text()) for path in sorted(self.root.glob("cases/*/*/attempt-*/result.json"))]
+        return [self._read_attempt(path) for path in sorted(self.root.glob("cases/*/*/attempt-*/result.json"))]
 
     def unfinished_attempts(self) -> int:
         """A killed process may have consumed tokens without emitting a result."""
