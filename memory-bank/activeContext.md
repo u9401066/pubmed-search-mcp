@@ -1,10 +1,14 @@
 # Active Context
 
-## Current Focus — v0.7.4 release preparation (2026-09-18)
+## Current Focus — v0.7.4 published and verified (2026-09-18)
 
 - User authorized completing the follow-up fixes and publishing the patch release.
-  Branch: `release/v0.7.4`; package version is 0.7.4. v0.7.3 remains the published
-  release until remote publication and artifact checks finish.
+  v0.7.4 is published on PyPI and GitHub. PR #18 merged five focused commits
+  (maximum 15 paths each) at `2d4c5bb`; branch, PR and master CI passed before
+  tagging. Release run `35338527013` passed all three jobs, including container
+  verification. Downloaded wheel/sdist from both services match each other and
+  local build SHA-256 values. Website and Wiki content were fetched and verified.
+  Receipt: [v0.7.4 publication](../docs/reports/release_v074_2026-09-18.json).
 - First priority is upstream API protection; request-rate quotas were not raised.
   Dependency-ready pipeline scheduling removes unrelated waits, preserves branch
   isolation, deterministic output ordering, budgets and owned-task cancellation.
@@ -24,8 +28,13 @@
   No paid benchmark or live API load test was started. Python 3.10 and 3.13 full
   gates each pass 4,758 tests, 23 skipped, 30 deselected; 3.13 requires real MCP
   Mermaid rendering. All 121 standalone diagrams render, wheel/sdist build, and
-  an independent wheel install imports 0.7.4 and runs HTTP CLI help. Segmented
-  commits, PR/master CI and artifact publication verification follow.
+  an independent wheel install imports 0.7.4 and runs HTTP CLI help. The tag
+  runner passed 4,771 tests, 10 skipped, 30 deselected; its PowerShell installation
+  executes 13 hook cases unavailable locally. Publication records are a separate
+  documentation-only follow-up; the release tag and distributions remain fixed.
+- Current core: 224 Python files, 458 classes and 2,456 functions/methods/nested
+  functions = 2,914 definitions. Review completion passes with zero core pending,
+  stale, follow-up or orphan entries; unchanged bodies retain authored provenance.
 - Documentation map: `docs/README.md`; archives: `docs/archive/phases/`; old paths
   remain pointers. Scripts/reports have indexes and website payloads are generated.
   User-owned installed harness directories/settings are preserved.

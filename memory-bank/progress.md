@@ -1,18 +1,25 @@
 # Progress (Updated: 2026-09-18)
 
-## 2026-09-18 — v0.7.4 release preparation
+## 2026-09-18 — v0.7.4 published and verified
 
 - User authorized publishing the completed patch. Follow-up reproduced and fixed
   conflicting concurrency limits, expired-budget cooldown loss, queued cancelled
   Entrez requests, late handle cleanup and cancelled-waiter 429 propagation.
-- Validation and eventual publication evidence are tracked in
+- Validation and completed publication evidence are tracked in
   [the release review](../docs/reports/release_v074_2026-09-18.md).
 - Python 3.10 and 3.13 full gates each pass 4,758 tests (23 skipped, 30 live
   integrations deselected). 3.13 requires real MCP SVG rendering; 121 standalone
   diagrams also render. Wheel/sdist build and the independent wheel smoke pass.
+- PR #18 merged five focused commits at `2d4c5bb`; branch/PR/master CI passed.
+  Run `35338527013` passed verification (including the actual container), PyPI
+  and GitHub Release publication. Its suite passed 4,771 tests, 10 skipped, 30
+  deselected, including 13 PowerShell hook cases unavailable locally.
+- Downloaded wheel/sdist hashes match across both services and local builds.
+  Website and Wiki content were fetched and verified. The [publication receipt](../docs/reports/release_v074_2026-09-18.json)
+  is a documentation-only follow-up; it does not move the release tag.
 
 
-## 2026-09-18 — Provider-safe scheduling and documentation organization (unreleased)
+## 2026-09-18 — Provider-safe scheduling and documentation organization (in v0.7.4)
 
 - Removed whole-layer pipeline waits while preserving output order and budgets.
 - Fixed queued cooldown propagation, concurrency/rate admission order, early
