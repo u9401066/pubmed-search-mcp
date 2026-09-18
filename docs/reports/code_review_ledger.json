@@ -2248,7 +2248,7 @@
       ]
     },
     "src/pubmed_search/shared/async_utils.py::RetryPolicy#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2258,10 +2258,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimitPolicy#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2271,10 +2273,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreakerPolicy#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2284,10 +2288,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RequestExecutionPolicy#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2297,10 +2303,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::OperationBudgetExceeded#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2310,10 +2318,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RetryableOperationError#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2323,10 +2333,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RetryableOperationError.__init__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2336,10 +2348,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::parse_retry_after#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2349,10 +2363,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::_validate_rate_budget#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2362,23 +2378,26 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Serializes token/cooldown accounting on one event loop; the limiter is shared per logical upstream rather than per agent.",
+      "notes": "Rechecked shared token state and atomic cooldown updates. Rate consumers mutate state without yielding while locked, sleep outside the lock, and recheck cooldown on wake. Async apply_cooldown delegates to synchronous loop-local defer so caller deadlines cannot discard safety updates; background threads dispatch defer onto the owning loop.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.__post_init__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2388,36 +2407,41 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.acquire#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
-      "decision": "retain",
-      "notes": "Checked cooldown, replenishment and waited-token accounting; elapsed sleep is consumed once and not counted again by the next caller.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Rechecked token conservation, clock update and cancellation. No lock is held while sleeping, so queued consumers observe new cooldowns. Token decrement is atomic, elapsed time is counted once, and sub-one throughput uses capacity at least one. Existing deterministic pacing and new queued-cooldown regression pass.",
       "evidence": [
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
-      ]
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ],
+      "release_recheck": "2026-09-18: prior scheduling/safety review still applies; this definition body was not changed again during release follow-up."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.apply_cooldown#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
-      "decision": "retain",
-      "notes": "Extends but never shortens the monotonic cooldown under the limiter lock; kernel now budgets this lock wait.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Compatibility coroutine performs a synchronous defer call with no suspension. Cooldown application is independent of the initiating request deadline and cannot queue behind token waiters.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.reconfigure#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2427,10 +2451,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.__aenter__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2440,10 +2466,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::RateLimiter.__aexit__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2453,10 +2481,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::_loop_scoped#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2466,23 +2496,27 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_rate_limiter#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Validates every request, reuses the loop/service limiter and only lowers throughput in conservative mode.",
+      "notes": "Documentation corrected to event-loop-wide. Verified conservative rate reconciliation and loop-scoped registry behavior are otherwise unchanged; this is not a distributed quota coordinator.",
       "evidence": [
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
-      ]
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ],
+      "release_recheck": "2026-09-18: prior scheduling/safety review still applies; this definition body was not changed again during release follow-up."
     },
     "src/pubmed_search/shared/async_utils.py::_throughput#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2492,10 +2526,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_circuit_breaker#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2505,36 +2541,40 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_bulkhead#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
-      "decision": "retain",
-      "notes": "Reuses loop/service semaphore; first construction establishes capacity, so runtime reconfiguration requires a new owning configuration.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Loop-scoped registry returns one ConcurrencyLimiter per service name and reconciles every new requested limit through tighten, rather than ignoring later safer limits. Invalid configurations cannot poison a working service.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::get_tenant_bulkhead#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
-      "decision": "retain",
-      "notes": "Prefixes tenant keys separately from upstream names to keep caller fairness and provider limits distinct.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Keeps tenant-prefixed identity and loop-local fairness isolation while adopting conservative FIFO capacity; upstream rate state remains independent of tenant identities.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::tenant_slot#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2544,10 +2584,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::create_async_http_client#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2557,36 +2599,40 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "One retry/budget owner for external operations; cooperative asyncio deadlines now include both concurrency and cooldown waits.",
+      "notes": "Rechecked conservative concurrency before rate admission, independent full cooldown update, bounded attempts/deadlines and cancellation cleanup. Shared cooldown survives the caller budget; no request-rate limits are raised.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel.execute#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Checked retry order, cancellation, total-budget termination and typed log redaction; added budgeting for previously unbounded internal waits.",
+      "notes": "Atomic cooldown update now runs directly before releasing the concurrency slot, even if the initiating budget expired. First/final headerless 429 pauses siblings; waits over retry_after_cap fail without retrying early. Capacity uses conservative FIFO limiter and existing operation timeout/error handling is retained.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._build_deadline#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2596,10 +2642,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._remaining_budget#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2609,10 +2657,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._raise_if_budget_exhausted#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2622,10 +2672,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._budget_message#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2635,10 +2687,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._await_with_budget#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2648,10 +2702,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._execute_operation_with_budget#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2661,10 +2717,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._sleep_with_budget#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2674,10 +2732,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._resolve_rate_limiter#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2687,10 +2747,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._resolve_circuit_breaker#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2700,36 +2762,40 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._resolve_bulkhead#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
-      "decision": "retain",
-      "notes": "No concurrency policy means no semaphore; explicit policy uses configured name or service name.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Maps configured service/concurrency identity to the shared conservative capacity; explicit None remains the trusted policy opt-out. Return annotation matches ConcurrencyLimiter.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._bulkhead_context#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-1",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Budgets acquisition and releases only after successful acquisition; queued timeout/cancellation does not leak or invent slots.",
+      "notes": "Budget-bounds acquire on ConcurrencyLimiter and releases in finally only after admission. Cancelled queued/reserved acquires refund within the limiter and do not create phantom release capacity.",
       "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
         "tests/test_async_utils.py",
-        "tests/test_multi_tenant_deployment.py",
-        "docs/reports/core_review_2026-09-15.md"
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._breaker_context#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2739,10 +2805,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._extract_retry_after#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2752,10 +2820,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._is_retryable#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2765,10 +2835,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::TransportExecutionKernel._compute_retry_delay#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2778,10 +2850,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_transport_kernel#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2791,10 +2865,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::gather_with_errors#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2804,10 +2880,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::gather_with_errors.run#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2817,10 +2895,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::batch_process#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2830,10 +2910,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::batch_process.process_with_limit#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2843,10 +2925,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreaker#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2856,10 +2940,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreaker.state#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2869,10 +2955,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreaker.is_open#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2882,10 +2970,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreaker.__aenter__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2895,10 +2985,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::CircuitBreaker.__aexit__#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2908,10 +3000,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::SharedAsyncClientRuntime#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2921,10 +3015,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::SharedAsyncClientRuntime.get#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2934,10 +3030,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::SharedAsyncClientRuntime.close#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2947,10 +3045,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_shared_async_client_runtime#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2960,10 +3060,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::bind_shared_async_client_runtime#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2973,10 +3075,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::get_shared_async_client#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2986,10 +3090,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::close_shared_async_client#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -2999,10 +3105,12 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/async_utils.py::timeout_with_fallback#1": {
-      "file_sha256": "99ad14d9d700f6f0c42669fc5bf5111d1a452fe275ff5f4107bccc7ba787d874",
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-1",
@@ -3012,7 +3120,9 @@
         "tests/test_async_utils.py",
         "tests/test_multi_tenant_deployment.py",
         "docs/reports/core_review_2026-09-15.md"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/shared/exceptions.py::ExceptionGroup#1": {
       "file_sha256": "cc23e8b4f9b6df886c1d6e133549f560a5faf81a143ea1edbb812bd0c35f0fe0",
@@ -12147,7 +12257,7 @@
       ]
     },
     "src/pubmed_search/application/pipeline/executor.py::classify_pipeline_outcome#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12159,10 +12269,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::pipeline_run_status#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12174,10 +12286,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::pipeline_outcome_message#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12189,10 +12303,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::_query_safe_action_failure#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12204,25 +12320,26 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-4",
-      "decision": "retain",
-      "notes": "Application DAG engine owns policy, dependencies and execution boundaries; adapters remain injected.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Action policy remains in the executor; only task ownership moved to the application scheduler. Rechecked stop-at ancestry, branch copies, stable topological result ordering, aggregate budget attachment and partial-result fallback against the changed call boundary.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
         "tests/test_pipeline_integrity.py",
-        "tests/test_pipeline.py",
-        "tests/test_pipeline_store.py",
-        "tests/test_pipeline_action_contracts.py"
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor.__init__#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12234,40 +12351,26 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor.execute#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-4",
-      "decision": "retain",
-      "notes": "Copies branch inputs, owns and cancels tasks on every exit, bounds cleanup and retains completed evidence when aggregate budget expires.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Calls dependency-ready scheduling with the existing validated topological order and ContextVar run budget. Missing results are typed deadline failures only after the scheduler exits; results are reordered before ranking/reporting. Scheduler owns cancellation on abort or parent cancellation; context resets in finally.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
         "tests/test_pipeline_integrity.py",
-        "tests/test_pipeline.py",
-        "tests/test_pipeline_store.py",
-        "tests/test_pipeline_action_contracts.py"
-      ]
-    },
-    "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor.execute.consume_outcome#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
-      "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-4",
-      "decision": "retain",
-      "notes": "Retrieves completed/late task exceptions without changing their result and ignores cancellation outcomes.",
-      "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_pipeline_integrity.py",
-        "tests/test_pipeline.py",
-        "tests/test_pipeline_store.py",
-        "tests/test_pipeline_action_contracts.py"
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._record_step_outcome#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12279,10 +12382,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._record_unexecuted_budget_steps#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12294,10 +12399,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._budget_failure_result#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12309,10 +12416,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._reserve_external_call#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12324,10 +12433,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor.dry_run#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12339,10 +12450,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor.prepare_config#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12354,10 +12467,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._resolve_value#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12369,10 +12484,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._resolve_value._replace#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12384,10 +12501,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._validate#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12399,10 +12518,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._validate_stop_at#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12414,10 +12535,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._steps_through_stop_at#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12429,10 +12552,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._steps_through_stop_at._visit#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12444,10 +12569,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._topological_batches#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12459,10 +12586,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._execute_step#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12474,10 +12603,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_search#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12489,10 +12620,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._search_pubmed#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12504,10 +12637,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._search_alternate#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12519,10 +12654,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._map_provider_items#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12534,10 +12671,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_pico#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12549,10 +12688,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_expand#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12564,10 +12705,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_details#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12579,10 +12722,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_related#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12594,10 +12739,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_citing#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12609,10 +12756,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_references#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12624,10 +12773,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._require_pubmed_rows#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12639,10 +12790,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_metrics#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12654,10 +12807,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._require_icite_mapping#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12669,10 +12824,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._apply_icite_metrics#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12684,10 +12841,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._optional_int#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12699,10 +12858,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._optional_float#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12714,10 +12875,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_merge#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12729,10 +12892,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._action_filter#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12744,10 +12909,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._article_citation_count#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12759,10 +12926,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._coerce_int#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12774,10 +12943,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._canonical_article_type_value#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12789,10 +12960,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._excluded_article_example#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12804,10 +12977,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._article_key#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12819,10 +12994,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._intersect_articles#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12834,10 +13011,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._rrf_merge#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12849,10 +13028,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._resolve_query#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12864,10 +13045,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._require_query_metadata#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12879,10 +13062,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._ranking_query#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12894,10 +13079,12 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/executor.py::PipelineExecutor._apply_ranking#1": {
-      "file_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+      "file_sha256": "1d4d22d34b466cc743096a44f0c4b139fd454b548b0d9394719a8b216b4e4578",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-4",
@@ -12909,7 +13096,9 @@
         "tests/test_pipeline.py",
         "tests/test_pipeline_store.py",
         "tests/test_pipeline_action_contracts.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/application/pipeline/report_generator.py::generate_pipeline_report#1": {
       "file_sha256": "ba16d1e0cb41d29d6c626bf50d1a5f5ef822c615daa1442d7acf727bf167c841",
@@ -21502,7 +21691,7 @@
       ]
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::NCBIInfrastructureError#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21515,10 +21704,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::NCBIInfrastructureError.__init__#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21531,10 +21722,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::NCBIProviderSchemaError#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21547,10 +21740,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::NCBIProviderSchemaError.__init__#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21563,10 +21758,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::raise_ncbi_infrastructure_error#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21579,10 +21776,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::SearchStrategy#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21595,74 +21794,69 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::build_ncbi_execution_policy#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-7",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Now preserves explicit total_timeout rather than truthiness fallback; common rate/circuit policy prevents per-mixin independent request budgets.",
+      "notes": "Added one shared ncbi-entrez concurrency slot across operation service names; existing token pacing, keyed/unkeyed rates, deadlines, circuit breaker and retry counts remain. Real policy regressions confirm serialized admission across four calls.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_entrez_modules.py",
-        "tests/test_pubtator_client.py",
-        "tests/test_safe_outbound_http.py",
-        "tests/test_citation_exporter_runtime.py",
-        "tests/test_multi_tenant_deployment.py"
-      ]
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ],
+      "release_recheck": "2026-09-18: prior scheduling/safety review still applies; this definition body was not changed again during release follow-up."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::run_entrez_callable#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-7",
-      "decision": "retain",
-      "notes": "Process lock snapshots and restores Bio.Entrez globals even on failures; one internal retry prevents retry multiplication.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Rechecked every branch under runtime lock: cancelled queued work exits before changing globals or sending HTTP; late handles close safely; retryable urllib errors close their response, preserve sanitized status/Retry-After, and dispatch full cooldown to the owning loop even after cancellation. Finally restores all Entrez globals. Already sent synchronous calls cannot be recalled.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_entrez_modules.py",
-        "tests/test_pubtator_client.py",
-        "tests/test_safe_outbound_http.py",
-        "tests/test_citation_exporter_runtime.py",
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
         "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::execute_entrez_operation#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-7",
-      "decision": "retain",
-      "notes": "Standalone mixins delegate to the same transport kernel and execution policy as the composed searcher.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Retains canonical NCBI execution policy and now wraps each kernel attempt with cancellation context via partial. Retry attempts get independent events; task cancellation propagates instead of waiting for a blocking thread.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_entrez_modules.py",
-        "tests/test_pubtator_client.py",
-        "tests/test_safe_outbound_http.py",
-        "tests/test_citation_exporter_runtime.py",
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
         "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-7",
-      "decision": "retain",
-      "notes": "Owns instance configuration and shared transport access, leaving parsing in dedicated infrastructure mixins.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Preserves credential/global isolation and policy override seam. Shared transport now wraps each Entrez attempt with explicit cancellation context; downstream search/detail/citation code retains the same ports and schemas.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_entrez_modules.py",
-        "tests/test_pubtator_client.py",
-        "tests/test_safe_outbound_http.py",
-        "tests/test_citation_exporter_runtime.py",
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
         "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase.__init__#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21675,10 +21869,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase._build_entrez_policy#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21691,26 +21887,26 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase._execute_entrez_call#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-7",
-      "decision": "retain",
-      "notes": "Injects the instance kernel and constructed policy without handling provider data itself.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Builds the existing overridable policy once, then executes its operation through the same per-attempt cancellation guard as the standalone entrypoint. Real cancellation tests cover both entrypoints.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_entrez_modules.py",
-        "tests/test_pubtator_client.py",
-        "tests/test_safe_outbound_http.py",
-        "tests/test_citation_exporter_runtime.py",
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
         "tests/test_multi_tenant_deployment.py"
       ]
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase._rate_limited_call#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21723,10 +21919,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase._rate_limited_call.call#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21739,10 +21937,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase.email#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21755,10 +21955,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::EntrezBase.api_key#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21771,10 +21973,12 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/base.py::_derive_total_timeout#1": {
-      "file_sha256": "5f417b7606af5c7ff95c2b92e55802f45cf5d297982d8d75d46366286e3e8048",
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-7",
@@ -21787,7 +21991,9 @@
         "tests/test_safe_outbound_http.py",
         "tests/test_citation_exporter_runtime.py",
         "tests/test_multi_tenant_deployment.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/infrastructure/ncbi/batch.py::BatchMixin#1": {
       "file_sha256": "2592832035c34b97b803cde6277a84614807ac1d05f93a873f6ecabe68da9157",
@@ -23806,7 +24012,7 @@
       ]
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::APIRequestError#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23820,10 +24026,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::APIRequestError.__init__#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23837,10 +24045,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::ProviderSchemaError#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23854,10 +24064,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::APIResponseTooLargeError#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23871,10 +24083,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::APIResponseTooLargeError.__init__#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23888,10 +24102,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::raise_provider_schema_error#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23905,10 +24121,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::raise_sanitized_retryable_error#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23922,44 +24140,40 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-8",
-      "decision": "retain",
-      "notes": "Shared provider transport remains the owner of retries, rate limits, streams and HTTP pool lifecycle.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Default REST service capacity is now two shared slots keyed by service, while explicit limits persist. Exhausted retries preserve full upstream cooldown and conservative rate configuration; HTTP parsing/size/security boundaries remain unchanged.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_source_adapter_failure_contracts.py",
-        "tests/test_search_query_provenance.py",
-        "tests/test_fulltext_download.py",
-        "tests/test_figure_client.py",
-        "tests/test_institutional_fetch.py",
-        "tests/test_image_query_advisor.py"
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient.__init__#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-8",
-      "decision": "retain",
-      "notes": "Validates bounds and owns one configured pool; shared rate gates prevent per-client quota multiplication.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "None concurrency resolves to two slots, explicit provider limits remain, and the default concurrency name matches the service rate identity. Construction does not create another rate budget; tested two real client instances through their request boundary.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_source_adapter_failure_contracts.py",
-        "tests/test_search_query_provenance.py",
-        "tests/test_fulltext_download.py",
-        "tests/test_figure_client.py",
-        "tests/test_institutional_fetch.py",
-        "tests/test_image_query_advisor.py"
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient.last_rate_limit_headers#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23973,10 +24187,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._build_execution_policy#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -23990,10 +24206,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._build_url#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24007,10 +24225,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._make_request#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24024,10 +24244,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._make_request.perform_request#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24041,44 +24263,40 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._handle_exhausted_retryable_error#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-8",
+      "reviewed_on": "2026-09-18",
       "decision": "changed",
-      "notes": "Now preserves explicit Retry-After zero rather than replacing it with a default.",
+      "notes": "Still applies fallback cooldown for final header-less 429; server-directed cooldown is reported in full instead of a capped value. Logging remains query-safe; non-429 retry failures keep existing handling.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_source_adapter_failure_contracts.py",
-        "tests/test_search_query_provenance.py",
-        "tests/test_fulltext_download.py",
-        "tests/test_figure_client.py",
-        "tests/test_institutional_fetch.py",
-        "tests/test_image_query_advisor.py"
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._apply_rate_limit_cooldown#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
-      "reviewed_on": "2026-09-15",
-      "phase": "core-8",
-      "decision": "retain",
-      "notes": "Shares provider cooldown using validated retry delay, without sleeping separately in every caller.",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Gets the named shared limiter with conservative=True so handling a failure cannot speed up another client. Applies the full cooldown; a missing rate policy or nonpositive delay remains a no-op.",
       "evidence": [
-        "docs/reports/core_review_2026-09-15.md",
-        "tests/test_source_adapter_failure_contracts.py",
-        "tests/test_search_query_provenance.py",
-        "tests/test_fulltext_download.py",
-        "tests/test_figure_client.py",
-        "tests/test_institutional_fetch.py",
-        "tests/test_image_query_advisor.py"
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
       ]
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._execute_request#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24092,10 +24310,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._read_response_body#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24109,10 +24329,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._declared_response_length#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24126,10 +24348,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._buffered_response#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24143,10 +24367,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._handle_expected_status#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24160,10 +24386,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._parse_response#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24177,10 +24405,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient._get_retry_after#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24194,10 +24424,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient.close#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24211,10 +24443,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient.__aenter__#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24228,10 +24462,12 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/base_client.py::BaseAPIClient.__aexit__#1": {
-      "file_sha256": "52a91b97dc5cd35f0955b3b79b1371f9f5b8e02237902672bc0b10e2a425edf8",
+      "file_sha256": "5c57391c2d0547dd09895009bb5fc405d6ec5a6ad5c1523d22e3f9e88d1f63c7",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-8",
@@ -24245,7 +24481,9 @@
         "tests/test_figure_client.py",
         "tests/test_institutional_fetch.py",
         "tests/test_image_query_advisor.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Prior authored review retained: definition AST unchanged from 3cf1127. Changed scheduling/transport boundaries reviewed separately in search_execution_2026-09-18.md; AST equality is not a new semantic review."
     },
     "src/pubmed_search/infrastructure/sources/contact.py::_normalize_contact_email#1": {
       "file_sha256": "b59d10b4d6418c0ca248e9d200fdd5136c81a471ef34418a42fe3482daafdf87",
@@ -40953,7 +41191,7 @@
       ]
     },
     "src/pubmed_search/__init__.py::__getattr__#1": {
-      "file_sha256": "35c3ae501e46f9053ea7e4dc0be372add7cb5756268542f3f64f840496e8a435",
+      "file_sha256": "061e9cd115f1df4118c6265c98be15b47360113fe81bf11bcbd1542cfacc4360",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-10",
@@ -40962,10 +41200,12 @@
       "evidence": [
         "docs/reports/core_review_2026-09-15.md",
         "tests/test_import_surface.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/__init__.py::__dir__#1": {
-      "file_sha256": "35c3ae501e46f9053ea7e4dc0be372add7cb5756268542f3f64f840496e8a435",
+      "file_sha256": "061e9cd115f1df4118c6265c98be15b47360113fe81bf11bcbd1542cfacc4360",
       "reviewed_by": "Codex (self-review)",
       "reviewed_on": "2026-09-15",
       "phase": "core-10",
@@ -40974,7 +41214,9 @@
       "evidence": [
         "docs/reports/core_review_2026-09-15.md",
         "tests/test_import_surface.py"
-      ]
+      ],
+      "carried_forward_on": "2026-09-18",
+      "carried_forward_reason": "Unchanged definition AST from 3cf1127; retained prior authored review. v0.7.4 changed caller/transport boundaries reviewed separately, not a new AST-based semantic review."
     },
     "src/pubmed_search/api.py::PubMedSearchConfig#1": {
       "file_sha256": "232b500345d64ea1e1dad6b809aec78f48f78b0b373d19cb2e9b64675c94ee1f",
@@ -41754,6 +41996,202 @@
       "evidence": [
         "docs/reports/core_review_2026-09-15.md",
         "tests/test_agent_benchmark.py"
+      ]
+    },
+    "src/pubmed_search/application/pipeline/scheduling.py::run_ready_steps#1": {
+      "file_sha256": "ef4372f7e2d37d73ad9a9a790805a1cf6ed5063f7d133f5e3086df4db03a2085",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Reviewed all paths: scan bounded waiting steps for complete own inputs; deep-copy each branch; own every scheduled task; FIRST_COMPLETED permits progress without unrelated barriers. Consume all completed outcomes before new launches, propagate abort/cancellation, mark deadlines and cancel remaining tasks with bounded cleanup. No provider rate/quota is increased.",
+      "evidence": [
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ]
+    },
+    "src/pubmed_search/application/pipeline/scheduling.py::run_ready_steps.consume_outcome#1": {
+      "file_sha256": "ef4372f7e2d37d73ad9a9a790805a1cf6ed5063f7d133f5e3086df4db03a2085",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Retrieves non-cancelled task exceptions, including late failures after bounded cancellation cleanup, without converting cancellation into success.",
+      "evidence": [
+        "docs/reports/search_execution_2026-09-18.md",
+        "tests/test_search_scheduling.py",
+        "tests/test_async_utils.py",
+        "tests/test_pipeline_integrity.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::RateLimiter.defer#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Finite positive waits atomically extend the deadline, reset to one token and move accounting to the cooldown end. Must run on owning loop; Entrez workers use call_soon_threadsafe. No I/O or await can split the state update.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Reviewed FIFO admission, reserved capacity accounting, conservative shrink, waiter cancellation and balanced release. The class replaces first-caller-wins asyncio.Semaphore use; already admitted work drains rather than being recalled. Service and tenant registries retain loop isolation.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.__init__#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Initializes active count and FIFO future queue, validating positive integer capacity through tighten before registry publication.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.tighten#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Rejects bool/noninteger/nonpositive limits before changing state and uses min to prevent a later caller increasing upstream capacity. Existing active admissions are allowed to drain.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.locked#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Reports no immediate admission when capacity is consumed or earlier waiters exist, preventing a new arrival from bypassing FIFO order.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.acquire#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Immediate admission increments active count atomically; queued callers use loop-owned futures. Reserved cancellation refunds exactly once, queued cancellation removes its own entry, then wakes eligible successors. Deterministic tests cover both cancellation timings and FIFO continuation.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.release#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Rejects unmatched release rather than minting slots, decrements one actual admission and wakes only as much capacity as the current conservative limit permits.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter._wake_waiters#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Pops FIFO futures, skips completed/cancelled entries and reserves active capacity before resolving a live waiter; reservations count against subsequent admission and can be refunded by acquire cancellation.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.__aenter__#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Acquires one tracked admission before returning the limiter; caller cancellation remains visible during acquire.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/shared/async_utils.py::ConcurrencyLimiter.__aexit__#1": {
+      "file_sha256": "7cf8db43293368efa4cab7448ecbb78d0300e714fdc0d483df302cc6ef64044f",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Releases exactly the admission acquired by async context entry, including exception exits.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/infrastructure/ncbi/base.py::_EntrezAttempt#1": {
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Frozen attempt context carries thread-safe cancellation event, owning event loop and shared rate limiter. ContextVar propagation through to_thread does not create another quota or share attempt cancellation across calls.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
+      ]
+    },
+    "src/pubmed_search/infrastructure/ncbi/base.py::_guard_entrez_attempt#1": {
+      "file_sha256": "2de0097aa4a7181693174a0916d5599f570ad300b042912fa2982594929c53be",
+      "reviewed_by": "Codex (self-review)",
+      "reviewed_on": "2026-09-18",
+      "decision": "changed",
+      "notes": "Creates one cancellation context per transport attempt and reuses the policy named rate limiter conservatively. Finally flags cancelled/finished scope and resets ContextVar; both function and EntrezBase entrypoints wrap their operation with it.",
+      "evidence": [
+        "docs/reports/release_v074_2026-09-18.md",
+        "tests/test_async_utils.py",
+        "tests/test_entrez_runtime_isolation.py",
+        "tests/test_search_scheduling.py",
+        "tests/test_multi_tenant_deployment.py"
       ]
     }
   }

@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-18
+
+- Start pipeline steps when their own dependencies finish; preserve deterministic
+  result order, aggregate budgets, branch isolation and cancellation ownership.
+- Protect upstream APIs: apply rate permits after concurrency admission, allow
+  queued waiters to observe new cooldowns, preserve full `Retry-After`, and share
+  a cooldown from the first header-less 429. NCBI gets one shared operation slot;
+  BaseAPIClient sources default to two shared slots without raising request rates.
+- Reconcile shared concurrency with the smallest requested limit, preserving FIFO
+  admission and returning cancelled reservations. Upstream cooldowns survive the
+  initiating caller's exhausted time budget.
+- Prevent cancelled Entrez threads from starting queued requests, close response
+  handles arriving after cancellation, and relay late 429 cooldowns to the owning
+  loop even when the original waiter has gone away.
+- Add an offline executor/MCP latency comparison with equivalent IDs and call
+  counts. Archive historical Phase documents with old-path pointers and publish
+  documentation, report and maintenance-script indexes.
+
 ## [0.7.3] - 2026-09-15
 
 ### Fixed
