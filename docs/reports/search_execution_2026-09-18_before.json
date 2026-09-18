@@ -1,0 +1,898 @@
+{
+  "schema_version": 1,
+  "scope": "Offline fixed-delay provider; real executor and in-memory MCP; no model, WAN or process startup",
+  "revision": "3cf11279be0c690091c0d5c1a09db127d7679c60",
+  "executor_sha256": "1250469c69c7d256a716839eec75e333f2f8bf41359b6ba2c2f5cf756ccf50c6",
+  "script_sha256": "2fe075fdc511b9ef2cbdaadd56c15f8d22ad8cc48b144acb1b0b4885a60eaa10",
+  "python": "3.10.12",
+  "repeats": 20,
+  "scenarios": {
+    "no_io": {
+      "config": {
+        "steps": [
+          {
+            "id": "s0",
+            "action": "search",
+            "params": {
+              "query": "q0",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          }
+        ],
+        "name": "",
+        "output": {
+          "format": "json",
+          "limit": 20,
+          "ranking": "balanced"
+        },
+        "globals": {},
+        "variables": {},
+        "template": null,
+        "template_params": {}
+      },
+      "provider_delays_seconds": {
+        "q0": 0.0
+      },
+      "signature": {
+        "pmids": [
+          "10000000"
+        ],
+        "queries": [
+          "q0"
+        ],
+        "successful_steps": [
+          "s0"
+        ]
+      },
+      "provider_operations": 1,
+      "mcp_calls_per_sample": 1,
+      "executor": {
+        "p50_ms": 0.216,
+        "p95_ms": 0.295,
+        "samples_ms": [
+          0.188,
+          0.227,
+          0.206,
+          0.238,
+          0.194,
+          0.232,
+          0.196,
+          0.281,
+          0.193,
+          0.264,
+          0.196,
+          0.231,
+          0.195,
+          0.295,
+          0.197,
+          0.271,
+          0.192,
+          0.303,
+          0.192,
+          0.232
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "mcp": {
+        "p50_ms": 24.375,
+        "p95_ms": 30.348,
+        "samples_ms": [
+          24.357,
+          15.746,
+          16.637,
+          18.384,
+          17.892,
+          17.947,
+          20.397,
+          30.348,
+          22.818,
+          22.739,
+          23.086,
+          24.393,
+          24.89,
+          26.448,
+          27.458,
+          27.5,
+          27.858,
+          30.219,
+          30.681,
+          29.68
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "single": {
+      "config": {
+        "steps": [
+          {
+            "id": "s0",
+            "action": "search",
+            "params": {
+              "query": "q0",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          }
+        ],
+        "name": "",
+        "output": {
+          "format": "json",
+          "limit": 20,
+          "ranking": "balanced"
+        },
+        "globals": {},
+        "variables": {},
+        "template": null,
+        "template_params": {}
+      },
+      "provider_delays_seconds": {
+        "q0": 0.04
+      },
+      "signature": {
+        "pmids": [
+          "10000000"
+        ],
+        "queries": [
+          "q0"
+        ],
+        "successful_steps": [
+          "s0"
+        ]
+      },
+      "provider_operations": 1,
+      "mcp_calls_per_sample": 1,
+      "executor": {
+        "p50_ms": 40.545,
+        "p95_ms": 40.814,
+        "samples_ms": [
+          40.675,
+          40.647,
+          40.64,
+          40.521,
+          40.448,
+          40.528,
+          40.55,
+          40.664,
+          40.471,
+          40.455,
+          40.508,
+          40.539,
+          40.625,
+          40.814,
+          40.868,
+          40.466,
+          40.551,
+          40.41,
+          40.667,
+          40.499
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "mcp": {
+        "p50_ms": 91.594,
+        "p95_ms": 97.594,
+        "samples_ms": [
+          79.722,
+          78.345,
+          88.605,
+          101.262,
+          82.809,
+          79.878,
+          84.098,
+          94.022,
+          88.589,
+          85.324,
+          84.623,
+          96.368,
+          94.078,
+          91.273,
+          93.239,
+          95.661,
+          94.477,
+          92.478,
+          97.594,
+          91.914
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "balanced": {
+      "config": {
+        "steps": [
+          {
+            "id": "s0",
+            "action": "search",
+            "params": {
+              "query": "q0",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          },
+          {
+            "id": "s1",
+            "action": "search",
+            "params": {
+              "query": "q1",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          },
+          {
+            "id": "s2",
+            "action": "search",
+            "params": {
+              "query": "q2",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s0"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "s3",
+            "action": "search",
+            "params": {
+              "query": "q3",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s1"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "merged",
+            "action": "merge",
+            "params": {},
+            "inputs": [
+              "s2",
+              "s3"
+            ],
+            "on_error": "skip"
+          }
+        ],
+        "name": "",
+        "output": {
+          "format": "json",
+          "limit": 20,
+          "ranking": "balanced"
+        },
+        "globals": {},
+        "variables": {},
+        "template": null,
+        "template_params": {}
+      },
+      "provider_delays_seconds": {
+        "q0": 0.06,
+        "q1": 0.06,
+        "q2": 0.06,
+        "q3": 0.06
+      },
+      "signature": {
+        "pmids": [
+          "10000002",
+          "10000003"
+        ],
+        "queries": [
+          "q0",
+          "q1",
+          "q2",
+          "q3"
+        ],
+        "successful_steps": [
+          "s0",
+          "s1",
+          "s2",
+          "s3",
+          "merged"
+        ]
+      },
+      "provider_operations": 4,
+      "mcp_calls_per_sample": 1,
+      "executor": {
+        "p50_ms": 121.673,
+        "p95_ms": 122.422,
+        "samples_ms": [
+          121.637,
+          122.112,
+          122.348,
+          122.404,
+          122.201,
+          121.501,
+          121.682,
+          122.404,
+          122.422,
+          122.259,
+          122.549,
+          121.642,
+          121.516,
+          121.664,
+          121.56,
+          121.508,
+          121.383,
+          121.698,
+          121.541,
+          121.65
+        ],
+        "peak_operations": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      "mcp": {
+        "p50_ms": 268.985,
+        "p95_ms": 320.601,
+        "samples_ms": [
+          230.367,
+          238.817,
+          253.55,
+          246.69,
+          270.304,
+          248.592,
+          273.088,
+          260.829,
+          286.154,
+          258.092,
+          266.65,
+          302.919,
+          267.36,
+          267.667,
+          271.803,
+          271.195,
+          275.782,
+          276.12,
+          333.265,
+          320.601
+        ],
+        "peak_operations": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2
+        ]
+      }
+    },
+    "staggered": {
+      "config": {
+        "steps": [
+          {
+            "id": "s0",
+            "action": "search",
+            "params": {
+              "query": "q0",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          },
+          {
+            "id": "s1",
+            "action": "search",
+            "params": {
+              "query": "q1",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          },
+          {
+            "id": "s2",
+            "action": "search",
+            "params": {
+              "query": "q2",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s0"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "s3",
+            "action": "search",
+            "params": {
+              "query": "q3",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s1"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "merged",
+            "action": "merge",
+            "params": {},
+            "inputs": [
+              "s2",
+              "s3"
+            ],
+            "on_error": "skip"
+          }
+        ],
+        "name": "",
+        "output": {
+          "format": "json",
+          "limit": 20,
+          "ranking": "balanced"
+        },
+        "globals": {},
+        "variables": {},
+        "template": null,
+        "template_params": {}
+      },
+      "provider_delays_seconds": {
+        "q0": 0.02,
+        "q1": 0.1,
+        "q2": 0.1,
+        "q3": 0.02
+      },
+      "signature": {
+        "pmids": [
+          "10000002",
+          "10000003"
+        ],
+        "queries": [
+          "q0",
+          "q1",
+          "q2",
+          "q3"
+        ],
+        "successful_steps": [
+          "s0",
+          "s1",
+          "s2",
+          "s3",
+          "merged"
+        ]
+      },
+      "provider_operations": 4,
+      "mcp_calls_per_sample": 1,
+      "executor": {
+        "p50_ms": 202.067,
+        "p95_ms": 202.327,
+        "samples_ms": [
+          202.55,
+          202.307,
+          202.226,
+          202.234,
+          202.327,
+          201.651,
+          201.988,
+          202.087,
+          202.055,
+          202.103,
+          201.914,
+          201.91,
+          202.08,
+          201.885,
+          201.764,
+          201.894,
+          202.193,
+          201.949,
+          202.0,
+          202.081
+        ],
+        "peak_operations": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2
+        ]
+      },
+      "mcp": {
+        "p50_ms": 391.957,
+        "p95_ms": 425.152,
+        "samples_ms": [
+          368.718,
+          365.637,
+          370.414,
+          393.52,
+          388.619,
+          389.645,
+          388.376,
+          386.042,
+          410.213,
+          391.229,
+          388.205,
+          393.689,
+          415.45,
+          392.537,
+          397.919,
+          391.377,
+          425.152,
+          406.379,
+          413.286,
+          434.908
+        ],
+        "peak_operations": [
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2,
+          2
+        ]
+      }
+    },
+    "serial": {
+      "config": {
+        "steps": [
+          {
+            "id": "s0",
+            "action": "search",
+            "params": {
+              "query": "q0",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [],
+            "on_error": "skip"
+          },
+          {
+            "id": "s1",
+            "action": "search",
+            "params": {
+              "query": "q1",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s0"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "s2",
+            "action": "search",
+            "params": {
+              "query": "q2",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s1"
+            ],
+            "on_error": "skip"
+          },
+          {
+            "id": "s3",
+            "action": "search",
+            "params": {
+              "query": "q3",
+              "sources": [
+                "pubmed"
+              ],
+              "limit": 1
+            },
+            "inputs": [
+              "s2"
+            ],
+            "on_error": "skip"
+          }
+        ],
+        "name": "",
+        "output": {
+          "format": "json",
+          "limit": 20,
+          "ranking": "balanced"
+        },
+        "globals": {},
+        "variables": {},
+        "template": null,
+        "template_params": {}
+      },
+      "provider_delays_seconds": {
+        "q0": 0.03,
+        "q1": 0.03,
+        "q2": 0.03,
+        "q3": 0.03
+      },
+      "signature": {
+        "pmids": [
+          "10000003"
+        ],
+        "queries": [
+          "q0",
+          "q1",
+          "q2",
+          "q3"
+        ],
+        "successful_steps": [
+          "s0",
+          "s1",
+          "s2",
+          "s3"
+        ]
+      },
+      "provider_operations": 4,
+      "mcp_calls_per_sample": 1,
+      "executor": {
+        "p50_ms": 121.812,
+        "p95_ms": 122.108,
+        "samples_ms": [
+          121.874,
+          121.853,
+          121.768,
+          122.594,
+          122.108,
+          121.632,
+          121.805,
+          121.75,
+          121.843,
+          121.948,
+          121.906,
+          121.76,
+          121.82,
+          121.69,
+          121.65,
+          121.798,
+          121.749,
+          121.82,
+          121.873,
+          121.484
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "mcp": {
+        "p50_ms": 336.959,
+        "p95_ms": 364.692,
+        "samples_ms": [
+          312.693,
+          309.943,
+          336.646,
+          316.018,
+          320.797,
+          341.886,
+          323.624,
+          328.943,
+          329.425,
+          346.775,
+          334.391,
+          333.511,
+          338.209,
+          358.718,
+          337.271,
+          347.436,
+          364.692,
+          338.587,
+          346.642,
+          366.44
+        ],
+        "peak_operations": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  }
+}

@@ -1,8 +1,10 @@
 # Search integration maintenance audit — 2026-09-15
 
-Current follow-up: the [ten-phase core review](core_review_2026-09-15.md) is
-complete for all 2,901 definitions in `src/pubmed_search/`. This report preserves
-the earlier maintenance snapshot; use the core report for current counts and gates.
+Latest follow-up: [v0.7.4 scheduling, provider safety and document organization](release_v074_2026-09-18.md).
+
+The [ten-phase core review](core_review_2026-09-15.md) completed all 2,901
+definitions in v0.7.3. This report preserves the earlier maintenance snapshot;
+use the latest release follow-up above for current counts and gates.
 
 Scope: local source, tests, CI configuration, and shipped agent guidance. This
 is a maintenance change to the academic search integration layer, not a new
