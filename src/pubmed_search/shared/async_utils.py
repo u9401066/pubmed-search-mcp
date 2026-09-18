@@ -25,12 +25,13 @@ import logging
 import math
 import random
 import time
+from collections import deque
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from functools import partial
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, TypeVar
 from weakref import WeakKeyDictionary
 
@@ -192,43 +193,39 @@ class RateLimiter:
         self._last_update = time.monotonic()
 
     async def acquire(self) -> None:
-        """Acquire a token, waiting if necessary."""
-        async with self._lock:
-            now = time.monotonic()
-
-            if now < self._cooldown_until:
-                wait_time = self._cooldown_until - now
-                logger.debug(f"Rate limiter cooldown: waiting {wait_time:.2f}s")
-                await asyncio.sleep(wait_time)
+        """Wait without holding the state lock so new cooldowns take effect."""
+        while True:
+            async with self._lock:
                 now = time.monotonic()
-
-            elapsed = now - self._last_update
-            self._tokens = min(self.rate, self._tokens + elapsed * (self.rate / self.per))
-            self._last_update = now
-
-            if self._tokens < 1:
-                wait_time = (1 - self._tokens) * (self.per / self.rate)
-                logger.debug(f"Rate limit: waiting {wait_time:.2f}s")
-                await asyncio.sleep(wait_time)
-                # Account for the elapsed wait and consume exactly the token
-                # acquired by this caller.  Leaving ``_last_update`` at its
-                # pre-sleep value lets the next caller count the same wait a
-                # second time, producing back-to-back requests at up to twice
-                # the configured upstream rate.
-                after_wait = time.monotonic()
-                available = self._tokens + (after_wait - self._last_update) * (self.rate / self.per)
-                self._tokens = min(self.rate, max(0.0, available - 1.0))
-                self._last_update = after_wait
-            else:
-                self._tokens -= 1
+                if now < self._cooldown_until:
+                    wait_time = self._cooldown_until - now
+                else:
+                    elapsed = max(0.0, now - self._last_update)
+                    self._tokens = min(max(1.0, self.rate), self._tokens + elapsed * (self.rate / self.per))
+                    self._last_update = now
+                    if self._tokens >= 1:
+                        self._tokens -= 1
+                        return
+                    wait_time = (1 - self._tokens) * (self.per / self.rate)
+            # Recheck both token availability and any new cooldown after waking.
+            await asyncio.sleep(wait_time)
 
     async def apply_cooldown(self, retry_after: float) -> None:
-        """Apply a server-directed cooldown window such as Retry-After."""
-        if retry_after <= 0:
-            return
+        """Async-compatible entrypoint for an atomic loop-local safety update."""
+        self.defer(retry_after)
 
-        async with self._lock:
-            self._cooldown_until = max(self._cooldown_until, time.monotonic() + retry_after)
+    def defer(self, retry_after: float) -> None:
+        """Record cooldown atomically on this loop, even after a caller times out.
+
+        Background threads must dispatch this through loop.call_soon_threadsafe.
+        No await occurs here or inside acquire's state-mutation block.
+        """
+        if not math.isfinite(retry_after) or retry_after <= 0:
+            return
+        self._cooldown_until = max(self._cooldown_until, time.monotonic() + retry_after)
+        # A cooldown must not fill a bucket and release a burst on expiry.
+        self._tokens = 1.0
+        self._last_update = self._cooldown_until
 
     def reconfigure(self, *, rate: float, per: float = 1.0) -> None:
         """Update limiter throughput for an existing shared limiter."""
@@ -245,6 +242,65 @@ class RateLimiter:
         pass
 
 
+class ConcurrencyLimiter:
+    """FIFO capacity shared by service; later callers may only tighten it.
+
+    Existing admissions drain naturally when the limit falls. Reservations for
+    awakened tasks count as active, and cancellation refunds them exactly once.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._active = 0
+        self._waiters: deque[asyncio.Future[bool]] = deque()
+        self.tighten(limit)
+
+    def tighten(self, limit: int) -> None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("Concurrency limit must be a positive integer")
+        self._limit = min(self._limit, limit)
+
+    def locked(self) -> bool:
+        return self._active >= self._limit or bool(self._waiters)
+
+    async def acquire(self) -> bool:
+        if not self.locked():
+            self._active += 1
+            return True
+        waiter: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        self._waiters.append(waiter)
+        self._wake_waiters()
+        try:
+            return await waiter
+        except asyncio.CancelledError:
+            if waiter.done() and not waiter.cancelled():
+                self._active -= 1
+            if waiter in self._waiters:
+                self._waiters.remove(waiter)
+            self._wake_waiters()
+            raise
+
+    def release(self) -> None:
+        if self._active < 1:
+            raise RuntimeError("Concurrency slot released without an admission")
+        self._active -= 1
+        self._wake_waiters()
+
+    def _wake_waiters(self) -> None:
+        while self._waiters and self._active < self._limit:
+            waiter = self._waiters.popleft()
+            if not waiter.done():
+                self._active += 1
+                waiter.set_result(True)
+
+    async def __aenter__(self) -> Self:
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        self.release()
+
+
 # Concurrency primitives are scoped to the event loop that owns them. The loop
 # object itself is the key, never id(loop): CPython recycles ids, so an id-keyed
 # registry can hand a brand new loop the stale limiter or tripped breaker that
@@ -252,12 +308,12 @@ class RateLimiter:
 # finished loop's entries be collected instead of accumulating forever.
 _rate_limiters: WeakKeyDictionary[AbstractEventLoop, dict[str, RateLimiter]] = WeakKeyDictionary()
 _circuit_breakers: WeakKeyDictionary[AbstractEventLoop, dict[str, CircuitBreaker]] = WeakKeyDictionary()
-_bulkheads: WeakKeyDictionary[AbstractEventLoop, dict[str, asyncio.Semaphore]] = WeakKeyDictionary()
+_bulkheads: WeakKeyDictionary[AbstractEventLoop, dict[str, ConcurrencyLimiter]] = WeakKeyDictionary()
 
 # Used when no loop is running, e.g. during synchronous construction.
 _rate_limiters_no_loop: dict[str, RateLimiter] = {}
 _circuit_breakers_no_loop: dict[str, CircuitBreaker] = {}
-_bulkheads_no_loop: dict[str, asyncio.Semaphore] = {}
+_bulkheads_no_loop: dict[str, ConcurrencyLimiter] = {}
 
 _PrimitiveT = TypeVar("_PrimitiveT")
 
@@ -286,7 +342,7 @@ def get_rate_limiter(
     *,
     conservative: bool = False,
 ) -> RateLimiter:
-    """Get or create the process-wide rate limiter for an API.
+    """Get or create the event-loop-wide rate limiter for an API.
 
     The limiter is shared by every caller of *api_name* on the current event
     loop. That is the point: upstreams meter us per API key or per IP, so a
@@ -345,17 +401,19 @@ def get_circuit_breaker(
     return breaker
 
 
-def get_bulkhead(name: str, limit: int) -> asyncio.Semaphore:
-    """Get or create a shared concurrency limiter for a service."""
+def get_bulkhead(name: str, limit: int) -> ConcurrencyLimiter:
+    """Share the smallest requested capacity instead of first-caller-wins."""
     table = _loop_scoped(_bulkheads, _bulkheads_no_loop)
     semaphore = table.get(name)
     if semaphore is None:
-        semaphore = asyncio.Semaphore(limit)
+        semaphore = ConcurrencyLimiter(limit)
         table[name] = semaphore
+    else:
+        semaphore.tighten(limit)
     return semaphore
 
 
-def get_tenant_bulkhead(tenant_id: str, limit: int) -> asyncio.Semaphore:
+def get_tenant_bulkhead(tenant_id: str, limit: int) -> ConcurrencyLimiter:
     """Get or create the in-flight request cap for one tenant.
 
     Upstream rate limiters stay global on purpose: NCBI and friends meter us per
@@ -368,7 +426,7 @@ def get_tenant_bulkhead(tenant_id: str, limit: int) -> asyncio.Semaphore:
         limit: Maximum concurrent operations for that tenant.
 
     Returns:
-        A semaphore private to the tenant and the running event loop.
+        A capacity limiter private to the tenant and the running event loop.
     """
     return get_bulkhead(f"tenant:{tenant_id}", limit)
 
@@ -441,38 +499,42 @@ class TransportExecutionKernel:
 
             self._raise_if_budget_exhausted(policy, deadline)
 
-            if limiter is not None:
-                await self._await_with_budget(
-                    limiter.acquire,
-                    policy=policy,
-                    deadline=deadline,
-                    phase="rate limit wait",
-                )
-
             try:
-                async with (
-                    self._bulkhead_context(bulkhead, policy=policy, deadline=deadline),
-                    self._breaker_context(breaker),
-                ):
-                    return await self._execute_operation_with_budget(operation, policy=policy, deadline=deadline)
+                async with self._bulkhead_context(bulkhead, policy=policy, deadline=deadline):
+                    if limiter is not None:
+                        await self._await_with_budget(
+                            limiter.acquire,
+                            policy=policy,
+                            deadline=deadline,
+                            phase="rate limit wait",
+                        )
+                    try:
+                        async with self._breaker_context(breaker):
+                            return await self._execute_operation_with_budget(
+                                operation, policy=policy, deadline=deadline
+                            )
+                    except Exception as exc:
+                        retry_after = self._extract_retry_after(exc)
+                        # Even a header-less 429 pauses sibling requests from
+                        # the first failure, including the final attempt.
+                        cooldown = retry_after
+                        if cooldown is None and getattr(exc, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS:
+                            cooldown = max(1.0, self._compute_retry_delay(policy.retry, attempt, None))
+                        if limiter is not None and cooldown is not None:
+                            await limiter.apply_cooldown(cooldown)
+                        raise
             except OperationBudgetExceeded:
                 raise
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 retry_after = self._extract_retry_after(exc)
-                if limiter is not None and retry_after is not None:
-                    capped_retry_after = min(retry_after, policy.retry.retry_after_cap)
-                    await self._await_with_budget(
-                        partial(limiter.apply_cooldown, capped_retry_after),
-                        policy=policy,
-                        deadline=deadline,
-                        phase="cooldown update",
-                    )
-
                 if attempt + 1 >= attempts or not self._is_retryable(exc, policy.retry, should_retry):
                     raise
-
+                # A local willingness-to-wait cap cannot shorten an upstream
+                # Retry-After. Fail this operation and keep the shared cooldown.
+                if retry_after is not None and retry_after > policy.retry.retry_after_cap:
+                    raise
                 delay = self._compute_retry_delay(policy.retry, attempt, retry_after)
                 logger.warning(
                     "%s attempt %s/%s failed (%s); retrying in %.2fs",
@@ -605,7 +667,7 @@ class TransportExecutionKernel:
         )
 
     @staticmethod
-    def _resolve_bulkhead(policy: RequestExecutionPolicy) -> asyncio.Semaphore | None:
+    def _resolve_bulkhead(policy: RequestExecutionPolicy) -> ConcurrencyLimiter | None:
         if policy.concurrency_limit is None:
             return None
         name = policy.concurrency_name or policy.service_name
@@ -615,7 +677,7 @@ class TransportExecutionKernel:
     @asynccontextmanager
     async def _bulkhead_context(
         cls,
-        semaphore: asyncio.Semaphore | None,
+        semaphore: ConcurrencyLimiter | None,
         *,
         policy: RequestExecutionPolicy,
         deadline: float | None,

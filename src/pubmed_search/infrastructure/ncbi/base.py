@@ -11,8 +11,13 @@ import asyncio
 import contextlib
 import logging
 import threading
+from contextvars import ContextVar
+from dataclasses import dataclass
 from enum import Enum
+from functools import partial
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
+from urllib.error import HTTPError
 
 from Bio import Entrez
 
@@ -20,13 +25,18 @@ from pubmed_search.shared.async_utils import (
     CircuitBreakerPolicy,
     RateLimitPolicy,
     RequestExecutionPolicy,
+    RetryableOperationError,
     RetryPolicy,
+    get_rate_limiter,
     get_transport_kernel,
+    parse_retry_after,
 )
 from pubmed_search.shared.exceptions import APIError, ErrorContext, is_retryable_error
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from pubmed_search.shared.async_utils import RateLimiter
 
 T = TypeVar("T")
 _MISSING = object()
@@ -127,6 +137,32 @@ class SearchStrategy(Enum):
 
 _entrez_runtime_lock = threading.Lock()
 
+
+@dataclass(frozen=True)
+class _EntrezAttempt:
+    """Attempt cancellation and a loop-safe route for late upstream cooldowns."""
+
+    cancelled: threading.Event
+    loop: asyncio.AbstractEventLoop
+    limiter: RateLimiter | None
+
+
+_entrez_attempt: ContextVar[_EntrezAttempt | None] = ContextVar("entrez_attempt", default=None)
+
+
+async def _guard_entrez_attempt(operation: Callable[[], Awaitable[T]], policy: RequestExecutionPolicy) -> T:
+    """Propagate cancellation into queued to_thread work without blocking exit."""
+    rate = policy.rate_limit
+    limiter = get_rate_limiter(rate.name, rate=rate.rate, per=rate.per, conservative=True) if rate else None
+    attempt = _EntrezAttempt(threading.Event(), asyncio.get_running_loop(), limiter)
+    token = _entrez_attempt.set(attempt)
+    try:
+        return await operation()
+    finally:
+        attempt.cancelled.set()
+        _entrez_attempt.reset(token)
+
+
 _NCBI_RETRYABLE_MESSAGES = (
     "database is not supported",
     "backend failed",
@@ -161,6 +197,8 @@ def build_ncbi_execution_policy(
             retryable_messages=_NCBI_RETRYABLE_MESSAGES,
         ),
         rate_limit=RateLimitPolicy(name="ncbi-entrez", rate=1.0, per=1.0 / rate),
+        concurrency_limit=1,
+        concurrency_name="ncbi-entrez",
         circuit_breaker_policy=CircuitBreakerPolicy(
             name="ncbi-entrez",
             failure_threshold=8,
@@ -181,7 +219,10 @@ def run_entrez_callable(
 ) -> Any:
     """Execute a Bio.Entrez callable with isolated runtime configuration."""
 
+    attempt = _entrez_attempt.get()
     with _entrez_runtime_lock:
+        if attempt is not None and attempt.cancelled.is_set():
+            raise TimeoutError("Cancelled Entrez operation did not start")
         snapshot = {
             "email": getattr(entrez_module, "email", _MISSING),
             "api_key": getattr(entrez_module, "api_key", _MISSING),
@@ -196,7 +237,32 @@ def run_entrez_callable(
         entrez_module.max_tries = 1
         entrez_module.sleep_between_tries = 0
         try:
-            return callable_obj(*args, **kwargs)
+            result = callable_obj(*args, **kwargs)
+            if attempt is not None and attempt.cancelled.is_set():
+                close = getattr(result, "close", None)
+                if callable(close):
+                    with contextlib.suppress(Exception):
+                        close()
+                raise TimeoutError("Cancelled Entrez operation completed")
+            return result
+        except HTTPError as exc:
+            if exc.code not in RetryPolicy().retryable_status_codes:
+                raise
+            # urllib/Bio.Entrez exposes headers rather than retry_after. Keep
+            # server cooldowns visible to the shared transport before retrying.
+            retry_after = parse_retry_after(exc.headers.get("Retry-After")) if exc.headers else None
+            exc.close()
+            # A cancelled asyncio waiter cannot relay this response. Publish
+            # cooldown to the owning loop even if its thread finishes late.
+            cooldown = (
+                retry_after if retry_after is not None else 1.0 if exc.code == HTTPStatus.TOO_MANY_REQUESTS else None
+            )
+            if attempt is not None and attempt.limiter is not None and cooldown is not None:
+                with contextlib.suppress(RuntimeError):  # loop may have shut down
+                    attempt.loop.call_soon_threadsafe(attempt.limiter.defer, cooldown)
+            raise RetryableOperationError(
+                f"NCBI HTTP {exc.code}", status_code=exc.code, retry_after=retry_after
+            ) from None
         finally:
             for attr, value in snapshot.items():
                 if value is _MISSING:
@@ -225,7 +291,7 @@ async def execute_entrez_operation(
         max_attempts=max_attempts,
         base_delay=base_delay,
     )
-    return await get_transport_kernel().execute(operation, policy=policy)
+    return await get_transport_kernel().execute(partial(_guard_entrez_attempt, operation, policy), policy=policy)
 
 
 class EntrezBase:
@@ -285,16 +351,14 @@ class EntrezBase:
         max_attempts: int = 3,
         base_delay: float = 1.0,
     ) -> T:
-        return await self._transport_kernel.execute(
-            operation,
-            policy=self._build_entrez_policy(
-                service_name=service_name,
-                timeout=timeout,
-                total_timeout=total_timeout,
-                max_attempts=max_attempts,
-                base_delay=base_delay,
-            ),
+        policy = self._build_entrez_policy(
+            service_name=service_name,
+            timeout=timeout,
+            total_timeout=total_timeout,
+            max_attempts=max_attempts,
+            base_delay=base_delay,
         )
+        return await self._transport_kernel.execute(partial(_guard_entrez_attempt, operation, policy), policy=policy)
 
     async def _rate_limited_call(self, func, *args, **kwargs):
         """Execute an Entrez call through the shared transport kernel."""
