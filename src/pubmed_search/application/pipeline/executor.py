@@ -3,15 +3,14 @@ PipelineExecutor — DAG-based search pipeline execution engine.
 
 Executes a PipelineConfig by:
 1. Validating step graph (no cycles, valid actions, valid references)
-2. Topological-sorting steps into parallel batches (Kahn's algorithm)
-3. Executing each batch concurrently via asyncio.gather
+2. Starting steps as soon as their own dependencies complete
+3. Sharing one run deadline and provider-operation quota across the DAG
 4. Passing StepResult between dependent steps
 """
 
 from __future__ import annotations
 
 import asyncio
-import copy
 import logging
 import math
 import re
@@ -35,6 +34,7 @@ from pubmed_search.application.pipeline.budgets import (
     action_limit,
     validate_pipeline_budgets,
 )
+from pubmed_search.application.pipeline.scheduling import run_ready_steps
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import CitationMetrics
@@ -193,55 +193,24 @@ class PipelineExecutor:
         budget = PipelineRunBudget(self._execution_policy)
         budget_token = self._run_budget.set(budget)
         results: dict[str, StepResult] = {}
-        tasks: list[asyncio.Task[StepResult]] = []
-
-        def consume_outcome(task: asyncio.Task[StepResult]) -> None:
-            if not task.cancelled():
-                task.exception()
+        ordered_steps = [step for batch in batches for step in batch]
 
         try:
-            for batch_index, batch in enumerate(batches):
-                remaining = budget.remaining_seconds()
-                if remaining <= 0:
-                    budget.mark_deadline_exhausted()
-                    self._record_unexecuted_budget_steps(
-                        results,
-                        [step for pending_batch in batches[batch_index:] for step in pending_batch],
-                        budget,
-                        reason="deadline_exhausted",
-                    )
-                    break
-
-                tasks = []
-                for step in batch:
-                    step_inputs = {sid: results[sid] for sid in step.inputs if sid in results}
-                    task = asyncio.create_task(self._execute_step(step, copy.deepcopy(step_inputs)))
-                    task.add_done_callback(consume_outcome)
-                    tasks.append(task)
-
-                _done, pending = await asyncio.wait(tasks, timeout=remaining)
-                for step, task in zip(batch, tasks):
-                    if task in pending:
-                        continue
-                    try:
-                        outcome: StepResult | BaseException = task.result()
-                    except BaseException as exc:  # task results preserve cancellation semantics below
-                        outcome = exc
-                    self._record_step_outcome(results, step, outcome, budget)
-
-                if pending:
-                    budget.mark_deadline_exhausted()
-                    for task in pending:
-                        task.cancel()
-                    pending_steps = [step for step, task in zip(batch, tasks) if task in pending]
-                    future_steps = [step for pending_batch in batches[batch_index + 1 :] for step in pending_batch]
-                    self._record_unexecuted_budget_steps(
-                        results,
-                        [*pending_steps, *future_steps],
-                        budget,
-                        reason="deadline_exhausted",
-                    )
-                    break
+            await run_ready_steps(
+                ordered_steps,
+                results,
+                execute_step=self._execute_step,
+                record_outcome=lambda step, outcome: self._record_step_outcome(results, step, outcome, budget),
+                budget=budget,
+            )
+            self._record_unexecuted_budget_steps(
+                results,
+                [step for step in ordered_steps if step.id not in results],
+                budget,
+                reason="deadline_exhausted",
+            )
+            # Completion timing must not change report/result iteration order.
+            results = {step.id: results[step.id] for step in ordered_steps}
 
             # Attach the aggregate budget to the terminal step even when it
             # completed normally, so callers can audit actual resource use.
@@ -276,11 +245,6 @@ class PipelineExecutor:
             return final_articles, results
         finally:
             self._run_budget.reset(budget_token)
-            pending_tasks = [task for task in tasks if not task.done()]
-            for task in pending_tasks:
-                task.cancel()
-            if pending_tasks:
-                await asyncio.wait(pending_tasks, timeout=0.1)
 
     def _record_step_outcome(
         self,

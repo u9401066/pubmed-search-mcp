@@ -35,6 +35,37 @@ from pubmed_search.shared.exceptions import RateLimitError
 
 
 class TestRateLimiter:
+    async def test_cooldown_interrupts_queued_token_waits_without_a_release_burst(self, monkeypatch):
+        from pubmed_search.shared import async_utils
+
+        clock = [0.0]
+        sleeping, resume = asyncio.Event(), asyncio.Event()
+        waits = []
+
+        async def controlled_sleep(delay):
+            waits.append(delay)
+            if len(waits) == 1:
+                sleeping.set()
+                await resume.wait()
+            clock[0] += delay
+
+        monkeypatch.setattr(async_utils, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        monkeypatch.setattr(async_utils, "asyncio", SimpleNamespace(sleep=controlled_sleep))
+        limiter = RateLimiter(rate=1, per=1)
+        await limiter.acquire()
+        queued = asyncio.create_task(limiter.acquire())
+        try:
+            await sleeping.wait()
+            await asyncio.wait_for(limiter.apply_cooldown(10), timeout=0.2)
+            resume.set()
+            await asyncio.wait_for(queued, timeout=1)
+            assert clock[0] == 10
+            await limiter.acquire()
+            assert clock[0] == 11
+        finally:
+            queued.cancel()
+            await asyncio.gather(queued, return_exceptions=True)
+
     @pytest.mark.parametrize("rate,per", [(0, 1), (1, 0), (float("nan"), 1), (1, float("inf"))])
     def test_invalid_reconfiguration_preserves_the_working_limiter(self, rate, per):
         limiter = RateLimiter(rate=2, per=1)
@@ -400,6 +431,73 @@ class TestTimeoutWithFallback:
 
 
 class TestTransportKernel:
+    async def test_rate_permission_is_acquired_after_a_concurrency_slot(self, monkeypatch):
+        semaphore = get_bulkhead("paced-slot", 1)
+        limiter = get_rate_limiter("paced-slot", rate=1, per=1)
+        await semaphore.acquire()
+        waiting = asyncio.Event()
+        original_acquire = semaphore.acquire
+
+        async def acquire_slot():
+            waiting.set()
+            return await original_acquire()
+
+        monkeypatch.setattr(semaphore, "acquire", acquire_slot)
+        acquire_token = AsyncMock()
+        monkeypatch.setattr(limiter, "acquire", acquire_token)
+        operation = AsyncMock(return_value="ok")
+        task = asyncio.create_task(
+            get_transport_kernel().execute(
+                operation,
+                policy=RequestExecutionPolicy(
+                    service_name="paced-slot",
+                    concurrency_limit=1,
+                    rate_limit=RateLimitPolicy(name="paced-slot", rate=1, per=1),
+                ),
+            )
+        )
+        try:
+            await asyncio.wait_for(waiting.wait(), timeout=1)
+            acquire_token.assert_not_awaited()
+            operation.assert_not_awaited()
+            semaphore.release()
+            assert await asyncio.wait_for(task, timeout=1) == "ok"
+            acquire_token.assert_awaited_once()
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_long_server_cooldown_is_preserved_and_not_retried_early(self):
+        limiter = get_rate_limiter("long-cooldown", rate=1, per=1)
+        started = time.monotonic()
+        operation = AsyncMock(side_effect=RetryableOperationError("throttled", status_code=429, retry_after=600))
+        with pytest.raises(RetryableOperationError):
+            await get_transport_kernel().execute(
+                operation,
+                policy=RequestExecutionPolicy(
+                    service_name="long-cooldown",
+                    rate_limit=RateLimitPolicy(name="long-cooldown", rate=1, per=1),
+                    retry=RetryPolicy(max_attempts=3, retry_after_cap=5),
+                ),
+            )
+        operation.assert_awaited_once()
+        assert limiter._cooldown_until >= started + 600
+
+    async def test_headerless_429_also_pauses_other_callers(self):
+        limiter = get_rate_limiter("headerless-cooldown", rate=1, per=1)
+        started = time.monotonic()
+        operation = AsyncMock(side_effect=RetryableOperationError("throttled", status_code=429))
+        with pytest.raises(RetryableOperationError):
+            await get_transport_kernel().execute(
+                operation,
+                policy=RequestExecutionPolicy(
+                    service_name="headerless-cooldown",
+                    rate_limit=RateLimitPolicy(name="headerless-cooldown", rate=1, per=1),
+                    retry=RetryPolicy(max_attempts=1),
+                ),
+            )
+        assert limiter._cooldown_until >= started + 1
+
     async def test_total_timeout_includes_waiting_for_a_bulkhead_slot(self):
         semaphore = get_bulkhead("core-review-blocked", 1)
         await semaphore.acquire()
@@ -419,30 +517,28 @@ class TestTransportKernel:
         assert await get_transport_kernel().execute(operation, policy=policy) == "ok"
         assert not semaphore.locked()
 
-    async def test_total_timeout_includes_waiting_to_apply_cooldown(self):
-        limiter = get_rate_limiter("core-review-cooldown", rate=100)
+    async def test_expired_caller_budget_does_not_discard_upstream_cooldown(self, monkeypatch):
+        from pubmed_search.shared import async_utils
+
+        clock = [0.0]
+        monkeypatch.setattr(async_utils, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        limiter = get_rate_limiter("expired-caller-cooldown", rate=1)
 
         async def throttled():
-            # Another operation owns the shared limiter while this response is processed.
-            await limiter._lock.acquire()
-            raise RetryableOperationError("throttled", retry_after=1)
+            clock[0] = 2.0
+            raise RetryableOperationError("throttled", retry_after=600, status_code=429)
 
-        try:
-            with pytest.raises(OperationBudgetExceeded, match="cooldown update"):
-                await asyncio.wait_for(
-                    get_transport_kernel().execute(
-                        throttled,
-                        policy=RequestExecutionPolicy(
-                            service_name="core-review-cooldown",
-                            total_timeout=0.01,
-                            rate_limit=RateLimitPolicy(name="core-review-cooldown", rate=100),
-                        ),
-                    ),
-                    timeout=1,
-                )
-        finally:
-            if limiter._lock.locked():
-                limiter._lock.release()
+        with pytest.raises(RetryableOperationError):
+            await get_transport_kernel().execute(
+                throttled,
+                policy=RequestExecutionPolicy(
+                    service_name="expired-caller-cooldown",
+                    total_timeout=1,
+                    rate_limit=RateLimitPolicy(name="expired-caller-cooldown", rate=1),
+                    retry=RetryPolicy(max_attempts=1),
+                ),
+            )
+        assert limiter._cooldown_until == 602.0
 
     @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
     def test_nonfinite_retry_after_is_not_a_usable_delay(self, value):
@@ -546,6 +642,67 @@ class TestTransportKernel:
 
 class TestSharedUpstreamBudget:
     """Parallel fan-out must draw from one budget per upstream, not one each."""
+
+    @pytest.mark.parametrize("cancel_after_admission", [False, True])
+    async def test_capacity_cancellation_preserves_fifo_and_refunds_one_slot(self, cancel_after_admission):
+        limiter = get_bulkhead("cancelled-capacity", 1)
+        await limiter.acquire()
+        tasks = [asyncio.create_task(limiter.acquire()) for _ in range(3)]
+        try:
+            await asyncio.sleep(0)
+            if cancel_after_admission:
+                limiter.release()
+            tasks[0].cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await tasks[0]
+            if not cancel_after_admission:
+                limiter.release()
+            await asyncio.wait_for(tasks[1], timeout=1)
+            assert limiter.locked() and not tasks[2].done()
+            limiter.release()
+            await asyncio.wait_for(tasks[2], timeout=1)
+            assert limiter.locked()
+            limiter.release()
+            assert not limiter.locked()
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def test_invalid_capacity_cannot_poison_an_existing_service(self):
+        limiter = get_bulkhead("valid-capacity", 1)
+        for invalid in (0, True, 1.5):
+            for name in ("new-capacity", "valid-capacity"):
+                with pytest.raises(ValueError, match="positive integer"):
+                    get_bulkhead(name, invalid)
+        await limiter.acquire()
+        assert limiter.locked()
+        limiter.release()
+        assert not limiter.locked()
+
+    async def test_lower_concurrency_drains_active_work_before_admitting_more(self):
+        limiter = get_bulkhead("conservative-capacity", 3)
+        for _ in range(3):
+            await limiter.acquire()
+        assert get_bulkhead("conservative-capacity", 1) is limiter
+        queued = asyncio.create_task(limiter.acquire())
+        try:
+            await asyncio.sleep(0)
+            limiter.release()
+            assert limiter.locked()
+            assert not queued.done()
+            limiter.release()
+            assert limiter.locked()
+            assert get_bulkhead("conservative-capacity", 5) is limiter
+            assert limiter.locked()
+            limiter.release()
+            await asyncio.wait_for(queued, timeout=1)
+            assert limiter.locked()
+            limiter.release()
+            assert not limiter.locked()
+        finally:
+            queued.cancel()
+            await asyncio.gather(queued, return_exceptions=True)
 
     async def test_a_slower_client_lowers_the_shared_budget(self):
         fast = get_rate_limiter("shared-budget-test", rate=1.0, per=0.1, conservative=True)

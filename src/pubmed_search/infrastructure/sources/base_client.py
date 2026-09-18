@@ -130,6 +130,8 @@ class BaseAPIClient:
             headers: Default headers for all requests
             circuit_breaker: Optional circuit breaker for fault tolerance.
                              If None, a default one is created (threshold=10, recovery=60s).
+            concurrency_limit: Shared in-flight operation limit for this service.
+                               None uses two slots; explicit source limits are preserved.
             follow_redirects: Whether the transport may follow HTTP redirects.
             max_response_bytes: Per-request byte budget across the complete
                                 redirect chain. Values may lower, but never
@@ -142,14 +144,14 @@ class BaseAPIClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._min_interval = min_interval
-        self._concurrency_limit = concurrency_limit
-        self._concurrency_name = concurrency_name
+        self._concurrency_limit = concurrency_limit if concurrency_limit is not None else 2
         self._follow_redirects = follow_redirects
         self._max_response_bytes = max_response_bytes
         # Keyed by upstream service, never by object identity: every client for
         # the same API must draw from one shared budget, otherwise a parallel
         # fan-out multiplies our real request rate by the number of instances.
         self._rate_limiter_name = f"source:{self._service_name.lower()}"
+        self._concurrency_name = concurrency_name or self._rate_limiter_name
         self._client = create_async_http_client(
             timeout=self._timeout,
             headers=headers or {},
@@ -307,7 +309,7 @@ class BaseAPIClient:
             logger.warning(
                 "%s rate limited by upstream API after retries; applying a %.0fs shared cooldown before failure",
                 self._service_name,
-                min(cooldown, policy.retry.retry_after_cap),
+                cooldown,
             )
             return
 
@@ -319,7 +321,7 @@ class BaseAPIClient:
 
     @staticmethod
     async def _apply_rate_limit_cooldown(policy: RequestExecutionPolicy, cooldown: float) -> None:
-        """Apply a bounded cooldown to the shared limiter after exhausted 429s."""
+        """Preserve upstream cooldowns without increasing a shared rate budget."""
         if cooldown <= 0 or policy.rate_limit is None:
             return
 
@@ -327,8 +329,9 @@ class BaseAPIClient:
             policy.rate_limit.name,
             rate=policy.rate_limit.rate,
             per=policy.rate_limit.per,
+            conservative=True,
         )
-        await limiter.apply_cooldown(min(cooldown, policy.retry.retry_after_cap))
+        await limiter.apply_cooldown(cooldown)
 
     async def _execute_request(
         self,

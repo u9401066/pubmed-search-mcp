@@ -66,10 +66,10 @@ The broker has six explicit stages:
    concurrency guards; it is not multiplied by the number of strategies. A
    slow or failed provider cannot discard good results returned by another
    provider.
-4. **Protect providers.** Reuse a process-wide conservative rate budget per
-   upstream service, then apply source-specific concurrency, retry/backoff,
-   timeout, and circuit-breaker policy. Creating another client instance never
-   creates another upstream quota.
+4. **Protect providers.** Admit requests through shared per-service concurrency
+   slots, then acquire the conservative rate budget immediately before execution.
+   Retry/backoff, timeouts and circuit breakers use the same transport kernel.
+   Client instances on the same event loop share the upstream budget.
 5. **Normalize and merge.** Convert every adapter outcome into the same
    `ok` / `empty` / `partial` / `error` contract. Deduplicate by DOI, PMID,
    PMCID, OpenAlex, Semantic Scholar, CORE, or arXiv identifiers before using a
@@ -79,6 +79,46 @@ The broker has six explicit stages:
    provenance, reproducibility diagnostics, structured bounded-search status,
    a search-run recovery handoff, and durable artifact hints when the caller is
    allowed to write them.
+
+### Scheduling and upstream protection
+
+Pipeline steps start when their own inputs finish; unrelated slow branches do
+not create a whole-layer barrier. `application/pipeline/scheduling.py` owns
+readiness, copied inputs and cancellation. The executor owns action behavior,
+error policy, output ordering and the aggregate run budget. The existing
+20-step bound and per-source search windows remain in effect. Deep search
+already acquires source slots before global slots; its concurrency is unchanged.
+
+The transport kernel is the final admission point, shared across normal,
+pipeline and enrichment clients. NCBI policies now share one operation slot;
+`BaseAPIClient` providers default to two per service. Existing explicit smaller
+limits, such as arXiv's single slot, remain in force. Request-per-period budgets
+are unchanged. When callers supply different concurrency limits for the same
+service, the smallest limit wins. Already admitted operations drain before new
+work can enter; FIFO reservations are refunded when their waiter is cancelled. A quota counts logical provider operations; one operation can
+perform several physical HTTP requests, each subject to its transport policy.
+
+A waiting rate consumer releases the state lock so a new `Retry-After` can take
+effect promptly. Cooldowns apply to sibling callers, including the first 429
+without a header; expiration permits one request, followed by normal pacing.
+When a server requests a wait longer than the local retry cap, fail the current
+operation and retain the full shared cooldown instead of retrying early.
+Bio.Entrez/urllib retryable HTTP errors are normalized with their status and
+Retry-After before reaching this kernel; the failed response handle is closed.
+Cooldown updates are atomic on the owning loop and survive the initiating
+caller's expired budget. Cancelled Entrez work checks a propagated cancellation
+flag after acquiring the thread lock, so a queued request does not start later.
+Responses arriving after cancellation are closed, and late 429s still dispatch
+cooldown to the owning loop. Cancellation cannot retract a request already
+received by an upstream or forcibly stop a running synchronous thread.
+
+These registries are **event-loop-local**, not a distributed quota service.
+Multiple processes, event loops, containers or other applications sharing one
+IP/key do not share this state. Deploy one serving worker per upstream budget,
+or coordinate quotas externally before increasing workers. A 429 can still
+occur when provider capacity changes or other clients share the same quota;
+return typed partial/error evidence and honor cooldown rather than fan out
+retries. See the [local measurements and safety tests](reports/search_execution_2026-09-18.md).
 
 ### Capability and data-plane model
 

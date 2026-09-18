@@ -30,7 +30,19 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Unified Search architecture](#/unified-search-architecture) | [41-tool quality audit](#/tool-quality-audit) | [60-repository academic retrieval landscape](reference-repositories/README.md) | [Provider data planes](#/semantic-scholar-api) | [BioMCP architecture analysis](#/biomcp-analysis) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
 
+[Documentation map](#/documentation-map) · [Maintenance scripts](https://github.com/u9401066/pubmed-search-mcp/blob/master/scripts/README.md)
+
 ---
+
+## Provider-safe scheduling — v0.7.4
+
+Pipeline branches now proceed as their dependencies finish while API request-rate
+limits remain unchanged. Shared concurrency uses the most conservative caller
+limit; 429 cooldowns survive timeouts and cancelled PubMed workers. Historical
+plans are archived behind a [documentation map](#/documentation-map). See the
+[release review](reports/release_v074_2026-09-18.md) and
+[offline latency experiment](reports/search_execution_2026-09-18.md);
+fixed-delay timing is not a live-provider throughput or retrieval-quality claim.
 
 ## Core review and reliability — v0.7.3
 

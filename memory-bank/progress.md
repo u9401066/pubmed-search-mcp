@@ -1,4 +1,29 @@
-# Progress (Updated: 2026-09-09)
+# Progress (Updated: 2026-09-18)
+
+## 2026-09-18 — v0.7.4 release preparation
+
+- User authorized publishing the completed patch. Follow-up reproduced and fixed
+  conflicting concurrency limits, expired-budget cooldown loss, queued cancelled
+  Entrez requests, late handle cleanup and cancelled-waiter 429 propagation.
+- Validation and eventual publication evidence are tracked in
+  [the release review](../docs/reports/release_v074_2026-09-18.md).
+- Python 3.10 and 3.13 full gates each pass 4,758 tests (23 skipped, 30 live
+  integrations deselected). 3.13 requires real MCP SVG rendering; 121 standalone
+  diagrams also render. Wheel/sdist build and the independent wheel smoke pass.
+
+
+## 2026-09-18 — Provider-safe scheduling and documentation organization (unreleased)
+
+- Removed whole-layer pipeline waits while preserving output order and budgets.
+- Fixed queued cooldown propagation, concurrency/rate admission order, early
+  retry after truncated Retry-After, and Entrez HTTP-header propagation. Default
+  provider concurrency is conservative; request-rate quotas were not raised.
+- Added reproducible offline executor/real MCP measurements and focused provider
+  overload regressions. Archived three historical phase documents, retaining old
+  links, and indexed docs, reports and maintenance scripts.
+- Measurements, validation scope and remaining multi-process limits are recorded
+  in [the report](../docs/reports/search_execution_2026-09-18.md).
+
 
 ## v0.7.3 Core Review and Reliability — Published and Verified
 

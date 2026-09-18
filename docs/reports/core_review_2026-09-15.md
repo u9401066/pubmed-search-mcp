@@ -1,5 +1,8 @@
 # 核心程式全量審查：分階段計畫與進度
 
+後續 [v0.7.4 排程與上游保護複查](release_v074_2026-09-18.md)
+更新目前清冊與變更審查；本文以下保留 v0.7.3 完成時的歷史分母。
+
 **十個階段已依序完成。** 最終核心為 **223 個 Python 檔案、456 個 class、
 2,445 個 function／method／nested function，共 2,901 個定義**。
 每項都有自審理由、證據與有效檔案 SHA-256；核心 pending、follow_up、stale_review、

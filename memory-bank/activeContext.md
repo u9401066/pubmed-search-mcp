@@ -1,10 +1,40 @@
 # Active Context
 
-## Current Focus — v0.7.3 published and verified (2026-09-15)
+## Current Focus — v0.7.4 release preparation (2026-09-18)
+
+- User authorized completing the follow-up fixes and publishing the patch release.
+  Branch: `release/v0.7.4`; package version is 0.7.4. v0.7.3 remains the published
+  release until remote publication and artifact checks finish.
+- First priority is upstream API protection; request-rate quotas were not raised.
+  Dependency-ready pipeline scheduling removes unrelated waits, preserves branch
+  isolation, deterministic output ordering, budgets and owned-task cancellation.
+- Shared transport uses concurrency before rate admission. Service capacity only
+  tightens across callers, uses FIFO reservations and refunds cancelled admissions.
+  Atomic full cooldown survives the initiating caller's expired time budget.
+- Entrez cancellation context crosses to_thread: queued cancelled work does not
+  start, late response handles close, and late 429s still update the owning loop.
+  NCBI has one shared operation slot; BaseAPIClient defaults to two per service.
+- These guards are event-loop-local. Do not raise worker counts without external
+  quota coordination; an already sent request or running thread cannot be recalled.
+- Historical offline measurements remain in the [scheduling report](../docs/reports/search_execution_2026-09-18.md).
+  Staggered executor p50 202.067 → 121.889 ms; in-memory MCP 391.957 → 314.257 ms,
+  with identical final PMIDs and four operations. The fixture bypasses live
+  throttling and does not measure model tokens, WAN latency or retrieval quality.
+- Additional review and current release status: [v0.7.4 review](../docs/reports/release_v074_2026-09-18.md).
+  No paid benchmark or live API load test was started. Python 3.10 and 3.13 full
+  gates each pass 4,758 tests, 23 skipped, 30 deselected; 3.13 requires real MCP
+  Mermaid rendering. All 121 standalone diagrams render, wheel/sdist build, and
+  an independent wheel install imports 0.7.4 and runs HTTP CLI help. Segmented
+  commits, PR/master CI and artifact publication verification follow.
+- Documentation map: `docs/README.md`; archives: `docs/archive/phases/`; old paths
+  remain pointers. Scripts/reports have indexes and website payloads are generated.
+  User-owned installed harness directories/settings are preserved.
+
+## Previous Focus — v0.7.3 published and verified (2026-09-15)
 
 - Completed all ten core-review phases in order. Scope: every Python file in
   `src/pubmed_search/`, including package roots, wrappers, models and evaluation
-  support. Current inventory: **223 files, 456 classes, 2,445 functions/methods/
+  support. Published v0.7.3 inventory: **223 files, 456 classes, 2,445 functions/methods/
   nested functions = 2,901 definitions**, all reviewed with authored reasons,
   evidence and current file SHA-256. No core pending/follow-up/stale/orphan entries.
   Tests/scripts are inventoried but are not all semantically reviewed.
@@ -320,4 +350,4 @@
 
 ---
 
-*Last updated: 2026-09-15 — v0.7.3 published; artifact, CI, website and Wiki verification recorded*
+*Last updated: 2026-09-18 — v0.7.4 release preparation and provider-safety follow-up*

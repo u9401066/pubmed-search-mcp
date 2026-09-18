@@ -26,6 +26,12 @@ ACTIVE_DOCS = (
     REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
     REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     REPO_ROOT / "copilot-studio/README.md",
+    REPO_ROOT / "docs/README.md",
+    REPO_ROOT / "docs/reports/README.md",
+    REPO_ROOT / "docs/archive/README.md",
+    REPO_ROOT / "scripts/README.md",
+    *sorted((REPO_ROOT / "docs/archive/phases").glob("*.md")),
+    *sorted((REPO_ROOT / "docs").glob("PHASE_*.md")),
 )
 MERMAID_DOCS = (
     REPO_ROOT / "ARCHITECTURE.md",
