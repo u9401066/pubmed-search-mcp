@@ -137,6 +137,16 @@ flowchart LR
   都是 capability-aware broker 的內部 execution mode
 - 大型 dataset/snapshot 是 operator data plane，絕不在 MCP request 中下載
 
+### Pipeline 排程與上游保護
+
+`application/pipeline/scheduling.py` 負責依賴就緒排程與子任務取消；
+`executor.py` 保留 action、錯誤策略、預算與穩定結果排序。
+排程只移除無關分支之間的等待，上游請求仍經共用 transport 的併發與速率限制。
+NCBI 共用單一 operation 名額；一般 BaseAPIClient 來源預設共用兩個名額。
+429 的完整冷卻時間對同一 event loop 的其他 caller 生效；跨 process 部署須另行協調配額。
+詳見 [provider protection](#/source-contracts#scheduling-and-upstream-protection)
+與 [前後量測](reports/search_execution_2026-09-18.md)。
+
 ### Provider-aware broker 的實際資料流
 
 ```mermaid
