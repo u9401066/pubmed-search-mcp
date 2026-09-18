@@ -1,5 +1,15 @@
 const DOC_PAGES = [
   {
+    slug: "documentation-map",
+    group: "documentation-map",
+    lang: "all",
+    audience: "start",
+    title: "Documentation Map / 文件分類",
+    blurb: "Current guides, architecture, evidence, maintenance scripts, and historical archives.",
+    keywords: "文件分類 archive 歸檔 reports architecture scripts",
+    file: "site-content/documentation-map.md",
+  },
+  {
     slug: "overview",
     group: "overview",
     lang: "en",

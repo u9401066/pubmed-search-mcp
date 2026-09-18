@@ -242,7 +242,7 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
     assert "唯一 generic literature search 為 `unified_search`" in embedded_pages["deployment"]
 
     source_contracts = embedded_pages["source-contracts"]
-    for term in ["Unified Search Broker", "Scopus", "Web of Science", "process-wide conservative rate budget"]:
+    for term in ["Unified Search Broker", "Scopus", "Web of Science", "event-loop-local"]:
         assert term in source_contracts
 
     assert "dataset partition" in embedded_pages["semantic-scholar-api"]
