@@ -1,0 +1,122 @@
+{
+  "version": "0.7.4",
+  "branch_head": "d53c2661cfed062321b063fb58198a5087586069",
+  "segmented_commits": 5,
+  "max_paths_per_commit": 15,
+  "local_distributions": {
+    "pubmed_search_mcp-0.7.4.tar.gz": "e2a3b65b2550047d257ec763a63da79fcadc4d1c25fe7df1f5c36897a2f60b6e",
+    "pubmed_search_mcp-0.7.4-py3-none-any.whl": "efd0eade81d23b531273df54dfd2a87d873d709737e2a37167727529b5dd1b59"
+  },
+  "artifacts": [
+    {
+      "filename": "pubmed_search_mcp-0.7.4-py3-none-any.whl",
+      "bytes": 857781,
+      "sha256": "efd0eade81d23b531273df54dfd2a87d873d709737e2a37167727529b5dd1b59",
+      "pypi_url": "https://files.pythonhosted.org/packages/4a/d5/04a030a81c214b6083140d7c0e85c3108182b3893b533924a4857542a0c9/pubmed_search_mcp-0.7.4-py3-none-any.whl",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.4/pubmed_search_mcp-0.7.4-py3-none-any.whl",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.4.tar.gz",
+      "bytes": 749832,
+      "sha256": "e2a3b65b2550047d257ec763a63da79fcadc4d1c25fe7df1f5c36897a2f60b6e",
+      "pypi_url": "https://files.pythonhosted.org/packages/8b/9e/63ed71449ea82ca3ee56cb913f953f490165253ae16c43aa09dde914e14f/pubmed_search_mcp-0.7.4.tar.gz",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.4/pubmed_search_mcp-0.7.4.tar.gz",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    }
+  ],
+  "release_commit": "2d4c5bb874b4c6e5c6b039e1528f79d37179e6be",
+  "pr": "https://github.com/u9401066/pubmed-search-mcp/pull/18",
+  "core_counts": {
+    "python_files": 224,
+    "functions": 2456,
+    "module_functions": 930,
+    "async_functions": 485,
+    "classes": 458,
+    "methods": 1348,
+    "nested_functions": 178
+  },
+  "core_reviewed": 2914,
+  "inventory_snapshot": "0aedf9d2df47792bde78d436fcf0e3f97f3d7f610fee0bca8c40293fcce81d2a",
+  "local_validation": {
+    "python310_full": {
+      "passed": 4758,
+      "skipped": 23,
+      "deselected": 30,
+      "seconds": 112.94
+    },
+    "python313_full": {
+      "passed": 4758,
+      "skipped": 23,
+      "deselected": 30,
+      "seconds": 99.38,
+      "mcp_mermaid_rendering_required": true
+    },
+    "python310_pre_push": "passed",
+    "standalone_svg_diagrams": 121,
+    "installed_wheel_version": "0.7.4",
+    "local_docker": "unavailable; verified by tag workflow"
+  },
+  "publication": "verified",
+  "publication_run": {
+    "id": 35338527013,
+    "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/35338527013",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Verify tag, tests, and distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified GitHub Release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.4",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.4/",
+  "ci_runs": {
+    "release_branch": 35338302784,
+    "pull_request": 35338344619,
+    "release_master": 35338436166,
+    "website": 35338436182,
+    "wiki": 35338436118
+  },
+  "documentation": {
+    "website": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/?release=v0.7.4",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "f4fe132ba5ed0be82e2410e4b208eeb500109c3b271d8b9b31462f8f49e3c065"
+    },
+    "website_content": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site-content.js?v=20260918-v074",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "0e67176acefdd5a9ab9f0021f10378b7a9b8c65166ff6a1fdd0bade8b6eee863"
+    },
+    "wiki_architecture": {
+      "url": "https://raw.githubusercontent.com/wiki/u9401066/pubmed-search-mcp/Architecture.md",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "7a15757121f17ab944eb6bdbf377b922aa3e96af121693cd1775fd5199bfe844"
+    }
+  },
+  "verified_at_utc": "2026-09-18T11:25:09.824067+00:00",
+  "publication_validation": {
+    "python313_full": {
+      "passed": 4771,
+      "skipped": 10,
+      "deselected": 30,
+      "seconds": 162.38,
+      "additional_cases": "13 PowerShell hook cases skipped locally"
+    },
+    "container_build_and_smoke": "passed"
+  }
+}
