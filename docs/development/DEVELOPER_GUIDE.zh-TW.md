@@ -2,13 +2,13 @@
 
 這份指南給 maintainer 與 contributor。它說明 codebase 組織、行為應放在哪一層、文件如何生成，以及哪些驗證命令保護整合面。
 
-請搭配 [架構文件](../ARCHITECTURE.md)、[AGENTS.md](../AGENTS.md) 與 [工具使用指南](TOOLS_USAGE_GUIDE.zh-TW.md) 閱讀。
+請搭配 [架構文件](../../ARCHITECTURE.md)、[AGENTS.md](../../AGENTS.md) 與 [工具使用指南](../guides/TOOLS_USAGE_GUIDE.zh-TW.md) 閱讀。
 
 ## Repository 契約
 
 PubMed Search MCP 是 Python MCP server，架構遵守 Domain-Driven Design 邊界：
 
-![DDD 與 runtime 邊界](images/ddd-runtime-boundaries.svg)
+![DDD 與 runtime 邊界](../images/ddd-runtime-boundaries.svg)
 
 ```text
 presentation -> application -> domain
@@ -142,8 +142,8 @@ Note export 行為改變時，要同步更新 user docs、generated docs、描�
 
 Pipeline behavior 是 application capability，不是 shell script feature。Canonical tutorials 位於：
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` 會另外同步到 `.claude/skills/pipeline-persistence/references/`，讓不讀 `docs/site-content/` 的 agent bundles 與 VSIX integrations 仍能取得教學。
 
@@ -162,7 +162,7 @@ Pipeline 變更需要同時考慮：
 
 ## Documentation System
 
-![文件發布流程](images/docs-publishing-flow.svg)
+![文件發布流程](../images/docs-publishing-flow.svg)
 
 Canonical Markdown sources 仍在 repo 裡。Static site 會 embed generated copies，讓 GitHub Pages 不需要 backend 也能服務文件。
 

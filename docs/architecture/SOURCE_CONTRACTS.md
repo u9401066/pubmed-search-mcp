@@ -14,7 +14,7 @@ This document answers seven operational questions for each source:
 
 ## Contract Semantics
 
-![Source contracts and provenance map](images/source-contracts-provenance-map.svg)
+![Source contracts and provenance map](../images/source-contracts-provenance-map.svg)
 
 | Term | Meaning in this repo |
 | ---- | -------------------- |
@@ -118,7 +118,7 @@ IP/key do not share this state. Deploy one serving worker per upstream budget,
 or coordinate quotas externally before increasing workers. A 429 can still
 occur when provider capacity changes or other clients share the same quota;
 return typed partial/error evidence and honor cooldown rather than fan out
-retries. See the [local measurements and safety tests](reports/search_execution_2026-09-18.md).
+retries. See the [local measurements and safety tests](../reports/search_execution_2026-09-18.md).
 
 ### Capability and data-plane model
 
@@ -329,7 +329,7 @@ records and rate-limit failures.
 
 | Source | Runtime role | Enablement | Retention | MCP/search posture |
 | --- | --- | --- | --- | --- |
-| ClinicalKey AI | Default-off application/data-plane contract adapter for licensed citation metadata | Explicit enabled, entitlement-confirmed, contract-acknowledged flags plus operator-held OAuth client credentials | Ephemeral; metadata allowlist only. Raw chunks, summaries, tokens and licensed payloads never enter session/cache/artifacts/exports | Not registered as a source or tool. Differential diagnosis, conversation and stateful article APIs are excluded. See [ClinicalKey AI boundary](CLINICALKEY_AI_INTEGRATION.md) |
+| ClinicalKey AI | Default-off application/data-plane contract adapter for licensed citation metadata | Explicit enabled, entitlement-confirmed, contract-acknowledged flags plus operator-held OAuth client credentials | Ephemeral; metadata allowlist only. Raw chunks, summaries, tokens and licensed payloads never enter session/cache/artifacts/exports | Not registered as a source or tool. Differential diagnosis, conversation and stateful article APIs are excluded. See [ClinicalKey AI boundary](../providers/CLINICALKEY_AI_INTEGRATION.md) |
 
 ## Contract Rules For Agents
 

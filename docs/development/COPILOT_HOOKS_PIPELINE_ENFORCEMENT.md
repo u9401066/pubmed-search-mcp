@@ -1,7 +1,7 @@
 # Copilot Research Workflow Hooks
 
 > **適用範圍**：這些 hooks 只在 GitHub Copilot 載入
-> [`.github/hooks/pipeline-enforcer.json`](../.github/hooks/pipeline-enforcer.json)
+> [`.github/hooks/pipeline-enforcer.json`](../../.github/hooks/pipeline-enforcer.json)
 > 時生效。它們是 agent workflow 輔助，不是 MCP server 的授權、安全或資料驗證邊界。
 
 ## 設計目標
@@ -15,7 +15,7 @@ Hook runtime 協助 agent 在多輪研究中記住「做到哪裡」、判讀部
 4. 文字 complexity heuristic 只提供建議，不可誤擋合法 tool call。
 
 共用決策實作位於
-[`scripts/hooks/copilot/hook_runtime.py`](../scripts/hooks/copilot/hook_runtime.py)。Bash 與
+[`scripts/hooks/copilot/hook_runtime.py`](../../scripts/hooks/copilot/hook_runtime.py)。Bash 與
 PowerShell 檔案只是薄包裝，因此不會各自演化成不同規則。
 
 ## Lifecycle
@@ -60,7 +60,7 @@ flowchart LR
 ### `postToolUse`
 
 判讀優先順序由
-[`copilot-tool-policy.json`](../.github/hooks/copilot-tool-policy.json) 的
+[`copilot-tool-policy.json`](../../.github/hooks/copilot-tool-policy.json) 的
 `runtimeContract.evaluationPriority` 定義：
 
 1. `toolResult.structuredContent`

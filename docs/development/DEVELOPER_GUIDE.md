@@ -2,13 +2,13 @@
 
 This guide is for maintainers and contributors. It explains how the codebase is organized, where behavior belongs, how documentation is generated, and which validation commands protect the integration surface.
 
-Read this with [Architecture](../ARCHITECTURE.md), [AGENTS.md](../AGENTS.md), and the [Tools Usage Guide](TOOLS_USAGE_GUIDE.md).
+Read this with [Architecture](../../ARCHITECTURE.md), [AGENTS.md](../../AGENTS.md), and the [Tools Usage Guide](../guides/TOOLS_USAGE_GUIDE.md).
 
 ## Repository Contract
 
 PubMed Search MCP is a Python MCP server with Domain-Driven Design boundaries:
 
-![DDD and runtime boundaries](images/ddd-runtime-boundaries.svg)
+![DDD and runtime boundaries](../images/ddd-runtime-boundaries.svg)
 
 ```text
 presentation -> application -> domain
@@ -69,7 +69,7 @@ Important documentation files:
 
 - `scripts/count_mcp_tools.py`: regenerates the tool index from the registry
 - `scripts/build_docs_site.py`: generates `docs/site-content/*.md` and `docs/site-content.js`
-- `docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
+- `docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
 - `docs/site.js`: client-side docs router and language switch
 - `tests/test_docs_site_sync.py`: verifies generated docs payloads match canonical Markdown
 
@@ -145,8 +145,8 @@ When note export behavior changes, update user docs, generated docs, skills or p
 
 Pipeline behavior is an application capability, not a shell-script feature. Canonical tutorials live in:
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` also syncs these into `.claude/skills/pipeline-persistence/references/` for agent bundles and VSIX integrations that do not read `docs/site-content/`.
 
@@ -165,7 +165,7 @@ Pipeline changes should consider:
 
 ## Documentation System
 
-![Documentation publishing flow](images/docs-publishing-flow.svg)
+![Documentation publishing flow](../images/docs-publishing-flow.svg)
 
 Canonical Markdown sources remain in the repository. The static site embeds generated copies so GitHub Pages can serve the docs without a backend.
 
