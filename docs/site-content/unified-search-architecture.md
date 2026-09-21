@@ -1,4 +1,4 @@
-<!-- Generated from docs/UNIFIED_SEARCH_ARCHITECTURE.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -395,8 +395,8 @@ uv run python scripts/check_async_tests.py
 uv run python scripts/build_docs_site.py
 MERMAID_NODE_MODULES=/path/to/pinned/node_modules \
   node scripts/check_mermaid_rendering.mjs \
-  docs/UNIFIED_SEARCH_ARCHITECTURE.md \
-  docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md
+  docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md \
+  docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md
 ```
 
 This inventory is a measurable refactoring boundary, not an attempt to freeze the current design: entries should stay thin, application policy should be injectable, source outcomes should remain typed, every partial failure should be auditable, and every term such as relevance, recall, and peer reviewed must match the computation behind it.

@@ -1,4 +1,4 @@
-<!-- Generated from docs/TOOLS_USAGE_GUIDE.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/guides/TOOLS_USAGE_GUIDE.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -453,7 +453,7 @@ response replaces every host path with a tenant-relative logical locator.
 
 Pipeline tutorials live canonically in:
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` also syncs those tutorials into `.claude/skills/pipeline-persistence/references/` so external agent bundles and VSIX packages that do not ship `docs/site-content/` can still read them.

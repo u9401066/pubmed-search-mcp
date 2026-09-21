@@ -1,4 +1,4 @@
-<!-- Generated from docs/TOOLS_USAGE_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -408,7 +408,7 @@ save_literature_notes(
 
 Pipeline tutorial 的正式來源是：
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` 會另外同步到 `.claude/skills/pipeline-persistence/references/`，讓不會打包 `docs/site-content/` 的外部 agent bundle 或 VSIX 也能讀到。
