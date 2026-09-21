@@ -34,7 +34,7 @@ into a Foam-compatible Markdown wiki for LLM-assisted reading and synthesis.
 
 ## Evidence And Citation Hygiene
 
-Note export behavior follows the shared contract in `AGENTS.md` and `docs/TOOLS_USAGE_GUIDE.md`.
+Note export behavior follows the shared contract in `AGENTS.md` and `docs/guides/TOOLS_USAGE_GUIDE.md`.
 
 - Preserve PMID, DOI, PMCID, Zotero key, URL, title, journal, year, and access
   status whenever available.

@@ -1,5 +1,15 @@
 const DOC_PAGES = [
   {
+    slug: "publication",
+    group: "publication",
+    lang: "all",
+    audience: "developer",
+    title: "Publication and Citation / 論文與引用",
+    blurb: "Working manuscript, reviewed references, measured evidence, and a proposed controlled evaluation.",
+    keywords: "arxiv manuscript citation benchmark 論文 引用 評測",
+    file: "site-content/publication.md",
+  },
+  {
     slug: "documentation-map",
     group: "documentation-map",
     lang: "all",
@@ -1984,6 +1994,14 @@ navToggle.addEventListener("click", () => {
 if (sidebarBackdrop) {
   sidebarBackdrop.addEventListener("click", closeSidebar);
 }
+
+// Selecting the current route produces no hashchange, but should still dismiss
+// the mobile menu. Delegate so filtering/rebuilding the nav keeps this behavior.
+nav.addEventListener("click", (event) => {
+  if (event.target instanceof Element && event.target.closest('a[href^="#/"]')) {
+    closeSidebar();
+  }
+});
 
 if (globalSearchBtn) {
   globalSearchBtn.addEventListener("click", openSearchModal);

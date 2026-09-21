@@ -33,4 +33,4 @@ pipeline state, fulltext access, exports, and release checks.
 - Respect NCBI email/API-key policy and institutional access configuration.
 - Keep exported citations reproducible with PMIDs, DOI, source, date filters, and query strategy.
 
-- For note verification status and abstract opt-out, follow the shared note export contract in `AGENTS.md` and `docs/TOOLS_USAGE_GUIDE.md`.
+- For note verification status and abstract opt-out, follow the shared note export contract in `AGENTS.md` and `docs/guides/TOOLS_USAGE_GUIDE.md`.

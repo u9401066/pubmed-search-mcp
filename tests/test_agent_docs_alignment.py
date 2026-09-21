@@ -48,9 +48,9 @@ def test_agent_pico_guidance_preserves_structured_handoff_boundary() -> None:
 def test_pico_guidance_has_no_backend_auto_parse_examples() -> None:
     critical_paths = [
         "src/pubmed_search/presentation/mcp_server/instructions.py",
-        "docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md",
+        "docs/development/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md",
         "docs/images/pico-clinical-workflow.svg",
-        "docs/arxiv-paper/main.tex",
+        "docs/publication/main.tex",
     ]
     forbidden = [
         "template: pico\\ntopic:",
@@ -110,7 +110,7 @@ def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> N
         "persistent query memory",
     ]
 
-    english_docs = _read("docs/USER_GUIDE.md") + "\n" + _read("docs/TOOLS_USAGE_GUIDE.md")
+    english_docs = _read("docs/guides/USER_GUIDE.md") + "\n" + _read("docs/guides/TOOLS_USAGE_GUIDE.md")
     for term in required:
         assert term in english_docs
 
@@ -128,7 +128,7 @@ def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> N
         "PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS",
         "持久化 query memory",
     ]
-    zh_docs = _read("docs/USER_GUIDE.zh-TW.md") + "\n" + _read("docs/TOOLS_USAGE_GUIDE.zh-TW.md")
+    zh_docs = _read("docs/guides/USER_GUIDE.zh-TW.md") + "\n" + _read("docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md")
     for term in zh_required:
         assert term in zh_docs
 
@@ -164,7 +164,7 @@ def test_live_agent_assets_use_only_canonical_handoff_contracts() -> None:
         for retired_name in retired_public_names:
             assert retired_name not in content, f"{path} still names retired tool {retired_name}"
 
-    source_contracts = _read("docs/SOURCE_CONTRACTS.md")
+    source_contracts = _read("docs/architecture/SOURCE_CONTRACTS.md")
     assert "read_session(action=" not in source_contracts
     assert 'read_session(request={"action":"search_runs","status":"partial"})' in source_contracts
     assert 'read_session(request={"action":"search_run","run_id":"..."})' in source_contracts

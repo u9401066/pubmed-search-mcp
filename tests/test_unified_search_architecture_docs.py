@@ -8,8 +8,8 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = (
-    ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
-    ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
+    ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md",
+    ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
 )
 
 REQUIRED_RUNTIME_SYMBOLS = (

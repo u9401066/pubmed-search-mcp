@@ -659,7 +659,7 @@ save_literature_notes(pmids="last")  # Default wiki note + Foam-compatible wikil
 get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)  # Retrieve selected paper full text
 ```
 
-筆記的驗證狀態與摘要排除規則以 `AGENTS.md` 及 `docs/TOOLS_USAGE_GUIDE.md` 的 note export contract 為準。
+筆記的驗證狀態與摘要排除規則以 `AGENTS.md` 及 `docs/guides/TOOLS_USAGE_GUIDE.md` 的 note export contract 為準。
 
 ---
 
