@@ -8,7 +8,7 @@ This document only describes pipeline mode behavior that is currently implemente
 
 ## Pipeline Mode Quick Start
 
-![Pipeline entry points and execution workflow](images/pipeline-entrypoints-and-dag.svg)
+![Pipeline entry points and execution workflow](../images/pipeline-entrypoints-and-dag.svg)
 
 Pipeline mode currently has 3 practical entry points:
 
@@ -200,7 +200,7 @@ You can directly inspect these examples:
 
 ## Custom DAG Tutorial
 
-![Custom pipeline DAG workflow](images/custom-pipeline-dag.svg)
+![Custom pipeline DAG workflow](../images/custom-pipeline-dag.svg)
 
 When templates are not enough, define `steps` directly.
 

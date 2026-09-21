@@ -15,7 +15,7 @@
 
 ## 研究編年史 / Research Chronicle
 
-![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
+![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
 
 ### 1. 核心設計理念與認識論模型
 
@@ -27,7 +27,7 @@
 - **不可變版本持久化（Immutable Revision Store）**：每次重跑同一主題或給定 `chronicle_id` 時，系統以原子鎖寫入 `Revision N+1`，支援版本比對（Diff）。
 - **認識論嚴謹性（Epistemic Audit）**：文獻在不同版本中的缺席嚴格標記為 `not_observed_in_revision`（檢索範圍未觀察到），而非斷言該論文「被學界淘汰」；每份 Chronicle 皆附帶完整度審計報告（Audit）。
 
-![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
+![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 ---
 

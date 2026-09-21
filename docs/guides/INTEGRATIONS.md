@@ -4,7 +4,7 @@ The complete operator-facing extension of the README: choose a runtime contract,
 connect an AI client, configure the multi-source and browser brokers, verify the
 modern MCP SDK v2 protocol, and recover common failures.
 
-> **Quick Start**: For minimal configuration snippets, see the main [README.md](../README.md#configuration).
+> **Quick Start**: For minimal configuration snippets, see the main [README.md](../../README.md#configuration).
 
 ---
 
@@ -46,7 +46,7 @@ modern MCP SDK v2 protocol, and recover common failures.
 
 Choose the trust boundary before choosing client-specific options:
 
-![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
+![Client integration and deployment workflow](../images/integration-deployment-workflow.svg)
 
 | Contract | Entry point | State and network boundary |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ never becomes an identity, authorization, or persistence boundary.
 Use Streamable HTTP for current remote clients. The legacy SSE transport remains
 available only as a compatibility surface. See the
 [MCP protocol update](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
-and the repository's [deployment smoke checklist](../DEPLOYMENT.md#10-驗證清單).
+and the repository's [deployment smoke checklist](../../DEPLOYMENT.md#10-驗證清單).
 
 ### stdio (Default)
 
@@ -166,11 +166,11 @@ format in the principal-scoped `references/` directory.
 
 For containers, use `docker-compose.yml` only as a single-user loopback demo and
 `docker-compose.service.yml` for the authenticated, persistent, single-replica
-service. See [DEPLOYMENT.md](../DEPLOYMENT.md) for the complete contract.
+service. See [DEPLOYMENT.md](../../DEPLOYMENT.md) for the complete contract.
 
 ### Auxiliary HTTP APIs
 
-![Session cache and auxiliary HTTP API workflow](images/session-cache-and-http-api.svg)
+![Session cache and auxiliary HTTP API workflow](../images/session-cache-and-http-api.svg)
 
 Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI exposes
 auxiliary routes. Only liveness/readiness metadata is public in service mode;
@@ -272,9 +272,9 @@ Scholar release/manifest/diff inspection is an operator data-plane workflow;
 it never downloads a dataset partition during `unified_search`. OpenAlex cursor
 and native semantic modes are likewise bounded broker capabilities, while an
 entire-corpus mirror must use the operator snapshot path. See
-[Semantic Scholar data plane](SEMANTIC_SCHOLAR_API.md),
-[OpenAlex search/data plane](OPENALEX_API.md), and the
-[ClinicalKey AI licensed boundary](CLINICALKEY_AI_INTEGRATION.md).
+[Semantic Scholar data plane](../providers/SEMANTIC_SCHOLAR_API.md),
+[OpenAlex search/data plane](../providers/OPENALEX_API.md), and the
+[ClinicalKey AI licensed boundary](../providers/CLINICALKEY_AI_INTEGRATION.md).
 
 Provider-native execution stays behind the single literature-search facade:
 
@@ -363,7 +363,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 
 ### Source Selection and Source Gating
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![Search and query intelligence workflow](../images/search-query-workflow.svg)
 
 `unified_search` now supports source expressions such as:
 
@@ -759,7 +759,7 @@ configuration and review tracked project-rule updates normally.
 
 ### Microsoft Copilot Studio
 
-![Copilot Studio deployment flow](images/copilot-studio-deployment-flow.svg)
+![Copilot Studio deployment flow](../images/copilot-studio-deployment-flow.svg)
 
 Copilot Studio requires **Streamable HTTP** transport with a public URL.
 
@@ -830,7 +830,7 @@ the sole generic search `unified_search` and typed `read_session(request={...})`
 Schema issues must be fixed in that shared contract instead of hidden behind a
 second primitive compatibility surface.
 
-> See [copilot-studio/README.md](../copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
+> See [copilot-studio/README.md](../../copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 
 ---
 
@@ -934,5 +934,5 @@ docker compose --env-file .env -f docker-compose.service.yml up -d
 The service profile uses a persistent volume, one replica/server process, a
 disabled in-process scheduler, and a host-loopback application port intended for
 a trusted same-host TLS proxy. See
-[DEPLOYMENT.md](../DEPLOYMENT.md) for proxy, secret, backup, and readiness
+[DEPLOYMENT.md](../../DEPLOYMENT.md) for proxy, secret, backup, and readiness
 requirements.

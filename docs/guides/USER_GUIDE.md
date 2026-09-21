@@ -2,7 +2,7 @@
 
 This guide is for people using PubMed Search MCP through an AI client such as VS Code, Claude Desktop, Claude Code, Cursor, Cline, Zed, or Copilot Studio. It explains how to move from a research question to reusable evidence without memorizing every MCP tool.
 
-Use this as the practical entry point, then keep the [Tools Usage Guide](TOOLS_USAGE_GUIDE.md) and [Quick Reference](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) nearby when you need exact tool names.
+Use this as the practical entry point, then keep the [Tools Usage Guide](TOOLS_USAGE_GUIDE.md) and [Quick Reference](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) nearby when you need exact tool names.
 
 ## What This Server Is Good For
 
@@ -46,11 +46,11 @@ UNPAYWALL_EMAIL=your@email.com     # optional override; defaults to server/NCBI 
 PUBMED_NOTES_DIR=/path/to/references
 ```
 
-For client-specific setup, see the [Integration Guide](INTEGRATIONS.md). For HTTP, Docker, Copilot Studio, and GitHub Pages deployment notes, see [Deployment](../DEPLOYMENT.md).
+For client-specific setup, see the [Integration Guide](INTEGRATIONS.md). For HTTP, Docker, Copilot Studio, and GitHub Pages deployment notes, see [Deployment](../../DEPLOYMENT.md).
 
 ## Choose The Right Path
 
-![PubMed Search MCP research workflow](images/research-workflow.svg)
+![PubMed Search MCP research workflow](../images/research-workflow.svg)
 
 | Goal | Start With | Then Use |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ The most important rule: start with the research intent, not the tool menu.
 
 ### 1. Start Broad, Then Narrow
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![Search and query intelligence workflow](../images/search-query-workflow.svg)
 
 Ask the client to run a modest first pass:
 
@@ -106,7 +106,7 @@ The server can validate the PICO handoff, build the backend PICO search plan, an
 
 ### 3. Explore Seed Papers
 
-![Article discovery and citation workflow](images/discovery-citation-workflow.svg)
+![Article discovery and citation workflow](../images/discovery-citation-workflow.svg)
 
 Once you have an important PMID, move from search to discovery:
 
@@ -127,9 +127,9 @@ Use this path when you already trust one seed paper and want to map the surround
 
 ### 4. Retrieve Full Text And Figures
 
-![Full text retrieval flow](images/fulltext-retrieval-flow.svg)
+![Full text retrieval flow](../images/fulltext-retrieval-flow.svg)
 
-![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
+![Full text, figures, and biomedical image workflow](../images/visual-evidence-workflow.svg)
 
 Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service follows an identifier-aware policy: Europe PMC XML when a PMCID is available, Unpaywall OA locations for DOI-backed articles, institutional direct/EZproxy when configured, CORE, then optional downloader/browser-session fallbacks. CrossRef is a metadata and publisher-link route, not a hosted full-text source.
 
@@ -179,8 +179,8 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 
 ### 5. Build A Research Chronicle Or Lineage Tree
 
-![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
-![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
+![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
+![Evaluation and timeline workflow](../images/timeline-evaluation-workflow.svg)
 
 Use the chronicle tools when the question is not just "what papers exist?" but "how did this field develop?"
 
@@ -199,7 +199,7 @@ read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazol
 read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `narrative`, and `json`. Research Chronicle is the only persistent research-lineage capability; `unified_search` returns search evidence without a duplicate context projection. The chronicle is persistent and versioned; see [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `narrative`, and `json`. Research Chronicle is the only persistent research-lineage capability; `unified_search` returns search evidence without a duplicate context projection. The chronicle is persistent and versioned; see [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 Lineage is an explainable grouping of the retrieved snapshot, not causal ancestry. `earliest_observed_in_scope` does not establish the first publication in the field, and the query, PMID set, year filters, source availability, and result cap all constrain what can be observed. Date precision is retained: same-year or overlapping date intervals can be displayed deterministically, but do not create an inferred `precedes` or `supersedes` relationship.
 
@@ -224,7 +224,7 @@ Local paths are redacted by default because remote clients cannot read the serve
 
 ### 7. Export Citations Or Local Notes
 
-![Export and local notes workflow](images/export-notes-workflow.svg)
+![Export and local notes workflow](../images/export-notes-workflow.svg)
 
 Use `prepare_export` for citation manager handoff. Official PubMed-backed formats are `ris`, `medline`, and `csl`; local rendered formats include `bibtex`, `csv`, and `json`.
 
@@ -272,7 +272,7 @@ published atomically; a failed batch may leave already completed files.
 
 ### 8. Save Repeatable Pipelines
 
-![Session and pipeline workflow](images/session-pipeline-workflow.svg)
+![Session and pipeline workflow](../images/session-pipeline-workflow.svg)
 
 Use pipelines when a research process should be rerun or audited. Start with the [Pipeline Tutorial](PIPELINE_MODE_TUTORIAL.en.md).
 
@@ -299,7 +299,7 @@ or design a single external leader/lease before enabling recurring execution.
 
 ## Copilot Studio Notes
 
-![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
+![Client integration and deployment workflow](../images/integration-deployment-workflow.svg)
 
 There are two Copilot launch boundaries over one registry:
 
@@ -358,5 +358,5 @@ Keep these limits in mind:
 - [Tools Usage Guide](TOOLS_USAGE_GUIDE.md): capability-first tool routing
 - [Pipeline Tutorial](PIPELINE_MODE_TUTORIAL.en.md): saved and scheduled workflows
 - [Integration Guide](INTEGRATIONS.md): client configuration and troubleshooting
-- [Deployment](../DEPLOYMENT.md): HTTP, Docker, Copilot Studio, and Pages
-- [Developer Guide](DEVELOPER_GUIDE.md): architecture, contribution flow, and validation
+- [Deployment](../../DEPLOYMENT.md): HTTP, Docker, Copilot Studio, and Pages
+- [Developer Guide](../development/DEVELOPER_GUIDE.md): architecture, contribution flow, and validation

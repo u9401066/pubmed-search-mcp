@@ -9,11 +9,11 @@
 1. 先用使用者意圖對應能力族。
 2. 用 session tools 取回上一輪結果，不要要求模型記住所有 PMID。
 3. 先確認 evidence set，再匯出引用或本機筆記。
-4. 需要查精確工具名時，再看[完整工具索引](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
+4. 需要查精確工具名時，再看[完整工具索引](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
 
 ## 8 個能力族
 
-![PubMed Search MCP 能力族地圖](images/tool-capability-map.svg)
+![PubMed Search MCP 能力族地圖](../images/tool-capability-map.svg)
 
 | 能力 | 主要工具 | 何時使用 |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ### 搜尋入口與查詢智能
 
-![搜尋與查詢智能流程](images/search-query-workflow.svg)
+![搜尋與查詢智能流程](../images/search-query-workflow.svg)
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
@@ -80,8 +80,8 @@ JSON/TOON 與 persistent artifact 會保存 `retrieval_mode` 及每來源
 provider 回傳的 opaque continuation token/cursor、cost/rate metadata 與 warnings。
 Continuation data 目前只作為 provenance；公開 facade 尚無 cursor-resume argument。
 解讀 provider total 或繼續擷取前，請先看
-[Source Contracts](SOURCE_CONTRACTS.md)、[Semantic Scholar](SEMANTIC_SCHOLAR_API.md) 與
-[OpenAlex](OPENALEX_API.md)。
+[Source Contracts](../architecture/SOURCE_CONTRACTS.md)、[Semantic Scholar](../providers/SEMANTIC_SCHOLAR_API.md) 與
+[OpenAlex](../providers/OPENALEX_API.md)。
 
 Agent 對一般 result envelope 做決策時，應以 structured `search_status` 為準，不要用
 rendered text 長度判斷。它會明確標示 bounded、non-exhaustive，區分
@@ -98,7 +98,7 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 
 ### 論文探索與引用脈絡
 
-![論文探索與引用流程](images/discovery-citation-workflow.svg)
+![論文探索與引用流程](../images/discovery-citation-workflow.svg)
 
 已有 seed PMID 後使用這條路徑。它涵蓋 `fetch_article_details`、`find_related_articles`、`find_citing_articles`、`get_article_references`、`build_citation_tree` 與 `get_citation_metrics`。
 
@@ -107,7 +107,7 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 
 ### 引用驗證
 
-![引用驗證流程](images/reference-verification-workflow.svg)
+![引用驗證流程](../images/reference-verification-workflow.svg)
 
 當 manuscript、bibliography 或 agent 產生的回答需要 PubMed-backed citation checking 時，使用 `verify_reference_list`。match / mismatch 應視為 audit trail，而不是只看生成摘要。
 
@@ -119,7 +119,7 @@ DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的�
 
 ### 全文、圖表與圖片證據
 
-![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
+![全文、圖表與生醫圖片流程](../images/visual-evidence-workflow.svg)
 
 這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`prepare_figure_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
 
@@ -136,14 +136,14 @@ DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的�
 
 ### 外部生醫資料
 
-![NCBI 延伸生醫資料流程](images/ncbi-extended-workflow.svg)
+![NCBI 延伸生醫資料流程](../images/ncbi-extended-workflow.svg)
 
 當問題從文獻延伸到 NCBI biomedical records 時，使用 `search_gene`、`get_gene_details`、`get_gene_literature`、`search_compound`、`get_compound_details`、`get_compound_literature` 與 `search_clinvar`。
 
 ### 評估、時間軸與比較
 
-![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
-![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
+![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
 
@@ -156,7 +156,7 @@ DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的�
 - **Chronicle map**：單一橫向時間主軸，各觀察研究線錨定在本次檢索範圍內最早的有日期論文；語意分支必須有多篇論文共同支持的訊號，只有 singleton 或 MeSH/keyword 訊號不足時會產生 audit warning 並退回研究階段分類。同年排列在日期 precision 不足時不代表先後。
 - **研究 lineage**：使用 `build_research_chronicle`；它是唯一持久化時序與分支脈絡能力。
 - **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
-- **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+- **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 ### 研究編年史 (Research Chronicle)
 
@@ -186,7 +186,7 @@ Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（�
 
 ### Session、Pipeline 與排程重用
 
-![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)
+![Session 與 Pipeline 流程](../images/session-pipeline-workflow.svg)
 
 這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`。
 
@@ -200,7 +200,7 @@ sanitized error，不會跳過後產生誤導的部分清單或空歷史。
 
 ### 機構存取
 
-![機構存取流程](images/institutional-access-workflow.svg)
+![機構存取流程](../images/institutional-access-workflow.svg)
 
 這條路徑涵蓋 `configure_institutional_access`、`get_institutional_link`、`list_resolver_presets`、`test_institutional_access` 與 `diagnose_institutional_access`。OpenURL 是 browser handoff；direct DOI 與 EZproxy 只有在環境已設定、且使用者有權存取時才是 agent-fetchable。
 
@@ -209,7 +209,7 @@ Resolver base 不得含 query parameter 或 embedded credential。PMID 診斷會
 
 ### 匯出與本機筆記
 
-![匯出與本機筆記流程](images/export-notes-workflow.svg)
+![匯出與本機筆記流程](../images/export-notes-workflow.svg)
 
 這條路徑涵蓋 `prepare_export` 與 `save_literature_notes`。Citation exports 供 reference manager 使用；local notes 則是帶有 machine-readable metadata、可被人與 agent 後續編輯的 literature-review artifacts。
 認證 service 回應會把所有 host path 改為 tenant-relative logical locator。
@@ -276,7 +276,7 @@ metadata 的舊 artifacts 才使用保守的同 query fallback。
 
 ## 本機 Wiki Note 匯出
 
-![匯出與本機筆記流程](images/export-notes-workflow.svg)
+![匯出與本機筆記流程](../images/export-notes-workflow.svg)
 
 搜尋完成後，如果使用者要留下受指引、半格式化、可被 agent 繼續編輯的檔案，使用 `save_literature_notes`。這比讓 agent 用一般 write file 自己拼 Markdown 穩定。
 
@@ -311,7 +311,7 @@ save_literature_notes(pmids="last", note_format="wiki")
 | --- | --- | --- | --- |
 | `wiki` | `[[stable-id|title]]` | 預設 guided literature note | Foam、Obsidian-style、一般 wiki workflow |
 | `foam` | `[[stable-id|title]]` | 與 `wiki` 相容 | 既有 Foam 使用者 |
-| `markdown` | `` `[title](note.md)` `` | 同樣 guided sections | 純 Markdown repo |
+| `markdown` | `` `[title](../note.md)` `` | 同樣 guided sections | 純 Markdown repo |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory，內含 `<citation_key>.md` 與 `metadata.json` | MedPaper-style 或 Zotero Keeper-compatible reference library |
 
 本機模式的目錄解析順序：
@@ -404,7 +404,7 @@ save_literature_notes(
 
 Pipeline tutorial 的正式來源是：
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` 會另外同步到 `.claude/skills/pipeline-persistence/references/`，讓不會打包 `docs/site-content/` 的外部 agent bundle 或 VSIX 也能讀到。

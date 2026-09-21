@@ -8,7 +8,7 @@
 
 ## Pipeline Mode 快速上手
 
-![Pipeline entry points and execution workflow](images/pipeline-entrypoints-and-dag.svg)
+![Pipeline entry points and execution workflow](../images/pipeline-entrypoints-and-dag.svg)
 
 Pipeline mode 有 3 種最常用入口：
 
@@ -198,7 +198,7 @@ output:
 
 ## Custom DAG 教學
 
-![Custom pipeline DAG workflow](images/custom-pipeline-dag.svg)
+![Custom pipeline DAG workflow](../images/custom-pipeline-dag.svg)
 
 當 template 不夠時，直接寫 `steps`。
 

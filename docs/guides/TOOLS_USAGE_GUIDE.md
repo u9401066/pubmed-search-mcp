@@ -9,11 +9,11 @@ Capability-first guide for using the 41-tool PubMed Search MCP surface without t
 1. Start with the capability family that matches the user intent.
 2. Use session tools to reuse the latest result set instead of asking the model to remember PMIDs.
 3. Export citations or notes only after the evidence set is clear.
-4. Use the raw [tools index](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) only when you need exact tool names.
+4. Use the raw [tools index](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) only when you need exact tool names.
 
 ## The 8 Capability Families
 
-![PubMed Search MCP capability map](images/tool-capability-map.svg)
+![PubMed Search MCP capability map](../images/tool-capability-map.svg)
 
 | Capability | Primary Tools | Use When |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Each feature family has a workflow diagram so users and developers can see where
 
 ### Search Entry And Query Intelligence
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![Search and query intelligence workflow](../images/search-query-workflow.svg)
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
@@ -86,8 +86,8 @@ per-source `source_metadata`, including requested/provider mode, canonical or
 compiled query, opaque continuation token/cursor when returned, cost/rate
 metadata, and warnings. Continuation data is currently provenance only: the
 public facade has no cursor-resume argument. Consult
-[Source Contracts](SOURCE_CONTRACTS.md),
-[Semantic Scholar](SEMANTIC_SCHOLAR_API.md), and [OpenAlex](OPENALEX_API.md)
+[Source Contracts](../architecture/SOURCE_CONTRACTS.md),
+[Semantic Scholar](../providers/SEMANTIC_SCHOLAR_API.md), and [OpenAlex](../providers/OPENALEX_API.md)
 before interpreting provider totals or continuing a search.
 
 For agent decisions on a normal result envelope, prefer the structured
@@ -106,7 +106,7 @@ the structured rows. Response and artifact both carry the same versioned
 
 ### Article Discovery And Citation Mapping
 
-![Article discovery and citation workflow](images/discovery-citation-workflow.svg)
+![Article discovery and citation workflow](../images/discovery-citation-workflow.svg)
 
 Use this path once you have one or more seed PMIDs. It covers `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`, and `get_citation_metrics`.
 
@@ -116,7 +116,7 @@ quality. Unknown metrics do not pass an explicitly requested zero threshold.
 
 ### Reference Verification
 
-![Reference verification workflow](images/reference-verification-workflow.svg)
+![Reference verification workflow](../images/reference-verification-workflow.svg)
 
 Use `verify_reference_list` when a manuscript, bibliography, or generated answer needs PubMed-backed citation checking. Treat matches and mismatches as an audit trail, not as prose-only summary.
 
@@ -130,7 +130,7 @@ determine whether the cited paper supports a claim; read the relevant passage.
 
 ### Full Text, Figures, And Image Evidence
 
-![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
+![Full text, figures, and biomedical image workflow](../images/visual-evidence-workflow.svg)
 
 Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `prepare_figure_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
 
@@ -149,14 +149,14 @@ that distinction and unknown totals.
 
 ### External Biomedical Data
 
-![NCBI extended biomedical data workflow](images/ncbi-extended-workflow.svg)
+![NCBI extended biomedical data workflow](../images/ncbi-extended-workflow.svg)
 
 Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, and `search_clinvar` when the question moves beyond papers into NCBI biomedical records.
 
 ### Evaluation, Timeline, And Comparison
 
-![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
-![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
+![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
+![Evaluation and timeline workflow](../images/timeline-evaluation-workflow.svg)
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.
 
@@ -169,7 +169,7 @@ Use precise terms:
 - **Chronicle map**: one horizontal time spine with observed lines anchored at their earliest dated papers in the retrieved scope. Semantic branches require a signal shared by multiple papers; singleton-only or insufficient MeSH/keyword support produces a warned research-stage fallback. Same-year layout does not imply precedence when date precision cannot establish it.
 - **Research lineage**: use `build_research_chronicle`; it is the sole persistent chronological and branching context capability.
 - **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
-- **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+- **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 ### Research Chronicle
 
@@ -199,7 +199,7 @@ Artifact preflight audits the names produced by the actual artifact payload buil
 
 ### Session, Pipeline, And Scheduled Reuse
 
-![Session and pipeline workflow](images/session-pipeline-workflow.svg)
+![Session and pipeline workflow](../images/session-pipeline-workflow.svg)
 
 Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, and `unschedule_pipeline`.
 
@@ -216,7 +216,7 @@ history.
 
 ### Institutional Access
 
-![Institutional access workflow](images/institutional-access-workflow.svg)
+![Institutional access workflow](../images/institutional-access-workflow.svg)
 
 Use this path for `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access`, and `diagnose_institutional_access`. OpenURL is a browser handoff; direct DOI and EZproxy paths become agent-fetchable only when the environment is configured and access is permitted.
 
@@ -226,7 +226,7 @@ the distinction between a confirmed missing DOI and a PubMed failure.
 
 ### Export And Local Notes
 
-![Export and local notes workflow](images/export-notes-workflow.svg)
+![Export and local notes workflow](../images/export-notes-workflow.svg)
 
 Use this path for `prepare_export` and `save_literature_notes`. Citation exports are for reference managers; local notes are editable literature-review artifacts with machine-readable metadata.
 
@@ -319,7 +319,7 @@ If a source fails but the search can continue, `unified_search` may return
 
 ## Local Wiki Note Export
 
-![Export and local notes workflow](images/export-notes-workflow.svg)
+![Export and local notes workflow](../images/export-notes-workflow.svg)
 
 Use `save_literature_notes` when the user wants a guided, semi-structured file output after search. This is better than asking an agent to assemble a Markdown note with a generic write-file operation.
 
@@ -354,7 +354,7 @@ Supported note formats:
 | --- | --- | --- | --- |
 | `wiki` | `[[stable-id|title]]` | default guided literature note | Foam, Obsidian-style, and general wiki workflows |
 | `foam` | `[[stable-id|title]]` | same compatible profile as `wiki` | existing Foam-specific users |
-| `markdown` | `` `[title](note.md)` `` | same guided sections | plain Markdown repositories |
+| `markdown` | `` `[title](../note.md)` `` | same guided sections | plain Markdown repositories |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory containing `<citation_key>.md` plus `metadata.json` | MedPaper-style or Zotero Keeper-compatible reference libraries |
 
 Local-mode directory resolution:
@@ -449,7 +449,7 @@ response replaces every host path with a tenant-relative logical locator.
 
 Pipeline tutorials live canonically in:
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` also syncs those tutorials into `.claude/skills/pipeline-persistence/references/` so external agent bundles and VSIX packages that do not ship `docs/site-content/` can still read them.

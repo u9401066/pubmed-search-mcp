@@ -2,7 +2,7 @@
 
 這份指南給透過 VS Code、Claude Desktop、Claude Code、Cursor、Cline、Zed 或 Copilot Studio 使用 PubMed Search MCP 的使用者。它說明如何從研究問題一路走到可重用的證據輸出，而不是要求你背下所有 MCP tool。
 
-需要精確工具名稱時，再搭配 [工具使用指南](TOOLS_USAGE_GUIDE.zh-TW.md) 與 [完整工具索引](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
+需要精確工具名稱時，再搭配 [工具使用指南](TOOLS_USAGE_GUIDE.zh-TW.md) 與 [完整工具索引](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
 
 ## 這個 Server 適合做什麼
 
@@ -46,11 +46,11 @@ UNPAYWALL_EMAIL=your@email.com     # 選填覆寫；預設使用 server/NCBI ema
 PUBMED_NOTES_DIR=/path/to/references
 ```
 
-各 client 的設定方式請看 [整合指南](INTEGRATIONS.md)。HTTP、Docker、Copilot Studio 與 GitHub Pages 部署請看 [部署文件](../DEPLOYMENT.md)。
+各 client 的設定方式請看 [整合指南](INTEGRATIONS.md)。HTTP、Docker、Copilot Studio 與 GitHub Pages 部署請看 [部署文件](../../DEPLOYMENT.md)。
 
 ## 先選對路徑
 
-![PubMed Search MCP 研究工作流](images/research-workflow.svg)
+![PubMed Search MCP 研究工作流](../images/research-workflow.svg)
 
 | 目標 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ PUBMED_NOTES_DIR=/path/to/references
 
 ### 1. 先廣後窄
 
-![搜尋與查詢智能流程](images/search-query-workflow.svg)
+![搜尋與查詢智能流程](../images/search-query-workflow.svg)
 
 可以要求 client 先做中等大小的第一輪搜尋：
 
@@ -106,7 +106,7 @@ Server 能驗證 PICO handoff、建立後端 PICO 搜尋計畫，並協助 MeSH�
 
 ### 3. 從 Seed Paper 探索
 
-![論文探索與引用流程](images/discovery-citation-workflow.svg)
+![論文探索與引用流程](../images/discovery-citation-workflow.svg)
 
 有重要 PMID 之後，從搜尋切換到探索：
 
@@ -127,9 +127,9 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 
 ### 4. 取得全文與圖表
 
-![全文擷取流程](images/fulltext-retrieval-flow.svg)
+![全文擷取流程](../images/fulltext-retrieval-flow.svg)
 
-![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
+![全文、圖表與生醫圖片流程](../images/visual-evidence-workflow.svg)
 
 摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依 identifier-aware policy 選路徑：有 PMCID 時先走 Europe PMC XML；DOI 文章會查 Unpaywall OA locations；依設定嘗試 institutional direct/EZproxy；再落到 CORE、optional downloader 與 browser-session fallback。CrossRef 是 metadata / publisher-link route，不是全文主機。
 
@@ -178,8 +178,8 @@ Broker 也會強制 loopback bind，並驗證 loopback Host 與 Origin。
 
 ### 5. 建立研究脈絡年表
 
-![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
-![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
+![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 chronicle tools。
 
@@ -198,7 +198,7 @@ read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazol
 read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`narrative` 與 `json`。Research Chronicle 是唯一的持久研究 lineage 能力；`unified_search` 回傳搜尋證據，不再產生重複的 context projection。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`narrative` 與 `json`。Research Chronicle 是唯一的持久研究 lineage 能力；`unified_search` 回傳搜尋證據，不再產生重複的 context projection。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`earliest_observed_in_scope` 不代表找到整個領域的首篇論文；query、PMID set、年份 filter、來源可用性與結果上限都會限制可觀察範圍。日期 precision 會保留：同年或日期區間重疊的項目可以固定顯示順序，但不會據此推論 `precedes` 或 `supersedes` 關係。
 
@@ -223,7 +223,7 @@ Local paths 預設會被遮蔽，因為 remote clients 不能讀 MCP server host
 
 ### 7. 匯出引用或本機筆記
 
-![匯出與本機筆記流程](images/export-notes-workflow.svg)
+![匯出與本機筆記流程](../images/export-notes-workflow.svg)
 
 要交給 citation manager 時使用 `prepare_export`。Official PubMed-backed formats 是 `ris`、`medline` 與 `csl`；local rendered formats 包含 `bibtex`、`csv` 與 `json`。
 
@@ -269,7 +269,7 @@ arguments、選擇內建 `note_format`，由 server 寫入該 principal 隔離�
 
 ### 8. 保存可重跑 Pipeline
 
-![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)
+![Session 與 Pipeline 流程](../images/session-pipeline-workflow.svg)
 
 當研究流程需要重跑或稽核時使用 pipeline。先從 [Pipeline 教學](PIPELINE_MODE_TUTORIAL.md) 開始。
 
@@ -295,7 +295,7 @@ run，或設計單一 external leader/lease。
 
 ## Copilot Studio 注意事項
 
-![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
+![Client integration and deployment workflow](../images/integration-deployment-workflow.svg)
 
 Copilot 有兩個部署邊界，但共用同一份 registry：
 
@@ -353,5 +353,5 @@ Copilot 有兩個部署邊界，但共用同一份 registry：
 - [工具使用指南](TOOLS_USAGE_GUIDE.zh-TW.md)：能力導向工具路由
 - [Pipeline 教學](PIPELINE_MODE_TUTORIAL.md)：保存與排程工作流
 - [整合指南](INTEGRATIONS.md)：client 設定與疑難排解
-- [部署文件](../DEPLOYMENT.md)：HTTP、Docker、Copilot Studio 與 Pages
-- [開發者指南](DEVELOPER_GUIDE.zh-TW.md)：架構、貢獻流程與驗證
+- [部署文件](../../DEPLOYMENT.md)：HTTP、Docker、Copilot Studio 與 Pages
+- [開發者指南](../development/DEVELOPER_GUIDE.zh-TW.md)：架構、貢獻流程與驗證

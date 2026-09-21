@@ -17,7 +17,7 @@ in PubMed Search MCP: **Research Chronicle (Evolution & Lineage Trees)**,
 
 ## Research Chronicle / Lineage Tree
 
-![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
+![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
 
 ### 1. Core Principles & Epistemic Model
 
@@ -44,7 +44,7 @@ and *"What has changed since my last search?"*.
   `not_observed_in_revision` (absence is not retirement); each snapshot is
   backed by an automated completeness audit.
 
-![Evaluation and Timeline Workflow](images/timeline-evaluation-workflow.svg)
+![Evaluation and Timeline Workflow](../images/timeline-evaluation-workflow.svg)
 
 ---
 
