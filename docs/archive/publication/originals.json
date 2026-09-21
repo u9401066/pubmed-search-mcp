@@ -1,0 +1,9 @@
+{
+  "source_revision": "d7a4060f6009a1f08a28c30795a5b1680cdadef9",
+  "sha256": {
+    "main.tex": "6db5d70a99eb3953f64f6ba090522f9ef9939a1ff42f65d3f456e323e3b24c7f",
+    "main.pdf": "3632dc3cf24d65eba5eccec3c0776032fb8caefa497e1c7bd97944eb7e701c12",
+    "references.bib": "1ff762ddc8ac432160ebe7bd8687cbb33f325cc3822abeb6d96ba81f341a2e04",
+    "paper-draft_2026-01-28.md": "fc92f271221397da56d25b433e18335a72c9612abaf22b00c3d0bb9efd1dbc31"
+  }
+}

@@ -40,6 +40,10 @@ def commands(profile: str) -> list[tuple[str, ...]]:
         ("python", "scripts/check_async_tests.py"),
     ]
     if profile == "full":
+        checks.append(("python", "scripts/check_repository_layout.py"))
+        checks.append(
+            ("python", "scripts/build_publication.py", "--prepare-only", "--output", "build/publication-preflight")
+        )
         checks.append(("python", "scripts/perf/symbol_inventory.py"))
         checks.append(("mypy", "src/", "tests/"))
     checks.append(("pytest", "-q", *(SMOKE_TESTS if profile == "smoke" else ("tests/",)), "-m", "not integration"))
