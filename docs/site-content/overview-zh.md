@@ -339,7 +339,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額（10 req/s vs 3 req/s）。
-> 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](#/troubleshooting)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
+> 📖 **完整整合指南**：詳見 [docs/guides/INTEGRATIONS.md](#/troubleshooting)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
 
 ---
 
@@ -658,7 +658,7 @@ read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazol
 read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。完整指南見 [進階研究工作流 (docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](#/advanced-workflows-zh) 與規格 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
+`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。完整指南見 [進階研究工作流 (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](#/advanced-workflows-zh) 與規格 [docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
 
 Chronicle Mermaid 由結構化 node/edge 生成，會自動跳脫 label、修正循環與孤兒 parent、避免 ID 碰撞並限制圖形大小；rich 圖失敗時依序降級為 safe 與 minimal syntax，不會讓整份 chronicle 建立失敗。`mermaid_validation.json` 記錄每個 correction、fallback 與被摘要的視覺項目，`chronicle.mmd` 則維持純 Mermaid source。
 
@@ -795,8 +795,8 @@ error，不會跳過後假裝是完整清單或「沒有歷史」。
 
 逐步教學：
 
-- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
-- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+- 繁體中文: [docs/guides/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+- English: [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
 
 ### 👁️ 視覺搜尋與圖片搜尋
 
@@ -1386,8 +1386,8 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 > 📖 **更多文件**:
 >
 > - 架構 → [ARCHITECTURE.md](#/architecture)
-> - Pipeline Mode 教學（繁中） → [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
-> - Pipeline Mode 教學（English） → [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+> - Pipeline Mode 教學（繁中） → [docs/guides/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+> - Pipeline Mode 教學（English） → [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
 > - 部署指南 → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 
@@ -1443,12 +1443,16 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 ## 📚 引用
 
+[論文與引用工作區](#/publication) 提供完整改寫稿、核對過的參考文獻、證據對照表與本機 PDF／arXiv 原始碼建置。稿件尚未投稿、沒有 arXiv 編號；目前請引用下方已發布軟體。作者沿用 Tz-Ping Gau／Kaohsiung Medical University Hospital。
+
 GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) 顯示 **Cite this repository**。若你在論文、methods section、技術報告或內部研究文件中使用 PubMed Search MCP，建議直接使用 GitHub 產生的引用格式，或重用這份 repository citation metadata。
 
 ```bibtex
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
-  author = {u9401066},
+  author = {Gau, Tz-Ping},
+  version = {0.7.4},
+  year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }
 ```

@@ -1,4 +1,4 @@
-<!-- Generated from docs/BIOMCP_ARCHITECTURE_ANALYSIS.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/research/BIOMCP_ARCHITECTURE_ANALYSIS.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

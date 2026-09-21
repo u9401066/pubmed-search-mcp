@@ -1,4 +1,4 @@
-<!-- Generated from docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

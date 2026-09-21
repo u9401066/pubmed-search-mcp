@@ -1,4 +1,4 @@
-<!-- Generated from docs/PIPELINE_MODE_TUTORIAL.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/guides/PIPELINE_MODE_TUTORIAL.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

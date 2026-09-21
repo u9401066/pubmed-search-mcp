@@ -713,7 +713,7 @@ flowchart LR
 ## 相關文件
 
 - [DEPLOYMENT.md](#/deployment): 實際部署與啟動方式
-- [docs/INTEGRATIONS.md](#/troubleshooting): 各 MCP client 設定
-- [docs/REPO_SEPARATION_PRINCIPLES.md](REPO_SEPARATION_PRINCIPLES.md): structural / semantic、policy / runtime、tool / service 的 repo 級分離原則
-- [docs/PIPELINE_PERSISTENCE_DESIGN.md](PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
+- [docs/guides/INTEGRATIONS.md](#/troubleshooting): 各 MCP client 設定
+- [docs/development/REPO_SEPARATION_PRINCIPLES.md](development/REPO_SEPARATION_PRINCIPLES.md): structural / semantic、policy / runtime、tool / service 的 repo 級分離原則
+- [docs/archive/design/PIPELINE_PERSISTENCE_DESIGN.md](archive/design/PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
 - [src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md](#/quick-reference): 工具索引

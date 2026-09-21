@@ -1,4 +1,4 @@
-<!-- Generated from docs/OPENALEX_API.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/providers/OPENALEX_API.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

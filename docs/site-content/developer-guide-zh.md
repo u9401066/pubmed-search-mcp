@@ -1,4 +1,4 @@
-<!-- Generated from docs/DEVELOPER_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/development/DEVELOPER_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -146,8 +146,8 @@ Note export 行為改變時，要同步更新 user docs、generated docs、描�
 
 Pipeline behavior 是 application capability，不是 shell script feature。Canonical tutorials 位於：
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` 會另外同步到 `.claude/skills/pipeline-persistence/references/`，讓不讀 `docs/site-content/` 的 agent bundles 與 VSIX integrations 仍能取得教學。
 

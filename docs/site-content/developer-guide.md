@@ -1,4 +1,4 @@
-<!-- Generated from docs/DEVELOPER_GUIDE.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/development/DEVELOPER_GUIDE.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -73,7 +73,7 @@ Important documentation files:
 
 - `scripts/count_mcp_tools.py`: regenerates the tool index from the registry
 - `scripts/build_docs_site.py`: generates `docs/site-content/*.md` and `docs/site-content.js`
-- `docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
+- `docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
 - `docs/site.js`: client-side docs router and language switch
 - `tests/test_docs_site_sync.py`: verifies generated docs payloads match canonical Markdown
 
@@ -149,8 +149,8 @@ When note export behavior changes, update user docs, generated docs, skills or p
 
 Pipeline behavior is an application capability, not a shell-script feature. Canonical tutorials live in:
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` also syncs these into `.claude/skills/pipeline-persistence/references/` for agent bundles and VSIX integrations that do not read `docs/site-content/`.
 

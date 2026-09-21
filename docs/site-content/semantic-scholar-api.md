@@ -1,4 +1,4 @@
-<!-- Generated from docs/SEMANTIC_SCHOLAR_API.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/providers/SEMANTIC_SCHOLAR_API.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
