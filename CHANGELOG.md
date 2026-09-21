@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Organize canonical documentation into guides, development, architecture,
+  providers, research, design and publication directories. Preserve website routes
+  and Wiki page names; record changed repository paths in the document move map.
+- Replace the old paper with an evidence-linked manuscript, reviewed bibliography,
+  proposed native/package evaluation and a local PDF/arXiv source builder. Preserve
+  old publication originals and correct software author metadata.
+- Validate whole-repository file ownership and pinned manuscript evidence locally,
+  without adding a cloud job or starting a full agent benchmark.
+- Close the mobile documentation menu when selecting the already-active page.
+
 ## [0.7.4] - 2026-09-18
 
 - Start pipeline steps when their own dependencies finish; preserve deterministic
@@ -129,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Offline BEIR retrieval-quality evaluator with measured precision, recall,
   nDCG, MRR, judged coverage, per-query outputs, and dataset fingerprints.
-  See [benchmark assessment and measured results](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md).
+  See [benchmark assessment and measured results](docs/research/ACADEMIC_RETRIEVAL_BENCHMARKS.md).
 - Real-agent paired evaluation runners for native Codex versus the complete
   PubMed MCP and packaged skills, plus a separate frozen-corpus diagnostic.
   Record public-label scores, failures, tool usage, budgets, and revision hashes.
@@ -137,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifests, atomic per-attempt checkpoints, batch limits, quota pauses,
   development-question exclusions, and query-level aggregation of repetitions.
 - Before/after reliability regressions and a
-  [repository audit](docs/REPOSITORY_RELIABILITY_AUDIT.md) covering citation
+  [repository audit](docs/research/REPOSITORY_RELIABILITY_AUDIT.md) covering citation
   identity, fulltext failure isolation, deduplication, and concurrent cache use.
 
 
@@ -1122,7 +1132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Domain Entity**: `ArticleFigure` + `ArticleFiguresResult` dataclasses (`domain/entities/figure.py`)
 - **Infrastructure**: `FigureClient(BaseAPIClient)` with JATS XML + BioC JSON parsing (`infrastructure/sources/figure_client.py`)
 - **New tool category**: "圖表擷取" (Figure Extraction) in tool registry
-- **Spec document**: `docs/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0 with review notes (Appendix C)
+- **Spec document**: `docs/archive/design/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0 with review notes (Appendix C)
 
 ### Tests
 
@@ -1344,7 +1354,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Algorithm Innovation Research Document** (`docs/ALGORITHM_INNOVATION_RESEARCH.md`)
+- **Algorithm Innovation Research Document** (`docs/archive/research/ALGORITHM_INNOVATION_RESEARCH.md`)
   - Comprehensive internal research document assessing current algorithm depth
   - Honest evaluation: ~60% API wrapping, ~30% rule engines, ~10% real algorithms
   - Identified 3 core pain points: result indigestibility, cross-search amnesia, ranking-research mismatch
@@ -1614,7 +1624,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documents the `count_mcp_tools.py --update-docs` workflow for keeping tool documentation in sync
   - Dynamic `_get_category_order()` in `count_mcp_tools.py` (replaces hardcoded list)
 
-- **Documentation**: `docs/IMAGE_SEARCH_API.md`, `docs/PHASE_4_IMAGE_SEARCH.md`
+- **Documentation**: `docs/providers/IMAGE_SEARCH_API.md`, `docs/PHASE_4_IMAGE_SEARCH.md`
 
 ### Changed
 
@@ -2533,8 +2543,8 @@ External API unchanged - this is an internal enhancement ("掛羊頭賣狗肉").
   - `cross_search_threshold`: Minimum results before fallback (default: 3)
 
 - **API Documentation**
-  - `docs/OPENALEX_API.md` - OpenAlex API reference (265 lines)
-  - `docs/SEMANTIC_SCHOLAR_API.md` - Semantic Scholar API reference (272 lines)
+  - `docs/providers/OPENALEX_API.md` - OpenAlex API reference (265 lines)
+  - `docs/providers/SEMANTIC_SCHOLAR_API.md` - Semantic Scholar API reference (272 lines)
 
 ### Technical Details
 

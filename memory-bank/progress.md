@@ -1,4 +1,24 @@
-# Progress (Updated: 2026-09-18)
+# Progress (Updated: 2026-09-21)
+
+## 2026-09-21 — Repository organization and manuscript revision
+
+- Moved 36 canonical docs into explicit categories, updated source references,
+  generated website/Wiki navigation and bundled tutorials; stable web routes.
+- Added Git-visible ownership validation to the local full gate. Existing root
+  configuration, runtime/command paths and user-owned harness installation
+  behavior are preserved. Core Python and its 2,914-definition review are unchanged.
+- Replaced the manuscript with an evidence-linked systems paper, reviewed 12
+  references and corrected software citation to the user-confirmed author.
+  Four old publication files are archived byte-for-byte with a checksum guard.
+- Added an offline publication preflight and local PDF/arXiv source builder.
+  The 8-page PDF and isolated source recompile pass; full benchmark remains unrun.
+- Browser verification exposed and fixed same-route mobile navigation dismissal.
+  See the [report](../docs/reports/repository_publication_overhaul_2026-09-21.md)
+  for verification details and limits. No package release or arXiv submission was
+  performed. User authorized segmented Git commits and branch push on 2026-09-21.
+- Final local gate passes 4,764 tests (23 skips, 30 live integrations deselected),
+  plus lint/format/async/mypy. File ownership covers 805/805 Git-visible files;
+  desktop/mobile navigation and the isolated source-bundle compile pass.
 
 ## 2026-09-18 — v0.7.4 published and verified
 
@@ -371,7 +391,7 @@
 - Known limitation: the pipeline scheduler is process-wide and bound to the default tenant, so `schedule_pipeline` is refused for isolated tenants.
 
 ### 2026-06-06: Research Chronicle Rebuild Spec Alignment
-- Rewrote `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md` as the canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.
+- Rewrote `docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md` as the canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.
 - Cross-checked implementation, documentation, and test gaps with multiple read-only subagents.
 - Historical terminology: `build_research_chronicle` became the single research-evolution entry point (timeline / lineage tree / milestones / comparison are projections or actions of it). The former `unified_search(options="context_graph")` preview was retired in v0.7.0; `build_citation_tree` remains the citation-network tool.
 - Captured rebuild blockers: broken/untested `pmids="last"` timeline path, incomplete timeline format coverage, context graph boundary tests, citation tree response-contract tests, presentation-layer citation graph logic, and projection formatting in domain entities.
@@ -423,7 +443,7 @@
 
 ### 2026-04-03: v0.5.0 — Docs Site + Source Contracts + Release Hardening
 - ✅ **Docs site** — `docs/index.html`, generated `docs/site-content/*`, `docs/site.css`, `docs/site.js`, `scripts/build_docs_site.py`
-- ✅ **Source contracts** — `docs/SOURCE_CONTRACTS.md` clarifies provenance, rate policy, credentials, and OA/fulltext promises
+- ✅ **Source contracts** — `docs/architecture/SOURCE_CONTRACTS.md` clarifies provenance, rate policy, credentials, and OA/fulltext promises
 - ✅ **Shared adapter/cache substrate** — `shared/source_contracts.py` + `shared/cache_substrate.py`
 - ✅ **Image/timeline policy extraction** — split advisor and timeline heuristics into policy/diagnostics modules
 - ✅ **Release hardening** — `scripts/run_mutation_gate.py`, `tests/test_mcp_protocol_in_memory.py`, local MCP RC validation
@@ -448,7 +468,7 @@
 - ✅ **get_fulltext enhancement**: `include_figures=True` for inline figure data
 - ✅ **58 new tests**: entity (10) + client (30) + tools (18)
 - ✅ **40 tools / 15 categories** (new category: 圖表擷取)
-- ✅ **Spec document**: `docs/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0
+- ✅ **Spec document**: `docs/archive/design/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0
 
 ### 2026-02-14: v0.3.10 — mypy 168→0 + Pre-commit 41 hooks
 - ✅ **mypy 0 errors** — 168→0 under `strict = true` (91 source files clean)
@@ -489,7 +509,7 @@
 ### 2026-02-09: 圖片搜尋 + Agent-Friendly 改善
 - ✅ Open-i API 全參數整合 (13 params)
 - ✅ ImageQueryAdvisor 擴展至 10 種 image types
-- ✅ docs/IMAGE_SEARCH_API.md 完整重寫
+- ✅ docs/providers/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
 
