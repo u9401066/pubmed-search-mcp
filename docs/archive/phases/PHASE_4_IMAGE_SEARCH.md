@@ -8,7 +8,7 @@
 >
 > **狀態**: ✅ **已完成** (v0.3.0, 2026-02-09)
 >
-> **API 參考**: [docs/IMAGE_SEARCH_API.md](../../IMAGE_SEARCH_API.md)
+> **API 參考**: [docs/providers/IMAGE_SEARCH_API.md](../../providers/IMAGE_SEARCH_API.md)
 >
 > **Current runtime note (2026-08-09)**: 下列範例已對齊 MCP SDK v2
 > `MCPServer`；Phase 數據與當時的 roadmap 狀態仍是歷史實作記錄。
@@ -41,7 +41,7 @@
 > - 省略 `it` → `{"total": 0, "Query-Error": "Invalid request type."}`
 > - 有效值: `xg` (X-ray), `mc` (Microscopy), `ph` (Photo), `gl` (Graphics)
 > - 無效值 (`ct`, `mr`, `us`, `all`) 全部返回錯誤
-> - 詳見 [IMAGE_SEARCH_API.md](../../IMAGE_SEARCH_API.md) Round 2 測試紀錄
+> - 詳見 [IMAGE_SEARCH_API.md](../../providers/IMAGE_SEARCH_API.md) Round 2 測試紀錄
 
 ---
 
@@ -652,7 +652,7 @@ tests/
 
 | 文件 | 說明 |
 |------|------|
-| [docs/IMAGE_SEARCH_API.md](../../IMAGE_SEARCH_API.md) | API 參考 + 測試記錄 |
+| [docs/providers/IMAGE_SEARCH_API.md](../../providers/IMAGE_SEARCH_API.md) | API 參考 + 測試記錄 |
 | [ARCHITECTURE.md](../../../ARCHITECTURE.md) | DDD 架構概覽 |
 | [docs/PHASE_2.1_TOOL_REFACTOR.md](PHASE_2.1_TOOL_REFACTOR.md) | 工具重構參考 |
 | [docs/PHASE_3_PUBTATOR_EUTILS.md](PHASE_3_PUBTATOR_EUTILS.md) | Phase 3 設計參考 |

@@ -136,5 +136,5 @@ Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也�
 ## 相關文件
 
 - [DEPLOYMENT.md](../DEPLOYMENT.md)
-- [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md)
+- [docs/guides/INTEGRATIONS.md](../docs/guides/INTEGRATIONS.md)
 - [openapi-schema.yaml](openapi-schema.yaml)

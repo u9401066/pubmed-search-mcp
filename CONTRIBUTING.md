@@ -158,6 +158,11 @@ uv run pre-commit run semgrep --all-files --hook-stage manual
 
 The full gate also regenerates the Git-visible Python class/function inventory
 and rejects parse gaps. This is coverage accounting, not semantic review approval.
+It checks every non-ignored file against the [ownership map](docs/repository-layout.json)
+and validates the [publication](docs/publication/README.md) evidence and sources
+without compiling TeX or starting an agent/provider benchmark. Put current docs
+in their [document category](docs/README.md); put disposable output under ignored
+`build/` or `scripts/_tmp/`. New top-level files require an explicit ownership rule.
 
 The pre-push hook runs the full gate, fails on the first unsuccessful command,
 and defaults to one pytest process. It does not cache success or trust a report

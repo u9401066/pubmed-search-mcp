@@ -24,7 +24,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/USER_GUIDE.md) | [Advanced workflows](docs/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Unified Search architecture](docs/UNIFIED_SEARCH_ARCHITECTURE.md) | [41-tool quality audit](docs/TOOL_QUALITY_AUDIT.md) | [60-repository academic retrieval landscape](docs/reference-repositories/README.md) | [Provider data planes](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP architecture analysis](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/guides/USER_GUIDE.md) | [Advanced workflows](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/guides/TOOLS_USAGE_GUIDE.md) | [Unified Search architecture](docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md) | [41-tool quality audit](docs/research/TOOL_QUALITY_AUDIT.md) | [60-repository academic retrieval landscape](docs/reference-repositories/README.md) | [Provider data planes](docs/providers/SEMANTIC_SCHOLAR_API.md) | [BioMCP architecture analysis](docs/research/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [Developer guide](docs/development/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 [Documentation map](docs/README.md) · [Maintenance scripts](scripts/README.md)
 
@@ -50,7 +50,7 @@ This release improves query-aware ranking and fusion, cross-source article
 deduplication, bibliographic verification, section filtering, and concurrent
 cache fetches. The canonical 41-tool interface remains unchanged.
 
-The [benchmark report](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md) separates component
+The [benchmark report](docs/research/ACADEMIC_RETRIEVAL_BENCHMARKS.md) separates component
 quality from the value of the complete agent package. On public BEIR NFCorpus,
 an earlier BM25 component comparison improved test nDCG@10 from **0.293357 to
 0.297831**. That result does not measure this release's full agent performance.
@@ -58,7 +58,7 @@ The three-question native Codex/package pilot is too small to establish a
 product-level gain; the complete 5,000-question evaluation is prepared but has
 not been started.
 
-Read the [reliability audit](docs/REPOSITORY_RELIABILITY_AUDIT.md) for reproduced
+Read the [reliability audit](docs/research/REPOSITORY_RELIABILITY_AUDIT.md) for reproduced
 defects, validation boundaries, and revision fingerprints. Reference verification
 checks bibliographic consistency; confirming that a paper supports a claim still
 requires inspecting the relevant passage.
@@ -146,7 +146,7 @@ send `tools/list` and `tools/call` directly, without an `initialize` handshake o
 callers cannot load `file:` pipelines, select note `output_dir`/`template_file`,
 or inherit a process-wide pipeline workspace. Note responses use tenant-relative
 logical locators and never reveal server filesystem paths. The service Compose scheduler is
-disabled. See the [Integrations & Operations Guide](docs/INTEGRATIONS.md)
+disabled. See the [Integrations & Operations Guide](docs/guides/INTEGRATIONS.md)
 for the capability matrix.
 
 ---
@@ -348,7 +348,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits (10 req/s vs 3 req/s).
-> 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
+> 📖 **Detailed Integration Guides**: See [docs/guides/INTEGRATIONS.md](docs/guides/INTEGRATIONS.md) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
 
 ---
 
@@ -500,7 +500,7 @@ For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets ba
 
 If you want to understand the tool surface as a usable system, do not start by memorizing 41 tool names.
 
-Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 41 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](docs/guides/TOOLS_USAGE_GUIDE.md): it compresses the current 41 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -580,9 +580,9 @@ PubMed, Europe PMC, Scopus, and Web of Science remain keyword-only in this relea
 explicit systematic requests for those sources fail before I/O instead of
 mislabeling a single page as systematic coverage.
 
-See [Source Contracts](docs/SOURCE_CONTRACTS.md),
-[Semantic Scholar](docs/SEMANTIC_SCHOLAR_API.md), and
-[OpenAlex](docs/OPENALEX_API.md) for provider limits and operator data-plane
+See [Source Contracts](docs/architecture/SOURCE_CONTRACTS.md),
+[Semantic Scholar](docs/providers/SEMANTIC_SCHOLAR_API.md), and
+[OpenAlex](docs/providers/OPENALEX_API.md) for provider limits and operator data-plane
 boundaries.
 
 ### 🔬 Discovery Tools (After Finding Key Papers)
@@ -684,8 +684,8 @@ author keywords shared by multiple papers; singleton-only or insufficient
 signals trigger a warned research-stage fallback. Same-year display order is
 stable, but does not assert precedence when publication precision cannot prove
 it. See
-[Advanced Research Workflows (docs/ADVANCED_RESEARCH_WORKFLOWS.md)](docs/ADVANCED_RESEARCH_WORKFLOWS.md) and
-[docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+[Advanced Research Workflows (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md)](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md) and
+[docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 Chronicle Mermaid output is built from structured nodes and edges, with safe
 label escaping, cycle/orphan repair, collision-resistant IDs, and bounded graph
@@ -883,8 +883,8 @@ explicit error instead of a partial list or a false “no history” result.
 
 Step-by-step tutorials:
 
-- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
-- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
+- English: [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](docs/guides/PIPELINE_MODE_TUTORIAL.en.md)
+- 繁體中文: [docs/guides/PIPELINE_MODE_TUTORIAL.md](docs/guides/PIPELINE_MODE_TUTORIAL.md)
 
 ### 👁️ Vision & Image Search
 
@@ -1266,7 +1266,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 > Do not mirror or split repo skills into `.github/skills/`.
 > These repo skills are project-scoped and should remain version-controlled. Personal cross-project skills belong in a user directory such as `~/.copilot/skills/` or `~/.claude/skills/`, not in this repository.
 
-Research skill installation preserves existing customizations. See the [installation and upgrade policy](docs/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations). Contributors run the [full local gate](CONTRIBUTING.md#what-the-hooks-check) before push; ordinary CI runs a smaller independent smoke gate.
+Research skill installation preserves existing customizations. See the [installation and upgrade policy](docs/guides/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations). Contributors run the [full local gate](CONTRIBUTING.md#what-the-hooks-check) before push; ordinary CI runs a smaller independent smoke gate.
 
 The [completed ten-phase core review](docs/reports/core_review_2026-09-15.md) covers all 223 Python files in `src/pubmed_search/`: 456 classes and 2,445 functions/methods/nested functions. Each of the 2,901 definitions has a recorded decision, evidence, and current file SHA-256; none are pending or stale. This is an authored self-review, separate from test results. Recheck the current tree with `uv run python scripts/perf/symbol_inventory.py --require-reviewed src/`; subsequent source edits invalidate affected reviews. Tests and scripts are inventoried but are outside this complete core-review claim.
 
@@ -1289,7 +1289,7 @@ legacy flat request shapes, and scalar/stringified coercions remain rejected.
 uv run pytest -q tests/test_all_tools_mcp_acceptance.py
 ```
 
-See the [Developer Guide](docs/DEVELOPER_GUIDE.md#complete-mcp-protocol-acceptance)
+See the [Developer Guide](docs/development/DEVELOPER_GUIDE.md#complete-mcp-protocol-acceptance)
 for the test architecture, CI gates, and live-provider boundary.
 
 ---
@@ -1487,8 +1487,8 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 > 📖 **More documentation**:
 >
 > - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
-> - Pipeline tutorial (English) → [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
-> - Pipeline tutorial (zh-TW) → [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
+> - Pipeline tutorial (English) → [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](docs/guides/PIPELINE_MODE_TUTORIAL.en.md)
+> - Pipeline tutorial (zh-TW) → [docs/guides/PIPELINE_MODE_TUTORIAL.md](docs/guides/PIPELINE_MODE_TUTORIAL.md)
 > - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
@@ -1544,12 +1544,16 @@ Export your search results in formats compatible with major reference managers:
 
 ## 📚 Citation
 
+The [publication workspace](docs/publication/README.md) contains the rewritten manuscript, reviewed references, evidence map and local PDF/arXiv source build. It is a working draft without an arXiv identifier; cite the released software below. Author: Tz-Ping Gau, Kaohsiung Medical University Hospital.
+
 GitHub will show **Cite this repository** from [CITATION.cff](CITATION.cff). If you use PubMed Search MCP in research, methods sections, or internal technical reports, prefer the GitHub-generated citation or reuse the repository metadata directly.
 
 ```bibtex
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
-  author = {u9401066},
+  author = {Gau, Tz-Ping},
+  version = {0.7.4},
+  year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }
 ```

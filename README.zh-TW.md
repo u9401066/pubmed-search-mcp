@@ -24,11 +24,11 @@
 
 **🌐 語言**: [English](README.md) | **繁體中文**
 
-**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](docs/USER_GUIDE.zh-TW.md) | [進階研究工作流](docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) | [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [Unified Search 架構](docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md) | [41 工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md) | [60 個學術檢索參考 Repo](docs/reference-repositories/README.md) | [Provider 資料平面](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP 架構分析](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](docs/guides/USER_GUIDE.zh-TW.md) | [進階研究工作流](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) | [能力導向使用指南](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md) | [Unified Search 架構](docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md) | [41 工具品質稽核](docs/research/TOOL_QUALITY_AUDIT.zh-TW.md) | [60 個學術檢索參考 Repo](docs/reference-repositories/README.md) | [Provider 資料平面](docs/providers/SEMANTIC_SCHOLAR_API.md) | [BioMCP 架構分析](docs/research/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [開發者指南](docs/development/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 [文件分類索引](docs/README.md) · [維護腳本分類](scripts/README.md)
 
-研究 skill 安裝會保留既有自訂內容；請見[安裝與更新規則](docs/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations)。開發者應在 push 前執行[本機完整驗證](CONTRIBUTING.md#what-the-hooks-check)，一般 CI 僅保留獨立 smoke 檢查。
+研究 skill 安裝會保留既有自訂內容；請見[安裝與更新規則](docs/guides/INTEGRATIONS.md#installing-research-skills-without-replacing-user-customizations)。開發者應在 push 前執行[本機完整驗證](CONTRIBUTING.md#what-the-hooks-check)，一般 CI 僅保留獨立 smoke 檢查。
 
 [十階段核心審查](docs/reports/core_review_2026-09-15.md)與 [v0.7.4 複查](docs/reports/release_v074_2026-09-18.md)涵蓋 `src/pubmed_search/` 全部 224 個 Python 檔案：458 個 class、2,456 個 function／method／nested function，合計 2,914 個定義。每項都有撰寫的自審理由、證據及目前檔案 SHA-256，沒有 pending 或過期紀錄；未變更的定義保留先前審查及來源紀錄。可執行 `uv run python scripts/perf/symbol_inventory.py --require-reviewed src/` 重新核對；後續修改會使受影響的審查失效。測試通過與語意審查分開計算，tests／scripts 不包含在這項核心全量完成宣告內。
 
@@ -53,12 +53,12 @@ Pipeline 改為依賴完成即可繼續，API 請求頻率上限維持不變。
 這次改進查詢相關性排序與融合、跨來源文獻去重、書目驗證、章節篩選與快取並行抓取，
 維持既有 41 個 MCP 工具介面。
 
-[Benchmark 報告](docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md) 分開量測元件品質與完整
+[Benchmark 報告](docs/research/ACADEMIC_RETRIEVAL_BENCHMARKS.md) 分開量測元件品質與完整
 Agent 套件效果。先前公開 BEIR NFCorpus 的 BM25 元件實驗，test nDCG@10 從
 **0.293357 提高至 0.297831**；這不是本版完整 Agent 的成績。原生 Codex／套件的
 三題 pilot 不足以證明整體增益，完整 5,000 題評測已設定，尚未啟動長跑。
 
-[可靠性稽核](docs/REPOSITORY_RELIABILITY_AUDIT.md) 提供缺陷重現、驗證範圍與版本
+[可靠性稽核](docs/research/REPOSITORY_RELIABILITY_AUDIT.md) 提供缺陷重現、驗證範圍與版本
 fingerprints。引用驗證確認書目一致性，論文是否支持某項論述仍需閱讀相關原文。
 
 ## 🚀 快速安裝
@@ -137,7 +137,7 @@ Protocol baseline 是 MCP SDK v2（`mcp>=2.0,<3`）。現代 2026-07-28 client �
 本機模式保留 filesystem 能力；認證 service caller 不能載入 `file:` pipeline、選擇 note
 `output_dir`/`template_file`，也不繼承 process-wide pipeline workspace。Note 回應只提供
 tenant-relative logical locator，絕不暴露 server filesystem path；service Compose
-scheduler 會停用。完整能力矩陣見 [整合與維運指南](docs/INTEGRATIONS.md)。
+scheduler 會停用。完整能力矩陣見 [整合與維運指南](docs/guides/INTEGRATIONS.md)。
 
 ---
 
@@ -335,7 +335,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額（10 req/s vs 3 req/s）。
-> 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
+> 📖 **完整整合指南**：詳見 [docs/guides/INTEGRATIONS.md](docs/guides/INTEGRATIONS.md)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
 
 ---
 
@@ -486,7 +486,7 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 
 如果你想真正理解這 41 個工具怎麼用，不要從背工具名開始。
 
-先看[工具使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md)：它把目前 41 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
+先看[工具使用指南](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md)：它把目前 41 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
 ### 🔍 搜尋與查詢智能
 
@@ -561,9 +561,9 @@ PubMed、Europe PMC、Scopus 與 Web of Science 在本版仍是 keyword-only；�
 這些來源的 systematic 請求會在 I/O 前失敗，不會把單頁結果誤標為
 systematic coverage。
 
-Provider 上限與 operator data-plane 邊界見[Source Contracts](docs/SOURCE_CONTRACTS.md)、
-[Semantic Scholar](docs/SEMANTIC_SCHOLAR_API.md) 與
-[OpenAlex](docs/OPENALEX_API.md)。
+Provider 上限與 operator data-plane 邊界見[Source Contracts](docs/architecture/SOURCE_CONTRACTS.md)、
+[Semantic Scholar](docs/providers/SEMANTIC_SCHOLAR_API.md) 與
+[OpenAlex](docs/providers/OPENALEX_API.md)。
 
 ### 🔬 探索工具（找到關鍵論文後）
 
@@ -654,7 +654,7 @@ read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazol
 read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。完整指南見 [進階研究工作流 (docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與規格 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。完整指南見 [進階研究工作流 (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與規格 [docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 Chronicle Mermaid 由結構化 node/edge 生成，會自動跳脫 label、修正循環與孤兒 parent、避免 ID 碰撞並限制圖形大小；rich 圖失敗時依序降級為 safe 與 minimal syntax，不會讓整份 chronicle 建立失敗。`mermaid_validation.json` 記錄每個 correction、fallback 與被摘要的視覺項目，`chronicle.mmd` 則維持純 Mermaid source。
 
@@ -791,8 +791,8 @@ error，不會跳過後假裝是完整清單或「沒有歷史」。
 
 逐步教學：
 
-- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
-- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
+- 繁體中文: [docs/guides/PIPELINE_MODE_TUTORIAL.md](docs/guides/PIPELINE_MODE_TUTORIAL.md)
+- English: [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](docs/guides/PIPELINE_MODE_TUTORIAL.en.md)
 
 ### 👁️ 視覺搜尋與圖片搜尋
 
@@ -1186,7 +1186,7 @@ uv run pytest -q tests/test_all_tools_mcp_acceptance.py
 ```
 
 測試架構、CI gates 與 live-provider 邊界請見
-[開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md#完整-mcp-protocol-acceptance)。
+[開發者指南](docs/development/DEVELOPER_GUIDE.zh-TW.md#完整-mcp-protocol-acceptance)。
 
 ---
 
@@ -1382,8 +1382,8 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 > 📖 **更多文件**:
 >
 > - 架構 → [ARCHITECTURE.md](ARCHITECTURE.md)
-> - Pipeline Mode 教學（繁中） → [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
-> - Pipeline Mode 教學（English） → [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
+> - Pipeline Mode 教學（繁中） → [docs/guides/PIPELINE_MODE_TUTORIAL.md](docs/guides/PIPELINE_MODE_TUTORIAL.md)
+> - Pipeline Mode 教學（English） → [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](docs/guides/PIPELINE_MODE_TUTORIAL.en.md)
 > - 部署指南 → [DEPLOYMENT.md](DEPLOYMENT.md)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
@@ -1439,12 +1439,16 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 ## 📚 引用
 
+[論文與引用工作區](docs/publication/README.md) 提供完整改寫稿、核對過的參考文獻、證據對照表與本機 PDF／arXiv 原始碼建置。稿件尚未投稿、沒有 arXiv 編號；目前請引用下方已發布軟體。作者沿用 Tz-Ping Gau／Kaohsiung Medical University Hospital。
+
 GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。若你在論文、methods section、技術報告或內部研究文件中使用 PubMed Search MCP，建議直接使用 GitHub 產生的引用格式，或重用這份 repository citation metadata。
 
 ```bibtex
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
-  author = {u9401066},
+  author = {Gau, Tz-Ping},
+  version = {0.7.4},
+  year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }
 ```

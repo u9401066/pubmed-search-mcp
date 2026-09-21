@@ -140,7 +140,7 @@ flowchart LR
 排程只移除無關分支之間的等待，上游請求仍經共用 transport 的併發與速率限制。
 NCBI 共用單一 operation 名額；一般 BaseAPIClient 來源預設共用兩個名額。
 429 的完整冷卻時間對同一 event loop 的其他 caller 生效；跨 process 部署須另行協調配額。
-詳見 [provider protection](docs/SOURCE_CONTRACTS.md#scheduling-and-upstream-protection)
+詳見 [provider protection](docs/architecture/SOURCE_CONTRACTS.md#scheduling-and-upstream-protection)
 與 [前後量測](docs/reports/search_execution_2026-09-18.md)。
 
 ### Provider-aware broker 的實際資料流
@@ -709,7 +709,7 @@ flowchart LR
 ## 相關文件
 
 - [DEPLOYMENT.md](DEPLOYMENT.md): 實際部署與啟動方式
-- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): 各 MCP client 設定
-- [docs/REPO_SEPARATION_PRINCIPLES.md](docs/REPO_SEPARATION_PRINCIPLES.md): structural / semantic、policy / runtime、tool / service 的 repo 級分離原則
-- [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
+- [docs/guides/INTEGRATIONS.md](docs/guides/INTEGRATIONS.md): 各 MCP client 設定
+- [docs/development/REPO_SEPARATION_PRINCIPLES.md](docs/development/REPO_SEPARATION_PRINCIPLES.md): structural / semantic、policy / runtime、tool / service 的 repo 級分離原則
+- [docs/archive/design/PIPELINE_PERSISTENCE_DESIGN.md](docs/archive/design/PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
 - [src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md): 工具索引

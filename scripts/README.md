@@ -7,6 +7,8 @@ policy is in [CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS](../AGENTS.md).
 | --- | --- |
 | Required local gates | `check_repo.py full` before push; `check_repo.py smoke` is the smaller independent CI gate |
 | Documentation generation | `build_docs_site.py`, `build_github_wiki.py`, `count_mcp_tools.py --update-docs` |
+| File ownership and placement | `check_repository_layout.py --output build/repository-layout.json`; rejects unclassified new files locally |
+| Publication artifacts | `build_publication.py`; validates frozen evidence, builds tables/PDF and an arXiv source bundle under `build/publication/` |
 | Semantic review inventory | `perf/symbol_inventory.py --require-reviewed src/` checks existing authored reviews against current files |
 | Structural inspection | `perf/complexity_scan.py`, `perf/import_surface_audit.py`; findings require human/agent review |
 | Offline execution latency | `perf/search_execution.py --output scripts/_tmp/latency.json`; compare with `--baseline <prior.json>` |
@@ -19,5 +21,8 @@ policy is in [CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS](../AGENTS.md).
 `perf/` contains inspection and performance experiments; `hooks/` contains
 repository validation and tool-specific hook adapters. Keep their established
 paths because pre-commit, contributor docs and integrations invoke them.
-Use ignored `scripts/_tmp/` for disposable output and [docs/reports](../docs/reports/README.md)
+Use ignored `build/` for generated publication/Wiki/inventory output. Keep one-off
+executable inspection scripts outside the repo (for example `/tmp/`) so recursive
+Python checks do not mistake them for maintained scripts. Use `scripts/_tmp/`
+for disposable data/logs and [docs/reports](../docs/reports/README.md)
 for reviewed evidence. Avoid a new cloud job for a benchmark that can run locally.

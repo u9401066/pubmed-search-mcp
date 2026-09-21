@@ -2,7 +2,7 @@
 
 Quick reference for all 41 available MCP tools. Auto-generated from `tool_registry.py`.
 
-Use `docs/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just the raw inventory.
+Use `docs/guides/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just the raw inventory.
 
 ---
 

@@ -1,7 +1,7 @@
 # Phase 3: 深度+廣度 專業文獻檢索系統
 
 > 歷史設計提案：以下「每次搜尋自動執行」等敘述不代表現行預設。
-> 目前行為請見 [搜尋架構](../../UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md)。
+> 目前行為請見 [搜尋架構](../../architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md)。
 
 > **核心理念**: 每次搜索都深度+廣度，這是專業工具該有的樣子
 > **設計原則**: 簡單搜索 Agent 有其他工具，我們提供專業級體驗
