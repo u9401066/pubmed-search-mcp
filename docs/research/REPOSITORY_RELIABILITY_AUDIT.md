@@ -100,13 +100,13 @@ uv run vulture src/ scripts/ vulture_whitelist.py --min-confidence 80
 - 中英文使用說明與 generated docs site 同步；既有 benchmark 與工作區修改保留。
 
 機器可讀的 source／test fingerprints、逐案例原版與改版狀態及測試摘要，見
-[audit JSON](reports/repository_reliability_audit_2026-09-09.json)。
+[audit JSON](../reports/repository_reliability_audit_2026-09-09.json)。
 
 ## 完整 Agent 評測狀態
 
 上述整合及版本更新會改變 lockfile／evaluator fingerprint，因此發布版已另建
 prepare-only manifest 並通過續跑驗證，見
-[v0.7.2 preflight](reports/papersearchqa_v072_preflight_2026-09-09.json)。
+[v0.7.2 preflight](../reports/papersearchqa_v072_preflight_2026-09-09.json)。
 既有未開始的實驗目錄保持原樣，不以新版檔案覆寫舊協定。
 
 原版 A/B 的 5,000 題 manifest 重新以 `--resume --prepare-only` 驗證成功。

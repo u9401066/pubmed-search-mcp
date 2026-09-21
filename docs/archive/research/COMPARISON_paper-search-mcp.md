@@ -177,7 +177,7 @@ europe_pmc → unpaywall → institutional → core → openalex_oa_locations
 
 我們的 `unified_search` doc 沒有這種「每個 source 的能力光譜」說明。
 
-**做法**：在 `docs/SOURCE_CONTRACTS.md`（已存在）加入類似 matrix。
+**做法**：在 `docs/architecture/SOURCE_CONTRACTS.md`（已存在）加入類似 matrix。
 
 #### F. 一致 Paper schema 對外輸出
 

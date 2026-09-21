@@ -73,7 +73,7 @@ Pipeline RRF 原本對同一清單中的每個 duplicate 都加分，可能使�
 
 test nDCG@10 相對提高約 **1.53%**。以 query 為單位的 paired bootstrap（10,000 次，seed 20260909），差值的 95% percentile interval 為 **[0.001049, 0.008004]**。49 個 query 改善、33 個下降、241 個不變，所以不能宣稱每個搜尋都變好。test Recall@100 interval 為 **[-0.000810, 0.002008]**，仍涵蓋零；召回改善不能作為確定結論。這是單資料集的探索性比較，沒有跨資料集泛化保證。
 
-完整彙總、四項主要指標的逐查詢配對、資料與程式 fingerprints 儲存在 [機器可讀評測紀錄](reports/academic_retrieval_benchmark_2026-09-09.json)。BM25 實測不涵蓋 balanced 多維排序、pipeline RRF 或 Agent 行為；後兩項修正目前的證據是確定性的行為回歸測試。
+完整彙總、四項主要指標的逐查詢配對、資料與程式 fingerprints 儲存在 [機器可讀評測紀錄](../reports/academic_retrieval_benchmark_2026-09-09.json)。BM25 實測不涵蓋 balanced 多維排序、pipeline RRF 或 Agent 行為；後兩項修正目前的證據是確定性的行為回歸測試。
 
 ### 指標定義
 
@@ -217,7 +217,7 @@ B 啟動指定舊版本的原始 production entrypoint，沒有注入假資料�
 每組每題最多 300 秒；B 使用 `dbcf0c88c76e6fac30877ff16a9850232e89bd4e`。
 六次皆正常完成。B 每題實際讀取 `pubmed-quick-search` skill，總共呼叫五次 production MCP；
 沒有強迫 B 放棄原生搜尋。完整逐題輸出、資源統計和 hash 見
-[產品 A/B 實測紀錄](reports/native_codex_product_benchmark_2026-09-09.json)。
+[產品 A/B 實測紀錄](../reports/native_codex_product_benchmark_2026-09-09.json)。
 
 | 指標 | A 原生 Codex | B 原版完整套件 | B−A |
 | --- | ---: | ---: | ---: |
@@ -255,12 +255,12 @@ uv run python scripts/benchmark_product_harness.py /tmp/pubmed-product-benchmark
 ### 完整 5,000 題的準備狀態（尚未啟動）
 
 使用者指定本輪**只完成完整設定與驗證，不啟動長跑**。已建立
-[完整 manifest](reports/papersearchqa_full_manifest_2026-09-09.json) 和
-[準備驗證紀錄／可執行 argv](reports/papersearchqa_full_preflight_2026-09-09.json)。
+[完整 manifest](../reports/papersearchqa_full_manifest_2026-09-09.json) 和
+[準備驗證紀錄／可執行 argv](../reports/papersearchqa_full_preflight_2026-09-09.json)。
 本輪模型呼叫數為 **0**，`progress.json` 的狀態為 `prepared`、attempts 為 0。
 
 v0.7.2 整合與 lockfile 更新後，已另建
-[發布版 preflight](reports/papersearchqa_v072_preflight_2026-09-09.json)，
+[發布版 preflight](../reports/papersearchqa_v072_preflight_2026-09-09.json)，
 重新通過 `--resume --prepare-only`。新舊實驗皆維持 0 次執行，原版 B 仍固定在
 `dbcf0c8`；發布版 preflight 不是原生 Codex 與 v0.7.2 的效果比較。
 
@@ -355,7 +355,7 @@ adapter 可實作的搜尋、讀文和 session 工具，所以**不能以它回�
 2026-09-09 的三題 dev 診斷 pilot：兩組 candidate recall 均為 0.634568、selected recall
 均為 0.144444、selected F1 均為 0.206607；nDCG@10 基本組 0.376406、原版 repo
 0.369072。這僅證實可執行、可配對評分，沒有顯示此窄 profile 的品質增益。
-[固定語料診斷紀錄](reports/frozen_agent_diagnostic_2026-09-09.json)
+[固定語料診斷紀錄](../reports/frozen_agent_diagnostic_2026-09-09.json)
 
 ```bash
 mkdir -p /tmp/pubmed-benchmark-before/src/pubmed_search/infrastructure/evaluation
