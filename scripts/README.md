@@ -10,6 +10,7 @@ policy is in [CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS](../AGENTS.md).
 | File ownership and placement | `check_repository_layout.py --output build/repository-layout.json`; rejects unclassified new files locally |
 | Publication artifacts | `build_publication.py`; validates frozen evidence, builds tables/PDF and an arXiv source bundle under `build/publication/` |
 | Semantic review inventory | `perf/symbol_inventory.py --require-reviewed src/` checks existing authored reviews against current files |
+| Background fulltext cost | `perf/fulltext_prefetch.py --output build/fulltext-prefetch.json`; offline XML wait and unused-request comparison |
 | Structural inspection | `perf/complexity_scan.py`, `perf/import_surface_audit.py`; findings require human/agent review |
 | Offline execution latency | `perf/search_execution.py --output scripts/_tmp/latency.json`; compare with `--baseline <prior.json>` |
 | Retrieval quality and harness evaluation | `benchmark_retrieval.py`, `benchmark_product_harness.py`, `benchmark_agent_harness.py`; agent runs require an explicit execution budget |

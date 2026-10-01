@@ -325,6 +325,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
 | `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS` | No | Include server-local artifact paths for trusted local clients | `false` |
 | `PUBMED_FULLTEXT_INLINE_MAX_CHARS` | No | Maximum inline full-text characters before artifact paging | `20000` |
+| `PUBMED_FULLTEXT_PREFETCH_LIMIT` | No | Top-result window (0–3) for explicit `fulltext="prefetch"`; 0 disables background XML | `3` |
 | `PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS` | No | End-to-end deadline shared by every step in one pipeline run (greater than 0, at most 3600 seconds) | `120` |
 | `PUBMED_PIPELINE_MAX_EXTERNAL_CALLS` | No | Aggregate external-call quota shared by sequential and parallel steps in one pipeline run (1–1000) | `40` |
 | `PUBMED_SCHEDULER_ENABLED` | No | Enable the saved-pipeline scheduler for a trusted local process; the authenticated service Compose profile forces it off | `true` |

@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `unified_search(fulltext="prefetch")` prepares known PMC XML for eligible
+  top-three results without waiting. Bound queued work, response size, deadlines
+  and memory; share existing provider limits and disable speculative retries.
+- Reuse tenant/server-scoped XML and in-flight retrieval across fulltext reads,
+  preserving independent section selection and cancellation ownership. Keep
+  search responses compact and avoid polling, PDF/browser/institutional prefetch.
+
+### Fixed
+
+- Skip Unpaywall link enrichment when structured fulltext has already succeeded
+  and `get_fulltext(include_pdf_links=False)` requests only text.
+
 ## [0.7.5] - 2026-10-01
 
 ### Changed

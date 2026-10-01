@@ -623,6 +623,11 @@ boundaries.
 
 ### 📚 Full Text, Figure Extraction & Export
 
+For searches followed by close reading, `unified_search(..., fulltext="prefetch")`
+prepares up to three eligible PMC XML articles in the background. Later
+`get_fulltext` calls share ready/in-flight XML. Default is off; no polling or
+speculative PDF/browser access. [Tradeoffs and limits](docs/design/FULLTEXT_PREFETCH.md).
+
 ![Full text, figures, and biomedical image workflow](docs/images/visual-evidence-workflow.svg)
 
 | Category | Tools |

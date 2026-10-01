@@ -1,0 +1,65 @@
+{
+  "scope": "Offline XML cache/scheduling only; excludes search, network, parsing, model tokens and real article availability.",
+  "recorded_at_utc": "2026-10-01T08:57:11.894334+00:00",
+  "base_revision": "c0f30adc07fe4000bcd568f3c09c40e6b23f90d6",
+  "working_tree_changes": true,
+  "source_sha256": {
+    "src/pubmed_search/application/fulltext/cache.py": "39043d2122f7e3f544747f610d7796975e788c86bacb14d638a553504456f772",
+    "scripts/perf/fulltext_prefetch.py": "f0b9f37c7180e1d675998a5599f1c4b2753d3cb6660cead1acee305c51a92522"
+  },
+  "fixture": {
+    "xml_fetch_ms": 80.0,
+    "selection_delay_ms": 100.0,
+    "repeats": 5
+  },
+  "rows": [
+    {
+      "scenario": "read_one_twice",
+      "mode": "uncached",
+      "foreground_wait_p50_ms": 160.409,
+      "upstream_xml_calls": 2,
+      "unused_xml_calls": 0,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_one_twice",
+      "mode": "demand_cache",
+      "foreground_wait_p50_ms": 80.346,
+      "upstream_xml_calls": 1,
+      "unused_xml_calls": 0,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_one_twice",
+      "mode": "prefetch",
+      "foreground_wait_p50_ms": 0.023,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 2,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "uncached",
+      "foreground_wait_p50_ms": 240.563,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "demand_cache",
+      "foreground_wait_p50_ms": 241.016,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "prefetch",
+      "foreground_wait_p50_ms": 140.637,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    }
+  ]
+}

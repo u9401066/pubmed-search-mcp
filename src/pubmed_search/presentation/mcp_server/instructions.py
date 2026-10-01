@@ -275,6 +275,8 @@ build_citation_tree(pmid="12345678", depth=2, direction="both")
 ═══════════════════════════════════════════════════════════════════════════════
 
 ### 全文取得
+- 預計深入閱讀時，可用 unified_search(fulltext="prefetch") 在背景準備排名前三篇中已有 PMCID 的 XML；一般探索維持預設 off。
+- 選定後以回應列出的 PMCID 呼叫 get_fulltext，共用已完成／進行中的 XML，不必輪詢；只需文字時可用 include_pdf_links=False。
 - get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
 
 ### 文本挖掘

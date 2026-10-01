@@ -24,6 +24,7 @@ paths:
 - `build_research_chronicle` is the single research-evolution entry point; the old timeline tools were folded into it. Use `output="mermaid"` for the horizontal time-spine/lineage map. Preserve warnings from `mermaid_validation.json` when a safe/minimal tier is used or visual items are omitted, and preserve audit warnings for research-stage fallback, capped/unknown source coverage, or at least 20% multi-signal branch overlap. In diffs, absence is `not_observed_in_revision`, never conclusive retirement. Read stored chronicles with `read_research_chronicle` (`load` / `list` / `diff` / `narrate` / `milestones` / `compare`) instead of rebuilding.
 - When `unified_search` returns an `artifact_summary`, preserve the user-facing summary and use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})` for deeper audit files.
 - Use `get_fulltext`, `get_article_figures`, and institutional access tools only when full-text retrieval is requested.
+- For planned close reading, `unified_search(fulltext="prefetch")` prepares bounded XML; use the returned PMCID with `get_fulltext` without polling. See `docs/guides/TOOLS_USAGE_GUIDE.md`; keep prefetch off for broad screening.
 - Export to RIS for Zotero/EndNote and BibTeX for LaTeX workflows.
 
 ## Tenant Isolation Rules

@@ -604,6 +604,10 @@ Provider 上限與 operator data-plane 邊界見[Source Contracts](#/source-cont
 
 ### 📚 全文、圖表擷取與匯出
 
+預計深入閱讀時，可用 `unified_search(..., fulltext="prefetch")`，在背景準備最多三篇符合
+條件的 PMC XML；後續 `get_fulltext` 共用已完成或進行中的內容。預設關閉，不必輪詢，
+也不預抓 PDF 或啟用瀏覽器登入。[效益、成本與限制](design/FULLTEXT_PREFETCH.md)。
+
 ![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
 
 | 類別 | 工具 |

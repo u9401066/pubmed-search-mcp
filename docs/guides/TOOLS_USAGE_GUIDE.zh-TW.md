@@ -203,6 +203,24 @@ DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的�
 
 這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`prepare_figure_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
 
+若預計深入閱讀搜尋結果，可使用 `unified_search(query="...", fulltext="prefetch")`。
+搜尋不等待全文，伺服器會在背景準備排名前三篇中符合條件的開放取用 XML。
+預設 `fulltext="off"`，一般探索不增加預取請求。
+
+選定文章後正常呼叫 `get_fulltext`，優先使用
+`enrichment.fulltext_prefetch.articles` 列出的 PMCID source，直接共用已完成或進行中的
+XML，省去再次解析 PMID 的請求。這是排程當下的快照，**不必輪詢**。
+快取保存 15 分鐘，依穩定租戶與伺服器隔離，重啟後消失；不同章節讀取共用完整 XML。
+
+背景一次只取一篇、含排隊最多 15 秒、不重試，也不預先抓 PDF、圖表或使用機構／瀏覽器登入。
+缺少 PMCID、明確標記非開放取用的結果會跳過；pipeline 呼叫須使用 `fulltext="off"`。
+管理者可設定 `PUBMED_FULLTEXT_PREFETCH_LIMIT=0` 關閉，或用 1–3 縮小候選範圍。
+匿名服務請求不保留跨請求的背景工作與快取。
+
+未閱讀的文章仍可能浪費請求，因此廣泛篩選時應維持關閉；即使不預取，一般全文讀取也會共用
+XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功後便省去額外 OA 連結查詢。
+詳見[完整評估與成本比較](../design/FULLTEXT_PREFETCH.md)。
+
 指定結構化章節時，逗號分隔清單中的空白項目會被忽略，無標題章節也不會誤中具名篩選。
 延伸來源的初始化或關閉失敗，會保留先前已成功取得的全文。
 
