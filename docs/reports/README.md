@@ -14,7 +14,7 @@ test suite is not a measured improvement on a public retrieval benchmark.
 | Agent input contract and automatic correction | [v0.7.5 release review](release_v075_2026-10-01.md), [five-phase contract](../design/AGENT_INPUT_CONTRACT.md) |
 | Fulltext integration release | [v0.7.6 review](release_v076_2026-10-01.md), [updated offline comparison](fulltext_prefetch_v076_2026-10-01.json) |
 | Release follow-up | [v0.7.4 safety review](release_v074_2026-09-18.md) |
-| Released artifact verification | [v0.7.6 publication](release_v076_2026-10-01.json), [v0.7.5 publication](release_v075_2026-10-01.json), [v0.7.4 history](release_v074_2026-09-18.json), [v0.7.3 history](release_v073_2026-09-15.json) |
+| Released artifact verification | [v0.7.7 publication](release_v077_2026-10-01.json), [v0.7.6 publication](release_v076_2026-10-01.json), [v0.7.5 publication](release_v075_2026-10-01.json), [v0.7.4 history](release_v074_2026-09-18.json), [v0.7.3 history](release_v073_2026-09-15.json) |
 | Research Chronicle evaluation | [remimazolam evaluation](research_chronicle_remimazolam_evaluation_report.md) |
 
 Retain dated reports and machine-readable evidence at their original paths.

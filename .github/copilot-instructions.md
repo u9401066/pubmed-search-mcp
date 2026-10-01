@@ -100,7 +100,7 @@ uv run pre-commit autoupdate
 
 **Push 階段自動檢查：**
 - **local-validation**：`uv run --frozen python scripts/check_repo.py full`，依序執行 lint、format、async consistency、mypy、完整非 live pytest（含 wheel/transport）。預設單 process，失敗即停止。
-- **semgrep** 改為 `uv run pre-commit run semgrep --all-files --hook-stage manual`。一般 CI 只跑共用 smoke profile；完整相容性矩陣以手動 extended checks 執行。
+- **semgrep** 改為 `uv run pre-commit run semgrep --all-files --hook-stage manual`。一般 CI 跑共用 smoke profile 與 Windows 實際 PowerShell hook 測試；完整相容性矩陣以手動 extended checks 執行。
 - 測試價值、harness 安裝保留規則以 `AGENTS.md` 與 `CONTRIBUTING.md` 為準。
 
 ```bash
