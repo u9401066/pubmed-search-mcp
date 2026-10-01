@@ -1,14 +1,22 @@
 # Progress (Updated: 2026-10-01)
 
-## 2026-10-01 — v0.7.7 test/CI renovation ready for hosted verification
+## 2026-10-01 — v0.7.7 test/CI renovation, published and verified
 
 - Three implementation phases committed: stronger production/provider/artifact
   smoke; 64 documented weak-test removals; local pretest/cloud release split.
 - Initial full gate: 4,861 passed, 19 skipped, 31 deselected in 125.82 s. Smoke:
   15 passed; documentation checks: 39 passed; mypy: 442 files clean. Fault injection
-  detects altered wheel contents and broken HTTP startup. Timing is not a speedup.
-- Documentation, website/Wiki, MEM and patch metadata updated. Await final push,
-  PR/mainline CI, real container verification and artifact publication evidence.
+  detects altered wheel contents, broken HTTP startup and stale distributions.
+  Timing is not a speedup.
+- PR #24 merged six focused commits at `8247af2`, after the final clean-tree
+  pre-push gate and PR CI. Master CI passed before the annotated `v0.7.7` tag.
+  Ubuntu/Windows each passed 15 smoke cases; Windows passed 13 PowerShell cases.
+- Release run `36851174140` passed exact-artifact smoke (15 cases), the real
+  container HTTP/MCP check and PyPI/GitHub publication. Downloaded wheel/sdist
+  hashes match both services and the local build. Website/Wiki public content
+  and deployments verified; documentation and MEM are complete.
+- The [publication receipt](../docs/reports/release_v077_2026-10-01.json) is a
+  docs-only follow-up; published distributions and release tag remain fixed.
 
 
 ## 2026-10-01 — v0.7.6 integration review, published and verified

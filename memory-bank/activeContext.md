@@ -1,6 +1,6 @@
 # Active Context
 
-## Current Focus — v0.7.7 test/CI renovation, release candidate
+## Current Focus — v0.7.7 test/CI renovation, published and verified
 
 - Updated from master before editing. Replaced mock-only E2E with actual loopback
   HTTP/provider parsing and MCP/search/fulltext/notes/session behavior. Production
@@ -8,13 +8,21 @@
 - Removed 64 reviewed weak/obsolete cases; retained regressions are mapped in the
   [ledger](../docs/reports/test_renovation_removals_v077.json). Full local gate:
   4,861 passed, 19 skipped, 31 deselected; 442 files pass mypy. Fifteen runtime
-  smoke cases pass; altered-wheel and broken-startup probes fail as required.
+  smoke cases pass; altered-wheel, broken-startup and stale-distribution probes
+  fail as required.
 - `pretest` aliases full; reports never bypass execution. CI focuses on Ubuntu/
   Windows smoke. Tag verification tests the exact distribution pair and real
   non-root container after successful mainline CI; full regressions stay local.
-- Testing policy and website/Wiki updated. Segmented commits prepared; merged
-  revision, hosted Docker verification and publication remain to be verified.
-  Docker is absent locally. No live literature APIs or paid benchmark runs.
+- PR #24 merged six focused commits at `8247af2`; annotated tag `v0.7.7` points
+  there. Final clean-tree pre-push and PR/master CI passed. Ubuntu and Windows
+  each passed 15 smoke cases; Windows also passed 13 real PowerShell hook cases.
+- Release run `36851174140` passed exact-distribution smoke, real container
+  HTTP/MCP verification and both publication jobs. PyPI/GitHub wheel and sdist
+  downloads match each other and the local build. Website/Wiki deployment and
+  public content verified. Docker was tested in the hosted runner, not locally.
+- The [publication receipt](../docs/reports/release_v077_2026-10-01.json) records
+  completed evidence. This docs-only follow-up leaves the tag/artifacts fixed.
+  No live literature APIs or paid benchmark runs were performed.
 - [Phased review](../docs/reports/release_v077_2026-10-01.md) records scope and limits;
   full-suite timing is essentially unchanged, so no local speedup is claimed.
 

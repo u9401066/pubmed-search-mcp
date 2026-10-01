@@ -1,0 +1,272 @@
+{
+  "version": "0.7.7",
+  "publication": "verified",
+  "verified_at_utc": "2026-10-01T10:55:04.790683+00:00",
+  "release_commit": "8247af2a5bc53e218c1f1e5b310c45535e11368c",
+  "tag": "v0.7.7",
+  "tag_type": "annotated",
+  "pr": "https://github.com/u9401066/pubmed-search-mcp/pull/24",
+  "branch_head": "a477ed2c7b0e8260b960dabaf9e52aa2bcd5c449",
+  "segmented_commits": 6,
+  "max_paths_per_commit": 20,
+  "commits": [
+    {
+      "commit": "b0522760d4f67c708e2aa04abb794a548feb0a17",
+      "subject": "test: exercise production MCP workflows and exact release artifacts",
+      "paths": 8
+    },
+    {
+      "commit": "d569fa1838cb15dd3074ddfb9de40ea5def7e43e",
+      "subject": "test: remove 64 vacuous or superseded cases with review evidence",
+      "paths": 14
+    },
+    {
+      "commit": "68c63cd3f782233932ae5874ea13198d3f37b14e",
+      "subject": "ci: move deterministic gates to pretest and verify real release boundaries",
+      "paths": 20
+    },
+    {
+      "commit": "3ceea6264a0d0546a93b5816787805ffbb041b58",
+      "subject": "release: prepare v0.7.7 test and CI renovation",
+      "paths": 17
+    },
+    {
+      "commit": "d6f775dd1f297db64e2cb57ba209d321c15b9eca",
+      "subject": "test: reject stale distributions before release installation",
+      "paths": 6
+    },
+    {
+      "commit": "a477ed2c7b0e8260b960dabaf9e52aa2bcd5c449",
+      "subject": "ci: retain real PowerShell hook contracts on Windows",
+      "paths": 8
+    }
+  ],
+  "local_validation": {
+    "full_suite": {
+      "passed": 4861,
+      "skipped": 19,
+      "deselected": 31,
+      "count_evidence": "Initial integrated suite; unchanged collected tests through final pre-push"
+    },
+    "final_pre_push": {
+      "schema_version": 1,
+      "profile": "full",
+      "status": "passed",
+      "started_at": "2026-10-01T10:44:44.338575+00:00",
+      "python": "3.10.12",
+      "platform": "Linux-5.15.0-177-generic-x86_64-with-glibc2.35",
+      "commit": "a477ed2c7b0e8260b960dabaf9e52aa2bcd5c449",
+      "dirty": false,
+      "steps": [
+        {
+          "command": [
+            "ruff",
+            "check",
+            "src/",
+            "tests/",
+            "scripts/",
+            "run_server.py",
+            "run_copilot.py"
+          ],
+          "returncode": 0,
+          "seconds": 0.027
+        },
+        {
+          "command": [
+            "ruff",
+            "format",
+            "--check",
+            "src/",
+            "tests/",
+            "scripts/",
+            "run_server.py",
+            "run_copilot.py"
+          ],
+          "returncode": 0,
+          "seconds": 0.022
+        },
+        {
+          "command": [
+            "python",
+            "scripts/check_async_tests.py"
+          ],
+          "returncode": 0,
+          "seconds": 0.448
+        },
+        {
+          "command": [
+            "python",
+            "scripts/check_repository_layout.py"
+          ],
+          "returncode": 0,
+          "seconds": 0.034
+        },
+        {
+          "command": [
+            "python",
+            "scripts/build_publication.py",
+            "--prepare-only",
+            "--output",
+            "build/publication-preflight"
+          ],
+          "returncode": 0,
+          "seconds": 0.036
+        },
+        {
+          "command": [
+            "python",
+            "scripts/perf/symbol_inventory.py"
+          ],
+          "returncode": 0,
+          "seconds": 0.931
+        },
+        {
+          "command": [
+            "mypy",
+            "src/",
+            "tests/"
+          ],
+          "returncode": 0,
+          "seconds": 0.242
+        },
+        {
+          "command": [
+            "pytest",
+            "-q",
+            "tests/",
+            "-m",
+            "not integration and not container"
+          ],
+          "returncode": 0,
+          "seconds": 127.362
+        }
+      ],
+      "finished_at": "2026-10-01T10:46:53.447691+00:00"
+    },
+    "exact_artifact_smoke": "15 passed",
+    "reviewed_removed_tests": 64,
+    "negative_detectors": 3,
+    "documentation_checks": "39 passed",
+    "mypy_files": 442,
+    "tools": 41
+  },
+  "publication_validation": {
+    "python313_exact_artifact_smoke": {
+      "passed": 15,
+      "seconds": 27.58
+    },
+    "real_container_http_mcp": {
+      "passed": 1,
+      "seconds": 6.92
+    },
+    "mainline_windows_powershell": "13 passed, 13 deselected"
+  },
+  "publication_run": {
+    "id": 36851174140,
+    "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36851174140",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Verify tag, exact distributions, and container",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified GitHub Release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.7",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.7/",
+  "ci_runs": {
+    "ci.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36850926354,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "8247af2a5bc53e218c1f1e5b310c45535e11368c",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36850926354"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 36850624454,
+        "event": "pull_request",
+        "headBranch": "release/v0.7.7",
+        "headSha": "a477ed2c7b0e8260b960dabaf9e52aa2bcd5c449",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36850624454"
+      }
+    ],
+    "pages.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36850926260,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "8247af2a5bc53e218c1f1e5b310c45535e11368c",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36850926260"
+      }
+    ],
+    "wiki.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36850926249,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "8247af2a5bc53e218c1f1e5b310c45535e11368c",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36850926249"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "filename": "pubmed_search_mcp-0.7.7-py3-none-any.whl",
+      "sha256": "3370d7bfd9c10eee3016e9ea03d072647e939c325fd8b8c4ca15d5ad31647cf8",
+      "bytes": 876224,
+      "pypi_url": "https://files.pythonhosted.org/packages/fa/33/d5e8d704cf74fb7ea08777ea73ff5343ee526648d87e5878d360d8844c05/pubmed_search_mcp-0.7.7-py3-none-any.whl",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.7/pubmed_search_mcp-0.7.7-py3-none-any.whl",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.7.tar.gz",
+      "sha256": "0ec24e4744ee0670a92bc139178cf73492d4bee6bc48bbaef77cfc3b9bdf9afe",
+      "bytes": 766333,
+      "pypi_url": "https://files.pythonhosted.org/packages/1f/4b/155015487ab7cd2d7626197b734a2b85bd22af899ca446644a199500e5a4/pubmed_search_mcp-0.7.7.tar.gz",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.7/pubmed_search_mcp-0.7.7.tar.gz",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    }
+  ],
+  "documentation": {
+    "website": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/?release=v0.7.7",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "93265ad813890924cc3f7f2eeeaadd437819c496458dda8c14fa133b6b62862d"
+    },
+    "website_testing": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site-content/testing.md?v=20261001-v077",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "78131795754c2c383d9bae4323c7f70c9f7672ad9cf83ae18c6d3b40deb944f3"
+    },
+    "website_navigation": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site.js?v=20261001-v077",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "bb2e22d1a7d29d04fd1e8b3d06722cceeacb8a45dfa22742287d2624620da66c"
+    },
+    "wiki_testing": {
+      "url": "https://raw.githubusercontent.com/wiki/u9401066/pubmed-search-mcp/Testing.md",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "16dd03234fc74d809c9229b949ff80ca824c14439a3c42a6ecf5d665721f2eec"
+    }
+  },
+  "scope": "Test/CI renovation with real production entrypoints and synthetic provider HTTP fixtures; no live-provider or model efficacy benchmark. Publication records are a docs-only follow-up; tag and distributions remain fixed."
+}
