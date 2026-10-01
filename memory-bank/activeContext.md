@@ -1,6 +1,32 @@
 # Active Context
 
-## Current Focus — repository classification and manuscript overhaul (2026-09-21)
+## Current Focus — v0.7.5 agent input contract release (2026-10-01)
+
+- User authorized a final review, remaining fixes, documentation/website/MEM
+  updates, segmented commits, push and publication of the agreed v0.7.5 patch.
+  Release branch: `release/v0.7.5`; publication is pending CI and tag verification.
+- All 41 tools share schema-derived correction of declared containers, numeric
+  strings, explicit boolean text and unambiguous enum spelling. Shared typed
+  PMID/PMCID/DOI/NCBI contracts validate identifiers before tool execution.
+- Structured input errors use safe JSON Pointers, exact codes/constraints and
+  `executed: false` only at argument validation. Errors inside tools cannot
+  imply that writes did not execute. Bad batches never execute partially.
+- Follow-up review preserved JSON parser error codes through typed batch
+  validators, fixed numeric unions and protected free-text union semantics.
+  Input-contract regressions are now included in ordinary CI smoke.
+- Plan/contract: [agent input contract](../docs/design/AGENT_INPUT_CONTRACT.md).
+  User formats: [usage guide](../docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md#輸入格式與防呆).
+- Final release full gate: **4,882 passed, 23 skipped, 30 live tests deselected**
+  (134.54 s), plus lint/format/async/layout/publication/mypy checks. Wheel/sdist
+  build, skills and generated documentation checks pass.
+- This release also includes the nine already-committed September documentation/
+  publication-organization changes inherited by this branch. Historical source
+  review ledgers and benchmark results remain historical; this focused patch
+  does not claim a new whole-core semantic review or agent efficacy benchmark.
+- This checkout is standalone (no Git superproject); no parent submodule pointer
+  or downstream extension pin is changed as part of this package release.
+
+## Previous Focus — repository classification and manuscript overhaul (2026-09-21)
 
 - User requested whole-repo file organization and a complete revision of the
   planned citation/arXiv paper; confirmed original author and affiliation:

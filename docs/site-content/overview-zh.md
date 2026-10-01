@@ -39,6 +39,13 @@
 
 ---
 
+## 共用輸入防呆 — v0.7.5
+
+全部 41 個工具共用自動校正：JSON 容器、十進位數字字串、明確布林文字、enum
+大小寫與生醫識別碼。Schema 公開可接受格式；執行前的參數錯誤提供精確欄位路徑
+與修正條件，並完成整套工具的原生／自動校正輸入及一次修正重試驗證。
+詳見[輸入格式與防呆](#/tools-usage-guide-zh#%E8%BC%B8%E5%85%A5%E6%A0%BC%E5%BC%8F%E8%88%87%E9%98%B2%E5%91%86)。
+
 ## 上游保護與排程修正 — v0.7.4
 
 Pipeline 改為依賴完成即可繼續，API 請求頻率上限維持不變。
@@ -1183,7 +1190,7 @@ services、persistence、artifacts、Chronicle revisions、pipelines 與 schedul
 CI 還會把 MCP 實際回傳的 Chronicle 與 citation Mermaid source 交給固定版
 Mermaid 11.16.1 render；presentation layer 的小語法破壞也會讓 gate 失敗。
 另一條 real-stdio rejection pass 會確認 retired tool names、legacy flat request
-shapes 與 scalar/stringified coercions 仍被拒絕。
+shapes、意義不明的 scalar 值與 malformed containers 仍被拒絕。
 
 ```bash
 uv run pytest -q tests/test_all_tools_mcp_acceptance.py
@@ -1451,7 +1458,7 @@ GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/bl
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.4},
+  version = {0.7.5},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

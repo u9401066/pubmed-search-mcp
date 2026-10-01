@@ -1,4 +1,19 @@
-# Progress (Updated: 2026-09-21)
+# Progress (Updated: 2026-10-01)
+
+## 2026-10-01 — v0.7.5 agent input contract, release preparation
+
+- Completed the five phases: shared field types, matching transport schemas,
+  safe structured errors, automatic format correction, and real MCP acceptance.
+- Each all-tool transport pass checks published schemas, 41 pre-execution
+  rejections with one successful repair per tool, and 60 successful semantic calls.
+- Reviewed and fixed typed PMID JSON diagnostics, integer/number union handling,
+  and free-text union preservation. Arbitrary validation contexts remain private.
+- The final release full gate passed **4,882 tests** (23 skipped, 30 live tests
+  deselected; 134.54 s), plus all lint/type/layout/publication checks. Wheel/sdist
+  build and docs/skills sync passed. Live providers are not exercised.
+- User authorized segmented Git commits, push and v0.7.5 publication; record
+  verified PyPI/GitHub/website results only after the workflows complete.
+
 
 ## 2026-09-21 — Repository organization and manuscript revision
 

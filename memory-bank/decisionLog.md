@@ -1,5 +1,29 @@
 # Decision Log
 
+## [2026-10-01] Correct unambiguous MCP representations before validation
+
+### Decision
+
+Use one schema-derived transport boundary for all 41 tools and shared identifier
+annotations backed by domain value objects. Publish accepted representations;
+normalize without changing meaning, then validate everything before execution.
+Keep application orchestration and provider behavior outside this boundary.
+
+### Consequences
+
+- Explicit false text remains false, including write options. Unknown fields,
+  ambiguous values, invalid identifiers and out-of-range values are never silently
+  removed, guessed or clipped. Free-text union branches preserve literal input.
+- Only argument-validation errors may return `executed: false`; no automatic
+  retry follows execution failures. Preserve parser codes through typed validators
+  and expose schema-owned paths/constraints without input values or arbitrary keys.
+- Keep successful response bodies compatible; normalization metadata is additive.
+  All-tool transports and one-repair tests verify the public schema and runtime.
+- v0.7.5 is a patch release; tool metadata contract version advances to 4. Historical
+  benchmark and whole-core review records are not relabeled as this patch's results.
+
+---
+
 ## [2026-09-09] Preserve Evaluation History Across the v0.7.2 Integration
 
 ### Decision

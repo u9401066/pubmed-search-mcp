@@ -34,6 +34,15 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Shared input normalization — v0.7.5
+
+All 41 tools share automatic correction for JSON containers, decimal numeric
+strings, explicit boolean text, enum spelling and biomedical identifiers.
+Published schemas include accepted representations; pre-execution errors provide
+precise field paths and repair constraints. Native and normalized requests are
+verified across all tools, including one corrected retry.
+See [input formats and validation](#/tools-usage-guide#input-formats-and-validation).
+
 ## Provider-safe scheduling — v0.7.4
 
 Pipeline branches now proceed as their dependencies finish while API request-rate
@@ -1287,7 +1296,7 @@ The opt-in extended CI also renders the exact Chronicle and citation Mermaid sou
 MCP with pinned Mermaid 11.16.1, so presentation-layer syntax damage fails the
 gate.
 An additional real-stdio rejection pass confirms that retired tool names,
-legacy flat request shapes, and scalar/stringified coercions remain rejected.
+legacy flat request shapes, ambiguous scalar values, and malformed containers remain rejected.
 
 ```bash
 uv run pytest -q tests/test_all_tools_mcp_acceptance.py
@@ -1556,7 +1565,7 @@ GitHub will show **Cite this repository** from [CITATION.cff](https://github.com
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.4},
+  version = {0.7.5},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }
