@@ -1,11 +1,12 @@
 # Active Context
 
-## Current Focus — v0.7.6 fulltext integration release (2026-10-01)
+## Current Focus — v0.7.6 published and verified (2026-10-01)
 
 - User authorized the focused refactor, merging all work for this feature and
   publishing the next patch, v0.7.6. PR #22 includes the original prefetch changes
   and this follow-up; unrelated PRs are outside this scope. Master was current
-  at `c0f30ad` when this review began. Publication is pending verification.
+  at `c0f30ad` when this review began. All seven feature/review/release commits
+  merged through PR #22; verified release tag `v0.7.6` points to master `e219ecd`.
 - Retain opt-in top-three bounded XML prefetch and shared demand cache. Queued
   speculation becomes foreground work when requested; running XML is joined.
   Provider budgets, deadlines, tenant isolation and cancellation ownership remain.
@@ -20,7 +21,12 @@
   experiment and do not claim WAN, token or agent-performance gains.
 - Focused regressions: 114 passed; all-tool real transport suite: 7 passed;
   mypy: 440 files clean. Full gate: 4,914 passed, 23 skipped, 30 deselected
-  (123.23 s); docs/skills and wheel/sdist build pass. Merge/publication pending.
+  (123.23 s); docs/skills and wheel/sdist build pass. PR/master CI and release
+  workflow `36844790649` passed; Python 3.13: 4,927 passed, 10 skipped, 30 deselected.
+- PyPI and GitHub wheel/sdist downloads match each other and local SHA-256 values.
+  Website and Wiki deploys passed; public content verified. The
+  [publication receipt](../docs/reports/release_v076_2026-10-01.json) preserves
+  the evidence; this docs-only follow-up does not change the fixed release tag.
 
 ## Previous Focus — v0.7.5 published and verified (2026-10-01)
 

@@ -1,0 +1,176 @@
+{
+  "version": "0.7.6",
+  "publication": "verified",
+  "verified_at_utc": "2026-10-01T09:56:48.447978+00:00",
+  "release_commit": "e219ecd1c7858bdeb52fa2aa210b7a057788f56a",
+  "tag": "v0.7.6",
+  "tag_type": "annotated",
+  "pr": "https://github.com/u9401066/pubmed-search-mcp/pull/22",
+  "branch_head": "546d2bed30fd1c3c5017a709622867f061f8d850",
+  "segmented_commits": 7,
+  "max_paths_per_commit": 25,
+  "commits": [
+    {
+      "commit": "7f1fdab129b7541611e031503f3d28fe600c87d0",
+      "subject": "feat(fulltext): add bounded XML prefetch and shared demand retrieval",
+      "paths": 21
+    },
+    {
+      "commit": "e1d41c3fb202f9040d0a3c7d0c6ad552347e4dff",
+      "subject": "docs(fulltext): explain prefetch tradeoffs and publish offline evidence",
+      "paths": 25
+    },
+    {
+      "commit": "5d27064062be43f1741d96c5adf2e96049fb91d1",
+      "subject": "docs(memory): record bounded fulltext decision and validation",
+      "paths": 4
+    },
+    {
+      "commit": "44fdde1b9c5be9f9e7ef4e8cfbe4d52d7bfbd6cf",
+      "subject": "fix(fulltext): prioritize requested XML and report missing body sections",
+      "paths": 12
+    },
+    {
+      "commit": "8bfb37faf32f7c7e40cbc440413485fb5182d501",
+      "subject": "docs(fulltext): document read handoffs and v0.7.6 integration evidence",
+      "paths": 18
+    },
+    {
+      "commit": "775a7f7977e1f96b664f6dcef693467fabad916d",
+      "subject": "chore(release): prepare v0.7.6",
+      "paths": 8
+    },
+    {
+      "commit": "546d2bed30fd1c3c5017a709622867f061f8d850",
+      "subject": "fix(fulltext): validate prefetch mode and align agent read examples",
+      "paths": 11
+    }
+  ],
+  "local_validation": {
+    "python310_full": {
+      "passed": 4914,
+      "skipped": 23,
+      "deselected": 30,
+      "seconds": 123.23
+    },
+    "focused_regressions": 114,
+    "website_and_extended_fulltext_regressions": 50,
+    "real_transports": 7,
+    "tools": 41,
+    "semantic_calls_per_transport": 60,
+    "pre_push_full_gate": "passed",
+    "lint_format_async_layout_publication_inventory_mypy": "passed"
+  },
+  "publication_validation": {
+    "python313_full": {
+      "passed": 4927,
+      "skipped": 10,
+      "deselected": 30,
+      "seconds": 165.37
+    },
+    "installed_wheel_smoke": "passed",
+    "container_build_and_smoke": "passed"
+  },
+  "publication_run": {
+    "id": 36844790649,
+    "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36844790649",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Verify tag, tests, and distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified GitHub Release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.6",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.6/",
+  "ci_runs": {
+    "ci.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36844636219,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "e219ecd1c7858bdeb52fa2aa210b7a057788f56a",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36844636219"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 36844503470,
+        "event": "pull_request",
+        "headBranch": "feat/bounded-fulltext-prefetch",
+        "headSha": "546d2bed30fd1c3c5017a709622867f061f8d850",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36844503470"
+      }
+    ],
+    "pages.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36844636221,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "e219ecd1c7858bdeb52fa2aa210b7a057788f56a",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36844636221"
+      }
+    ],
+    "wiki.yml": [
+      {
+        "conclusion": "success",
+        "databaseId": 36844636281,
+        "event": "push",
+        "headBranch": "master",
+        "headSha": "e219ecd1c7858bdeb52fa2aa210b7a057788f56a",
+        "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36844636281"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "filename": "pubmed_search_mcp-0.7.6-py3-none-any.whl",
+      "sha256": "cc6fe2669a4e6411df9a77a81ff46d83048ef03bfe084b5a0bff78bcf9982803",
+      "bytes": 876049,
+      "pypi_url": "https://files.pythonhosted.org/packages/f9/66/53ffc9718e42010304e7c3fa394737445b0734cad80e81d7222d9bed2514/pubmed_search_mcp-0.7.6-py3-none-any.whl",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.6/pubmed_search_mcp-0.7.6-py3-none-any.whl",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.6.tar.gz",
+      "sha256": "98317b8cdb8c41d4f9894aaffcfbe2f38064b0e362daedf7c5a2440f87f991e2",
+      "bytes": 765952,
+      "pypi_url": "https://files.pythonhosted.org/packages/3d/4b/770f15a9250ca5e4e5dc77ff616087ae1ae8d414fe2eb6445ea17bca6180/pubmed_search_mcp-0.7.6.tar.gz",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.6/pubmed_search_mcp-0.7.6.tar.gz",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    }
+  ],
+  "documentation": {
+    "website": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/?release=v0.7.6",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "be683aada4404309d8c6c695c863193df3a6abd5179a2b26d6671da220ac461a"
+    },
+    "website_content": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site-content.js?v=20261001-v076",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "a6d45053a75235f0570aeda8ab029f265ff6f8ba114a61d8698e08017fc2e644"
+    },
+    "wiki_fulltext_guide": {
+      "url": "https://raw.githubusercontent.com/wiki/u9401066/pubmed-search-mcp/Tools-Usage-Guide.md",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "e134d4fd0ef84fb5d665da23ec1d717e4f21841d24083d87af45007b447e659f"
+    }
+  },
+  "scope": "Focused background fulltext integration review; no live-provider load or model efficacy benchmark. Publication records are a docs-only follow-up; the tag and distributions remain fixed."
+}

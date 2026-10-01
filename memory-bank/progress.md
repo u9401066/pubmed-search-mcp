@@ -1,15 +1,22 @@
 # Progress (Updated: 2026-10-01)
 
-## 2026-10-01 — v0.7.6 integration review and patch preparation
+## 2026-10-01 — v0.7.6 integration review, published and verified
 
 - Reviewed the prefetch/read handoff; fixed queued demand priority, section/abstract
   correctness, native read arguments and candidate-limit reporting.
 - Separated application section selection and removed duplicated MCP request
   construction. Added 14 regression cases; focused suite 114 passed, all-tool
   transports 7 passed, mypy 440 files clean. Full gate: 4,914 passed, 23 skipped,
-  30 deselected (123.23 s); website/extended regressions 50 passed. Publication pending.
+  30 deselected (123.23 s); website/extended regressions 50 passed.
 - Updated bilingual docs, website payloads, fulltext skill, release metadata and
-  memory. Historical reports remain unchanged; publication is not yet claimed.
+  memory. Historical reports retain their original results.
+- PR #22 merged seven commits at `e219ecd` after CI; master CI also passed before
+  the annotated `v0.7.6` tag. Release run `36844790649` passed all three jobs;
+  Python 3.13: 4,927 passed, 10 skipped, 30 deselected (165.37 s). Wheel and
+  container smoke passed; downloaded PyPI/GitHub artifacts match local hashes.
+- Website/Wiki deployment and public content verified. The
+  [receipt](../docs/reports/release_v076_2026-10-01.json) records the evidence as a
+  documentation-only follow-up; the published tag/distributions remain fixed.
 
 
 ## 2026-10-01 — Bounded background fulltext optimization
