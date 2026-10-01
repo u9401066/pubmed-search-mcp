@@ -260,12 +260,3 @@ Tree Number(s): C18.452.394.750"""
         assert analysis == {"status": "partial", "attempted": 3, "completed": 2, "failed": 1}
         assert result["suggested_queries"][0]["estimated_count"] == 12
         assert result["suggested_queries"][1]["estimated_count"] is None
-
-    async def test_expand_broader(self):
-        pass
-
-    async def test_expand_narrower(self):
-        pass
-
-    async def test_expand_with_existing_queries(self):
-        pass

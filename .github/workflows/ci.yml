@@ -5,7 +5,6 @@ on:
     branches:
       - master
       - main
-      - release/**
   pull_request:
   workflow_dispatch:
     inputs:
@@ -90,9 +89,13 @@ jobs:
             tests/test_all_tools_mcp_acceptance.py::test_all_tools_through_real_stdio_mcp
 
   quality-and-package:
-    name: Public contracts, docs, and wheel smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    name: Artifact and runtime smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -111,11 +114,27 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --dev --python 3.13
 
-      # Full validation belongs to the local pre-push gate. Keep an independent
-      # clean-environment public-contract check for bypassed hooks and packaging.
-      # The smoke profile already includes the fresh-wheel acceptance test once.
+      # Lint, types, docs and full regressions run in local pretest. These real
+      # runtime/artifact contracts stay independent of bypassable local hooks.
+      # Windows exercises process/paths that a Linux developer cannot prove.
       - name: Shared smoke gate
         run: uv run --frozen python scripts/check_repo.py smoke
+
+      # These real wrapper processes are skipped on Linux clones without
+      # PowerShell. Keep this environment boundary in CI instead of losing it
+      # when tag publication stops repeating the complete unit suite.
+      - name: Real PowerShell hook processes
+        if: runner.os == 'Windows'
+        run: |
+          Get-Command powershell.exe -ErrorAction Stop | Out-Null
+          uv run --frozen pytest -q tests/test_copilot_hook_integration.py -k powershell
+
+      - name: Preserve smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-${{ matrix.os }}
+          path: build/validation/smoke.json
 
   test-matrix:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_extended_checks }}
@@ -168,11 +187,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Sync smoke driver dependencies
+        run: uv sync --frozen --dev --python 3.13
+
       - name: Build pinned non-root image
         run: docker build --tag pubmed-search-mcp:ci .
 
-      - name: Smoke packaged HTTP entrypoint
-        run: docker run --rm pubmed-search-mcp:ci uv run --no-sync pubmed-search-mcp-http --help
+      - name: Smoke real non-root HTTP service
+        run: uv run --frozen python scripts/check_repo.py container --container-image pubmed-search-mcp:ci
 
   live-integrations:
     name: External API integration probes

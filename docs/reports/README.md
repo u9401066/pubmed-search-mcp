@@ -5,6 +5,7 @@ test suite is not a measured improvement on a public retrieval benchmark.
 
 | Evidence | Start here |
 | --- | --- |
+| Test and CI renovation | [v0.7.7 phased review](release_v077_2026-10-01.md), [64 removals](test_renovation_removals_v077.json), [baseline and detector evidence](test_renovation_v077_2026-10-01.json) |
 | Bounded background fulltext | [assessment and implementation](../design/FULLTEXT_PREFETCH.md), [offline wait/call comparison](fulltext_prefetch_2026-10-01.json) |
 | Repository classification and manuscript overhaul | [2026-09-21 report](repository_publication_overhaul_2026-09-21.md), [publication workspace](../publication/README.md) |
 | Current scheduling, provider safety and document organization | [2026-09-18 report](search_execution_2026-09-18.md), [before](search_execution_2026-09-18_before.json), [after](search_execution_2026-09-18_after.json) |

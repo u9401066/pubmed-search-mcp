@@ -123,32 +123,6 @@ class TestFormatsModuleEdgeCases:
             assert len(result) > 0
 
 
-class TestPicoModuleEdgeCases:
-    """Cover edge cases in pico.py."""
-
-    async def test_pico_module_structure(self):
-        """Test pico module structure."""
-        from pubmed_search.presentation.mcp_server.tools import pico
-
-        assert hasattr(pico, "register_pico_tools")
-
-
-class TestIciteModuleEdgeCases:
-    """Cover edge cases in icite.py."""
-
-    async def test_icite_sorting(self):
-        """Test iCite result sorting."""
-        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
-
-        class TestSearcher(ICiteMixin):
-            pass
-
-        searcher = TestSearcher()
-
-        # Test that method exists
-        assert hasattr(searcher, "get_citation_metrics")
-
-
 class TestBatchModuleEdgeCases:
     """Cover edge cases in batch.py."""
 
@@ -175,21 +149,6 @@ class TestBatchModuleEdgeCases:
             result = await searcher.search_with_history("cancer")
 
             assert result["count"] == 100
-
-
-class TestPdfModuleEdgeCases:
-    """Cover edge cases in pdf.py."""
-
-    async def test_pdf_mixin_methods(self):
-        """Test PDFMixin has expected methods."""
-        from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
-
-        class TestSearcher(PDFMixin):
-            pass
-
-        searcher = TestSearcher()
-
-        assert hasattr(searcher, "get_pmc_fulltext_url")
 
 
 class TestLinksModuleEdgeCases:

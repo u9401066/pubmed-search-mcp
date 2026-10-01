@@ -326,4 +326,5 @@ repos:
         always_run: true
         stages: [pre-push]
         # Single process by default: no forced four-worker memory multiplier.
-        # Includes slow wheel/transport tests. External API probes stay opt-in.
+        # `pretest` is an alias. Includes shared wheel/sdist and real transport smoke.
+        # Reports are evidence, never a skip cache. External API probes stay opt-in.

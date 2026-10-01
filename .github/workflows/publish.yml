@@ -10,12 +10,27 @@ permissions:
 
 jobs:
   verify:
-    name: Verify tag, tests, and distributions
+    name: Verify tag, exact distributions, and container
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout tagged source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require merged source with successful mainline smoke
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          successful=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f event=push \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          test "$successful" -gt 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -50,28 +65,25 @@ jobs:
               raise SystemExit(f"tag {os.environ['RELEASE_TAG']!r} must equal {expected_tag!r}")
           PY
 
-      - name: Quality and documentation gates
-        run: |
-          uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py
-          uv run ruff format --check src/ tests/ scripts/ run_server.py run_copilot.py
-          uv run python scripts/check_async_tests.py
-          uv run mypy src/ tests/
-          uv run pytest -q -m "not integration"
-
+      # Deterministic source checks already belong to local pretest. Test the
+      # exact files uploaded below, in a clean production-only installation.
       - name: Build distributions
-        run: uv build
+        run: uv build --no-sources
 
-      - name: Install and smoke-test wheel
-        run: |
-          uv venv --python 3.13 .wheel-smoke
-          uv pip install --python .wheel-smoke/bin/python dist/*.whl
-          .wheel-smoke/bin/python -c "import pubmed_search; from pubmed_search.api import PubMedSearchClient"
-          .wheel-smoke/bin/pubmed-search-mcp-http --help
+      - name: Smoke exact wheel and sdist through real MCP
+        run: uv run --frozen python scripts/check_repo.py smoke --release-dist dist
 
       - name: Build and smoke-test container image
         run: |
           docker build --tag pubmed-search-mcp:release .
-          docker run --rm pubmed-search-mcp:release uv run --no-sync pubmed-search-mcp-http --help
+          uv run --frozen python scripts/check_repo.py container --container-image pubmed-search-mcp:release
+
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-verification
+          path: build/validation/*.json
 
       - name: Upload verified distributions
         uses: actions/upload-artifact@v7

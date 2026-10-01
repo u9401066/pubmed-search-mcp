@@ -118,73 +118,6 @@ class TestSearchMixinEdgeCases:
                 await search_mixin.search_page(query="test")
 
 
-class TestServerCreateServer:
-    """Tests for server creation function."""
-
-    async def test_create_server_basic(self):
-        """Test creating server with basic parameters."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-        from pubmed_search.presentation.mcp_server.server import create_server
-
-        with (
-            patch.object(LiteratureSearcher, "__init__", return_value=None),
-            patch.object(SearchStrategyGenerator, "__init__", return_value=None),
-            patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
-            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
-        ):
-            mock_mcp.return_value = MagicMock()
-
-            server = create_server(email="test@example.com")
-
-            assert server is not None
-
-    async def test_create_server_with_security_disabled(self):
-        """Test creating server with security disabled."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-        from pubmed_search.presentation.mcp_server.server import create_server
-
-        with (
-            patch.object(LiteratureSearcher, "__init__", return_value=None),
-            patch.object(SearchStrategyGenerator, "__init__", return_value=None),
-            patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
-            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
-        ):
-            mock_mcp.return_value = MagicMock()
-
-            server = create_server(email="test@example.com", disable_security=True)
-
-            assert server is not None
-
-    async def test_create_server_with_api_key(self):
-        """Test creating server with API key."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-        from pubmed_search.presentation.mcp_server.server import create_server
-
-        with (
-            patch.object(LiteratureSearcher, "__init__", return_value=None),
-            patch.object(SearchStrategyGenerator, "__init__", return_value=None),
-            patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
-            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
-        ):
-            mock_mcp.return_value = MagicMock()
-
-            server = create_server(email="test@example.com", api_key="test_api_key")
-
-            assert server is not None
-
-
 class TestExportToolsFunctions:
     """Tests for export tool functions."""
 
@@ -334,46 +267,6 @@ class TestSessionManagerCoverage:
             assert "12345" in session.cached_pmids
             assert manager.get_cached_article("12345") is not None
             assert not hasattr(session, "article_cache")
-
-
-class TestStrategyGeneratorEdgeCases:
-    """Tests for strategy generator edge cases."""
-
-    async def test_strategy_generator_init(self):
-        """Test strategy generator initialization."""
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-        generator = SearchStrategyGenerator(email="test@example.com")
-        assert generator is not None
-
-    async def test_strategy_generate_strategies(self):
-        """Test strategy generation with MeSH lookup."""
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-        generator = SearchStrategyGenerator(email="test@example.com")
-
-        # Test that correct method exists
-        assert hasattr(generator, "generate_strategies")
-
-
-class TestClientCoverage:
-    """Additional tests for client.py coverage."""
-
-    async def test_literature_searcher_init(self):
-        """Test LiteratureSearcher initialization."""
-        from pubmed_search import LiteratureSearcher
-
-        searcher = LiteratureSearcher(email="test@example.com")
-
-        assert searcher is not None
-
-    async def test_literature_searcher_with_api_key(self):
-        """Test LiteratureSearcher with API key."""
-        from pubmed_search import LiteratureSearcher
-
-        searcher = LiteratureSearcher(email="test@example.com", api_key="test_key")
-
-        assert searcher is not None
 
 
 class TestCommonModuleMoreCoverage:

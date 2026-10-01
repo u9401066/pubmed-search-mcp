@@ -15,6 +15,7 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         assert (tmp_path / page).exists()
 
     expected_pages = {
+        "Testing.md",
         "Publication.md",
         "Home.md",
         "_Sidebar.md",

@@ -147,39 +147,44 @@ uv run pre-commit run --all-files                  # test all hooks manually
 Run validation **before uploading**:
 
 ```bash
-uv run --frozen python scripts/check_repo.py full
-# The exact smaller gate used by ordinary cloud CI:
+uv run --frozen python scripts/check_repo.py pretest
+# `full` remains an equivalent command and the installed pre-push entrypoint.
 uv run --frozen python scripts/check_repo.py smoke
-# Preview the commands (does not validate anything):
-uv run --frozen python scripts/check_repo.py full --dry-run
+# Preview only; does not validate or write successful evidence:
+uv run --frozen python scripts/check_repo.py pretest --dry-run
 # Optional upstream security rules; Bandit still runs at commit time:
 uv run pre-commit run semgrep --all-files --hook-stage manual
 ```
 
-The full gate also regenerates the Git-visible Python class/function inventory
-and rejects parse gaps. This is coverage accounting, not semantic review approval.
-It checks every non-ignored file against the [ownership map](docs/repository-layout.json)
-and validates the [publication](docs/publication/README.md) evidence and sources
-without compiling TeX or starting an agent/provider benchmark. Put current docs
-in their [document category](docs/README.md); put disposable output under ignored
-`build/` or `scripts/_tmp/`. New top-level files require an explicit ownership rule.
+The complete pretest runs lint, formatting, async consistency, mypy, all non-live
+regressions and real artifact/transport smoke in one pytest process. It also
+checks [file ownership](docs/repository-layout.json), validates the
+[publication evidence](docs/publication/README.md), regenerates the Python symbol
+inventory and rejects parse gaps. Symbol accounting is not semantic review.
 
-The pre-push hook runs the full gate, fails on the first unsuccessful command,
-and defaults to one pytest process. It does not cache success or trust a report
-from another commit. Package build/install checks can require dependency cache
-access; “non-live” means no literature-provider API calls, not an air-gapped build.
-Installing hooks is local to each clone; Git does not distribute active hooks.
-A bypassed hook is not evidence of successful local validation.
+The pre-push hook fails at the first unsuccessful check. Every invocation runs
+against current files; JSON reports in `build/validation/` are evidence, never a
+success cache. Hooks are local to each clone and can be bypassed. Package
+installation may access dependency indexes; non-live does not mean air-gapped.
 
-Ordinary push/PR CI runs **one clean-environment smoke job**, including public
-source/error/provenance contracts, generated documentation, and all-tool MCP
-acceptance over stdio, HTTP, and a fresh wheel. It does not repeat the entire
-unit suite on six platforms. The fresh-wheel test builds and installs its own
-wheel; there is no second duplicate build/install step in ordinary CI.
-Use manual CI `run_extended_checks` for the six-environment compatibility
-matrix, Mermaid rendering, and container smoke, especially before a release or
-a dependency/platform change. Tag publication retains independent full tests,
-package/version checks, and container verification before upload to PyPI.
+Ordinary PR/master CI runs the shared runtime smoke on **Ubuntu and Windows**.
+Windows also executes 13 real PowerShell hook cases unavailable on Linux clones
+without PowerShell. CI verifies production entrypoints, all-tool MCP contracts, provider HTTP
+workflows and one fresh installation shared across tests. Lint, types, generated
+docs and the full regression suite belong to local pretest. Release-branch pushes
+do not duplicate PR runs; merged master/main revisions still receive CI.
+
+Tag verification tests the **exact wheel/sdist pair uploaded to PyPI**, including
+sdist rebuild parity, installed stdio/HTTP calls, process restart and data
+isolation. It also starts the non-root container and exercises health, MCP and
+writes. It does not rerun the entire unit suite. Manual `run_extended_checks`
+retains the full compatibility matrix, Mermaid rendering and container checks;
+manual `run_live_integrations` covers actual providers.
+
+See [Testing and release gates](docs/development/TESTING.md) for exact commands,
+smoke boundaries, limitations and test-removal rules. New current docs belong in
+their [document category](docs/README.md); disposable output belongs in ignored
+`build/` or `scripts/_tmp/`. New top-level files need an ownership rule.
 
 Run the renderer locally when changing graph output or Mermaid documentation:
 
@@ -192,7 +197,7 @@ MCP_ACCEPTANCE_REQUIRE_MERMAID_RENDER=1 MERMAID_NODE_MODULES=/tmp/pubmed-mermaid
 
 The paths and environment syntax above are POSIX examples; use equivalent
 explicit temporary paths/environment variables on Windows. Container changes
-also require the build and entrypoint smoke from `.github/workflows/ci.yml`
+also require the build and HTTP/MCP smoke from `.github/workflows/ci.yml`
 on a machine with Docker. These environment-specific checks complement the
 full Python gate; a Python-only pass does not claim they were exercised.
 

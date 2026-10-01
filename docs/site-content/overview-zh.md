@@ -39,6 +39,13 @@
 
 ---
 
+## 真實流程 smoke 與本機 pretest — v0.7.7
+
+完整回歸檢查先在本機 `pretest` 完成；CI 聚焦 Ubuntu／Windows 的套件安裝、正式
+MCP 與 provider HTTP 流程。發布前驗證實際上傳的 wheel／sdist 及可處理請求的非 root
+容器。移除 64 個弱測試或過時案例，保留替代保護與逐項理由。詳見
+[測試分工](#/testing)與[分階段修正版紀錄](reports/release_v077_2026-10-01.md)。
+
 ## 背景全文與可靠章節讀取 — v0.7.6
 
 可選的 XML 背景預取與後續 `get_fulltext` 共用下載；讀取尚在排隊的文章會直接改為前景工作。
@@ -1469,7 +1476,7 @@ GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/bl
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.6},
+  version = {0.7.7},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

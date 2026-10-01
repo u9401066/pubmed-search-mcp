@@ -5,7 +5,7 @@ policy is in [CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS](../AGENTS.md).
 
 | Purpose | Entry points |
 | --- | --- |
-| Required local gates | `check_repo.py full` before push; `check_repo.py smoke` is the smaller independent CI gate |
+| Required local gates | `check_repo.py pretest` (`full`) before push; `smoke` checks real artifacts/transports; `container --container-image IMAGE` verifies Docker |
 | Documentation generation | `build_docs_site.py`, `build_github_wiki.py`, `count_mcp_tools.py --update-docs` |
 | File ownership and placement | `check_repository_layout.py --output build/repository-layout.json`; rejects unclassified new files locally |
 | Publication artifacts | `build_publication.py`; validates frozen evidence, builds tables/PDF and an arXiv source bundle under `build/publication/` |

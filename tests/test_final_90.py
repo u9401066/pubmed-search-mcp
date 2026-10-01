@@ -248,29 +248,6 @@ class TestDiscoveryToolEdgeCases:
         assert "222" in formatted
 
 
-class TestSessionToolsInternals:
-    """Test session tools internal functions."""
-
-    async def test_session_tools_module(self):
-        """Test session_tools module contents."""
-        from pubmed_search.presentation.mcp_server import session_tools
-
-        # Check module has expected functions
-        assert hasattr(session_tools, "register_session_tools")
-        assert hasattr(session_tools, "register_session_resources")
-
-
-class TestPicoElementExtraction:
-    """Test PICO element extraction."""
-
-    async def test_pico_parse_question(self):
-        """Test PICO parsing of clinical question."""
-        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
-
-        # Just verify the module works
-        assert callable(register_pico_tools)
-
-
 class TestLinksSummarizeAccess:
     """Test links summarize_access function."""
 

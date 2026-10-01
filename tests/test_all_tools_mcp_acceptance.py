@@ -24,6 +24,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from tests.fixtures.release_support import ReleaseInstallation
+
 ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE_SERVER = ROOT / "tests" / "fixtures" / "all_tools_mcp_server.py"
 PRIMARY_PMID = "12345678"
@@ -1310,52 +1312,10 @@ async def test_all_tools_through_real_streamable_http_mcp(
 @pytest.mark.slow
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)
-async def test_all_tools_from_freshly_installed_wheel_through_stdio_mcp(tmp_path: Path) -> None:
-    uv = shutil.which("uv")
-    if uv is None:
-        pytest.skip("uv is required for the wheel acceptance test")
-
-    dist_dir = tmp_path / "dist"
-    venv_dir = tmp_path / "venv"
-    subprocess.run(
-        [uv, "build", "--wheel", "--out-dir", str(dist_dir)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    wheel = next(dist_dir.glob("pubmed_search_mcp-*.whl"))
-    subprocess.run(
-        [uv, "venv", str(venv_dir), "--python", sys.executable],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    venv_python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    subprocess.run(
-        [uv, "pip", "install", "--python", str(venv_python), str(wheel)],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    imported = subprocess.run(
-        [
-            str(venv_python),
-            "-c",
-            "from pathlib import Path; import pubmed_search; print(Path(pubmed_search.__file__).resolve())",
-        ],
-        cwd=tmp_path,
-        env=_acceptance_env(tmp_path / "wheel-import"),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    imported_path = Path(imported.stdout.strip()).resolve()
-    assert imported_path.is_relative_to(venv_dir.resolve())
-
+async def test_all_tools_from_freshly_installed_wheel_through_stdio_mcp(
+    tmp_path: Path, release_installation: ReleaseInstallation
+) -> None:
+    venv_python = release_installation.python
     scratch = tmp_path / "wheel"
     parameters = StdioServerParameters(
         command=str(venv_python),

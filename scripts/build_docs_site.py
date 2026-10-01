@@ -31,6 +31,7 @@ REPO_BLOB_BASE = "https://github.com/u9401066/pubmed-search-mcp/blob/master"
 REPO_TREE_BASE = "https://github.com/u9401066/pubmed-search-mcp/tree/master"
 
 PAGES = [
+    ("testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
     ("publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
     ("documentation-map", "Documentation Map", DOCS_ROOT / "README.md"),
     ("overview", "Overview", REPO_ROOT / "README.md"),

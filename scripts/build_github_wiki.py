@@ -32,6 +32,7 @@ class WikiPage:
 
 
 PAGES: tuple[WikiPage, ...] = (
+    WikiPage("Testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
     WikiPage("Publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
     WikiPage("User-Guide", "User Guide", DOCS_ROOT / "guides/USER_GUIDE.md"),
     WikiPage("User-Guide.zh-TW", "使用者指南", DOCS_ROOT / "guides/USER_GUIDE.zh-TW.md"),

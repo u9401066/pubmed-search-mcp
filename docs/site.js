@@ -1,5 +1,15 @@
 const DOC_PAGES = [
   {
+    slug: "testing",
+    group: "testing",
+    lang: "all",
+    audience: "developer",
+    title: "Testing and Release Gates / 測試與發布",
+    blurb: "Local pretest, real MCP and provider HTTP smoke, artifact parity, and cloud release boundaries.",
+    keywords: "pretest smoke CI wheel sdist container 測試 發布 防呆",
+    file: "site-content/testing.md",
+  },
+  {
     slug: "publication",
     group: "publication",
     lang: "all",

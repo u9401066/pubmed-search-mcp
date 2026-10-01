@@ -13,20 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-class TestServerModule:
-    async def test_import(self):
-        import pubmed_search.presentation.mcp_server.server as mod
-
-        assert hasattr(mod, "main")
-
-    async def test_create_server(self):
-        from pubmed_search.presentation.mcp_server.server import create_server
-
-        srv = create_server(email="test@test.com")
-        assert srv is not None
-
-
 # ============================================================
 # CORE infrastructure — COREClient
 # ============================================================
@@ -840,17 +826,6 @@ class TestEuropePMCInfra:
 
 class TestNCBIStrategy:
     """Test infrastructure/ncbi/strategy.py — SearchStrategyGenerator."""
-
-    async def test_import(self):
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-        assert SearchStrategyGenerator is not None
-
-    async def test_init(self):
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-        sg = SearchStrategyGenerator(email="test@test.com")
-        assert sg is not None
 
     async def test_spell_check(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator

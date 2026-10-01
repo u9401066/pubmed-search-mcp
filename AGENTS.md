@@ -66,8 +66,10 @@ tool-native locations such as `.github/copilot-instructions.md` or
 - Prefer regression and public-contract tests over coverage-only assertions.
   Remove a duplicate only after identifying the stronger retained coverage.
 - Before push, run `uv run --frozen python scripts/check_repo.py full`.
-  Ordinary CI provides an independent smaller smoke gate; extended platform,
-  Mermaid, and container checks remain explicit. See `CONTRIBUTING.md`.
+  Ordinary CI verifies real runtime/artifact smoke on Ubuntu and Windows;
+  extended compatibility and Mermaid checks remain explicit. Tag publication
+  verifies the exact distributions and real container HTTP/MCP calls. See
+  `CONTRIBUTING.md` and `docs/development/TESTING.md`.
 
 ## Shared Constraints
 
