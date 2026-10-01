@@ -53,6 +53,7 @@ from .agent_output import (
 )
 from .article_source import ArticleSource, PubmedSource, normalize_article_source
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
+from .fulltext_runtime import get_cached_fulltext_xml
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -537,7 +538,8 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     {"kind":"pmcid","value":"PMC7096777"}, or
                     {"kind":"doi","value":"10.1001/jama.2024.1234"}.
             sections: Filter sections (e.g., "introduction,methods,results")
-            include_pdf_links: Include PDF download links (default: True)
+            include_pdf_links: Include PDF download links (default: True). False
+                skips link enrichment when structured fulltext is already available.
             include_figures: Include figure metadata with image URLs (default: False)
             extended_sources: Search the extended downloader chain after the standard policy (default: False)
             output_format: Response format - "markdown" (default), "json", or "toon"
@@ -569,6 +571,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
         if normalized_source.kind == "pmid":
             request = FulltextRequest(
                 pmid=normalized_source.value,
+                include_pdf_links=include_pdf_links,
                 sections=sections,
                 include_figures=include_figures,
                 extended_sources=extended_sources,
@@ -577,6 +580,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
         elif normalized_source.kind == "pmcid":
             request = FulltextRequest(
                 pmcid=normalized_source.value,
+                include_pdf_links=include_pdf_links,
                 sections=sections,
                 include_figures=include_figures,
                 extended_sources=extended_sources,
@@ -585,6 +589,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
         else:
             request = FulltextRequest(
                 doi=normalized_source.value,
+                include_pdf_links=include_pdf_links,
                 sections=sections,
                 include_figures=include_figures,
                 extended_sources=extended_sources,
@@ -599,6 +604,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
         _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
 
+        async def _structured_xml(pmcid: str) -> str | None:
+            return await get_cached_fulltext_xml(pmcid, get_europe_pmc_client().get_fulltext_xml)
+
         service = FulltextService(
             europe_pmc_client_factory=get_europe_pmc_client,
             unpaywall_client_factory=get_unpaywall_client,
@@ -606,6 +614,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             downloader_factory=FulltextDownloader,
             figure_client_factory=get_figure_client if include_figures else None,
             institutional_client_factory=_institutional_factory,
+            structured_xml_fetcher=_structured_xml,
         )
         try:
             retrieval = await service.retrieve(request, progress=_progress, log=_log)

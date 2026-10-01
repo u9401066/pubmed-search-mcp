@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.citation_network import CitationTaskSupervisor
+from pubmed_search.application.fulltext.cache import FulltextCache
 
 from .tool_runtime import HostCallbackRuntime
 
@@ -38,6 +39,7 @@ class ToolSessionRuntime:
     source_runtime: SourceRuntime | None = None
     host_callbacks: HostCallbackRuntime = field(default_factory=HostCallbackRuntime)
     citation_tasks: CitationTaskSupervisor = field(default_factory=CitationTaskSupervisor)
+    fulltext_cache: FulltextCache = field(default_factory=FulltextCache)
 
     def manager_for_current_tenant(self) -> SessionManager | None:
         """Resolve the active tenant without mutating the server runtime."""

@@ -455,6 +455,18 @@ async def _format_unified_results(
     source_rows = _serialize_source_counts(source_api_counts, stats)
     next_actions = _build_next_actions(articles, analysis, source_rows)
 
+    prefetch = (enrichment_metadata or {}).get("fulltext_prefetch")
+    if isinstance(prefetch, dict):
+        rows = prefetch.get("articles", [])
+        status_text = ", ".join(
+            f"{_escape_markdown_text(row['source']['value'])}: {_escape_markdown_text(row['status'])}" for row in rows
+        )
+        output_parts.append(
+            "**Background fulltext**: "
+            + (status_text or str(prefetch.get("reason") or prefetch.get("status") or "no eligible top results"))
+            + ". Read with get_fulltext when needed; ready/in-flight XML is reused. No polling required.\n"
+        )
+
     # Header with analysis summary
     if include_analysis:
         output_parts.append("## 🔍 Unified Search Results\n")

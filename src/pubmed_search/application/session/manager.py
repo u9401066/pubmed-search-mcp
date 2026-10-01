@@ -71,6 +71,7 @@ _UNIFIED_REPLAY_KEYS = frozenset(
         "pipeline",
         "dry_run",
         "stop_at",
+        "fulltext",
     }
 )
 

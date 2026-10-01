@@ -49,6 +49,7 @@ class FulltextRequest:
     include_figures: bool = False
     extended_sources: bool = False
     allow_browser_session: bool | None = None
+    include_pdf_links: bool = True
 
     def normalized(self) -> FulltextRequest:
         """Return a strict, canonical request with exactly one public identifier.
@@ -210,6 +211,7 @@ class FulltextService:
         downloader_factory: Callable[[], Any],
         figure_client_factory: Callable[[], Any] | None = None,
         institutional_client_factory: Callable[[], Any] | None = None,
+        structured_xml_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
     ) -> None:
         self._registry = registry or get_fulltext_registry()
         self._europe_pmc_client_factory = europe_pmc_client_factory
@@ -218,6 +220,7 @@ class FulltextService:
         self._downloader_factory = downloader_factory
         self._figure_client_factory = figure_client_factory
         self._institutional_client_factory = institutional_client_factory
+        self._structured_xml_fetcher = structured_xml_fetcher
 
     async def retrieve(
         self,
@@ -255,7 +258,7 @@ class FulltextService:
                 await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
                 result.record_source_attempted(source)
                 await self._collect_europe_pmc(request, result, log)
-            elif source == "unpaywall" and request.doi:
+            elif source == "unpaywall" and request.doi and (request.include_pdf_links or not result.fulltext_content):
                 await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
                 result.record_source_attempted(source)
                 await self._collect_unpaywall(request, result, log)
@@ -343,7 +346,11 @@ class FulltextService:
         source = "europe_pmc"
         try:
             client = self._europe_pmc_client_factory()
-            xml = await client.get_fulltext_xml(request.pmcid)
+            xml = (
+                await self._structured_xml_fetcher(str(request.pmcid))
+                if self._structured_xml_fetcher is not None
+                else await client.get_fulltext_xml(request.pmcid)
+            )
             if not xml:
                 result.record_source_completed(source)
                 return

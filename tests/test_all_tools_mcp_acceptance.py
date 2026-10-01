@@ -358,12 +358,14 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
             "limit": 1,
             "output_format": "json",
             "options": "shallow,no_oa,no_relax,no_analysis,no_scores,no_next",
+            "fulltext": "prefetch",
         },
         _expect_json(
             {
                 "articles.0.identifiers.pmid": SEARCH_PMID,
                 "source_counts.0.source": "pubmed",
                 "source_counts.0.returned": 1,
+                "enrichment.fulltext_prefetch.articles.0.status": "scheduled",
             }
         ),
     )
