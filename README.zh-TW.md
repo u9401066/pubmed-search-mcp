@@ -35,6 +35,13 @@
 
 ---
 
+## 背景全文與可靠章節讀取 — v0.7.6
+
+可選的 XML 背景預取與後續 `get_fulltext` 共用下載；讀取尚在排隊的文章會直接改為前景工作。
+搜尋回應提供可直接使用的讀取參數；章節不存在時列出可用標題，不以摘要冒充，也不重複抓取 PDF。
+預取預設關閉，避免浪費未閱讀文章的請求。詳見[完整評估](docs/design/FULLTEXT_PREFETCH.md)
+與[修正版檢查紀錄](docs/reports/release_v076_2026-10-01.md)。
+
 ## 共用輸入防呆 — v0.7.5
 
 全部 41 個工具共用自動校正：JSON 容器、十進位數字字串、明確布林文字、enum
@@ -1458,7 +1465,7 @@ GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.5},
+  version = {0.7.6},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

@@ -1,0 +1,89 @@
+{
+  "scope": "Offline XML cache/scheduling only; excludes search, network, parsing, model tokens and real article availability.",
+  "recorded_at_utc": "2026-10-01T09:28:36.733396+00:00",
+  "base_revision": "5d27064062be43f1741d96c5adf2e96049fb91d1",
+  "working_tree_changes": true,
+  "source_sha256": {
+    "src/pubmed_search/application/fulltext/cache.py": "5ada6ed840d7ee711010a61c9db96af2c13e144bb215fb02223959a040fab29b",
+    "scripts/perf/fulltext_prefetch.py": "55b9ea5c6a276297d6cbad7db85a5ee4a091c43624eb0648f53f0e3b03610bd6"
+  },
+  "fixture": {
+    "xml_fetch_ms": 80.0,
+    "selection_delay_ms": 100.0,
+    "repeats": 5
+  },
+  "rows": [
+    {
+      "scenario": "read_one_twice",
+      "mode": "uncached",
+      "foreground_wait_p50_ms": 160.512,
+      "upstream_xml_calls": 2,
+      "unused_xml_calls": 0,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_one_twice",
+      "mode": "demand_cache",
+      "foreground_wait_p50_ms": 80.569,
+      "upstream_xml_calls": 1,
+      "unused_xml_calls": 0,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_one_twice",
+      "mode": "prefetch",
+      "foreground_wait_p50_ms": 0.039,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 2,
+      "content_sha256": "586c8ec23ff4b58bb89d9b4f406723cc91151cc241d3abaa321dec32c076e3da"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "uncached",
+      "foreground_wait_p50_ms": 240.766,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "demand_cache",
+      "foreground_wait_p50_ms": 241.299,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    },
+    {
+      "scenario": "read_all_three",
+      "mode": "prefetch",
+      "foreground_wait_p50_ms": 140.93,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 0,
+      "content_sha256": "c6ff63685d716085c0ade05a69beb174def4863b0ffafc15621d92bd718815f0"
+    },
+    {
+      "scenario": "read_queued_third_twice",
+      "mode": "uncached",
+      "foreground_wait_p50_ms": 160.633,
+      "upstream_xml_calls": 2,
+      "unused_xml_calls": 0,
+      "content_sha256": "1647367999cc9f681239b66f1ab63054e38cac8ff8a7b3410178fd917a198a50"
+    },
+    {
+      "scenario": "read_queued_third_twice",
+      "mode": "demand_cache",
+      "foreground_wait_p50_ms": 80.567,
+      "upstream_xml_calls": 1,
+      "unused_xml_calls": 0,
+      "content_sha256": "1647367999cc9f681239b66f1ab63054e38cac8ff8a7b3410178fd917a198a50"
+    },
+    {
+      "scenario": "read_queued_third_twice",
+      "mode": "prefetch",
+      "foreground_wait_p50_ms": 80.948,
+      "upstream_xml_calls": 3,
+      "unused_xml_calls": 2,
+      "content_sha256": "1647367999cc9f681239b66f1ab63054e38cac8ff8a7b3410178fd917a198a50"
+    }
+  ]
+}

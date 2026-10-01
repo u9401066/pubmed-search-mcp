@@ -1,6 +1,6 @@
 # Bounded background fulltext — assessment and implementation
 
-Date: 2026-10-01. Status: implemented after v0.7.5; see the Unreleased changelog.
+Date: 2026-10-01. Status: included in the v0.7.6 patch release.
 
 ## Decision
 
@@ -59,6 +59,10 @@ only serves its open-access subset through
 - Cache and in-flight keys include the stable tenant. Separate server instances
   do not share content. Anonymous/stateless and unverified transport identities
   do not own background work or cross-request XML caches.
+- A read promotes its queued, not-yet-started prefetch into foreground work, so
+  it does not wait behind unrelated speculation. Already-running XML is joined;
+  promotion never starts a second download for the same tenant/PMCID. Foreground
+  I/O still respects shared provider admission/cooldown and its 45-second deadline.
 - Foreground reads coalesce, preserve complete XML, and apply section filters
   independently. Cancelling one reader does not cancel another; abandoned
   demand work is cancelled. A demand XML operation has a 45-second deadline.
@@ -89,7 +93,10 @@ get_fulltext(source={"kind":"pmcid","value":"PMC7096777"},
 Structured search responses and saved result artifacts include
 `enrichment.fulltext_prefetch`; Markdown contains a short readiness note even
 with query analysis hidden. Its rows are a scheduling snapshot, not a later
-completion notification. Use the row's PMCID source to avoid another PMID
+completion notification. Each row includes `read_request` with `tool` and native
+`arguments` for a text-only JSON `get_fulltext` call; use it directly or add
+`sections`. The advertised `max_articles` respects the operator limit.
+Use the row's PMCID source to avoid another PMID
 metadata-resolution call. Missing candidates retain normal on-demand behavior.
 The search journal and strategy artifact preserve the selected prefetch mode.
 
@@ -134,7 +141,36 @@ selection/other work overlaps retrieval; it adds waste when prepared articles
 are not read. Production uptake should be evaluated from actual read rates and
 provider budgets before considering any default-on policy.
 
-Final local gate on 2026-10-01: **4,900 passed, 23 skipped, 30 deselected**
+Initial prefetch implementation gate on 2026-10-01: **4,900 passed, 23 skipped, 30 deselected**
 (125.13 seconds). Ruff, formatting, async-test consistency, ownership,
 publication preflight, inventory and mypy all passed. Generated docs/skills and
 documentation links passed; 18 new focused tests cover the cache and transport.
+
+
+## v0.7.6 integration review
+
+The focused refactor separates task start state and structured section selection
+from formatting. `SectionSelection` records requested, available and unmatched
+body titles, with `not_requested`, `matched`, `partial`, `not_found` or
+`unavailable` status. Only sections containing text are eligible; untitled body
+text is listed as `Body`. Empty filter entries are ignored and repeats removed.
+
+A missing title is not a failed source. Return the available titles and no
+substituted abstract, retain source coverage separately, and avoid a second
+PDF/institutional retrieval just to compensate for that filter. If desired, one
+corrected `get_fulltext` call reuses the same XML. Abstract-only XML cannot claim
+fulltext success and still permits the normal retrieval fallbacks. These
+selection facts describe the structured XML; unstructured fallback text has no
+claim to satisfy a named section filter.
+
+The [v0.7.6 offline comparison](../reports/fulltext_prefetch_v076_2026-10-01.json)
+adds reading the queued third article twice: demand caching took 80.567 ms with
+one XML call, while promoted prefetch took 80.948 ms with three XML calls (two
+unused). Provider gates can still delay foreground work; this fixture does not
+model them. This scenario reinforces keeping prefetch off by default. The
+original comparison above remains a historical measurement of its pinned code.
+
+See the [release review](../reports/release_v076_2026-10-01.md) for regression
+coverage, final gates and publication evidence. Durable jobs, default-on
+speculation, parsed-document caching and automatically injecting full articles
+into search responses remain out of scope: none is needed to fix this workflow.

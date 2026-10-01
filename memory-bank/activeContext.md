@@ -1,29 +1,26 @@
 # Active Context
 
-## Current Focus — bounded background fulltext (2026-10-01)
+## Current Focus — v0.7.6 fulltext integration release (2026-10-01)
 
-- User requested a complete background-fulltext benefit/cost evaluation and
-  implementation. Work is on `feat/bounded-fulltext-prefetch`, based on current
-  master `c0f30ad`; version 0.7.5 remains the published boundary.
-- Added explicit `unified_search(fulltext="prefetch")`, default off, for up to
-  three eligible top-ranked PMCIDs. One background XML request at a time, one
-  attempt, 15-second queue-inclusive deadline; no PDF/browser/institutional fan-out.
-- Application-owned `FulltextCache` shares ready/in-flight XML for stable tenants,
-  bounds TTL/entries/UTF-8 bytes and owned tasks, and closes before source clients.
-  Foreground reads keep independent sections and support cancellation isolation.
-- XML success with `include_pdf_links=False` skips unnecessary Unpaywall lookup.
-  Existing source limits/cooldowns stay authoritative; anonymous callers do not
-  retain cross-request cache/background state. No new MCP tool or polling API.
-- [Assessment](../docs/design/FULLTEXT_PREFETCH.md) records alternatives, quotas,
-  client compatibility and limits. [Offline comparison](../docs/reports/fulltext_prefetch_2026-10-01.json)
-  shows the cost tradeoff: one repeated article needs 1 XML call with demand
-  caching, while prefetching three but reading one wastes 2 calls. Artificial
-  delays are not measured WAN, token or agent performance improvements.
-- Full gate: **4,900 passed, 23 skipped, 30 deselected** (125.13 s); lint,
-  formatting, async checks, ownership, publication preflight, inventory and mypy
-  pass. All-tool source stdio/HTTP/fresh-wheel acceptance verifies XML reuse;
-  docs/skills/link checks pass. Changes remain under Unreleased for the next
-  package version. Historical core review/release evidence remains historical.
+- User authorized the focused refactor, merging all work for this feature and
+  publishing the next patch, v0.7.6. PR #22 includes the original prefetch changes
+  and this follow-up; unrelated PRs are outside this scope. Master was current
+  at `c0f30ad` when this review began. Publication is pending verification.
+- Retain opt-in top-three bounded XML prefetch and shared demand cache. Queued
+  speculation becomes foreground work when requested; running XML is joined.
+  Provider budgets, deadlines, tenant isolation and cancellation ownership remain.
+- Extracted application `SectionSelection`: missing body titles expose available
+  titles, never substitute abstracts and never cause another download. A single
+  corrected read reuses XML. Abstract-only documents retain normal fallback.
+- Search rows provide native `read_request` arguments and actual candidate limit;
+  the thin tool adapter constructs one request for all identifier kinds.
+- [Assessment](../docs/design/FULLTEXT_PREFETCH.md) and
+  [release review](../docs/reports/release_v076_2026-10-01.md) explain changes,
+  bounds and evidence. New fixed-delay measurements preserve the historical
+  experiment and do not claim WAN, token or agent-performance gains.
+- Focused regressions: 110 passed; all-tool real transport suite: 7 passed;
+  mypy: 440 files clean. Full gate: 4,910 passed, 23 skipped, 30 deselected
+  (124.03 s); docs/skills and wheel/sdist build pass. Merge/publication pending.
 
 ## Previous Focus — v0.7.5 published and verified (2026-10-01)
 

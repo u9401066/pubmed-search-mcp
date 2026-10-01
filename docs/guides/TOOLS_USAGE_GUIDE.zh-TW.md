@@ -210,6 +210,8 @@ DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的�
 選定文章後正常呼叫 `get_fulltext`，優先使用
 `enrichment.fulltext_prefetch.articles` 列出的 PMCID source，直接共用已完成或進行中的
 XML，省去再次解析 PMID 的請求。這是排程當下的快照，**不必輪詢**。
+每列也提供 `read_request`（`tool` 與原生 `arguments`），可直接取得 JSON 文字全文，
+有需要再加 `sections`。尚未開始的預取會改為前景讀取；已開始的下載繼續共用，仍遵守來源配額。
 快取保存 15 分鐘，依穩定租戶與伺服器隔離，重啟後消失；不同章節讀取共用完整 XML。
 
 背景一次只取一篇、含排隊最多 15 秒、不重試，也不預先抓 PDF、圖表或使用機構／瀏覽器登入。
@@ -221,7 +223,10 @@ XML，省去再次解析 PMID 的請求。這是排程當下的快照，**不必
 XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功後便省去額外 OA 連結查詢。
 詳見[完整評估與成本比較](../design/FULLTEXT_PREFETCH.md)。
 
-指定結構化章節時，逗號分隔清單中的空白項目會被忽略，無標題章節也不會誤中具名篩選。
+指定結構化章節時，`section_selection` 提供要求、可用與未找到的正文標題。
+缺少章節不會以摘要冒充，也不會因此再次抓取 PDF；改用回應列出的標題或省略 `sections`，
+一次修正便可共用原 XML。空白篩選項目會忽略、沒有文字的章節會排除，無標題正文以 `Body` 列出。
+只有摘要的 XML 不算全文成功，仍保留正常備援取得流程。
 延伸來源的初始化或關閉失敗，會保留先前已成功取得的全文。
 
 當使用者提供 image URL 或上傳圖片 payload，且需要 agent 從視覺內容推論搜尋詞時，使用 `prepare_figure_search`。這個 tool 會回傳 MCP `ImageContent`；實際圖片語意解讀由 LLM agent 完成，agent 應接續呼叫 `search_biomedical_images` 或 `unified_search`。

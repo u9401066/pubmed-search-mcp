@@ -1,5 +1,16 @@
 # Decision Log
 
+## [2026-10-01] v0.7.6 focused fulltext integration refactor
+
+- Promote queued prefetch when demanded; join running I/O instead of restarting it.
+- Keep structured section selection separate from download success. Missing titles
+  expose available evidence and preserve XML reuse; abstracts are not fulltext.
+- Return directly usable read arguments, not a polling workflow. Retain explicit
+  opt-in and one read call; avoid new durable jobs or parsed caches without need.
+- Ship as the next patch with reviewed documentation, full gates, verified master
+  tag and publication receipts. Do not relabel old benchmark or review evidence.
+
+
 ## 2026-10-01 — Demand XML caching with opt-in bounded prefetch
 
 Keep ordinary searches free of speculative fulltext I/O. Expose
