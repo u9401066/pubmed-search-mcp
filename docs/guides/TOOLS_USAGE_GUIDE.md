@@ -11,6 +11,99 @@ Capability-first guide for using the 41-tool PubMed Search MCP surface without t
 3. Export citations or notes only after the evidence set is clear.
 4. Use the raw [tools index](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) only when you need exact tool names.
 
+## Input formats and validation
+
+All 41 tools use a shared input contract (metadata `contractVersion: 4`).
+The server first corrects unambiguous representations, then validates the entire
+request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
+also advertises the supported alternatives.
+
+| Declared field | Automatic correction |
+| --- | --- |
+| Object or array | One JSON string layer at each declared container field; optional JSON code fence |
+| Integer | ASCII decimal string, including surrounding ASCII whitespace, becomes an integer |
+| Number | Finite decimal string becomes a number; the original bounds still apply |
+| Boolean | `"true"` or `"false"`, ignoring ASCII case/outer whitespace; `"false"` becomes **false** |
+| Enum / discriminator | Unique match after ASCII case and outer-whitespace normalization, including `kind` and `action` |
+| PMID / PMCID / DOI | Shared rules across scalar fields, article `source.value`, session requests and batches; prefixes, official article URLs, surrounding whitespace and inline backticks |
+| PMID batch | Native string array, JSON array string, delimited text, or one identifier per Markdown bullet/numbered line |
+
+For example, the reported `fetch_article_details(pmids='["33053718", "36170657"]',
+output_format="markdown")` works directly. `read_session(request='{"action":" SUMMARY ",
+"include_history":"false","history_limit":" 10 "}')` also needs only one call.
+PMID text accepts comma, whitespace/newline, semicolon, pipe and Chinese
+`，` / `；` / `、` separators. Markdown examples: `- 33053718` and `1. PMID:36170657`
+on separate lines. Every array or Markdown item denotes exactly one identifier.
+
+PMID URLs must use `pubmed.ncbi.nlm.nih.gov/<PMID>/`. PMCID URLs use
+`pmc.ncbi.nlm.nih.gov/articles/PMC<ID>/` or the legacy
+`www.ncbi.nlm.nih.gov/pmc/articles/PMC<ID>/`. DOI URLs use `doi.org` or `dx.doi.org`.
+Only HTTP(S) article URLs are parsed; credentials, explicit ports, queries,
+fragments and foreign hosts are rejected. Parsing does not fetch the URL.
+Gene IDs and compound CIDs remain positive ASCII digit strings.
+
+The five batch tools (`fetch_article_details`, `get_citation_metrics`,
+`prepare_export`, `save_literature_notes`, `build_research_chronicle`) validate
+**every** item before deduplicating in first-seen order. Empty, null, numeric,
+boolean, nested or malformed array items reject the whole batch. `last` remains
+available only where documented, as the sole batch value; `fetch_article_details`
+requires explicit IDs. The raw batch limit is 1,000 items / 100,000 text characters;
+Chronicle additionally limits the evidence set to 500 unique IDs.
+
+No guessing of field names, enum synonyms, yes/no or 1/0 booleans, scientific
+notation, Unicode digits, leading-zero identifiers, filenames or opaque IDs.
+Values outside numeric bounds are rejected, never clipped. Free-text fields such
+as `query`, `pipeline`, `config`, and `unified_search.sources` retain their own
+syntax; the shared boundary does not rewrite them. String/container unions with
+ambiguous meanings also retain their string branch. Unknown fields, duplicate
+JSON keys, NaN/Infinity and Python list literals remain invalid. Encoded containers
+are limited to 1,000,000 characters, with a schema traversal depth limit of 32.
+
+The schema describes transport representations; `contentSchema` / `x-pubmed-decodedSchema`, named identifier
+formats and numeric-branch bounds describe validation after decoding. Generic JSON
+Schema clients may not enforce these semantic constraints; the server does.
+Successful normalization is recorded in response `_meta.pubmed-search.normalizations`
+with paths and rule names only (at most 20 distinct entries), leaving successful
+Markdown/JSON/TOON bodies compatible.
+
+Argument failures return `isError: true`, with the same safe error information in
+`structuredContent` and the text response. For example:
+
+```json
+{
+  "status": "invalid_input",
+  "executed": false,
+  "errors": [{
+    "code": "out_of_range",
+    "path": "/request/history_limit",
+    "message": "Use a value within the published bounds.",
+    "expected": {"type": "integer", "minimum": 1, "maximum": 100}
+  }],
+  "error_count": 1,
+  "truncated": false,
+  "recovery": {
+    "action": "correct_arguments",
+    "retry_unchanged": false,
+    "instruction": "Correct the reported fields using expected constraints, then call the same tool."
+  }
+}
+```
+
+Paths are JSON Pointers into the **decoded** request (`/pmids/1` identifies the
+second item). Unknown keys are not echoed; their parent object and `allowed_fields`
+are returned instead. Invalid/missing discriminator errors point to `kind`/`action`
+and list valid choices. Up to 20 distinct issues are returned with the total count.
+PMID batch JSON syntax, duplicate-key and size errors retain `invalid_json`,
+`duplicate_key` and `input_too_large` codes. Integer/number unions accept decimal
+strings; a free-text union branch preserves the literal string.
+Correct the reported fields together, preserve the rest, and retry once; do not
+repeat unchanged arguments or retry a write merely because execution failed.
+Only argument validation can assert `executed: false`; application/provider errors
+retain their existing result contracts. This is not a guarantee that every
+business-rule or external-service failure can be repaired in one call.
+
+Implementation phases and verification: [agent input contract](../design/AGENT_INPUT_CONTRACT.md).
+
 ## The 8 Capability Families
 
 ![PubMed Search MCP capability map](../images/tool-capability-map.svg)

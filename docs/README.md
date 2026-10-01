@@ -12,7 +12,7 @@ describe their own snapshots; they do not override the running tool registry.
 | Provider API contracts | [OpenAlex](providers/OPENALEX_API.md), [Semantic Scholar](providers/SEMANTIC_SCHOLAR_API.md), [ClinicalKey AI](providers/CLINICALKEY_AI_INTEGRATION.md), [images](providers/IMAGE_SEARCH_API.md) | Access modes, limits and response boundaries |
 | Evaluation and evidence | [benchmarks](research/ACADEMIC_RETRIEVAL_BENCHMARKS.md), [report index](reports/README.md) | Reproducible methods, dated measurements and review ledger |
 | Software citation and paper | [publication workspace](publication/README.md) | One current manuscript; evidence, bibliography and arXiv preparation |
-| Design context | [pipeline persistence](archive/design/PIPELINE_PERSISTENCE_DESIGN.md), [fulltext registry](design/FULLTEXT_REGISTRY_REFACTOR.md), [Chronicle specification](design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md) | Read each document's implementation status before treating proposals as behavior |
+| Design context | [pipeline persistence](archive/design/PIPELINE_PERSISTENCE_DESIGN.md), [fulltext registry](design/FULLTEXT_REGISTRY_REFACTOR.md), [Chronicle specification](design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md), [agent input contract](design/AGENT_INPUT_CONTRACT.md) | Read each document's implementation status before treating proposals as behavior |
 | External comparisons | [reference repositories](reference-repositories/README.md), [BioMCP analysis](research/BIOMCP_ARCHITECTURE_ANALYSIS.md) | Comparisons and research, not product guarantees |
 | Historical phases | [archive](archive/README.md) | Superseded implementation plans; old URLs contain navigation stubs |
 

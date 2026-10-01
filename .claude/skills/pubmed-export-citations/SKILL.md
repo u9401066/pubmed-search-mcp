@@ -38,7 +38,11 @@ prepare_export(
 - `"last"`
 - `"12345678,87654321"`
 - `["12345678", "87654321"]`
+- `'["12345678", "87654321"]'`（JSON 陣列字串）
 - `"PMID:12345678"`
+
+PMID 分隔格式、整批驗證與 `save_literature_notes` 共用的契約，詳見
+`docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md` 的「輸入格式與防呆」。
 
 ---
 

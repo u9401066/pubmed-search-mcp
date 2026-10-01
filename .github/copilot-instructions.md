@@ -691,7 +691,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 ## ⚠️ Important Notes
 
-1. **Session Auto-management**: Search results are automatically cached. Use `pmids="last"` to reference previous searches.
+1. **Session Auto-management**: Search results are automatically cached. Use `pmids="last"` to reference previous searches. For batch PMID formats and JSON container strings, follow the shared [input format contract](../docs/guides/TOOLS_USAGE_GUIDE.md#input-formats-and-validation).
 
 1. **Tool Progress**: `unified_search`, `build_research_chronicle`, and Europe PMC fulltext/text-mining tools can emit MCP progress updates when the client provides a progress token.
 

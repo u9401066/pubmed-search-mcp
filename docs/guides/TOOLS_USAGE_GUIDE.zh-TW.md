@@ -11,6 +11,86 @@
 3. 先確認 evidence set，再匯出引用或本機筆記。
 4. 需要查精確工具名時，再看[完整工具索引](../../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
 
+## 輸入格式與防呆
+
+全部 41 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
+`tools/list.inputSchema` 也會列出可接受的替代表示法。
+
+| 宣告的欄位 | 自動校正 |
+| --- | --- |
+| Object / array | 每個容器欄位可各包一層 JSON 字串，也接受 JSON 程式碼區塊 |
+| 整數 | ASCII 十進位字串轉整數，可含前後 ASCII 空白 |
+| 數字 | 有限十進位字串轉數字，仍檢查原本上下限 |
+| 布林值 | `"true"` / `"false"`，忽略 ASCII 大小寫與前後空白；`"false"` 正確轉成 **false** |
+| Enum / discriminator | 大小寫與前後空白校正後，必須唯一對應合法選項，包含 `kind`、`action` |
+| PMID / PMCID / DOI | 各工具的單筆參數、`source.value`、session 欄位與批次使用共用規則，接受前綴、官方文章網址、前後空白與反引號 |
+| PMID 清單 | 原生字串陣列、JSON 陣列字串、分隔文字、每行一筆的 Markdown 項目或編號清單 |
+
+原本的 `fetch_article_details(pmids='["33053718", "36170657"]', output_format="markdown")`
+可直接成功。`read_session(request='{"action":" SUMMARY ","include_history":"false",
+"history_limit":" 10 "}')` 也只需一次呼叫。PMID 分隔文字支援逗號、空白／換行、
+分號、直線及 `，`、`；`、`、`。Markdown 每行可用 `- 33053718` 或 `1. PMID:36170657`；
+陣列與 Markdown 的每個元素只能是一筆識別碼。
+
+PMID 網址限 `pubmed.ncbi.nlm.nih.gov/<PMID>/`；PMCID 網址限
+`pmc.ncbi.nlm.nih.gov/articles/PMC<ID>/` 或舊式
+`www.ncbi.nlm.nih.gov/pmc/articles/PMC<ID>/`；DOI 網址限 `doi.org`、`dx.doi.org`。
+僅解析 HTTP(S) 官方文章網址，不允許帳密、明確 port、query、fragment 或其他主機；
+解析不會連線抓取網址。Gene ID 與 compound CID 維持正整數 ASCII 字串。
+
+五個批次工具（`fetch_article_details`、`get_citation_metrics`、`prepare_export`、
+`save_literature_notes`、`build_research_chronicle`）會先驗證**全部**元素，才依首次
+出現順序去重。空值、null、數字、布林值、巢狀或無效的陣列元素會拒絕整批。
+原本支援 `last` 的工具仍可單獨使用；`fetch_article_details` 必須提供明確 PMID。
+原始批次上限為 1,000 筆／100,000 文字字元；Chronicle 的證據集合另限 500 筆不同 PMID。
+
+不猜欄位名稱、enum 同義詞、yes/no 或 1/0 布林值、科學記號、Unicode 數字、前導零
+識別碼、檔名或不透明 ID。超出數字範圍會拒絕，不會截到上限。`query`、`pipeline`、
+`config`、`unified_search.sources` 等純文字欄位保留各自語法，共用入口不重寫內容。
+意義不明確的 string/container union 也保留字串分支。未知欄位、重複 JSON key、
+NaN/Infinity、Python list 表示法仍會拒絕。容器字串上限為 1,000,000 字元，
+schema 遞迴深度上限為 32。
+
+Schema 宣告傳輸格式；`contentSchema` / `x-pubmed-decodedSchema`、識別碼 format 和數字分支的 bounds 說明
+解析後的驗證規則。一般 JSON Schema client 不一定執行這些語意檢查，server 會執行。
+自動校正記錄在回應 `_meta.pubmed-search.normalizations`，只含欄位路徑與規則名稱
+（最多 20 筆不同記錄），成功回應原有的 Markdown／JSON／TOON 內容保持相容。
+
+參數錯誤會回傳 `isError: true`，並在 `structuredContent` 與文字回應提供相同資訊：
+
+```json
+{
+  "status": "invalid_input",
+  "executed": false,
+  "errors": [{
+    "code": "out_of_range",
+    "path": "/request/history_limit",
+    "message": "Use a value within the published bounds.",
+    "expected": {"type": "integer", "minimum": 1, "maximum": 100}
+  }],
+  "error_count": 1,
+  "truncated": false,
+  "recovery": {
+    "action": "correct_arguments",
+    "retry_unchanged": false,
+    "instruction": "Correct the reported fields using expected constraints, then call the same tool."
+  }
+}
+```
+
+路徑是**解碼後**參數的 JSON Pointer，例如 `/pmids/1` 代表第二筆。未知 key 不回顯，
+改回傳所在物件與 `allowed_fields`；缺少或錯誤 discriminator 會指出 `kind`／`action`
+及合法選項。最多列出 20 個不同問題，並附總數。PMID 批次的 JSON 語法、重複 key
+及大小錯誤保留 `invalid_json`、`duplicate_key`、`input_too_large` 分類；整數／數字
+union 接受十進位字串，含自由文字分支的 union 則保留字串原文。
+Agent 應一起修正已列出的欄位，
+保留其餘內容後重試一次，不要重送原錯誤參數，也不要只因工具失敗就重跑寫入操作。
+只有參數驗證可宣告 `executed: false`；業務規則或 provider 錯誤沿用原本回應契約，
+並不保證所有外部服務或業務錯誤都能靠一次參數修正解決。
+
+分階段實作與驗證記錄見[Agent 輸入契約](../design/AGENT_INPUT_CONTRACT.md)。
+
 ## 8 個能力族
 
 ![PubMed Search MCP 能力族地圖](../images/tool-capability-map.svg)

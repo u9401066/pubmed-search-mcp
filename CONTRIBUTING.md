@@ -398,7 +398,9 @@ real.
 The opt-in extended Mermaid CI job additionally renders the exact Chronicle and citation graph
 sources returned by the MCP acceptance process with pinned Mermaid 11.16.1.
 A separate real-stdio rejection test protects the breaking no-compatibility
-boundary for retired tools, flat action bags, and scalar/stringified coercions.
+boundary for retired tools, flat action bags, wrong scalar types, and malformed
+containers. A second all-tool stdio pass verifies schema-declared JSON array/object
+strings, including nested requests; the reported nine-PMID batch has its own regression.
 Use `-m "not slow"` to omit only the fresh-wheel path during a focused local
 iteration. Live provider probes remain separately opt-in with
 `PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration`.
