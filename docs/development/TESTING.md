@@ -20,7 +20,8 @@ uv run --frozen python scripts/check_repo.py container --container-image pubmed-
 ```
 
 Use a clean distribution directory: the artifact check requires exactly one
-wheel and one sdist. The wheel is installed once per pytest session into an empty
+wheel and one sdist matching the source version; stale distributions fail before
+installation. The wheel is installed once per pytest session into an empty
 virtual environment with production dependencies only. The sdist is rebuilt and
 its wheel entries are compared with the supplied wheel. The driver runs outside
 the checkout, checks the actual import location, and clears inherited credentials,

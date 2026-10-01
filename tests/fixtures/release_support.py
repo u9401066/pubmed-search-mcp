@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from pubmed_search import __version__
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -105,6 +107,10 @@ def install_release(root: Path, dist: Path | None) -> ReleaseInstallation:
         "Expected exactly one wheel and one sdist; use a clean distribution directory"
     )
     wheel, sdist = wheels[0].resolve(), sdists[0].resolve()
+    assert wheel.name.startswith(f"pubmed_search_mcp-{__version__}-"), (
+        "Wheel version does not match the source under test"
+    )
+    assert sdist.name == f"pubmed_search_mcp-{__version__}.tar.gz", "sdist version does not match the source under test"
     # A published sdist must reproduce the same installed files as the wheel.
     rebuilt = root / "from-sdist"
     run_checked([uv, "build", "--no-sources", "--wheel", str(sdist), "--out-dir", str(rebuilt)], cwd=root)
@@ -135,7 +141,7 @@ def install_release(root: Path, dist: Path | None) -> ReleaseInstallation:
         )
     )
     assert Path(imported[0]).resolve().is_relative_to(venv.resolve()), "Checkout import masked broken packaging"
-    assert imported[1] == imported[2]
+    assert imported[1] == imported[2] == __version__, "Installed metadata/package version differs from source"
     return ReleaseInstallation(python, wheel, sdist, imported[1])
 
 

@@ -33,6 +33,11 @@
       "mutation": "installed HTTP console exits before startup",
       "detected": true,
       "reason": "Server exited before readiness: 23"
+    },
+    {
+      "mutation": "real v0.7.6 distributions supplied to v0.7.7 acceptance",
+      "detected": true,
+      "reason": "Wheel version does not match the source under test"
     }
   ],
   "limits": [
