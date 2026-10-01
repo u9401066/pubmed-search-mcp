@@ -1,0 +1,159 @@
+{
+  "version": "0.7.5",
+  "publication": "verified",
+  "verified_at_utc": "2026-10-01T08:06:45.693999+00:00",
+  "release_commit": "2431374a92a327ef7f5a0c9a4a6c90e05ff86be1",
+  "tag": "v0.7.5",
+  "tag_type": "annotated",
+  "pr": "https://github.com/u9401066/pubmed-search-mcp/pull/20",
+  "branch_head": "4f7a6fe6683e7ac00d9cb51776e656536d2b7a89",
+  "segmented_commits": 4,
+  "max_paths_per_commit": 27,
+  "commits": [
+    {
+      "commit": "a71d38df7c39a2b1083ddf6024f442e053408b92",
+      "subject": "fix(mcp): normalize shared inputs and expose repairable validation errors",
+      "paths": 27
+    },
+    {
+      "commit": "eee981583b9d0b17cd8c203344621404285fdc00",
+      "subject": "docs(mcp): document automatic correction and release review",
+      "paths": 15
+    },
+    {
+      "commit": "0e0e85bc1c2a3a03eed9511f5ab2b3ef0bd72770",
+      "subject": "docs(site): refresh input guides and release memory",
+      "paths": 14
+    },
+    {
+      "commit": "4f7a6fe6683e7ac00d9cb51776e656536d2b7a89",
+      "subject": "chore(release): prepare v0.7.5",
+      "paths": 7
+    }
+  ],
+  "inherited_documentation_commits": 9,
+  "local_validation": {
+    "python310_full": {
+      "passed": 4882,
+      "skipped": 23,
+      "deselected": 30,
+      "seconds": 134.54
+    },
+    "focused_regressions": 185,
+    "pre_push_full_gate": "passed",
+    "lint_format_async_layout_publication_inventory_mypy": "passed",
+    "source_stdio_http_fresh_wheel_acceptance": "passed",
+    "tools": 41,
+    "rejected_and_repaired_calls_per_transport": 41,
+    "successful_semantic_calls_per_transport": 60
+  },
+  "publication_validation": {
+    "python313_full": {
+      "passed": 4895,
+      "skipped": 10,
+      "deselected": 30,
+      "seconds": 169.26,
+      "additional_cases": "13 PowerShell hook cases skipped locally"
+    },
+    "installed_wheel_smoke": "passed",
+    "container_build_and_smoke": "passed"
+  },
+  "publication_run": {
+    "id": 36833096189,
+    "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36833096189",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Verify tag, tests, and distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified distributions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Publish verified GitHub Release",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "ci_runs": {
+    "release_branch": {
+      "id": 36832773468,
+      "conclusion": "success",
+      "headSha": "4f7a6fe6683e7ac00d9cb51776e656536d2b7a89",
+      "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36832773468"
+    },
+    "pull_request": {
+      "id": 36832805368,
+      "conclusion": "success",
+      "headSha": "4f7a6fe6683e7ac00d9cb51776e656536d2b7a89",
+      "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36832805368"
+    },
+    "release_master": {
+      "id": 36832952716,
+      "conclusion": "success",
+      "headSha": "2431374a92a327ef7f5a0c9a4a6c90e05ff86be1",
+      "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36832952716"
+    },
+    "website": {
+      "id": 36832952706,
+      "conclusion": "success",
+      "headSha": "2431374a92a327ef7f5a0c9a4a6c90e05ff86be1",
+      "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36832952706"
+    },
+    "wiki": {
+      "id": 36832952703,
+      "conclusion": "success",
+      "headSha": "2431374a92a327ef7f5a0c9a4a6c90e05ff86be1",
+      "url": "https://github.com/u9401066/pubmed-search-mcp/actions/runs/36832952703"
+    }
+  },
+  "local_distributions": {
+    "pubmed_search_mcp-0.7.5-py3-none-any.whl": "cb943c3c1035e13c932d5af87c5256bdbebf1958cf72c77f1a6141cb375ef4d8",
+    "pubmed_search_mcp-0.7.5.tar.gz": "ae91293b3e4ef86d0364cd56c55915af65344fc10845ea4632d64c13c73621ec"
+  },
+  "release_url": "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.5",
+  "pypi_url": "https://pypi.org/project/pubmed-search-mcp/0.7.5/",
+  "artifacts": [
+    {
+      "filename": "pubmed_search_mcp-0.7.5-py3-none-any.whl",
+      "sha256": "cb943c3c1035e13c932d5af87c5256bdbebf1958cf72c77f1a6141cb375ef4d8",
+      "bytes": 867984,
+      "pypi_url": "https://files.pythonhosted.org/packages/42/33/f1c646bd00dd2ca98f6e593ffebb6857ba65baea4108246b1d4e61bd1e69/pubmed_search_mcp-0.7.5-py3-none-any.whl",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.5/pubmed_search_mcp-0.7.5-py3-none-any.whl",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    },
+    {
+      "filename": "pubmed_search_mcp-0.7.5.tar.gz",
+      "sha256": "ae91293b3e4ef86d0364cd56c55915af65344fc10845ea4632d64c13c73621ec",
+      "bytes": 759605,
+      "pypi_url": "https://files.pythonhosted.org/packages/b5/c9/e8d0d04da01c34ebbda78f0e466c7df0b65539da2e6969196e334f402d3e/pubmed_search_mcp-0.7.5.tar.gz",
+      "github_url": "https://github.com/u9401066/pubmed-search-mcp/releases/download/v0.7.5/pubmed_search_mcp-0.7.5.tar.gz",
+      "downloaded_from_both_and_matched": true,
+      "matches_local_build": true
+    }
+  ],
+  "documentation": {
+    "website": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/?release=v0.7.5",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "af2bc5c9d55412ce49438313431d5cef38a05077e4bca397905c5930a3a1a360"
+    },
+    "website_content": {
+      "url": "https://u9401066.github.io/pubmed-search-mcp/site-content.js?v=20261001-v075",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "d2aa005ce71a147457c8440d634a8275f68df65d0d9cf7d8005212970b30a459"
+    },
+    "wiki_input_guide": {
+      "url": "https://raw.githubusercontent.com/wiki/u9401066/pubmed-search-mcp/Tools-Usage-Guide.md",
+      "http_status": 200,
+      "current_content_verified": true,
+      "sha256": "3b3ad9a54a9cc795bc81424d269eb0daf952120b3ed44f6c9f7b8d334aca8e8f"
+    }
+  },
+  "scope": "Focused input-contract review and deterministic protocol tests; no new whole-core semantic review, live-provider load test or agent efficacy benchmark. Publication records are a documentation-only follow-up; the tag and artifacts remain fixed."
+}

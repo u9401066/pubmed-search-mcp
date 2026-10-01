@@ -1,6 +1,6 @@
 # Progress (Updated: 2026-10-01)
 
-## 2026-10-01 — v0.7.5 agent input contract, release preparation
+## 2026-10-01 — v0.7.5 agent input contract, published and verified
 
 - Completed the five phases: shared field types, matching transport schemas,
   safe structured errors, automatic format correction, and real MCP acceptance.
@@ -11,8 +11,15 @@
 - The final release full gate passed **4,882 tests** (23 skipped, 30 live tests
   deselected; 134.54 s), plus all lint/type/layout/publication checks. Wheel/sdist
   build and docs/skills sync passed. Live providers are not exercised.
-- User authorized segmented Git commits, push and v0.7.5 publication; record
-  verified PyPI/GitHub/website results only after the workflows complete.
+- PR #20 merged four focused release commits (maximum 27 paths) at `2431374`;
+  branch/PR/master CI passed before the annotated tag. Release run `36833096189`
+  passed verification, PyPI and GitHub Release publication. The release runner
+  passed 4,895 tests, 10 skipped, 30 deselected, including 13 PowerShell hook
+  cases skipped locally; fresh-wheel installation and container smoke passed.
+- Downloaded wheel/sdist hashes match across PyPI, GitHub and local builds.
+  Website and Wiki content are deployed and verified. The
+  [publication receipt](../docs/reports/release_v075_2026-10-01.json) records the
+  evidence as a documentation-only follow-up without moving the release tag.
 
 
 ## 2026-09-21 — Repository organization and manuscript revision
