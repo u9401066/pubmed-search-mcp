@@ -131,7 +131,7 @@ Use this path when you already trust one seed paper and want to map the surround
 
 ![Full text, figures, and biomedical image workflow](../images/visual-evidence-workflow.svg)
 
-Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service follows an identifier-aware policy: Europe PMC XML when a PMCID is available, Unpaywall OA locations for DOI-backed articles, institutional direct/EZproxy when configured, CORE, then optional downloader/browser-session fallbacks. CrossRef is a metadata and publisher-link route, not a hosted full-text source.
+Use `get_fulltext` when abstracts are not enough. Use a discriminated `source` object, for example `source={"kind":"pmcid","value":"PMC7096777"}`; the other supported kinds are `pmid` and `doi`. After a prefetched search, reuse the selected row's `read_request.arguments`. Missing body sections are reported with available titles instead of substituting abstracts. The full-text service follows an identifier-aware policy: Europe PMC XML when a PMCID is available, Unpaywall OA locations for DOI-backed articles, institutional direct/EZproxy when configured, CORE, then optional downloader/browser-session fallbacks. CrossRef is a metadata and publisher-link route, not a hosted full-text source.
 
 Use `get_article_figures` for PMC Open Access articles when the task needs captions, image URLs, or PDF links. Figure extraction depends on open-access availability; a missing figure result is not proof that the article has no figures.
 

@@ -75,6 +75,7 @@ def validate_unified_search_input_envelope(
         "options": options,
         "pipeline": pipeline,
         "stop_at": stop_at,
+        "fulltext": fulltext,
     }
     for field_name, value in values.items():
         if value is None:

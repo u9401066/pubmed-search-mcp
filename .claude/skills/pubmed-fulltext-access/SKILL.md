@@ -134,7 +134,7 @@ get_institutional_link(pmid="12345678")
 
 ```python
 fetch_article_details(pmids="12345678")
-get_fulltext(source={"kind":"pmid","value":"12345678"}, sections="abstract,results")
+get_fulltext(source={"kind":"pmid","value":"12345678"}, sections="methods,results")
 ```
 
 ### 情境 2：搜尋後挑代表性文章讀全文
@@ -152,11 +152,18 @@ PMCID 的候選背景預取 XML。選定後用回應列出的 PMCID 呼叫 `get_
 unified_search(
     query="remimazolam ICU sedation",
     limit=10,
-    ranking="quality"
+    ranking="quality",
+    fulltext="prefetch",
+    output_format="json"
 )
 
-# 對選中的 PMID 再做全文抓取
-get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)
+# 使用所選文章的 read_request.arguments；此 PMCID 僅為格式示例。
+get_fulltext(
+    source={"kind":"pmcid","value":"PMC7096777"},
+    sections="methods,results",
+    include_pdf_links=False,
+    output_format="json"
+)
 ```
 
 ### 情境 3：先抓全文，再抽圖表與實體

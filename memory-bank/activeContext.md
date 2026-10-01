@@ -18,9 +18,9 @@
   [release review](../docs/reports/release_v076_2026-10-01.md) explain changes,
   bounds and evidence. New fixed-delay measurements preserve the historical
   experiment and do not claim WAN, token or agent-performance gains.
-- Focused regressions: 110 passed; all-tool real transport suite: 7 passed;
-  mypy: 440 files clean. Full gate: 4,910 passed, 23 skipped, 30 deselected
-  (124.03 s); docs/skills and wheel/sdist build pass. Merge/publication pending.
+- Focused regressions: 114 passed; all-tool real transport suite: 7 passed;
+  mypy: 440 files clean. Full gate: 4,914 passed, 23 skipped, 30 deselected
+  (123.23 s); docs/skills and wheel/sdist build pass. Merge/publication pending.
 
 ## Previous Focus — v0.7.5 published and verified (2026-10-01)
 

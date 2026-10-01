@@ -334,6 +334,12 @@ async def test_two_server_runtimes_and_tenants_never_share_xml() -> None:
         await second.fulltext_cache.aclose()
 
 
+@pytest.mark.parametrize("value", [[], {}, True, 1])
+def test_prefetch_mode_rejects_wrong_types_at_application_boundary(value: object) -> None:
+    with pytest.raises(ValueError, match="fulltext must be a string"):
+        normalize_unified_search_request(query="sedation", fulltext=value)
+
+
 def test_prefetch_request_is_explicit_and_pipeline_combination_rejected() -> None:
     assert normalize_unified_search_request(query="sedation").fulltext == "off"
     assert normalize_unified_search_request(query="sedation", fulltext="prefetch").fulltext == "prefetch"

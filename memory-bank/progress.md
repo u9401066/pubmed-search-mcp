@@ -5,9 +5,9 @@
 - Reviewed the prefetch/read handoff; fixed queued demand priority, section/abstract
   correctness, native read arguments and candidate-limit reporting.
 - Separated application section selection and removed duplicated MCP request
-  construction. Added 10 regression cases; focused suite 110 passed, all-tool
-  transports 7 passed, mypy 440 files clean. Full gate: 4,910 passed, 23 skipped,
-  30 deselected (124.03 s); website/extended regressions 50 passed. Publication pending.
+  construction. Added 14 regression cases; focused suite 114 passed, all-tool
+  transports 7 passed, mypy 440 files clean. Full gate: 4,914 passed, 23 skipped,
+  30 deselected (123.23 s); website/extended regressions 50 passed. Publication pending.
 - Updated bilingual docs, website payloads, fulltext skill, release metadata and
   memory. Historical reports remain unchanged; publication is not yet claimed.
 

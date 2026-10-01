@@ -131,7 +131,7 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 
 ![全文、圖表與生醫圖片流程](../images/visual-evidence-workflow.svg)
 
-摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依 identifier-aware policy 選路徑：有 PMCID 時先走 Europe PMC XML；DOI 文章會查 Unpaywall OA locations；依設定嘗試 institutional direct/EZproxy；再落到 CORE、optional downloader 與 browser-session fallback。CrossRef 是 metadata / publisher-link route，不是全文主機。
+摘要不夠時使用 `get_fulltext`。使用明確的 `source` 物件，例如 `source={"kind":"pmcid","value":"PMC7096777"}`；另外支援 `pmid` 與 `doi` kind。預取搜尋後可直接使用所選列的 `read_request.arguments`。缺少正文章節時會列出可用標題，不以摘要替代。全文服務會依 identifier-aware policy 選路徑：有 PMCID 時先走 Europe PMC XML；DOI 文章會查 Unpaywall OA locations；依設定嘗試 institutional direct/EZproxy；再落到 CORE、optional downloader 與 browser-session fallback。CrossRef 是 metadata / publisher-link route，不是全文主機。
 
 需要 captions、image URLs 或 PDF links 時，對 PMC Open Access 文章使用 `get_article_figures`。圖表擷取取決於 open-access availability；沒有結果不代表文章一定沒有圖。
 
