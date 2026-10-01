@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-10-01
+
 ### Added
 
 - Opt-in `unified_search(fulltext="prefetch")` prepares known PMC XML for eligible
@@ -21,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Promote queued, not-yet-started XML prefetch to foreground reads without
+  duplicating an active download; preserve reader cancellation and provider limits.
+- Include native `read_request` arguments in prefetch rows and report the actual
+  operator candidate limit, so agents can read directly without polling or guessing.
+- Separate structured section selection from retrieval and rendering. Report
+  available/unmatched titles; never substitute abstracts for missing body sections
+  or start PDF fallback just because a filter missed. Abstract-only XML remains
+  eligible for normal fallback rather than claiming successful fulltext.
+- Consolidate fulltext request construction across identifier kinds and exercise
+  handoff arguments through real stdio, HTTP and fresh-wheel acceptance.
 - Skip Unpaywall link enrichment when structured fulltext has already succeeded
   and `get_fulltext(include_pdf_links=False)` requests only text.
 
@@ -2996,7 +3008,10 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.5...v0.7.6
+[0.7.5]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.4...v0.7.5
+[0.7.4]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.0...v0.7.1
