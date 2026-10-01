@@ -101,6 +101,7 @@ addopts = "--timeout=60"
 markers = [
     "integration: marks tests as integration tests (may make real API calls)",
     "slow: marks tests as slow running",
+    "container: opt-in tests of a locally built Docker image",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

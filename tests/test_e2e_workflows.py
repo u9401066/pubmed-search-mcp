@@ -1,514 +1,209 @@
-"""
-End-to-End Testing - Verify complete user workflows.
+"""Offline workflow smoke with real provider HTTP, JSON/XML parsers and storage.
 
-Tests realistic scenarios that users would encounter.
-Run with: pytest tests/test_e2e_workflows.py -v
+The loopback fixture serves synthetic provider-shaped responses. Only endpoint
+addresses are redirected; no search, parser, cache or application result is mocked.
+This is not evidence of availability or latency of a live literature provider.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+import json
+import os
+import threading
+from collections import Counter
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from Bio import Entrez
+from mcp.client import Client
 
-from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.infrastructure.sources import europe_pmc
+from pubmed_search.presentation.mcp_server import create_server
+from tests.fixtures.release_support import smoke_env
+from tests.test_all_tools_mcp_acceptance import _json_document, _result_text
 
-# ============================================================
-# E2E Test Fixtures
-# ============================================================
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+ARTICLE = {
+    "id": "12345678",
+    "source": "MED",
+    "pmid": "12345678",
+    "pmcid": "PMC7096777",
+    "doi": "10.1000/smoke",
+    "title": "Offline smoke: aspirin & stroke",
+    "authorString": "Smith J",
+    "journalTitle": "Smoke Journal",
+    "pubYear": "2024",
+    "isOpenAccess": "Y",
+    "inEPMC": "Y",
+    "inPMC": "Y",
+    "hasPDF": "Y",
+    "abstractText": "Synthetic abstract, not research evidence.",
+}
+XML = b"""<article><front><article-meta><title-group>
+<article-title>Offline smoke: aspirin &amp; stroke</article-title></title-group>
+<abstract><p>Synthetic abstract, not research evidence.</p></abstract></article-meta></front>
+<body><sec><title>Methods</title><p>Synthetic body with <italic>inline</italic> markup.</p></sec>
+<sec><title>Results</title><p>A separate result section.</p></sec></body></article>"""
+
+PUBMED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE PubmedArticleSet SYSTEM "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_190101.dtd">
+<PubmedArticleSet><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM">
+<PMID Version="1">12345678</PMID><Article PubModel="Print">
+<Journal><ISSN IssnType="Print">1234-5678</ISSN><JournalIssue CitedMedium="Print">
+<PubDate><Year>2024</Year></PubDate></JournalIssue><Title>Smoke Journal</Title></Journal>
+<ArticleTitle>Offline smoke: aspirin &amp; stroke</ArticleTitle>
+<Abstract><AbstractText>Synthetic abstract, not research evidence.</AbstractText></Abstract>
+<AuthorList><Author ValidYN="Y"><LastName>Smith</LastName><ForeName>John</ForeName><Initials>J</Initials></Author></AuthorList>
+<Language>eng</Language><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
+</Article></MedlineCitation><PubmedData><ArticleIdList>
+<ArticleId IdType="pubmed">12345678</ArticleId><ArticleId IdType="doi">10.1000/smoke</ArticleId>
+<ArticleId IdType="pmc">PMC7096777</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"""
 
 
 @pytest.fixture
-def complete_article_data():
-    """Complete article data for E2E tests."""
-    return {
-        "pmid": "33475315",
-        "title": "Remimazolam for procedural sedation: a systematic review",
-        "authors": ["Chen SH", "Wang ST", "Cheng WC"],
-        "authors_full": [
-            {"lastname": "Chen", "forename": "Shih-Hao", "initials": "SH"},
-            {"lastname": "Wang", "forename": "Shao-Tung", "initials": "ST"},
-            {"lastname": "Cheng", "forename": "Wei-Chun", "initials": "WC"},
-        ],
-        "abstract": (
-            "Background: Remimazolam is an ultra-short-acting benzodiazepine. "
-            "This systematic review evaluates its efficacy and safety for procedural sedation. "
-            "Methods: We searched PubMed, EMBASE, and Cochrane Library. "
-            "Results: Remimazolam showed effective sedation with rapid onset and offset. "
-            "Conclusion: Remimazolam is a promising agent for procedural sedation."
-        ),
-        "journal": "British Journal of Anaesthesia",
-        "journal_abbrev": "Br J Anaesth",
-        "year": "2021",
-        "month": "Feb",
-        "volume": "126",
-        "issue": "2",
-        "pages": "404-413",
-        "doi": "10.1016/j.bja.2020.09.032",
-        "pmc_id": "PMC7816155",
-        "keywords": ["remimazolam", "sedation", "procedural sedation"],
-        "mesh_terms": ["Benzodiazepines", "Conscious Sedation", "Anesthetics"],
+def provider_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
+    state: dict[str, Any] = {
+        "requests": [],
+        "status": 200,
+        "search": {"hitCount": 1, "resultList": {"result": [ARTICLE]}},
     }
 
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, message: str, *args: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            parsed = urlsplit(self.path)
+            state["requests"].append((parsed.path, parse_qs(parsed.query)))
+            if parsed.path == "/search":
+                body, status, content_type = json.dumps(state["search"]).encode(), state["status"], "application/json"
+            elif parsed.path == "/PMC7096777/fullTextXML":
+                body, status, content_type = XML, 200, "application/xml"
+            elif parsed.path == "/efetch.fcgi":
+                body, status, content_type = PUBMED_XML, 200, "application/xml"
+            else:
+                body, status, content_type = b"unexpected request", 404, "text/plain"
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+    worker.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    monkeypatch.setattr(europe_pmc, "EPMC_SEARCH_URL", f"{base_url}/search")
+    monkeypatch.setattr(europe_pmc, "EPMC_API_BASE", base_url)
+    build_request = Entrez._build_request
+
+    def local_request(cgi, *args, **kwargs):
+        # Redirect only the network address; preserve Biopython request encoding,
+        # rate control, XML/DTD parsing and the production article parser.
+        return build_request(f"{base_url}/{urlsplit(cgi).path.rsplit('/', 1)[-1]}", *args, **kwargs)
+
+    monkeypatch.setattr(Entrez, "_build_request", local_request)
+    try:
+        yield state
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+
 
 @pytest.fixture
-def mock_client_full(complete_article_data):
-    """Fully mocked literature source for E2E tests."""
-    client = AsyncMock()  # AsyncMock to support await calls
+def production_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    for key in list(os.environ):
+        if key.startswith(("PUBMED_", "NCBI_", "OPENURL_")) or key.lower().endswith("_proxy"):
+            monkeypatch.delenv(key)
+    for key, value in smoke_env(tmp_path).items():
+        monkeypatch.setenv(key, value)
+    return create_server(email="workflow-smoke@example.com", data_dir=str(tmp_path / "data"))
 
-    # Mock the sole typed PubMed search contract.
-    client.search_page.return_value = SourceSearchPage(
-        source="pubmed",
-        items=[complete_article_data],
-        total=1,
-        query="mock query",
+
+async def test_search_prefetch_read_export_and_session_over_real_provider_http(
+    provider_http, production_server, tmp_path
+):
+    async with Client(production_server) as client:
+        search = await client.call_tool(
+            "unified_search",
+            {
+                "query": "aspirin stroke",
+                "sources": "europe_pmc",
+                "limit": "1",
+                "output_format": "json",
+                "options": "shallow,no_oa,no_relax,no_analysis,no_scores,no_next",
+                "fulltext": "prefetch",
+            },
+        )
+        assert not search.is_error, _result_text(search)
+        payload = _json_document(_result_text(search))
+        assert payload["articles"][0]["identifiers"]["pmid"] == ARTICLE["pmid"]
+        assert payload["source_counts"][0]["returned"] == 1
+        read = payload["enrichment"]["fulltext_prefetch"]["articles"][0]["read_request"]
+        fulltext = await client.call_tool(read["tool"], read["arguments"])
+        assert not fulltext.is_error, _result_text(fulltext)
+        document = _json_document(_result_text(fulltext))
+        assert document["fulltext_available"] is True
+        assert document["title"] == ARTICLE["title"]
+        assert document["content_sections"][0]["title"] == "Methods"
+        assert "Synthetic body with inline markup." in document["content_sections"][0]["content"]
+        assert "Synthetic abstract" not in document["content_sections"][0]["content"]
+        repeated = await client.call_tool(read["tool"], {**read["arguments"], "sections": "Results"})
+        assert "A separate result section." in _result_text(repeated)
+        exported = await client.call_tool(
+            "save_literature_notes",
+            {
+                "pmids": '["12345678"]',
+                "output_dir": str(tmp_path / "notes"),
+                "note_format": "wiki",
+                "include_csl_json": True,
+                "create_index": False,
+            },
+        )
+        assert not exported.is_error, _result_text(exported)
+        note = (tmp_path / "notes" / "12345678.md").read_text()
+        assert ARTICLE["title"] in note
+        assert ARTICLE["abstractText"] in note
+        citations = json.loads((tmp_path / "notes" / "references.csl.json").read_text())
+        assert citations[0]["PMID"] == ARTICLE["pmid"]
+        assert citations[0]["DOI"] == ARTICLE["doi"]
+        cached = await client.call_tool("read_session", {"request": {"action": "article", "pmid": "12345678"}})
+        assert not cached.is_error, _result_text(cached)
+        assert ARTICLE["title"] in _result_text(cached)
+    counts = Counter(path for path, _ in provider_http["requests"])
+    assert counts == {"/search": 1, "/PMC7096777/fullTextXML": 1, "/efetch.fcgi": 1}, (
+        "Prefetch/read/export duplicated upstream I/O"
     )
-
-    # Mock fetch_details
-    client.fetch_details.return_value = [complete_article_data]
-
-    # Mock get_related_articles
-    client.get_related_articles.return_value = [
-        {**complete_article_data, "pmid": "33475316", "title": "Related Article 1"},
-        {**complete_article_data, "pmid": "33475317", "title": "Related Article 2"},
-    ]
-
-    # Mock get_citing_articles
-    client.get_citing_articles.return_value = [
-        {**complete_article_data, "pmid": "33475318", "title": "Citing Article 1"}
-    ]
-
-    return client
-
-
-# ============================================================
-# Workflow 1: Quick Literature Search
-# ============================================================
-
-
-class TestQuickSearchWorkflow:
-    """Test: User wants to quickly find papers on a topic."""
-
-    async def test_quick_search_workflow(self, mock_client_full):
-        """
-        Workflow:
-        1. User searches for a topic
-        2. Gets back relevant articles
-        3. Reads titles and abstracts
-        """
-        # Step 1: Search
-        results = (await mock_client_full.search_page("remimazolam sedation", limit=10)).items
-
-        assert len(results) > 0
-        assert results[0]["pmid"] is not None
-
-        # Step 2: Verify article data
-        article = results[0]
-        assert "title" in article
-        assert "abstract" in article
-        assert "authors" in article
-
-        # Step 3: User can read key information
-        assert len(article["title"]) > 0
-        assert len(article["abstract"]) > 0
-        assert len(article["authors"]) > 0
-
-
-# ============================================================
-# Workflow 2: Systematic Literature Review
-# ============================================================
-
-
-class TestSystematicReviewWorkflow:
-    """Test: Researcher conducting systematic literature review."""
-
-    async def test_systematic_review_workflow(self, mock_client_full, complete_article_data):
-        """
-        Workflow:
-        1. Search with MeSH terms
-        2. Get detailed article information
-        3. Export citations for reference manager
-        4. Check for full text availability
-        """
-        # Step 1: Comprehensive search with MeSH
-        mesh_query = '("Remimazolam"[MeSH]) AND ("Conscious Sedation"[MeSH])'
-        results = (await mock_client_full.search_page(mesh_query, limit=50)).items
-
-        assert len(results) > 0
-
-        # Step 2: Get detailed information
-        pmids = [r["pmid"] for r in results[:10]]
-        details = await mock_client_full.fetch_details(pmids)
-
-        assert len(details) > 0
-        assert all("abstract" in d for d in details)
-
-        # Step 3: Prepare export (mock)
-        # In real scenario, would call prepare_export()
-        export_data = {"format": "ris", "articles": details, "count": len(details)}
-        assert export_data["format"] == "ris"
-        assert export_data["count"] > 0
-
-        # Step 4: Check full text availability
-        article = details[0]
-        has_pmc = bool(article.get("pmc_id"))
-        has_doi = bool(article.get("doi"))
-
-        # User can access full text if PMC or DOI available
-        can_access_fulltext = has_pmc or has_doi
-        assert can_access_fulltext  # Our test data has both
-
-
-# ============================================================
-# Workflow 3: Citation Network Exploration
-# ============================================================
-
-
-class TestCitationExplorationWorkflow:
-    """Test: Researcher exploring citation networks."""
-
-    async def test_citation_network_workflow(self, mock_client_full):
-        """
-        Workflow:
-        1. Find a key paper
-        2. Get related articles
-        3. Find papers that cite this paper
-        4. Get references from this paper
-        """
-        key_pmid = "33475315"
-
-        # Step 1: Get the key paper details
-        details = await mock_client_full.fetch_details([key_pmid])
-        article = details[0]
-        assert article["pmid"] == key_pmid
-
-        # Step 2: Find related articles
-        related = await mock_client_full.get_related_articles(key_pmid, limit=10)
-        assert len(related) > 0
-        assert all(r["pmid"] != key_pmid for r in related)
-
-        # Step 3: Find citing articles (forward citation)
-        citing = await mock_client_full.get_citing_articles(key_pmid, limit=10)
-        assert len(citing) > 0
-
-        # Step 4: Get references (backward citation)
-        # Mock would be similar
-        # references = mock_client_full.get_article_references(key_pmid)
-
-        # User now has complete citation network
-        network = {
-            "key_paper": article,
-            "related": related,
-            "cited_by": citing,
-            # "references": references
-        }
-        assert network["key_paper"] is not None
-        assert len(network["related"]) > 0
-        assert len(network["cited_by"]) > 0
-
-
-# ============================================================
-# Workflow 4: PICO Clinical Question
-# ============================================================
-
-
-class TestPICOWorkflow:
-    """Test: Clinician asking PICO-based question."""
-
-    async def test_pico_clinical_workflow(self, mock_client_full):
-        """
-        Workflow:
-        1. Clinician has PICO question
-        2. System parses PICO elements
-        3. Generates optimized search query
-        4. Finds relevant clinical trials
-        5. Filters for high-quality evidence
-        """
-        # Step 1: PICO question
-
-        # Step 2: Parse PICO (mock)
-        pico = {
-            "P": "ICU patients",
-            "I": "remimazolam",
-            "C": "propofol",
-            "O": "sedation quality",
-        }
-
-        # Step 3: Generate optimized query
-        # Combine PICO elements with Boolean logic
-        optimized_query = f'("{pico["P"]}"[All Fields]) AND ("{pico["I"]}"[All Fields]) AND ("{pico["C"]}"[All Fields])'
-
-        # Step 4: Search
-        results = (await mock_client_full.search_page(optimized_query, limit=20)).items
-        assert len(results) > 0
-
-        # Step 5: Filter for high-quality evidence
-        # Look for systematic reviews, RCTs, meta-analyses
-        [
-            r
-            for r in results
-            if any(term in r.get("title", "").lower() for term in ["systematic review", "meta-analysis", "randomized"])
-        ]
-
-        # User gets evidence-based answer
-        assert len(results) > 0  # Found papers
-
-
-# ============================================================
-# Workflow 5: Drug Research Workflow
-# ============================================================
-
-
-class TestDrugResearchWorkflow:
-    """Test: Pharmacologist researching a drug compound."""
-
-    async def test_drug_compound_workflow(self, mock_client_full):
-        """
-        Workflow:
-        1. Search for drug by name
-        2. Get compound information
-        3. Find related literature
-        4. Identify clinical trials
-        """
-        drug_name = "remimazolam"
-
-        # Step 1: Search PubMed
-        results = (await mock_client_full.search_page(drug_name, limit=50)).items
-        assert len(results) > 0
-
-        # Step 2: Search PubChem (mock)
-        # compound_info = search_compound(drug_name)
-        compound_info = {
-            "cid": "11550111",
-            "name": "Remimazolam",
-            "formula": "C21H21N5O3",
-            "molecular_weight": "391.42",
-        }
-        assert compound_info["cid"] is not None
-
-        # Step 3: Get literature linked to compound
-        # compound_literature = get_compound_literature(compound_info["cid"])
-
-        # Step 4: Filter for clinical trials
-        clinical_trials = [
-            r
-            for r in results
-            if "clinical trial" in r.get("title", "").lower() or "Clinical Trial" in r.get("mesh_terms", [])
-        ]
-
-        # Researcher has comprehensive drug information
-        drug_profile = {
-            "compound": compound_info,
-            "literature_count": len(results),
-            "clinical_trials": clinical_trials,
-        }
-        assert drug_profile["compound"] is not None
-        assert drug_profile["literature_count"] > 0
-
-
-# ============================================================
-# Workflow 6: Full Text Access Workflow
-# ============================================================
-
-
-class TestFullTextAccessWorkflow:
-    """Test: Researcher needing full text access."""
-
-    async def test_fulltext_access_workflow(self, mock_client_full, complete_article_data):
-        """
-        Workflow:
-        1. Find articles
-        2. Check open access availability
-        3. Access full text from PMC
-        4. Get PDF links
-        """
-        # Step 1: Find articles
-        results = (await mock_client_full.search_page("diabetes treatment", limit=10)).items
-        assert len(results) > 0
-
-        # Step 2: Check OA availability
-        article = results[0]
-        has_pmc = bool(article.get("pmc_id"))
-        has_doi = bool(article.get("doi"))
-
-        # Step 3: Access PMC full text (mock)
-        if has_pmc:
-            # fulltext = get_fulltext(article["pmc_id"])
-            fulltext = {
-                "pmcid": article["pmc_id"],
-                "title": article["title"],
-                "sections": {
-                    "introduction": "Full introduction text...",
-                    "methods": "Full methods text...",
-                    "results": "Full results text...",
-                    "discussion": "Full discussion text...",
-                },
-            }
-            assert fulltext["pmcid"] == article["pmc_id"]
-            assert "introduction" in fulltext["sections"]
-
-        # Step 4: Get PDF links (mock)
-        {
-            "pmc": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/pdf/",
-            "doi": f"https://doi.org/{article['doi']}" if has_doi else None,
-        }
-
-        # User can access full text
-        assert has_pmc or has_doi
-
-
-# ============================================================
-# Workflow 7: Session Management Workflow
-# ============================================================
-
-
-class TestSessionWorkflow:
-    """Test: User managing research sessions."""
-
-    @pytest.mark.skip(reason="SessionManager API changed - needs rewrite")
-    async def test_session_management_workflow(self, mock_client_full):
-        """
-        Workflow:
-        1. Create research session
-        2. Save search results
-        3. Build reading list
-        4. Add notes
-        5. Resume session later
-        """
-        from pubmed_search.application.session import SessionManager
-
-        session_mgr = SessionManager()
-        session_id = "research-project-001"
-
-        # Step 1: Create session
-        session_mgr.create_session(topic="diabetes treatment")
-        session = session_mgr.get_session(session_id)
-        assert session is not None
-        assert session["topic"] == "diabetes treatment"
-
-        # Step 2: Save search results
-        results = (await mock_client_full.search_page("diabetes", limit=10)).items
-        session_mgr.cache_articles(session_id, results)
-
-        # Step 3: Build reading list
-        important_pmid = results[0]["pmid"]
-        session_mgr.add_to_reading_list(session_id, important_pmid, priority="high")
-
-        # Step 4: Add notes
-        session_mgr.add_note(session_id, important_pmid, "Key paper for methodology section")
-
-        # Step 5: Resume session
-        reading_list = session_mgr.get_reading_list(session_id)
-        notes = session_mgr.get_notes(session_id, important_pmid)
-
-        assert important_pmid in reading_list
-        assert len(notes) > 0
-
-
-# ============================================================
-# Workflow 8: Error Recovery Workflow
-# ============================================================
-
-
-class TestErrorRecoveryWorkflow:
-    """Test: System handles errors gracefully."""
-
-    async def test_network_error_recovery(self):
-        """Handle network failures gracefully."""
-        from pubmed_search.shared.exceptions import NetworkError
-
-        mock_client = AsyncMock()
-        mock_client.search_page.side_effect = NetworkError("Network timeout")
-
-        # User should get meaningful error
-        with pytest.raises(NetworkError) as exc_info:
-            await mock_client.search_page("diabetes")
-
-        assert "Network timeout" in str(exc_info.value)
-
-    async def test_invalid_pmid_handling(self, mock_client_full):
-        """Handle invalid PMIDs gracefully."""
-        invalid_pmids = ["invalid", "999999999", ""]
-
-        # Should not crash, just skip invalid PMIDs
-        mock_client_full.fetch_details.return_value = []
-
-        results = await mock_client_full.fetch_details(invalid_pmids)
-        # Should return empty or valid results only
-        assert isinstance(results, list)
-
-    async def test_rate_limit_retry(self):
-        """Retry on rate limit errors."""
-        mock_client = AsyncMock()
-
-        # First call fails with rate limit
-        # Second call succeeds
-        mock_client.search_page.side_effect = [
-            Exception("Rate limit exceeded"),
-            SourceSearchPage(
-                source="pubmed",
-                items=[{"pmid": "12345678", "title": "Success"}],
-                total=1,
-                query="diabetes",
-            ),
-        ]
-
-        # Implementation should retry
-        # For now, just verify exception is raised
-        with pytest.raises(Exception):
-            await mock_client.search_page("diabetes")
-
-
-# ============================================================
-# Integration of Workflows
-# ============================================================
-
-
-class TestCompleteResearchProject:
-    """Test: Complete research project from start to finish."""
-
-    async def test_full_research_project(self, mock_client_full):
-        """
-        Complete workflow:
-        1. Define research question
-        2. Systematic search
-        3. Screen articles
-        4. Extract data
-        5. Export results
-        """
-        # Step 1: Research question
-        question = "What is the efficacy of remimazolam for procedural sedation?"
-
-        # Step 2: Systematic search
-        results = (await mock_client_full.search_page("remimazolam procedural sedation", limit=100)).items
-        assert len(results) > 0
-
-        # Step 3: Screen articles (mock screening)
-        relevant = [r for r in results if "sedation" in r["title"].lower()]
-        assert len(relevant) > 0
-
-        # Step 4: Extract data
-        extracted_data = []
-        for article in relevant[:10]:
-            data = {
-                "pmid": article["pmid"],
-                "title": article["title"],
-                "year": article["year"],
-                "study_type": "RCT" if "randomized" in article.get("abstract", "").lower() else "Other",
-            }
-            extracted_data.append(data)
-
-        assert len(extracted_data) > 0
-
-        # Step 5: Export (mock)
-        export_package = {
-            "question": question,
-            "search_date": "2024-01-01",
-            "total_found": len(results),
-            "screened": len(relevant),
-            "included": len(extracted_data),
-            "data": extracted_data,
-        }
-
-        assert export_package["included"] > 0
-        assert export_package["included"] <= export_package["screened"]
+    params = provider_http["requests"][0][1]
+    assert params["query"] == ["aspirin stroke"]
+    assert params["pageSize"] == ["1"]
+
+
+@pytest.mark.parametrize("failure", ["malformed", "unauthorized"])
+async def test_provider_failure_is_not_reported_as_successful_empty_search(provider_http, production_server, failure):
+    provider_http["search"] = {"error": "synthetic provider failure"}
+    provider_http["status"] = 401 if failure == "unauthorized" else 200
+    async with Client(production_server) as client:
+        result = await client.call_tool(
+            "unified_search",
+            {
+                "query": "aspirin",
+                "sources": "europe_pmc",
+                "limit": 1,
+                "output_format": "json",
+                "options": "shallow,no_oa,no_relax,no_analysis,no_scores,no_next",
+            },
+        )
+        payload = _json_document(_result_text(result))
+        assert payload["source_errors"], payload
+        assert payload["articles"] == []
+        assert payload["search_status"]["state"] == "failed"
+        assert payload["search_status"]["failed_sources"] == ["europe_pmc"]
+    assert len(provider_http["requests"]) == 1

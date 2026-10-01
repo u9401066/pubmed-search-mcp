@@ -15,10 +15,24 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from pubmed_search.application.search.source_models import SourceSearchPage
+from tests.fixtures.release_support import ReleaseInstallation, install_release
 
 _TRUE_ENV_VALUES = frozenset({"1", "true", "yes"})
 _LIVE_TEST_OPT_IN = "PUBMED_RUN_LIVE_TESTS"
 _LIVE_TEST_OPT_OUT = "SKIP_INTEGRATION"
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--release-dist", type=Path, help="Test exactly one prebuilt wheel/sdist pair in this directory")
+    parser.addoption("--container-image", help="Opt into real HTTP smoke of this locally built Docker image")
+
+
+@pytest.fixture(scope="session")
+def release_installation(
+    tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
+) -> ReleaseInstallation:
+    dist = request.config.getoption("--release-dist")
+    return install_release(tmp_path_factory.mktemp("release-installation"), dist.resolve() if dist else None)
 
 
 def _env_flag(name: str) -> bool:
