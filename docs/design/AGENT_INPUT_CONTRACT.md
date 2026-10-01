@@ -108,4 +108,8 @@ many generic JSON Schema clients do not enforce. The server remains authoritativ
   and memory bank, without changing historical v0.7.4 review provenance.
 
 Release-review full gate: **4,882 passed, 23 skipped, 30 deselected** (134.54 s);
-all lint/type/layout/publication checks passed. Publication is pending remote CI.
+all lint/type/layout/publication checks passed. **v0.7.5 is published and verified**
+on PyPI and GitHub after branch/PR/master CI and all three release jobs passed.
+The release runner passed 4,895 tests, including 13 PowerShell cases skipped
+locally. Downloaded artifacts match local SHA-256 values; website and Wiki content
+are verified. See the [publication receipt](../reports/release_v075_2026-10-01.json).

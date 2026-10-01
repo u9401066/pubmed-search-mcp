@@ -1,10 +1,11 @@
 # Active Context
 
-## Current Focus — v0.7.5 agent input contract release (2026-10-01)
+## Current Focus — v0.7.5 published and verified (2026-10-01)
 
 - User authorized a final review, remaining fixes, documentation/website/MEM
   updates, segmented commits, push and publication of the agreed v0.7.5 patch.
-  Release branch: `release/v0.7.5`; publication is pending CI and tag verification.
+  PR #20 merged four focused release commits (maximum 27 paths each); branch,
+  PR and master CI passed before the annotated `v0.7.5` tag at `2431374`.
 - All 41 tools share schema-derived correction of declared containers, numeric
   strings, explicit boolean text and unambiguous enum spelling. Shared typed
   PMID/PMCID/DOI/NCBI contracts validate identifiers before tool execution.
@@ -19,6 +20,13 @@
 - Final release full gate: **4,882 passed, 23 skipped, 30 live tests deselected**
   (134.54 s), plus lint/format/async/layout/publication/mypy checks. Wheel/sdist
   build, skills and generated documentation checks pass.
+- Release run `36833096189` passed verification, PyPI and GitHub Release jobs.
+  Python 3.13 passed **4,895 tests, 10 skipped, 30 deselected** (169.26 s), including
+  13 PowerShell hook cases skipped locally; wheel and container smoke passed.
+  Wheel/sdist downloaded from both services match each other and local SHA-256
+  values. Website and Wiki content were fetched and verified after deployment.
+  [Publication receipt](../docs/reports/release_v075_2026-10-01.json) and MEM updates
+  are a documentation-only follow-up; the release tag and artifacts remain fixed.
 - This release also includes the nine already-committed September documentation/
   publication-organization changes inherited by this branch. Historical source
   review ledgers and benchmark results remain historical; this focused patch
