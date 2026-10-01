@@ -71,7 +71,11 @@ async def measure(mode: str, reads: list[str]) -> dict[str, Any]:
 
 async def run() -> dict[str, Any]:
     rows = []
-    for name, reads in (("read_one_twice", ["PMC1", "PMC1"]), ("read_all_three", ["PMC1", "PMC2", "PMC3"])):
+    for name, reads in (
+        ("read_one_twice", ["PMC1", "PMC1"]),
+        ("read_all_three", ["PMC1", "PMC2", "PMC3"]),
+        ("read_queued_third_twice", ["PMC3", "PMC3"]),
+    ):
         expected_hash = None
         for mode in ("uncached", "demand_cache", "prefetch"):
             samples = [await measure(mode, reads) for _ in range(REPEATS)]

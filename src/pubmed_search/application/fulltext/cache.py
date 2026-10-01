@@ -11,7 +11,7 @@ import asyncio
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.value_objects.article_identifiers import IdentifierValidationError, normalize_pmcid
@@ -40,8 +40,9 @@ class _Entry:
 
 @dataclass
 class _Job:
-    task: asyncio.Future[Any]
     background: bool
+    task: asyncio.Future[Any] = field(init=False)
+    started: bool = False
     waiters: int = 0
     abandoned: bool = False
 
@@ -152,7 +153,7 @@ class FulltextCache:
             "scope": "open_access_xml",
             "snapshot": True,
             "articles": rows,
-            "max_articles": MAX_PREFETCH_ARTICLES,
+            "max_articles": max(0, min(limit, MAX_PREFETCH_ARTICLES)),
             "deadline_seconds": self._prefetch_timeout,
             "next_action": "Call get_fulltext with a listed source when needed; it reuses ready or in-flight XML. Do not poll.",
         }
@@ -161,10 +162,11 @@ class FulltextCache:
         if self._closed:
             return None
         deadline = self._clock() + (self._prefetch_timeout if background else self._foreground_timeout)
-        task = self._jobs.schedule(self._load(key, fetch, background=background, deadline=deadline))
+        job = _Job(background=background)
+        task = self._jobs.schedule(self._load(key, fetch, job=job, deadline=deadline))
         if task is None:
             return None
-        job = _Job(task=task, background=background)
+        job.task = task
         self._pending[key] = job
 
         def finished(_: asyncio.Future[Any]) -> None:
@@ -174,9 +176,9 @@ class FulltextCache:
         task.add_done_callback(finished)
         return job
 
-    async def _load(self, key: CacheKey, fetch: XMLFetcher, *, background: bool, deadline: float) -> str | None:
+    async def _load(self, key: CacheKey, fetch: XMLFetcher, *, job: _Job, deadline: float) -> str | None:
         try:
-            xml = await self._fetch(key[1], fetch, background=background, deadline=deadline)
+            xml = await self._fetch(key[1], fetch, job=job, deadline=deadline)
             self._store(key, xml)
             return xml
         except asyncio.CancelledError:
@@ -185,15 +187,16 @@ class FulltextCache:
             self._store(key, None, failed=True)
             raise FulltextCacheError("Structured fulltext was unavailable") from None
 
-    async def _fetch(self, pmcid: str, fetch: XMLFetcher, *, background: bool, deadline: float) -> str | None:
+    async def _fetch(self, pmcid: str, fetch: XMLFetcher, *, job: _Job, deadline: float) -> str | None:
         work: asyncio.Future[Any] | None = None
         owns_slot = False
         try:
-            if background:
+            if job.background:
                 await asyncio.wait_for(self._background_slot.acquire(), timeout=max(0, deadline - self._clock()))
                 owns_slot = True
             if self._closed or self._clock() >= deadline:
                 raise FulltextCacheError("Fulltext XML deadline exceeded")
+            job.started = True
             work = self._io.schedule(fetch(pmcid))
             if work is None:
                 raise FulltextCacheError("Fulltext XML capacity reached")
@@ -225,6 +228,12 @@ class FulltextCache:
                 return entry.xml
             job = self._pending.get(key)
             if job is not None and (job.task.done() or job.abandoned):
+                self._pending.pop(key, None)
+                job = None
+            if job is not None and job.background and not job.started:
+                # No source I/O has begun: replace queued speculation with demand.
+                # Running downloads remain shared, including their provider budget.
+                job.task.cancel()
                 self._pending.pop(key, None)
                 job = None
             if job is None:

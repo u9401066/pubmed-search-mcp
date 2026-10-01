@@ -366,13 +366,18 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
                 "source_counts.0.source": "pubmed",
                 "source_counts.0.returned": 1,
                 "enrichment.fulltext_prefetch.articles.0.status": "scheduled",
+                "enrichment.fulltext_prefetch.articles.0.read_request.tool": "get_fulltext",
             }
         ),
     )
     run_id = ""
     artifact_uri = ""
+    read_arguments: dict[str, Any] = {}
     if unified is not None:
         payload = _json_document(_result_text(unified))
+        read_request = payload["enrichment"]["fulltext_prefetch"]["articles"][0]["read_request"]
+        read_arguments = read_request["arguments"]
+        Draft202012Validator(driver.schemas[read_request["tool"]]).validate(read_arguments)
         run_id = str(payload.get("search_run", {}).get("run_id") or "")
         artifact_uri = str(payload.get("artifact_summary", {}).get("artifact_uri") or "")
     if not run_id:
@@ -506,7 +511,7 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
     await driver.call(
         "get_fulltext",
         {
-            "source": {"kind": "pmcid", "value": "PMC7096777"},
+            **read_arguments,
             "include_pdf_links": True,
             "include_figures": False,
             "extended_sources": False,

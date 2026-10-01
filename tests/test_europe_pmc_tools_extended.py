@@ -647,7 +647,7 @@ class TestGetFulltextSections:
             result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC123"))
         assert "truncated" in result.lower()
 
-    async def test_no_matching_sections_falls_back_abstract(self, tools):
+    async def test_no_matching_sections_reports_available_body_without_abstract(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
         mock_client.parse_fulltext_xml = MagicMock(
@@ -666,7 +666,9 @@ class TestGetFulltextSections:
             result = await tools["get_fulltext"](
                 source=PMCIDSource(kind="pmcid", value="PMC123"), sections="conclusion"
             )
-        assert "Abstract" in result or "abstract" in result.lower()
+        assert "Abstract text fallback" not in result
+        assert "Requested sections not found" in result
+        assert "Available body sections:** Introduction" in result
 
 
 # ============================================================

@@ -44,6 +44,58 @@ class _FigureStub:
 
 
 class TestFulltextService:
+    @pytest.mark.parametrize("sections", ["discussion", "methods,discussion", None])
+    async def test_section_selection_never_substitutes_abstract_or_repeats_retrieval(self, sections):
+        provider = MagicMock()
+        provider.get_article = AsyncMock(return_value={"pmc_id": "PMC123", "doi": "10.1000/test"})
+        provider.get_fulltext_xml = AsyncMock(return_value="<article/>")
+        provider.parse_fulltext_xml.return_value = {
+            "abstract": "This is only an abstract",
+            "sections": [{"title": "Methods", "content": "Body evidence"}, {"title": "Discussion", "content": ""}],
+        }
+        unpaywall, core, downloader, institutional = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: provider,
+            unpaywall_client_factory=unpaywall,
+            core_client_factory=core,
+            downloader_factory=downloader,
+            institutional_client_factory=institutional,
+        )
+        result = await service.retrieve(FulltextRequest(pmid="123", sections=sections, include_pdf_links=False))
+        assert "abstract" not in (result.fulltext_content or "")
+        assert result.has_retrieved_text
+        assert result.coverage_status == "complete"
+        assert result.section_selection.available == ("Methods",)
+        if sections == "discussion":
+            assert not result.fulltext_content
+            assert result.section_selection.status == "not_found"
+        else:
+            assert "Body evidence" in result.fulltext_content
+            assert result.section_selection.status == ("partial" if sections else "not_requested")
+        for unused in (unpaywall, core, downloader, institutional):
+            unused.assert_not_called()
+
+    async def test_abstract_only_xml_is_not_fulltext_and_preserves_download_fallback(self):
+        provider = MagicMock()
+        provider.get_fulltext_xml = AsyncMock(return_value="<article/>")
+        provider.parse_fulltext_xml.return_value = {"abstract": "Abstract only", "sections": []}
+        downloader = AsyncMock()
+        downloader.get_fulltext.return_value = FulltextResult(
+            text_content="Actual full body", link_discovery=PDFLinkDiscoveryResult()
+        )
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: provider,
+            unpaywall_client_factory=MagicMock(),
+            core_client_factory=MagicMock(),
+            downloader_factory=lambda: downloader,
+        )
+        result = await service.retrieve(FulltextRequest(pmcid="PMC123", include_pdf_links=False))
+        assert result.fulltext_content == "Actual full body"
+        assert result.section_selection.status == "unavailable"
+        assert result.sources_tried == ["europe_pmc", "pdf_retrieval_fallback"]
+        assert downloader.get_fulltext.await_args.kwargs["strategy"] == "extract_text"
+        downloader.close.assert_awaited_once()
+
     async def test_europe_pmc_preserves_full_selected_text_and_figure_failure(self):
         from pubmed_search.application.fulltext import FulltextPolicyDefinition, FulltextRegistry
 

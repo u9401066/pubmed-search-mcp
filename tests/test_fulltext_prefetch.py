@@ -85,6 +85,74 @@ async def test_background_selects_only_top_three_and_one_source_at_a_time() -> N
         await cache.aclose()
 
 
+@pytest.mark.parametrize("start_queue", [False, True])
+async def test_queued_prefetch_promotes_demand_without_waiting_or_duplicate_fetch(start_queue: bool) -> None:
+    cache = FulltextCache()
+    background_started, demand_started, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    background_calls: list[str] = []
+
+    async def speculative(pmcid: str) -> str:
+        background_calls.append(pmcid)
+        background_started.set()
+        await release.wait()
+        return "background XML"
+
+    async def foreground(_: str) -> str:
+        demand_started.set()
+        await release.wait()
+        return "requested XML"
+
+    demand = AsyncMock(side_effect=foreground)
+    try:
+        cache.prefetch([_article("PMC1"), _article("PMC2")], tenant="a", fetch=speculative)
+        if start_queue:
+            await background_started.wait()
+        first = asyncio.create_task(cache.get("PMC2", tenant="a", fetch=demand))
+        second = asyncio.create_task(cache.get("PMC2", tenant="a", fetch=demand))
+        await asyncio.wait_for(demand_started.wait(), timeout=1)
+        assert not release.is_set()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        assert await second == "requested XML"
+        assert await cache.get("PMC2", tenant="a", fetch=demand) == "requested XML"
+        await cache.get("PMC1", tenant="a", fetch=speculative)
+        demand.assert_awaited_once_with("PMC2")
+        assert background_calls == ["PMC1"]
+    finally:
+        release.set()
+        await cache.aclose()
+
+
+async def test_read_handoff_uses_actual_operator_limit_and_native_tool_arguments() -> None:
+    runtime = ToolSessionRuntime()
+    fetch = AsyncMock(return_value="xml")
+    try:
+        with (
+            bind_tool_session_runtime(runtime),
+            bind_tenant(TenantIdentity()),
+            patch("pubmed_search.presentation.mcp_server.tools.fulltext_runtime.fetch_prefetch_xml", fetch),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.fulltext_runtime.load_settings",
+                return_value=SimpleNamespace(fulltext_prefetch_limit=1),
+            ),
+        ):
+            snapshot = prefetch_search_fulltext([_article("PMC1"), _article("PMC2")])
+            assert snapshot["max_articles"] == 1
+            assert len(snapshot["articles"]) == 1
+            assert snapshot["articles"][0]["read_request"] == {
+                "tool": "get_fulltext",
+                "arguments": {
+                    "source": {"kind": "pmcid", "value": "PMC1"},
+                    "include_pdf_links": False,
+                    "output_format": "json",
+                },
+            }
+    finally:
+        await runtime.fulltext_cache.aclose()
+
+
 async def test_unknown_ids_closed_access_and_duplicates_do_not_expand_selection() -> None:
     cache = FulltextCache()
     fetch = AsyncMock(return_value="<article/>")

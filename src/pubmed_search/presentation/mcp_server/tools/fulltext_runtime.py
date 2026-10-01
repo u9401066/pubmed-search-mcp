@@ -31,12 +31,18 @@ def prefetch_search_fulltext(articles: Sequence[UnifiedArticle]) -> dict[str, An
         reason = "source_disabled"
     if reason:
         return {"mode": "prefetch", "status": "disabled", "reason": reason, "articles": []}
-    return get_tool_session_runtime().fulltext_cache.prefetch(
+    snapshot = get_tool_session_runtime().fulltext_cache.prefetch(
         articles,
         tenant=tenant.tenant_id,
         fetch=fetch_prefetch_xml,
         limit=limit,
     )
+    for article in snapshot["articles"]:
+        article["read_request"] = {
+            "tool": "get_fulltext",
+            "arguments": {"source": dict(article["source"]), "include_pdf_links": False, "output_format": "json"},
+        }
+    return snapshot
 
 
 async def get_cached_fulltext_xml(pmcid: str, fetch: XMLFetcher) -> str | None:

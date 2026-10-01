@@ -264,4 +264,6 @@ async def test_extended_source_failure_preserves_successful_fulltext(failure):
 def test_section_filter_ignores_trailing_comma_and_untitled_sections():
     results = {"title": "Results", "content": "Requested findings"}
     parsed = {"sections": [results, {"title": "Methods", "content": "Not requested"}, {"content": "Untitled content"}]}
-    assert FulltextService._select_sections(parsed, "results, ") == [results]
+    from pubmed_search.application.fulltext.sections import select_sections
+
+    assert list(select_sections(parsed, "results, ").sections) == [results]
