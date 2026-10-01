@@ -15,7 +15,7 @@ paths:
 - Preserve session-aware flows: cached articles, last PMIDs, search history, and pipeline state.
 - Return source counts and warnings when a source fails or contributes zero results.
 - Keep output formats stable for markdown, JSON, RIS, BibTeX, CSV, and MEDLINE.
-- Treat public MCP inputs as schema-exact contracts. Breaking releases remove retired fields and aliases; update every live agent asset in the same change instead of preserving compatibility shims.
+- Treat public MCP inputs as strict contracts after the shared input normalization in `docs/guides/TOOLS_USAGE_GUIDE.md#input-formats-and-validation`. Breaking releases remove retired fields and aliases; update every live agent asset in the same change instead of preserving compatibility shims.
 
 ## Research Workflow Rules
 

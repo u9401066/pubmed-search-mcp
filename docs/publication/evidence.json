@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scope": "Historical records; not a new end-to-end evaluation of v0.7.4",
+  "records": {
+    "retrieval": {
+      "path": "docs/reports/academic_retrieval_benchmark_2026-09-09.json",
+      "sha256": "5362412a5cfab73b67fb4fd94abf13d56b153595e3e189c758aec69a11e6d72c"
+    },
+    "execution_before": {
+      "path": "docs/reports/search_execution_2026-09-18_before.json",
+      "sha256": "16edc51dc025405ccf043efeca0c514671f4c8fc79b93ed7bb116f1c575f1fad"
+    },
+    "execution_after": {
+      "path": "docs/reports/search_execution_2026-09-18_after.json",
+      "sha256": "65b2fcb1d7d5909f64198db2202d19b00f89861e39e9fb0b162077d134efc9a6"
+    },
+    "agent_pilot": {
+      "path": "docs/reports/native_codex_product_benchmark_2026-09-09.json",
+      "sha256": "f38485ded42b050ebeb99461424d4c0ab552e35f43601abd666eb827f5e766e0"
+    },
+    "release": {
+      "path": "docs/reports/release_v074_2026-09-18.json",
+      "sha256": "b17b15f86d088f6cd1405791d61bc8f7eb29fae1d1182af7819e8c7daf3babe1"
+    }
+  }
+}

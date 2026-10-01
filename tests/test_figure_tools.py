@@ -158,11 +158,12 @@ class TestGetArticleFiguresTool:
         with pytest.raises(TypeError, match="source"):
             await self._call_tool()
 
-    def test_source_models_reject_non_string_and_unprefixed_values(self):
+    def test_source_models_reject_numbers_and_normalize_explicit_pmcid_strings(self):
         with pytest.raises(ValidationError):
             PMIDSource(kind="pmid", value=123)
+        assert PMCIDSource(kind="pmcid", value="12086443").value == "PMC12086443"
         with pytest.raises(ValidationError):
-            PMCIDSource(kind="pmcid", value="12086443")
+            PMCIDSource(kind="pmcid", value="PMID:12086443")
 
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
     async def test_error_result(self, mock_get_client, mock_error_result):

@@ -1,0 +1,336 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\setlength{\emergencystretch}{3em}
+\input{evidence.tex}
+\title{PubMed Search MCP: An Auditable Integration Layer for\newline Agent-Assisted Biomedical Literature Retrieval}
+\author{Tz-Ping Gau\\Kaohsiung Medical University Hospital}
+\date{September 21, 2026\\\small Working manuscript; not submitted}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Language-model agents can already search the web and call biomedical APIs. The
+engineering question is whether a dedicated integration layer improves the
+reliability, efficiency, and inspectability of that work. We describe PubMed
+Search MCP, a biomedical retrieval service that exposes search, article access,
+reference verification, persistent sessions, and reproducible pipelines through
+the Model Context Protocol. The service separates host-agent decisions from
+retrieval execution and preserves source failures, provenance, and provider
+budgets. We distinguish three kinds of existing evidence. A historical lexical
+ranking experiment on the BEIR distribution of NFCorpus improved test nDCG@10
+from \NdcgBefore{} to \NdcgAfter{}, while the recall@100 interval included zero.
+A five-scenario offline scheduling experiment reduced median in-memory MCP
+latency by \StaggeredReduction\% in the staggered-dependency case, with unchanged
+provider-operation counts and output signatures; other scenarios include a
+regression. A three-question native-agent versus packaged-MCP pilot found equal
+answer and source-hit scores. These measurements support bounded component and
+workflow observations, not an established end-to-end agent advantage. We provide
+an evidence-linked manuscript build and a proposed controlled evaluation that
+separates server capabilities, client instructions, and provider access.
+\end{abstract}
+
+\section{Introduction}
+Biomedical literature retrieval combines several distinct activities: translating
+a question into queries, locating records, accessing available text, following
+references, selecting evidence, and reporting what was searched. A language-model
+host can perform these activities using general web search or direct provider
+APIs. Adding a domain-specific service therefore requires a comparison with an
+already capable baseline, rather than with an agent that has no search tools.
+
+PubMed Search MCP addresses the integration work around retrieval. It provides
+consistent article representations, bounded source operations, reusable query
+pipelines, and records that a host can inspect after a search. The host remains
+responsible for research questions, inclusion criteria, interpretation, and final
+claims. The service does not run an autonomous scientific investigation or certify
+that a retrieved article supports a clinical conclusion.
+
+This paper makes three engineering contributions: an explicit boundary between
+agent reasoning and biomedical retrieval services; inspectable execution and
+source-state contracts across search, reading, and export; and a reproducibility
+structure that separates component measurements from the unproven causal effect
+of the complete agent package. The described software surface is version 0.7.4.
+Historical measurements retain their original revision and file fingerprints;
+they are not relabeled as measurements of every current capability.
+
+\section{Related work and evaluation targets}
+The Model Context Protocol standardizes communication between hosts and tool
+servers \citep{mcp2026}. Interoperable transport alone does not determine query
+quality, relevance, or appropriate use of evidence. A host can use the same
+protocol to access services with substantially different retrieval policies.
+
+The implementation uses established retrieval ideas. BM25 supplies lexical
+relevance signals \citep{robertson2009bm25}; reciprocal rank fusion combines ranked
+lists \citep{cormack2009rrf}; maximal marginal relevance motivates balancing
+relevance and redundancy \citep{carbonell1998mmr}. Their use or combination here is
+an implementation choice, not a claim to invent these methods. A scoring option
+must also be distinguished from a signal that was actually available and applied
+in a particular execution.
+
+Literature search and systematic-review screening have different endpoints.
+PRISMA-S specifies reporting considerations for search methods
+\citep{rethlefsen2021prismas}; retaining queries and source states can assist that
+reporting, but does not establish compliance with the full checklist. ASReview
+uses machine learning to prioritize screening within a set of candidate records
+\citep{vandeschoot2021asreview}. PubMed Search MCP primarily integrates discovery
+and access, and cannot infer systematic-review completeness from a short ranked
+result list.
+
+Public benchmarks test different units. BEIR supports retrieval comparisons
+across datasets \citep{thakur2021beir}; NFCorpus supplies a medical retrieval task
+\citep{nfcorpus}. LitSearch contains 597 scientific literature queries in machine
+learning and natural language processing \citep{ajith2024litsearch}, making domain
+transfer an explicit concern for a biomedical service. ScholarGym separates query
+planning, tool invocation, and relevance assessment in a static environment with
+approximately 570,000 papers and 2,536 queries \citep{shen2026scholargym}.
+PaperSearchQA studies scientific search and question answering
+\citep{burgess2026papersearchqa}. An adapted tool interface or corpus changes the
+evaluation setting and must be disclosed rather than presented as an official
+leaderboard result.
+
+OpenResearch offers a broader workspace for agent-driven research and experimental
+artifacts \citep{openresearch2026}. Its emphasis on inspectable artifacts is useful
+context for integration design. Its scope differs from a retrieval service, and
+we report no head-to-head quality comparison with it.
+
+\section{Service design}
+\subsection{Host and service responsibilities}
+Version 0.7.4 exposes 41 MCP tools organized into 16 registry categories through
+the MCP SDK v2 \texttt{MCPServer}. Presentation wrappers validate requests and
+delegate to application services. Domain models represent articles, pipelines,
+and research artifacts; infrastructure adapters implement external providers
+and storage. Keeping this direction of dependency allows transport checks and
+retrieval checks to exercise separate contracts.
+
+The host supplies a query or a pipeline specification. For a PICO workflow, the
+host supplies the population, intervention, comparison, and outcome fields; the
+backend does not silently infer those fields from an unrestricted question.
+Likewise, host instructions and optional skills can guide tool use, but are
+separate from the server implementation. Their contribution must be isolated in
+an evaluation intended to explain an observed package-level gain.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{p{0.23\linewidth}p{0.68\linewidth}}
+\toprule
+Boundary & Responsibility and observable output \\
+\midrule
+Host agent & Plans queries, chooses articles, interprets findings, writes claims. \\
+MCP presentation & Validates parameters, exposes the registry, serializes results. \\
+Application services & Execute searches and pipelines, aggregate articles, manage sessions and exports. \\
+Domain and infrastructure & Represent evidence objects; access providers and storage under provider-specific constraints. \\
+\bottomrule
+\end{tabular}
+\caption{Responsibility boundaries. A successful tool call does not validate the host's scientific conclusion.}
+\end{table}
+
+\subsection{Retrieval, access, and provenance}
+Multi-source retrieval must reconcile identifiers and metadata without turning
+provider-specific absence into a universal assertion. A result may lack an
+abstract, a citation metric, or accessible full text. Source diagnostics separate
+an empty response from an unavailable, failed, or unrequested source. Ranking
+provenance distinguishes the requested configuration from effective signals.
+For example, a citation-based ordering should not be reported as applied when
+the metric provider returned no usable values.
+
+Article access and reference verification remain separate operations. Resolving
+an identifier or matching bibliographic fields checks identity and consistency;
+it does not establish support for a statement. Claim validation requires access
+to the relevant passage, its context, and a judgment about the claim. Similarly,
+exporting a note or a CSL record preserves metadata rather than completing
+scientific verification. Unverified status and the option to omit abstracts must
+survive export.
+
+Persistent sessions and pipeline artifacts let a host revisit search decisions
+without reconstructing them from conversational text alone. Research-chronicle
+views organize articles and relationships over time. Their importance signals,
+milestones, and inferred relationships are descriptive heuristics: they are not
+validated measures of research maturity, causal influence, or clinical evidence
+strength. A citation graph also does not by itself identify support, contradiction,
+or the reason one article cites another.
+
+\subsection{Dependency scheduling and provider protection}
+A pipeline describes steps and dependencies. A dependency-ready scheduler can
+start an eligible child after its prerequisites finish, without waiting for an
+unrelated slow branch at the same nominal level. The useful optimization is less
+avoidable waiting, not unrestricted growth in request concurrency.
+
+Provider protection combines applicable rate admission, bounded in-flight
+operations, shared cooldown behavior, retry handling, and cancellation cleanup.
+The documented scope matters: limits coordinated within a process or event loop
+do not constitute a distributed quota across independently deployed workers.
+An operator sharing one provider account across processes needs an appropriate
+shared admission mechanism or a deployment-wide conservative allocation.
+No result in this paper demonstrates permission to exceed an upstream quota.
+
+Transport and artifact ownership also affect safe integration. Local and service
+deployments have different authentication and filesystem boundaries. Client
+harness installation preserves existing user-owned instruction files and whole
+skill directories by default. Repository updates to canonical instructions are
+not authorization to replace a user's customized installed copy.
+
+\section{Evidence and methods}
+We use four existing evidence records: lexical retrieval, offline execution,
+a small agent pilot, and release validation. An evidence manifest pins their
+SHA-256 hashes. The manuscript builder reads numerical tables from these records
+and rejects modified inputs. This protects against transcription drift; it does
+not independently validate the original experiments or eliminate bias.
+
+\subsection{Historical lexical retrieval experiment}
+The September 9 experiment evaluated the production lexical scorer against a
+baseline revision beginning \texttt{dbcf0c8}. It used the BEIR distribution of
+NFCorpus: 3,633 documents, 324 development queries, and 323 test queries. Full-corpus
+document frequencies and average length were available in both conditions, with
+deterministic identifier tie-breaking. The recorded protocol uses linear-gain
+nDCG and treats unjudged documents as zero gain. Recall is consequently recall
+against the available judgments, not an exhaustive measure of all relevant
+biomedical literature.
+
+The experiment did not invoke an LLM, external search APIs, full-text reading,
+or the complete MCP package. Its paired bootstrap intervals use 10,000 resamples
+and seed 20260909. Original data hashes, per-query values, baseline commit, and
+before/after production-file hashes remain in the report. This is historical
+component evidence, not a fresh evaluation of all version 0.7.4 behavior.
+
+\subsection{Offline execution experiment}
+The September 18 execution benchmark used the real pipeline executor and an
+in-memory MCP client, replacing providers with fixed-delay fixtures. Twenty
+repetitions per condition covered no-I/O, single-step, balanced-branch,
+staggered-branch, and serial-dependency scenarios. The fixture records provider
+operations, successful steps, output identifiers, and latency samples. Comparing
+signatures checks that a timing change did not omit required work.
+
+This setup excludes live provider latency, host-model planning, network transport,
+process startup, and real rate-limit incidents. Session history grows within the
+fixture, so the difference between executor and MCP timings is not a clean estimate
+of protocol overhead alone. The result records include executor and script hashes;
+the shared recorded Git revision alone does not identify the uncommitted change
+that was measured.
+
+\subsection{Exploratory agent pilot and release checks}
+The September 9 agent pilot selected three queries from the 5,000-query
+PaperSearchQA test split, with one run per condition. Both conditions used
+\texttt{gpt-6-astra}, xhigh reasoning effort, and native web search; the package
+condition additionally had the historical MCP package. The corpus was not frozen
+and token and backend-call budgets were not enforced. This pilot checks that
+comparative execution and scoring are possible, with substantial confounding and
+insufficient sample size for a general performance claim.
+
+Release validation provides a different kind of evidence. The version 0.7.4
+receipt records 4,758 passing local tests, 23 skips, and 30 deselections under
+Python 3.10 and 3.13. It also records actual stdio, Streamable HTTP, and installed-wheel
+checks of the 41-tool surface. These are software-contract checks, not measures
+of scientific relevance. Counts alone do not measure test value; maintaining
+public contracts and concrete regression coverage is the objective.
+
+\section{Results}
+\subsection{Lexical relevance}
+Table~\ref{tab:retrieval} reports the historical lexical comparison. Test nDCG@10
+increased by \NdcgDelta{} (paired 95\% bootstrap interval
+[\NdcgLow{}, \NdcgHigh{}]). Of 323 queries, 49 improved, 33 regressed, and 241 were
+unchanged. The absolute change is small and specific to this corpus and scorer.
+Test recall@100 changed by \RecallDelta{}, with interval
+[\RecallLow{}, \RecallHigh{}], which includes zero. We therefore do not infer a
+recall improvement, clinical coverage improvement, or agent-level benefit from
+this experiment.
+\input{retrieval-table.tex}
+
+\subsection{Execution latency}
+Table~\ref{tab:execution} includes every measured scenario. In the staggered case,
+the median executor time fell from 202.067 to 121.889 ms, and median MCP time fell
+from 391.957 to 314.257 ms (\StaggeredReduction\% reduction). Both conditions
+performed four provider operations and returned the same output signature. The
+serial case became slower at the MCP level; performance is not uniformly improved.
+These observations support an implementation-level reduction in waiting for this
+fixture, without predicting the same percentage for a live literature search.
+\input{execution-table.tex}
+
+\subsection{Agent-level uncertainty}
+Both pilot conditions answered two of three queries exactly and retrieved the
+gold source PMID for one of three. The observed paired differences were zero.
+With three pairs, neither equality of the systems nor a positive MCP effect is
+established. We omit the degenerate bootstrap intervals stored for this pilot
+because they would invite unjustified precision. No complete 5,000-query run,
+current-package comparison, or official benchmark submission is reported.
+
+\section{Proposed controlled evaluation}
+The key estimand is the difference between a capable native host and that same
+host with the integration package under comparable information and resource
+access. A proposed three-arm evaluation uses (A) native search and direct PubMed
+access, (B) the original MCP package, and (C) the current package. The model,
+reasoning configuration, task text, and availability of native search should be
+matched. Arm B must be identified by an immutable revision, and C must be built
+from a pinned revision rather than a changing working tree.
+
+Two tracks answer different questions. A frozen-corpus track supplies all arms
+with the same article and reference snapshot through instrumented adapters. It
+estimates the benefit of planning support, aggregation, state, and tool design
+conditional on that snapshot. An ecological live-search track retains actual
+web and provider access and measures the whole deployment experience, including
+coverage differences. The tracks must be reported separately; replacing a native
+search backend with a fixture changes the evaluated product.
+
+The main retrieval endpoints should be preregistered for the selected task:
+for ranked retrieval, nDCG@10 and judged recall@100; for high-recall screening,
+recall and work saved at a prespecified sensitivity; for question answering,
+answer and supporting-source scores. A claim-support subset requires passages
+and an adjudication rubric that distinguishes support, contradiction, insufficient
+context, and inaccessible evidence. Bibliographic matches cannot substitute for
+that annotation.
+
+Resource accounting must occur below the MCP interface. One bundled tool call
+may issue several searches, reads, or retries. Record provider requests, unique
+documents read, returned text volume, model tokens, latency, failures, and cache
+hits. Pair questions across arms, isolate sessions and caches, randomize execution
+order, and include failed or timed-out runs in the denominator. Analyze paired
+differences with uncertainty estimates and disclose any development-set tuning.
+An additional server-only versus server-plus-instructions ablation separates
+service utility from prompt guidance.
+
+All executions must respect provider-specific admission and cooldown policies.
+A repeatable benchmark should use frozen fixtures for broad sweeps and a small,
+separately budgeted live validation for provider contracts. The proposed protocol
+is documented in the repository but has not been preregistered or fully executed.
+This paper does not claim results for that future experiment.
+
+\section{Limitations and reproducibility}
+The existing evidence is heterogeneous in revision, scope, and environment. The
+retrieval judgments are incomplete; the timing fixture is synthetic; the pilot
+is small and uses live search. None establishes improved systematic-review recall,
+reliable citation sentiment, or more accurate scientific conclusions. Provider
+availability and model behavior can change after a release. Loop-local admission
+does not guarantee safety across a distributed fleet, and local software tests
+cannot prove that an external service will never throttle a request.
+
+The repository publishes software under Apache-2.0 and records its release in
+\texttt{CITATION.cff}. The current manuscript, reviewed bibliography, evidence
+manifest, and build script are maintained in one publication workspace. Builds
+generate tables from pinned evidence and produce a self-contained TeX source
+archive with the resolved bibliography. Historical drafts are archived separately
+and are not evidence for present claims. The manuscript has no assigned arXiv
+identifier or publication DOI at the time of writing.
+
+Software and evidence are available at
+\url{https://github.com/u9401066/pubmed-search-mcp}. Relevant reproducibility
+entry points are \path{scripts/build_publication.py},
+\path{docs/publication/evidence.json}, and the dated records in
+\path{docs/reports/}. Build receipts identify the source and input hashes;
+they do not imply that a later commit reproduces historical experiments unchanged.
+
+\section{Conclusion}
+PubMed Search MCP packages biomedical retrieval as an inspectable service for a
+host agent. Its contribution is integration: explicit responsibility boundaries,
+source-state reporting, reusable execution, and bounded provider operations.
+Existing records show a small lexical-ranking change and a scenario-dependent
+scheduling improvement, while the agent pilot establishes no overall advantage.
+A controlled, resource-accounted comparison is still needed to quantify what the
+complete package adds over native search.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}

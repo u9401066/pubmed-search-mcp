@@ -30,6 +30,7 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
     # but never exclude "slow" and silently lose wheel acceptance.
     assert "tests/test_all_tools_mcp_acceptance.py" in smoke_tests[0]
     assert "tests/test_release_transport_smoke.py" in smoke_tests[0]
+    assert "tests/test_agent_input_contract.py" in smoke_tests[0]
     assert full_tests[0][-2:] == smoke_tests[0][-2:] == ("-m", "not integration")
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
     assert sum("if" not in job for job in workflow["jobs"].values()) == 1

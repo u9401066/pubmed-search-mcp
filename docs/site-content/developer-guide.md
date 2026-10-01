@@ -1,4 +1,4 @@
-<!-- Generated from docs/DEVELOPER_GUIDE.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/development/DEVELOPER_GUIDE.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -73,7 +73,7 @@ Important documentation files:
 
 - `scripts/count_mcp_tools.py`: regenerates the tool index from the registry
 - `scripts/build_docs_site.py`: generates `docs/site-content/*.md` and `docs/site-content.js`
-- `docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
+- `docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
 - `docs/site.js`: client-side docs router and language switch
 - `tests/test_docs_site_sync.py`: verifies generated docs payloads match canonical Markdown
 
@@ -149,8 +149,8 @@ When note export behavior changes, update user docs, generated docs, skills or p
 
 Pipeline behavior is an application capability, not a shell-script feature. Canonical tutorials live in:
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` also syncs these into `.claude/skills/pipeline-persistence/references/` for agent bundles and VSIX integrations that do not read `docs/site-content/`.
 
@@ -247,7 +247,9 @@ uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
 External-provider boundaries are replaced inside the child server. MCP
 registration and schema validation, tool adapters, application services,
 session/artifact/Chronicle/pipeline persistence, note files, and scheduling are
-real. Each transport performs 60 semantic `tools/call` requests. Chronicle and
+real. Each transport performs 60 successful semantic `tools/call` requests plus
+41 pre-execution rejections, verifying one repaired retry for every tool. Every
+accepted request is checked against its published JSON Schema. Chronicle and
 citation Mermaid returned through MCP are hash/size checked; CI also renders
 those exact sources with pinned Mermaid 11.16.1. A socket/DNS
 guard blocks unexpected external access and leaves a sentinel that fails the
@@ -257,7 +259,11 @@ explicit PR CI and release gates; the cross-platform matrix also executes the
 non-slow paths.
 
 The source-stdio path also has a rejection pass for retired tool names, legacy
-flat action bags, wrong scalar types, and stringified arrays/objects. The wheel
+flat action bags, wrong scalar types, and malformed containers. A second all-tool
+stdio pass verifies JSON array/object strings, nested requests, numeric strings
+and explicit boolean text. See the
+[input format contract](#/tools-usage-guide#input-formats-and-validation).
+The wheel
 path runs an external deterministic bootstrap, but all imported server code is
 asserted to come from the otherwise blank wheel environment rather than the
 source tree.

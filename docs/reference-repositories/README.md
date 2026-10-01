@@ -1,6 +1,6 @@
 # 學術檢索參考 Repository 地圖
 
-本目錄是 PubMed Search MCP 的外部設計研究，而不是套件推薦榜或可直接搬用的程式碼清單。調查以 **2026-09-01 UTC** 可取得的 GitHub repository、授權檔、原始碼、測試與工作流程為準；舊有的 [`competitor-analysis.md`](../competitor-analysis.md) 與 [`DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md`](../DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md) 保留為歷史資料，不作為本次現況判斷的依據。
+本目錄是 PubMed Search MCP 的外部設計研究，而不是套件推薦榜或可直接搬用的程式碼清單。調查以 **2026-09-01 UTC** 可取得的 GitHub repository、授權檔、原始碼、測試與工作流程為準；舊有的 [`competitor-analysis.md`](../archive/research/competitor-analysis.md) 與 [`DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md`](../archive/research/DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md) 保留為歷史資料，不作為本次現況判斷的依據。
 
 ## 結論先行
 

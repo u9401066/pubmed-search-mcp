@@ -445,5 +445,5 @@ uv run python scripts/build_docs_site.py
 ## 相關文件
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
+- [docs/guides/INTEGRATIONS.md](docs/guides/INTEGRATIONS.md)
 - [copilot-studio/README.md](copilot-studio/README.md)

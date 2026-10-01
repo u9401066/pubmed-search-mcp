@@ -29,7 +29,7 @@ tool-native locations such as `.github/copilot-instructions.md` or
 - When MCP tools are added, removed, or renamed, keep registry, docs, and
   generated artifacts in sync.
 - Note export alone does not verify bibliography or claim support. Preserve the
-  unverified status and abstract opt-out semantics documented in `docs/TOOLS_USAGE_GUIDE.md`.
+  unverified status and abstract opt-out semantics documented in `docs/guides/TOOLS_USAGE_GUIDE.md`.
 - When note export behavior changes, keep skills, Copilot instructions, Cline
   rules, generated docs, and packaged references aligned.
 - The `unicode-mojibake` pre-commit hook scans newly staged diff lines for
@@ -46,7 +46,7 @@ tool-native locations such as `.github/copilot-instructions.md` or
 - `.claude/skills/pipeline-persistence/references/`: packaged tutorial copies
   for agent bundles and VSIX integrations that do not read `docs/site-content/`
 - `scripts/setup-vscode-ai-harness.sh`: install recommended VS Code extensions
-- `docs/INTEGRATIONS.md`: client configuration reference
+- `docs/guides/INTEGRATIONS.md`: client configuration reference
 
 ## Verification Baseline
 

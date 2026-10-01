@@ -23,7 +23,7 @@ async def test_article_tools_expose_required_discriminated_source_contracts():
     for tool_name, kinds in expected_kinds.items():
         schema = tools[tool_name].input_schema
         properties = schema["properties"]
-        source = properties["source"]
+        source = properties["source"]["anyOf"][0]
 
         assert schema["additionalProperties"] is False
         assert schema["required"] == ["source"]
@@ -39,28 +39,19 @@ async def test_article_tools_expose_required_discriminated_source_contracts():
             assert definition["properties"]["value"]["type"] == "string"
 
     fulltext = tools["get_fulltext"].input_schema
-    assert fulltext["$defs"]["PMIDSource"]["properties"]["value"] == {
-        "maxLength": 20,
-        "pattern": "^[1-9][0-9]{0,19}$",
-        "title": "Value",
-        "type": "string",
-    }
-    assert fulltext["$defs"]["PMCIDSource"]["properties"]["value"] == {
-        "maxLength": 23,
-        "pattern": "^PMC[1-9][0-9]{0,19}$",
-        "title": "Value",
-        "type": "string",
-    }
-    assert fulltext["$defs"]["DOISource"]["properties"]["value"]["maxLength"] == 512
-    assert fulltext["$defs"]["DOISource"]["properties"]["value"]["pattern"] == (r"^10\.[0-9]{4,9}/")
+    for name, kind in [("PMIDSource", "pmid"), ("PMCIDSource", "pmcid"), ("DOISource", "doi")]:
+        field = fulltext["$defs"][name]["properties"]["value"]
+        assert field["maxLength"] == 512
+        assert field["format"] == f"pubmed-{kind}"
+        assert field["examples"]
 
     fulltext_properties = fulltext["properties"]
     sections = next(branch for branch in fulltext_properties["sections"]["anyOf"] if branch.get("type") == "string")
     assert sections["maxLength"] == 500
-    assert fulltext_properties["output_format"]["enum"] == ["markdown", "json", "toon"]
+    assert fulltext_properties["output_format"]["anyOf"][0]["enum"] == ["markdown", "json", "toon"]
 
     semantic_schema = tools["get_text_mined_terms"].input_schema["properties"]["semantic_type"]
-    semantic_values = next(branch["enum"] for branch in semantic_schema["anyOf"] if "enum" in branch)
+    semantic_values = semantic_schema["anyOf"][0]["anyOf"][0]["enum"]
     assert set(semantic_values) == {
         "GENE_PROTEIN",
         "DISEASE",

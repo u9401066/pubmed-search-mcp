@@ -1,4 +1,4 @@
-<!-- Generated from docs/DEVELOPER_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/development/DEVELOPER_GUIDE.zh-TW.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -146,8 +146,8 @@ Note export 行為改變時，要同步更新 user docs、generated docs、描�
 
 Pipeline behavior 是 application capability，不是 shell script feature。Canonical tutorials 位於：
 
-- `docs/PIPELINE_MODE_TUTORIAL.en.md`
-- `docs/PIPELINE_MODE_TUTORIAL.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.en.md`
+- `docs/guides/PIPELINE_MODE_TUTORIAL.md`
 
 `scripts/build_docs_site.py` 會另外同步到 `.claude/skills/pipeline-persistence/references/`，讓不讀 `docs/site-content/` 的 agent bundles 與 VSIX integrations 仍能取得教學。
 
@@ -244,7 +244,9 @@ uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
 Child server 只替換 external-provider boundaries；MCP registration 與 schema
 validation、tool adapters、application services、session/artifact/Chronicle/
 pipeline persistence、note files 與 scheduling 都使用真實實作。每一種
-transport 都會執行 60 次具語意斷言的 `tools/call`。經 MCP 回傳的 Chronicle
+transport 都會執行 60 次成功且具語意斷言的 `tools/call`，加上 41 次執行前
+拒絕，驗證每個工具都能修正一次後成功。所有可接受參數也會驗證符合公開的
+JSON Schema。經 MCP 回傳的 Chronicle
 與 citation Mermaid 會核對 hash/size，CI 還會把這兩份實際 source 交給固定版
 Mermaid 11.16.1 render。Socket/DNS guard 會阻擋外連並留下 sentinel；即使
 application boundary 捕捉 provider error，測試仍會失敗。CI 明確以 source
@@ -252,7 +254,9 @@ stdio、Streamable HTTP 與 fresh-wheel stdio acceptance 作為 PR CI 與 releas
 gates；cross-platform matrix 也會執行 non-slow 路徑。
 
 Source-stdio 另有 rejection pass，會傳入 retired tool names、legacy flat action
-bags、錯誤 scalar types 與 stringified arrays/objects。Wheel 路徑使用外部
+bags、錯誤 scalar types 與 malformed containers。另一輪 all-tool stdio pass
+會驗證 JSON array/object 字串、巢狀 request、數字字串與明確布林文字，詳見
+[輸入格式契約](#/tools-usage-guide-zh#%E8%BC%B8%E5%85%A5%E6%A0%BC%E5%BC%8F%E8%88%87%E9%98%B2%E5%91%86)。Wheel 路徑使用外部
 deterministic bootstrap，但會明確斷言所有匯入的 server code 都來自空白 wheel
 environment，而非 source tree。
 

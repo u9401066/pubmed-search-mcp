@@ -1180,17 +1180,17 @@ class TestChronicleTools:
         assert max_events_schema["minimum"] == 1
         assert max_events_schema["maximum"] == 200
         assert build_schema["properties"]["max_events"]["default"] is None
-        assert "mermaid" in build_schema["properties"]["output"]["enum"]
-        read_request = read_schema["properties"]["request"]
+        assert "mermaid" in build_schema["properties"]["output"]["anyOf"][0]["enum"]
+        read_request = read_schema["properties"]["request"]["anyOf"][0]
         assert read_request["discriminator"]["propertyName"] == "action"
         assert set(read_request["discriminator"]["mapping"]) == set(chronicle_tools.READ_ACTIONS)
-        assert read_schema["$defs"]["ChronicleNarrateRequest"]["properties"]["mode"]["enum"] == [
+        assert read_schema["$defs"]["ChronicleNarrateRequest"]["properties"]["mode"]["anyOf"][0]["enum"] == [
             "brief",
             "full",
         ]
         chronicle_id_schema = read_schema["$defs"]["ChronicleLoadRequest"]["properties"]["chronicle_id"]
         assert chronicle_id_schema["pattern"] == r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
-        compare_values = read_schema["$defs"]["ChronicleTopicsSelection"]["properties"]["values"]
+        compare_values = read_schema["$defs"]["ChronicleTopicsSelection"]["properties"]["values"]["anyOf"][0]
         assert compare_values["minItems"] == 2
         assert compare_values["maxItems"] == 5
         assert read_schema["required"] == ["request"]
@@ -1248,11 +1248,12 @@ class TestChronicleTools:
         result = await tools["build_research_chronicle"](pmids="last")
         assert "No usable PMIDs resolved" in result
 
-    async def test_build_accepts_only_strict_explicit_pmid_tokens(self, monkeypatch, tmp_path):
+    @pytest.mark.parametrize("pmids", ["PMID: 1, 2 PMID:3", "pubmed:1;2;3", '["1","2","3"]', ["1", "2", "3"]])
+    async def test_build_accepts_shared_pmid_formats(self, monkeypatch, tmp_path, pmids):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
         result = await tools["build_research_chronicle"](
-            pmids="PMID: 1, 2 PMID:3",
+            pmids=pmids,
             topic="Selected",
         )
 
@@ -1264,7 +1265,6 @@ class TestChronicleTools:
         [
             "10.1000/123456",
             "1, DOI:10.1000/2, 3",
-            "pubmed:123456",
             "PMID123456",
             "123abc",
             "１２３４５６",
@@ -1300,7 +1300,7 @@ class TestChronicleTools:
         payload = json.loads(await tools["build_research_chronicle"](**kwargs, output="json"))
 
         assert payload["success"] is False
-        assert f"{field} must be a string" in payload["error"]
+        assert f"{field} must be" in payload["error"]
 
     async def test_build_direct_call_non_string_output_returns_error_instead_of_type_error(
         self,

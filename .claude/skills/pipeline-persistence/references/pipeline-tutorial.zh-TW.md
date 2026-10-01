@@ -1,4 +1,4 @@
-<!-- Synced from docs/PIPELINE_MODE_TUTORIAL.md by scripts/build_docs_site.py -->
+<!-- Synced from docs/guides/PIPELINE_MODE_TUTORIAL.md by scripts/build_docs_site.py -->
 
 # Pipeline Mode Tutorial
 

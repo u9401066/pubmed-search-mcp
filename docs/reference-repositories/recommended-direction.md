@@ -12,7 +12,7 @@
 - [`planning.py`](../../src/pubmed_search/application/unified/planning.py) 已有 provider-neutral query、retrieval capability 檢查，以及 PubMed dialect fail-closed 邊界。
 - [`SourceCapabilities`](../../src/pubmed_search/infrastructure/sources/registry.py) 已描述 search mode、pagination、limit、operator data plane、counts 與 provenance。
 - [`ChronicleSnapshot`](../../src/pubmed_search/domain/entities/chronicle.py) 已是 timeline、tree、graph、map、narrative 與 Mermaid 的單一 source of truth。
-- [`RESEARCH_CHRONICLE_REFACTOR_SPEC.md`](../RESEARCH_CHRONICLE_REFACTOR_SPEC.md) 已明定橫向時間主軸、主題分支、branch basis、版本差異、audit 與 rich-to-safe-to-minimal Mermaid fallback。
+- [`RESEARCH_CHRONICLE_REFACTOR_SPEC.md`](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md) 已明定橫向時間主軸、主題分支、branch basis、版本差異、audit 與 rich-to-safe-to-minimal Mermaid fallback。
 
 因此，合理方向是擴充現有 domain contracts，讓更多來源和後續工作流接進同一條主幹。
 

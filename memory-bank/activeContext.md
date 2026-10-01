@@ -1,6 +1,60 @@
 # Active Context
 
-## Current Focus — v0.7.4 published and verified (2026-09-18)
+## Current Focus — v0.7.5 agent input contract release (2026-10-01)
+
+- User authorized a final review, remaining fixes, documentation/website/MEM
+  updates, segmented commits, push and publication of the agreed v0.7.5 patch.
+  Release branch: `release/v0.7.5`; publication is pending CI and tag verification.
+- All 41 tools share schema-derived correction of declared containers, numeric
+  strings, explicit boolean text and unambiguous enum spelling. Shared typed
+  PMID/PMCID/DOI/NCBI contracts validate identifiers before tool execution.
+- Structured input errors use safe JSON Pointers, exact codes/constraints and
+  `executed: false` only at argument validation. Errors inside tools cannot
+  imply that writes did not execute. Bad batches never execute partially.
+- Follow-up review preserved JSON parser error codes through typed batch
+  validators, fixed numeric unions and protected free-text union semantics.
+  Input-contract regressions are now included in ordinary CI smoke.
+- Plan/contract: [agent input contract](../docs/design/AGENT_INPUT_CONTRACT.md).
+  User formats: [usage guide](../docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md#輸入格式與防呆).
+- Final release full gate: **4,882 passed, 23 skipped, 30 live tests deselected**
+  (134.54 s), plus lint/format/async/layout/publication/mypy checks. Wheel/sdist
+  build, skills and generated documentation checks pass.
+- This release also includes the nine already-committed September documentation/
+  publication-organization changes inherited by this branch. Historical source
+  review ledgers and benchmark results remain historical; this focused patch
+  does not claim a new whole-core semantic review or agent efficacy benchmark.
+- This checkout is standalone (no Git superproject); no parent submodule pointer
+  or downstream extension pin is changed as part of this package release.
+
+## Previous Focus — repository classification and manuscript overhaul (2026-09-21)
+
+- User requested whole-repo file organization and a complete revision of the
+  planned citation/arXiv paper; confirmed original author and affiliation:
+  Tz-Ping Gau / Kaohsiung Medical University Hospital.
+- Canonical docs now live in `docs/guides/`, `development/`, `architecture/`,
+  `providers/`, `research/`, `design/` and `publication/`. The move map records
+  36 relocations. Existing website routes/Wiki names remain stable; raw document
+  paths change. Root configuration and established script paths remain stable.
+- `docs/repository-layout.json` plus `scripts/check_repository_layout.py` cover
+  every Git-visible path. This is placement coverage, not semantic review.
+- One current manuscript: `docs/publication/main.tex`; reviewed references,
+  evidence map/hash manifest and proposed A/B/C evaluation live alongside it.
+  Four historical publication originals are preserved with checksums. Software
+  citation uses the confirmed name; no fabricated arXiv identifier or paper DOI.
+- Local builder generates tables from immutable records, validates citations and
+  creates an 8-page PDF plus self-contained TeX ZIP in ignored `build/publication/`.
+  Native/full-package advantage remains unproven; the three-pair pilot tied.
+- Source runtime and provider budgets are unchanged. Installed user-owned harness
+  files are preserved; only repository-owned documentation references were updated.
+- No costly benchmark, live API load test, arXiv submission or software release
+  was started. v0.7.4 remains the published release. The user authorized segmented
+  commits and push on 2026-09-21; delivery branch: `docs/repository-publication-overhaul`.
+- Verification details: [organization/publication report](../docs/reports/repository_publication_overhaul_2026-09-21.md).
+- Final local full gate: 4,764 passed, 23 skipped, 30 live integrations deselected;
+  lint/format/async/mypy pass. All 805 Git-visible files have unique categories.
+  Desktop/mobile publication navigation and isolated arXiv source compilation pass.
+
+## Previous Focus — v0.7.4 published and verified (2026-09-18)
 
 - User authorized completing the follow-up fixes and publishing the patch release.
   v0.7.4 is published on PyPI and GitHub. PR #18 merged five focused commits
@@ -335,9 +389,9 @@
 - README, bilingual handbook sources, generated website content, tool index,
   Copilot/Cline guidance, architecture inventory, and quality audit must all
   describe the same 41-tool strict registry.
-- `docs/UNIFIED_SEARCH_ARCHITECTURE.md` inventories every class/function reached
+- `docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md` inventories every class/function reached
   by unified search and documents the execution flow and improvement seams.
-- `docs/TOOL_QUALITY_AUDIT.md` records every public tool, shared primitives,
+- `docs/research/TOOL_QUALITY_AUDIT.md` records every public tool, shared primitives,
   eliminated duplicate surfaces, and remaining architectural opportunities.
 - Preserve unrelated user workspace files and changes during release commits.
 

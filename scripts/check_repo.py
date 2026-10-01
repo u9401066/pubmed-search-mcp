@@ -25,6 +25,7 @@ SMOKE_TESTS = (
     "tests/test_search_query_provenance.py",
     "tests/test_search_run_journal.py",
     "tests/test_tool_schema_hardening.py",
+    "tests/test_agent_input_contract.py",
     "tests/test_install_research_skills.py",
     "tests/test_check_repo.py",
     "tests/test_release_transport_smoke.py",
@@ -40,6 +41,10 @@ def commands(profile: str) -> list[tuple[str, ...]]:
         ("python", "scripts/check_async_tests.py"),
     ]
     if profile == "full":
+        checks.append(("python", "scripts/check_repository_layout.py"))
+        checks.append(
+            ("python", "scripts/build_publication.py", "--prepare-only", "--output", "build/publication-preflight")
+        )
         checks.append(("python", "scripts/perf/symbol_inventory.py"))
         checks.append(("mypy", "src/", "tests/"))
     checks.append(("pytest", "-q", *(SMOKE_TESTS if profile == "smoke" else ("tests/",)), "-m", "not integration"))

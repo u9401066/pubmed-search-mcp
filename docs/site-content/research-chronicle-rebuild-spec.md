@@ -1,4 +1,4 @@
-<!-- Generated from docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

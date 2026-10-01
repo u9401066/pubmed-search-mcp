@@ -1,4 +1,4 @@
-<!-- Generated from docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
@@ -393,8 +393,8 @@ uv run python scripts/check_async_tests.py
 uv run python scripts/build_docs_site.py
 MERMAID_NODE_MODULES=/path/to/pinned/node_modules \
   node scripts/check_mermaid_rendering.mjs \
-  docs/UNIFIED_SEARCH_ARCHITECTURE.md \
-  docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md
+  docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md \
+  docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md
 ```
 
 這份清冊的目的不是把現有設計「文件化後凍結」，而是提供可測量的重構邊界：入口應薄、application policy 應可注入、source outcome 應 typed、每一次部分失敗都可稽核、每一個「相關度／召回率／peer reviewed」名稱都必須與實際計算語意一致。

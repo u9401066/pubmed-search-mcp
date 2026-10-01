@@ -1,4 +1,4 @@
-<!-- Generated from docs/ACADEMIC_RETRIEVAL_BENCHMARKS.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/research/ACADEMIC_RETRIEVAL_BENCHMARKS.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

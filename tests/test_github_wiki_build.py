@@ -15,6 +15,7 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         assert (tmp_path / page).exists()
 
     expected_pages = {
+        "Publication.md",
         "Home.md",
         "_Sidebar.md",
         "User-Guide.md",
@@ -73,8 +74,8 @@ def test_build_github_wiki_rewrites_image_links_to_raw_assets() -> None:
     route_map = build_github_wiki._source_route_map()
 
     rendered = build_github_wiki._rewrite_links(
-        "![Workflow](images/research-workflow.svg)",
-        build_github_wiki.DOCS_ROOT / "USER_GUIDE.md",
+        "![Workflow](../images/research-workflow.svg)",
+        build_github_wiki.DOCS_ROOT / "guides/USER_GUIDE.md",
         route_map,
     )
 

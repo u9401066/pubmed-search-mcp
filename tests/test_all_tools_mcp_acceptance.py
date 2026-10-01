@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from jsonschema import Draft202012Validator
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
@@ -257,9 +258,12 @@ def _render_with_pinned_mermaid_if_configured(source: str, scratch: Path, label:
 @dataclass
 class AcceptanceDriver:
     client: Client[Any]
+    stringify_containers: bool = False
     called_tools: set[str] = field(default_factory=set)
     failures: list[str] = field(default_factory=list)
     call_count: int = 0
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
+    repaired_tools: set[str] = field(default_factory=set)
 
     async def call(
         self,
@@ -270,6 +274,39 @@ class AcceptanceDriver:
         self.called_tools.add(name)
         self.call_count += 1
         try:
+            if self.stringify_containers:
+                # Encode nested containers too, as some clients serialize each
+                # structured field separately before serializing the request.
+                def encode(value: Any) -> Any:
+                    if isinstance(value, dict):
+                        return json.dumps({key: encode(item) for key, item in value.items()})
+                    if isinstance(value, list):
+                        return json.dumps([encode(item) for item in value])
+                    if isinstance(value, bool):
+                        return " TRUE " if value else " false "
+                    if isinstance(value, (int, float)):
+                        return f" {value} "
+                    return value
+
+                arguments = {
+                    key: encode([value] if key == "pmids" and isinstance(value, str) else value)
+                    for key, value in arguments.items()
+                }
+            Draft202012Validator(self.schemas[name]).validate(arguments)
+            if name not in self.repaired_tools:
+                rejected = await self.client.call_tool(name, {**arguments, "unknown-field-secret": "secret-value"})
+                assert rejected.is_error is True
+                failure = rejected.structured_content
+                assert failure["executed"] is False
+                assert failure["recovery"]["action"] == "correct_arguments"
+                assert failure["errors"] == [{**failure["errors"][0], "code": "unknown_field", "path": ""}]
+                assert "unknown-field-secret" not in json.dumps(failure)
+                assert "secret-value" not in _result_text(rejected)
+                # Follow the returned allowed_fields once, then execute the
+                # repaired request through the real transport/provider fixture.
+                allowed = failure["errors"][0]["expected"]["allowed_fields"]
+                arguments = {key: value for key, value in arguments.items() if key in allowed}
+                self.repaired_tools.add(name)
             result = await self.client.call_tool(name, arguments)
             assert result.is_error is False, _result_text(result)
             assert result.content, "MCP result contained no content blocks"
@@ -297,17 +334,21 @@ class AcceptanceDriver:
                 f"extra={sorted(listed_tools - EXPECTED_TOOLS)}"
             )
         assert not self.failures, "MCP acceptance failures:\n- " + "\n- ".join(self.failures)
+        assert self.repaired_tools == EXPECTED_TOOLS
 
 
-async def _exercise_all_tools(client: Client[Any], scratch: Path) -> None:
+async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_containers: bool = False) -> None:
     listed = await client.list_tools()
     listed_tools = {tool.name for tool in listed.tools}
-    driver = AcceptanceDriver(client)
+    driver = AcceptanceDriver(client, stringify_containers=stringify_containers)
+    driver.schemas = {tool.name: tool.input_schema for tool in listed.tools}
+    for schema in driver.schemas.values():
+        Draft202012Validator.check_schema(schema)
     assert len(listed.tools) == len(EXPECTED_TOOLS)
     assert all(tool.description for tool in listed.tools)
     assert all(tool.annotations is not None for tool in listed.tools)
     assert all(tool.input_schema.get("additionalProperties") is False for tool in listed.tools)
-    assert all((tool.meta or {}).get("pubmed-search", {}).get("contractVersion") == 3 for tool in listed.tools)
+    assert all((tool.meta or {}).get("pubmed-search", {}).get("contractVersion") == 4 for tool in listed.tools)
 
     unified = await driver.call(
         "unified_search",
@@ -1118,7 +1159,8 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
-async def test_all_tools_through_real_stdio_mcp(tmp_path: Path) -> None:
+@pytest.mark.parametrize("stringify_containers", [False, True], ids=["native", "encoded"])
+async def test_all_tools_through_real_stdio_mcp(tmp_path: Path, stringify_containers: bool) -> None:
     scratch = tmp_path / "stdio"
     parameters = StdioServerParameters(
         command=sys.executable,
@@ -1127,7 +1169,7 @@ async def test_all_tools_through_real_stdio_mcp(tmp_path: Path) -> None:
         env=_acceptance_env(scratch),
     )
     async with Client(stdio_client(parameters), read_timeout_seconds=30) as client:
-        await _exercise_all_tools(client, scratch)
+        await _exercise_all_tools(client, scratch, stringify_containers=stringify_containers)
     _assert_no_external_network(scratch)
 
 
@@ -1145,12 +1187,12 @@ async def test_breaking_contract_rejections_through_real_stdio_mcp(tmp_path: Pat
         listed = {tool.name for tool in (await client.list_tools()).tools}
         assert listed.isdisjoint(RETIRED_TOOLS)
         invalid_calls = [
-            ("unified_search", {"query": "offline acceptance", "limit": "1"}),
+            ("unified_search", {"query": "offline acceptance", "limit": "1.5"}),
             ("read_session", {"action": "summary"}),
             ("read_research_chronicle", {"action": "list"}),
             ("get_institutional_link", {"pmid": PRIMARY_PMID}),
             ("prepare_figure_search", {"source": '{"kind":"base64","data":"YWJj"}'}),
-            ("validate_pico_plan", {"description": "ICU sedation", "sources": '["pubmed"]'}),
+            ("validate_pico_plan", {"description": "ICU sedation", "sources": '["not-a-source"]'}),
         ]
         for tool_name, arguments in invalid_calls:
             result = await client.call_tool(tool_name, arguments)
@@ -1158,6 +1200,33 @@ async def test_breaking_contract_rejections_through_real_stdio_mcp(tmp_path: Pat
         for retired_tool in sorted(RETIRED_TOOLS):
             result = await client.call_tool(retired_tool, {})
             assert result.is_error is True, f"retired tool became callable: {retired_tool}"
+    _assert_no_external_network(scratch)
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(60)
+async def test_reported_pmid_batch_through_real_stdio_mcp(tmp_path: Path) -> None:
+    scratch = tmp_path / "reported-pmids"
+    pmids = ["33053718", "36170657", "36707153", "16616769", "18419722", "1688220", "6121568", "25288149", "40378294"]
+    parameters = StdioServerParameters(
+        command=sys.executable, args=[str(ACCEPTANCE_SERVER)], cwd=ROOT, env=_acceptance_env(scratch)
+    )
+    async with Client(stdio_client(parameters), read_timeout_seconds=30) as client:
+        markdown = await client.call_tool(
+            "fetch_article_details", {"pmids": json.dumps(pmids), "output_format": "markdown"}
+        )
+        assert markdown.is_error is False, _result_text(markdown)
+        for pmid in pmids:
+            assert pmid in _result_text(markdown)
+        for value in [pmids, json.dumps(pmids), ",".join(pmids), "\n".join(pmids), "，".join(pmids)]:
+            result = await client.call_tool("fetch_article_details", {"pmids": value, "output_format": "json"})
+            assert result.is_error is False, _result_text(result)
+            payload = _json_document(_result_text(result))
+            assert payload["pmids_requested"] == pmids
+            assert [article["pmid"] for article in payload["articles"]] == pmids
+        for value in ['["33053718", null]', '["33053718", "bad"]', "33053718PMID:36170657"]:
+            result = await client.call_tool("fetch_article_details", {"pmids": value, "output_format": "json"})
+            assert result.is_error is True
     _assert_no_external_network(scratch)
 
 

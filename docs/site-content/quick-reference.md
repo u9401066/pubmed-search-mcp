@@ -6,7 +6,8 @@
 
 Quick reference for all 41 available MCP tools. Auto-generated from `tool_registry.py`.
 
-Use `docs/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just the raw inventory.
+Use `docs/guides/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just the raw inventory.
+Automatic input correction, published schemas and structured repair errors: `docs/guides/TOOLS_USAGE_GUIDE.md#input-formats-and-validation`.
 
 ---
 
@@ -184,6 +185,7 @@ mcp_server/
 ├── http_cli.py
 ├── http_compat.py
 ├── http_security.py
+├── input_contract.py
 ├── instructions.py
 ├── prompts.py
 ├── resources.py

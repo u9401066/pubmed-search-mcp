@@ -1,4 +1,4 @@
-<!-- Generated from docs/SOURCE_CONTRACTS.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/architecture/SOURCE_CONTRACTS.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

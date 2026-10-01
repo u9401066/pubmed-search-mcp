@@ -32,57 +32,72 @@ class WikiPage:
 
 
 PAGES: tuple[WikiPage, ...] = (
-    WikiPage("User-Guide", "User Guide", DOCS_ROOT / "USER_GUIDE.md"),
-    WikiPage("User-Guide.zh-TW", "使用者指南", DOCS_ROOT / "USER_GUIDE.zh-TW.md"),
+    WikiPage("Publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
+    WikiPage("User-Guide", "User Guide", DOCS_ROOT / "guides/USER_GUIDE.md"),
+    WikiPage("User-Guide.zh-TW", "使用者指南", DOCS_ROOT / "guides/USER_GUIDE.zh-TW.md"),
     WikiPage(
-        "Advanced-Research-Workflows", "Advanced Research Workflows", DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.md"
+        "Advanced-Research-Workflows",
+        "Advanced Research Workflows",
+        DOCS_ROOT / "guides/ADVANCED_RESEARCH_WORKFLOWS.md",
     ),
     WikiPage(
         "Advanced-Research-Workflows.zh-TW",
         "進階研究工作流",
-        DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
+        DOCS_ROOT / "guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
     ),
     WikiPage(
         "Research-Chronicle-Rebuild-Spec",
         "Research Chronicle Rebuild Spec",
-        DOCS_ROOT / "RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
+        DOCS_ROOT / "design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
     ),
-    WikiPage("Developer-Guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
-    WikiPage("Developer-Guide.zh-TW", "開發者指南", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
-    WikiPage("Tools-Usage-Guide", "Tools Usage Guide", DOCS_ROOT / "TOOLS_USAGE_GUIDE.md"),
-    WikiPage("Tools-Usage-Guide.zh-TW", "工具使用指南", DOCS_ROOT / "TOOLS_USAGE_GUIDE.zh-TW.md"),
-    WikiPage("Pipeline-Tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
-    WikiPage("Pipeline-Tutorial.zh-TW", "Pipeline 教學", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),
+    WikiPage("Developer-Guide", "Developer Guide", DOCS_ROOT / "development/DEVELOPER_GUIDE.md"),
+    WikiPage("Developer-Guide.zh-TW", "開發者指南", DOCS_ROOT / "development/DEVELOPER_GUIDE.zh-TW.md"),
+    WikiPage("Tools-Usage-Guide", "Tools Usage Guide", DOCS_ROOT / "guides/TOOLS_USAGE_GUIDE.md"),
+    WikiPage("Tools-Usage-Guide.zh-TW", "工具使用指南", DOCS_ROOT / "guides/TOOLS_USAGE_GUIDE.zh-TW.md"),
+    WikiPage("Pipeline-Tutorial", "Pipeline Tutorial", DOCS_ROOT / "guides/PIPELINE_MODE_TUTORIAL.en.md"),
+    WikiPage("Pipeline-Tutorial.zh-TW", "Pipeline 教學", DOCS_ROOT / "guides/PIPELINE_MODE_TUTORIAL.md"),
     WikiPage(
         "Unified-Search-Architecture",
         "Unified Search Architecture",
-        DOCS_ROOT / "UNIFIED_SEARCH_ARCHITECTURE.md",
+        DOCS_ROOT / "architecture/UNIFIED_SEARCH_ARCHITECTURE.md",
     ),
     WikiPage(
         "Unified-Search-Architecture.zh-TW",
         "Unified Search 架構",
-        DOCS_ROOT / "UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
+        DOCS_ROOT / "architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     ),
-    WikiPage("Tool-Quality-Audit", "Tool Quality Audit", DOCS_ROOT / "TOOL_QUALITY_AUDIT.md"),
-    WikiPage("Tool-Quality-Audit.zh-TW", "工具品質稽核", DOCS_ROOT / "TOOL_QUALITY_AUDIT.zh-TW.md"),
+    WikiPage("Tool-Quality-Audit", "Tool Quality Audit", DOCS_ROOT / "research/TOOL_QUALITY_AUDIT.md"),
+    WikiPage("Tool-Quality-Audit.zh-TW", "工具品質稽核", DOCS_ROOT / "research/TOOL_QUALITY_AUDIT.zh-TW.md"),
     WikiPage("Architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
     WikiPage(
-        "Academic-Retrieval-Benchmarks", "Academic Retrieval Benchmarks", DOCS_ROOT / "ACADEMIC_RETRIEVAL_BENCHMARKS.md"
+        "Academic-Retrieval-Benchmarks",
+        "Academic Retrieval Benchmarks",
+        DOCS_ROOT / "research/ACADEMIC_RETRIEVAL_BENCHMARKS.md",
     ),
     WikiPage(
-        "Repository-Reliability-Audit", "Repository Reliability Audit", DOCS_ROOT / "REPOSITORY_RELIABILITY_AUDIT.md"
+        "Repository-Reliability-Audit",
+        "Repository Reliability Audit",
+        DOCS_ROOT / "research/REPOSITORY_RELIABILITY_AUDIT.md",
     ),
     WikiPage(
         "Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
     ),
-    WikiPage("Source-Contracts", "Source Contracts", DOCS_ROOT / "SOURCE_CONTRACTS.md"),
-    WikiPage("Semantic-Scholar-Data-Plane", "Semantic Scholar Data Plane", DOCS_ROOT / "SEMANTIC_SCHOLAR_API.md"),
-    WikiPage("OpenAlex-Search-And-Data-Plane", "OpenAlex Search And Data Plane", DOCS_ROOT / "OPENALEX_API.md"),
-    WikiPage("ClinicalKey-AI-Boundary", "ClinicalKey AI Boundary", DOCS_ROOT / "CLINICALKEY_AI_INTEGRATION.md"),
+    WikiPage("Source-Contracts", "Source Contracts", DOCS_ROOT / "architecture/SOURCE_CONTRACTS.md"),
     WikiPage(
-        "BioMCP-Architecture-Analysis", "BioMCP Architecture Analysis", DOCS_ROOT / "BIOMCP_ARCHITECTURE_ANALYSIS.md"
+        "Semantic-Scholar-Data-Plane", "Semantic Scholar Data Plane", DOCS_ROOT / "providers/SEMANTIC_SCHOLAR_API.md"
     ),
-    WikiPage("Troubleshooting", "Troubleshooting", DOCS_ROOT / "INTEGRATIONS.md"),
+    WikiPage(
+        "OpenAlex-Search-And-Data-Plane", "OpenAlex Search And Data Plane", DOCS_ROOT / "providers/OPENALEX_API.md"
+    ),
+    WikiPage(
+        "ClinicalKey-AI-Boundary", "ClinicalKey AI Boundary", DOCS_ROOT / "providers/CLINICALKEY_AI_INTEGRATION.md"
+    ),
+    WikiPage(
+        "BioMCP-Architecture-Analysis",
+        "BioMCP Architecture Analysis",
+        DOCS_ROOT / "research/BIOMCP_ARCHITECTURE_ANALYSIS.md",
+    ),
+    WikiPage("Troubleshooting", "Troubleshooting", DOCS_ROOT / "guides/INTEGRATIONS.md"),
     WikiPage("Deployment", "Deployment", REPO_ROOT / "DEPLOYMENT.md"),
 )
 
@@ -171,6 +186,7 @@ interactive documentation site remains the preferred reading surface:
 
 ## Reference Pages
 
+- [Publication and Citation](Publication): manuscript, evidence, bibliography and proposed evaluation
 - [Tools Usage Guide](Tools-Usage-Guide) / [工具使用指南](Tools-Usage-Guide.zh-TW)
 - [Pipeline Tutorial](Pipeline-Tutorial) / [Pipeline 教學](Pipeline-Tutorial.zh-TW)
 - [Unified Search Architecture](Unified-Search-Architecture) / [Unified Search 架構](Unified-Search-Architecture.zh-TW)
@@ -215,6 +231,7 @@ def _render_sidebar() -> str:
 
 ## Developers
 
+- [Publication and Citation](Publication)
 - [Developer Guide](Developer-Guide)
 - [開發者指南](Developer-Guide.zh-TW)
 - [Unified Search Architecture](Unified-Search-Architecture)

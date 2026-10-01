@@ -347,12 +347,12 @@ def test_docs_site_image_links_rewrite_to_published_assets() -> None:
     route_map = _route_map()
 
     readme_markdown = "![Workflow](docs/images/research-workflow.svg)"
-    docs_markdown = "![Workflow](images/research-workflow.svg)"
+    docs_markdown = "![Workflow](../images/research-workflow.svg)"
 
     assert _rewrite_links(readme_markdown, REPO_ROOT / "README.md", route_map) == (
         "![Workflow](images/research-workflow.svg)"
     )
-    assert _rewrite_links(docs_markdown, DOCS_ROOT / "USER_GUIDE.md", route_map) == (
+    assert _rewrite_links(docs_markdown, DOCS_ROOT / "guides/USER_GUIDE.md", route_map) == (
         "![Workflow](images/research-workflow.svg)"
     )
 
@@ -362,16 +362,16 @@ def test_docs_site_links_preserve_fragments_and_route_repo_files() -> None:
 
     assert (
         _rewrite_links(
-            "[README section](../README.md#-configuration)",
-            DOCS_ROOT / "INTEGRATIONS.md",
+            "[README section](../../README.md#-configuration)",
+            DOCS_ROOT / "guides/INTEGRATIONS.md",
             route_map,
         )
         == "[README section](#/overview#configuration)"
     )
     assert (
         _rewrite_links(
-            "[Deployment check](../DEPLOYMENT.md#10-驗證清單)",
-            DOCS_ROOT / "INTEGRATIONS.md",
+            "[Deployment check](../../DEPLOYMENT.md#10-驗證清單)",
+            DOCS_ROOT / "guides/INTEGRATIONS.md",
             route_map,
         )
         == "[Deployment check](#/deployment#10-%E9%A9%97%E8%AD%89%E6%B8%85%E5%96%AE)"
@@ -389,8 +389,8 @@ def test_docs_site_links_preserve_fragments_and_route_repo_files() -> None:
 def test_docs_site_link_rewrite_rejects_missing_routed_heading() -> None:
     with pytest.raises(ValueError, match=r"DEPLOYMENT\.md#9-驗證清單"):
         _rewrite_links(
-            "[Stale deployment check](../DEPLOYMENT.md#9-驗證清單)",
-            DOCS_ROOT / "INTEGRATIONS.md",
+            "[Stale deployment check](../../DEPLOYMENT.md#9-驗證清單)",
+            DOCS_ROOT / "guides/INTEGRATIONS.md",
             _route_map(),
         )
 
@@ -474,14 +474,14 @@ def test_primary_tool_count_mentions_match_runtime_surface() -> None:
             f"理解這 {total} 個工具",
             "diagnose_institutional_access",
         ],
-        DOCS_ROOT / "TOOLS_USAGE_GUIDE.md": [f"{total}-tool PubMed Search MCP surface"],
-        DOCS_ROOT / "TOOLS_USAGE_GUIDE.zh-TW.md": [f"不用死背 {total} 個 MCP tool"],
+        DOCS_ROOT / "guides/TOOLS_USAGE_GUIDE.md": [f"{total}-tool PubMed Search MCP surface"],
+        DOCS_ROOT / "guides/TOOLS_USAGE_GUIDE.zh-TW.md": [f"不用死背 {total} 個 MCP tool"],
         REPO_ROOT / "ARCHITECTURE.md": [
             f"提供 {total} 個 MCP tools",
             f"{total} tools / {categories} categories",
             "引用驗證 | 1 | `verify_reference_list`",
         ],
-        DOCS_ROOT / "INTEGRATIONS.md": [
+        DOCS_ROOT / "guides/INTEGRATIONS.md": [
             f"Full {total}-tool primary MCP surface",
             f"enumerate {total} tools in the primary MCP surface",
         ],

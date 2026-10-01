@@ -1,4 +1,4 @@
-<!-- Generated from docs/REPOSITORY_RELIABILITY_AUDIT.md by scripts/build_docs_site.py -->
+<!-- Generated from docs/research/REPOSITORY_RELIABILITY_AUDIT.md by scripts/build_docs_site.py -->
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 

@@ -158,6 +158,11 @@ uv run pre-commit run semgrep --all-files --hook-stage manual
 
 The full gate also regenerates the Git-visible Python class/function inventory
 and rejects parse gaps. This is coverage accounting, not semantic review approval.
+It checks every non-ignored file against the [ownership map](docs/repository-layout.json)
+and validates the [publication](docs/publication/README.md) evidence and sources
+without compiling TeX or starting an agent/provider benchmark. Put current docs
+in their [document category](docs/README.md); put disposable output under ignored
+`build/` or `scripts/_tmp/`. New top-level files require an explicit ownership rule.
 
 The pre-push hook runs the full gate, fails on the first unsuccessful command,
 and defaults to one pytest process. It does not cache success or trust a report
@@ -393,7 +398,9 @@ real.
 The opt-in extended Mermaid CI job additionally renders the exact Chronicle and citation graph
 sources returned by the MCP acceptance process with pinned Mermaid 11.16.1.
 A separate real-stdio rejection test protects the breaking no-compatibility
-boundary for retired tools, flat action bags, and scalar/stringified coercions.
+boundary for retired tools, flat action bags, wrong scalar types, and malformed
+containers. A second all-tool stdio pass verifies schema-declared JSON array/object
+strings, including nested requests; the reported nine-PMID batch has its own regression.
 Use `-m "not slow"` to omit only the fresh-wheel path during a focused local
 iteration. Live provider probes remain separately opt-in with
 `PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration`.

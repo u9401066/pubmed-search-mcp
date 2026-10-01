@@ -11,8 +11,8 @@ from pubmed_search.presentation.mcp_server.tool_registry import TOOL_CATEGORIES
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = (
-    ROOT / "docs/TOOL_QUALITY_AUDIT.md",
-    ROOT / "docs/TOOL_QUALITY_AUDIT.zh-TW.md",
+    ROOT / "docs/research/TOOL_QUALITY_AUDIT.md",
+    ROOT / "docs/research/TOOL_QUALITY_AUDIT.zh-TW.md",
 )
 
 TOOL_ROW_RE = re.compile(

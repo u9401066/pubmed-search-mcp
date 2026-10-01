@@ -6,11 +6,76 @@ import json
 
 import pytest
 
+from pubmed_search.domain.value_objects import MAX_PMIDS_PER_REQUEST, IdentifierValidationError
 from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
 
 class TestInputNormalizer:
-    """Only production-used, schema-strict normalization remains public."""
+    """Safe transport repairs retain strict identifier and scalar validation."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            '["33053718", "36170657", "33053718"]',
+            ["33053718", "PMID: 36170657", "33053718"],
+            "33053718,36170657,33053718",
+            "PMID: 33053718; pubmed:36170657|33053718",
+            "33053718\n36170657\t33053718",
+            "33053718，36170657；33053718、33053718",
+        ],
+    )
+    def test_batch_formats_preserve_order_and_deduplicate(self, value: object):
+        assert InputNormalizer.normalize_pmids(value) == ["33053718", "36170657"]
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            None,
+            True,
+            123,
+            123.0,
+            "",
+            [],
+            [""],
+            ["123", ""],
+            ["123", None],
+            ["123", True],
+            [123],
+            [["123"]],
+            ["123,456"],
+            "[]",
+            '["123", null]',
+            '["123", ["456"]]',
+            '["123", true]',
+            '["123", 456]',
+            '["123", "bad"]',
+            '["123",]',
+            "['123']",
+            '{"pmids":["123"]}',
+            "123PMID:456",
+            "PMID:PMID:123",
+            "123 last",
+            '["last","123"]',
+            "１２３",
+            "0",
+            "-123",
+            "123.0",
+            "10.1000/123",
+        ],
+    )
+    def test_malformed_batches_are_rejected_as_a_whole(self, value: object):
+        with pytest.raises(IdentifierValidationError):
+            InputNormalizer.normalize_pmids(value)
+
+    def test_batch_limit_applies_before_deduplication(self):
+        with pytest.raises(IdentifierValidationError, match="exceeds"):
+            InputNormalizer.normalize_pmids(["123"] * (MAX_PMIDS_PER_REQUEST + 1))
+
+    @pytest.mark.parametrize("value", [" last ", '["last"]', ["last"]])
+    def test_last_remains_an_explicit_session_sentinel(self, value: object):
+        assert InputNormalizer.normalize_pmids(value) == ["last"]
+        with pytest.raises(IdentifierValidationError):
+            InputNormalizer.normalize_pmids(value, allow_last=False)
 
     def test_query_normalizes_free_form_typography_and_outer_whitespace(self):
         assert (
@@ -54,7 +119,6 @@ class TestInputNormalizer:
     @pytest.mark.parametrize(
         "retired_method",
         [
-            "normalize_pmids",
             "normalize_pmcid",
             "normalize_year",
             "normalize_limit",

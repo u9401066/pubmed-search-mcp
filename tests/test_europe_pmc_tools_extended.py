@@ -171,9 +171,13 @@ class TestGetFulltextIdentifiers:
             result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="12345678"))
         assert isinstance(result, str)
 
-    async def test_doi_url_is_not_silently_normalized(self):
+    async def test_doi_url_uses_shared_identifier_normalization(self):
+        assert (
+            DOISource(kind="doi", value="https://doi.org/10.1038/s41586-021-03819-2").value
+            == "10.1038/s41586-021-03819-2"
+        )
         with pytest.raises(ValidationError):
-            DOISource(kind="doi", value="https://doi.org/10.1038/s41586-021-03819-2")
+            DOISource(kind="doi", value="https://evil.example/10.1038/s41586-021-03819-2")
 
     async def test_short_pmid(self, tools):
         """Short digit-only identifier → treated as PMID."""

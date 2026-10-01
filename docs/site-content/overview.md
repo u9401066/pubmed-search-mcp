@@ -34,6 +34,15 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Shared input normalization — v0.7.5
+
+All 41 tools share automatic correction for JSON containers, decimal numeric
+strings, explicit boolean text, enum spelling and biomedical identifiers.
+Published schemas include accepted representations; pre-execution errors provide
+precise field paths and repair constraints. Native and normalized requests are
+verified across all tools, including one corrected retry.
+See [input formats and validation](#/tools-usage-guide#input-formats-and-validation).
+
 ## Provider-safe scheduling — v0.7.4
 
 Pipeline branches now proceed as their dependencies finish while API request-rate
@@ -352,7 +361,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits (10 req/s vs 3 req/s).
-> 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](#/troubleshooting) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
+> 📖 **Detailed Integration Guides**: See [docs/guides/INTEGRATIONS.md](#/troubleshooting) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
 
 ---
 
@@ -688,8 +697,8 @@ author keywords shared by multiple papers; singleton-only or insufficient
 signals trigger a warned research-stage fallback. Same-year display order is
 stable, but does not assert precedence when publication precision cannot prove
 it. See
-[Advanced Research Workflows (docs/ADVANCED_RESEARCH_WORKFLOWS.md)](#/advanced-workflows) and
-[docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec).
+[Advanced Research Workflows (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md)](#/advanced-workflows) and
+[docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec).
 
 Chronicle Mermaid output is built from structured nodes and edges, with safe
 label escaping, cycle/orphan repair, collision-resistant IDs, and bounded graph
@@ -887,8 +896,8 @@ explicit error instead of a partial list or a false “no history” result.
 
 Step-by-step tutorials:
 
-- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
-- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+- English: [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+- 繁體中文: [docs/guides/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
 
 ### 👁️ Vision & Image Search
 
@@ -1287,7 +1296,7 @@ The opt-in extended CI also renders the exact Chronicle and citation Mermaid sou
 MCP with pinned Mermaid 11.16.1, so presentation-layer syntax damage fails the
 gate.
 An additional real-stdio rejection pass confirms that retired tool names,
-legacy flat request shapes, and scalar/stringified coercions remain rejected.
+legacy flat request shapes, ambiguous scalar values, and malformed containers remain rejected.
 
 ```bash
 uv run pytest -q tests/test_all_tools_mcp_acceptance.py
@@ -1491,8 +1500,8 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 > 📖 **More documentation**:
 >
 > - Architecture → [ARCHITECTURE.md](#/architecture)
-> - Pipeline tutorial (English) → [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
-> - Pipeline tutorial (zh-TW) → [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+> - Pipeline tutorial (English) → [docs/guides/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+> - Pipeline tutorial (zh-TW) → [docs/guides/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
 > - Deployment guide → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 
@@ -1548,12 +1557,16 @@ Export your search results in formats compatible with major reference managers:
 
 ## 📚 Citation
 
+The [publication workspace](#/publication) contains the rewritten manuscript, reviewed references, evidence map and local PDF/arXiv source build. It is a working draft without an arXiv identifier; cite the released software below. Author: Tz-Ping Gau, Kaohsiung Medical University Hospital.
+
 GitHub will show **Cite this repository** from [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff). If you use PubMed Search MCP in research, methods sections, or internal technical reports, prefer the GitHub-generated citation or reuse the repository metadata directly.
 
 ```bibtex
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
-  author = {u9401066},
+  author = {Gau, Tz-Ping},
+  version = {0.7.5},
+  year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }
 ```

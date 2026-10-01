@@ -4,6 +4,11 @@
 
 ## Current Runtime Contracts
 
+- v0.7.5 MCP input contract v4: shared presentation field annotations delegate
+  identifier semantics to domain value objects. One boundary publishes transport
+  alternatives, corrects representations, validates before execution and renders
+  safe structured input errors. Details: [input contract](../docs/design/AGENT_INPUT_CONTRACT.md).
+
 - Canonical MCP registry: 41 tools in 16 categories. v0.7.0 intentionally
   removes public compatibility aliases, alternate tool registries, and legacy
   wrapper modules instead of routing them indefinitely.

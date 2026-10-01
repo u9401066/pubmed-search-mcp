@@ -18,29 +18,34 @@ ACTIVE_DOCS = (
     REPO_ROOT / "ARCHITECTURE.md",
     REPO_ROOT / "DEPLOYMENT.md",
     REPO_ROOT / "ROADMAP.md",
-    REPO_ROOT / "docs/INTEGRATIONS.md",
-    REPO_ROOT / "docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md",
-    REPO_ROOT / "docs/REPO_SEPARATION_PRINCIPLES.md",
-    REPO_ROOT / "docs/TOOLS_USAGE_GUIDE.md",
-    REPO_ROOT / "docs/TOOLS_USAGE_GUIDE.zh-TW.md",
-    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
-    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
+    REPO_ROOT / "docs/guides/INTEGRATIONS.md",
+    REPO_ROOT / "docs/development/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md",
+    REPO_ROOT / "docs/development/REPO_SEPARATION_PRINCIPLES.md",
+    REPO_ROOT / "docs/guides/TOOLS_USAGE_GUIDE.md",
+    REPO_ROOT / "docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md",
+    REPO_ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md",
+    REPO_ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     REPO_ROOT / "copilot-studio/README.md",
     REPO_ROOT / "docs/README.md",
     REPO_ROOT / "docs/reports/README.md",
     REPO_ROOT / "docs/archive/README.md",
     REPO_ROOT / "scripts/README.md",
+    *sorted(
+        path
+        for directory in ("guides", "development", "architecture", "providers", "design", "research", "publication")
+        for path in (REPO_ROOT / "docs" / directory).rglob("*.md")
+    ),
     *sorted((REPO_ROOT / "docs/archive/phases").glob("*.md")),
     *sorted((REPO_ROOT / "docs").glob("PHASE_*.md")),
 )
 MERMAID_DOCS = (
     REPO_ROOT / "ARCHITECTURE.md",
     REPO_ROOT / "DEPLOYMENT.md",
-    REPO_ROOT / "docs/ADVANCED_RESEARCH_WORKFLOWS.md",
-    REPO_ROOT / "docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
-    REPO_ROOT / "docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
-    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
-    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
+    REPO_ROOT / "docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md",
+    REPO_ROOT / "docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
+    REPO_ROOT / "docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
+    REPO_ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.md",
+    REPO_ROOT / "docs/architecture/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     REPO_ROOT / "copilot-studio/README.md",
 )
 LINK_PATTERN = re.compile(r"!?(?:\[[^\]]*\])\(([^)]+)\)")
@@ -139,7 +144,7 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
 
     current_surfaces = (
         *ACTIVE_DOCS[:4],
-        REPO_ROOT / "docs/INTEGRATIONS.md",
+        REPO_ROOT / "docs/guides/INTEGRATIONS.md",
         REPO_ROOT / "copilot-studio/README.md",
         REPO_ROOT / "docs/images/integration-deployment-workflow.svg",
         REPO_ROOT / "docs/images/copilot-studio-deployment-flow.svg",
@@ -252,7 +257,7 @@ def test_runtime_docs_keep_local_http_durable_and_service_fail_closed() -> None:
             "單使用者 durable `default` tenant",
             "| service anonymous |",
         ],
-        REPO_ROOT / "docs/INTEGRATIONS.md": [
+        REPO_ROOT / "docs/guides/INTEGRATIONS.md": [
             "trusted single-user contract",
             "anonymous request is always rejected",
         ],
@@ -291,17 +296,17 @@ def test_runtime_docs_explain_mcp_v2_and_service_filesystem_boundaries() -> None
             "拒絕 server-host `file:` read",
             "Service Compose 停用",
         ],
-        REPO_ROOT / "docs/INTEGRATIONS.md": [
+        REPO_ROOT / "docs/guides/INTEGRATIONS.md": [
             "MCP SDK v2 Protocol Baseline",
             "Authenticated service callers cannot read `file:` paths",
             "cannot choose `output_dir` or `template_file`",
         ],
-        REPO_ROOT / "docs/USER_GUIDE.md": [
+        REPO_ROOT / "docs/guides/USER_GUIDE.md": [
             "authenticated service caller cannot select a server-host path",
             "tenant-derived saved-pipeline store",
             "single external leader/lease",
         ],
-        REPO_ROOT / "docs/USER_GUIDE.zh-TW.md": [
+        REPO_ROOT / "docs/guides/USER_GUIDE.zh-TW.md": [
             "caller 不能選擇 server host path",
             "process-wide workspace path",
             "單一 external leader/lease",
@@ -313,11 +318,11 @@ def test_runtime_docs_explain_mcp_v2_and_service_filesystem_boundaries() -> None
         for snippet in snippets:
             assert snippet in content, f"{path} is missing {snippet!r}"
 
-    sdk_design = (REPO_ROOT / "docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md").read_text(encoding="utf-8")
+    sdk_design = (REPO_ROOT / "docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md").read_text(encoding="utf-8")
     assert "MCP SDK v2 `MCPServer`" in sdk_design
     assert "FastMCP" not in sdk_design
 
-    paper = (REPO_ROOT / "docs/arxiv-paper/main.tex").read_text(encoding="utf-8")
+    paper = (REPO_ROOT / "docs/publication/main.tex").read_text(encoding="utf-8")
     assert "41 MCP tools organized into 16 registry categories" in paper
     assert "MCP SDK v2 \\texttt{MCPServer}" in paper
     assert "With 40 MCP tools" not in paper
@@ -326,7 +331,7 @@ def test_runtime_docs_explain_mcp_v2_and_service_filesystem_boundaries() -> None
 def test_public_copilot_docs_require_service_auth_and_one_canonical_registry() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     readme_zh = (REPO_ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
-    integrations = (REPO_ROOT / "docs/INTEGRATIONS.md").read_text(encoding="utf-8")
+    integrations = (REPO_ROOT / "docs/guides/INTEGRATIONS.md").read_text(encoding="utf-8")
     copilot = (REPO_ROOT / "copilot-studio/README.md").read_text(encoding="utf-8")
     openapi = (REPO_ROOT / "copilot-studio/openapi-schema.yaml").read_text(encoding="utf-8")
     architecture = (REPO_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")

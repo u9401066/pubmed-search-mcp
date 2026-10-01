@@ -10,6 +10,15 @@ from __future__ import annotations
 SERVER_INSTRUCTIONS = """
 PubMed Search MCP Server - AI Agent 的文獻搜尋助理
 
+輸入格式：優先依 tools/list 的 inputSchema 使用原生 JSON 型別。
+array/object 欄位也接受 JSON 字串，包含巢狀 request/source；純文字欄位保留原文。
+批次 pmids 接受 PMID 字串陣列、JSON 陣列字串及逗號／換行／分號分隔文字。
+也可使用官方識別碼網址、反引號和 Markdown PMID 清單。任一 PMID 無效即拒絕整批。
+依欄位型別自動校正十進位數字字串、明確 true/false 字串、enum 大小寫與前後空白。
+參數錯誤提供 structuredContent.errors（JSON Pointer、expected）與 executed=false；
+一起修正已列出的問題後重試，不要重送原錯誤參數。
+完整契約見 docs/guides/TOOLS_USAGE_GUIDE.md 的 Input formats and validation。
+
 ═══════════════════════════════════════════════════════════════════════════════
 🎯 搜尋策略選擇指南 (IMPORTANT - 所有文獻搜尋統一使用 unified_search)
 ═══════════════════════════════════════════════════════════════════════════════

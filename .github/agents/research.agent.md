@@ -43,7 +43,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 - Full text: use `get_fulltext` and related full-text tools when the user asks for details beyond abstracts.
 - Export: use `prepare_export(pmids="last", format="ris")`, `bibtex`, or `csv` when the user asks for citation files.
 
-- Local notes: use `save_literature_notes`; follow the note export contract in `AGENTS.md` and `docs/TOOLS_USAGE_GUIDE.md`.
+- Local notes: use `save_literature_notes`; follow the note export contract in `AGENTS.md` and `docs/guides/TOOLS_USAGE_GUIDE.md`.
 
 ## Guardrails
 

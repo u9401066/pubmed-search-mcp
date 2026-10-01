@@ -118,7 +118,7 @@
 
 **歷史結論**：當時盤點為 42 個工具；這個表不再代表 runtime。v0.7.0 的
 canonical 結果是 41 個工具／16 類，詳見
-[工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md)。
+[工具品質稽核](docs/research/TOOL_QUALITY_AUDIT.zh-TW.md)。
 
 ### v0.7.0 已同步完成的基建工作
 
@@ -661,7 +661,7 @@ user / agent problem
 - ✅ 先提升 evidence workflow 的價值密度，再考慮新增資料源
 - ✅ Agent-first：優先優化 query planning、output contract、next-step guidance
 - ✅ Bounded autonomy：規劃 / 執行 / 評估 / 核准分層，不把 server 做成黑箱 agent
-- ✅ 所有新工作流遵循 [docs/REPO_SEPARATION_PRINCIPLES.md](docs/REPO_SEPARATION_PRINCIPLES.md)
+- ✅ 所有新工作流遵循 [docs/development/REPO_SEPARATION_PRINCIPLES.md](docs/development/REPO_SEPARATION_PRINCIPLES.md)
 - ✅ 新來源只有在 normalization、policy、service 邊界穩定後才擴張
 
 ## 版本歷程
@@ -1289,7 +1289,7 @@ src/pubmed_search/
 ---
 
 ### 🔥 Phase 5.7: 從競品學習的功能 ⭐⭐⭐⭐⭐
-> **來源**: 2025 年 8-9 月競品分析 - 詳見 [docs/competitor-analysis.md](docs/competitor-analysis.md)
+> **來源**: 2025 年 8-9 月競品分析 - 詳見 [docs/archive/research/competitor-analysis.md](docs/archive/research/competitor-analysis.md)
 > **狀態**: 核心功能已透過現有工具實現
 
 #### 1. Think/Plan Tool 概念 (參考 BioMCP) ✅ 已有等價功能
@@ -1848,7 +1848,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 ## 競品參考
 
-> **詳見**: [docs/competitor-analysis.md](docs/competitor-analysis.md) (2026-02 更新)
+> **詳見**: [docs/archive/research/competitor-analysis.md](docs/archive/research/competitor-analysis.md) (2026-02 更新)
 
 ### 直接競品比較 (2026-02 最新)
 
@@ -1935,7 +1935,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 ## 🔬 Phase 10.5: 演算法創新升級 (Algorithm Innovation)
 > **目標**: 從「API 包裝 + 規則引擎」升級為「有學術深度的演算法」
 > **狀態**: 研究中
-> **研究文件**: [docs/ALGORITHM_INNOVATION_RESEARCH.md](docs/ALGORITHM_INNOVATION_RESEARCH.md)
+> **研究文件**: [docs/archive/research/ALGORITHM_INNOVATION_RESEARCH.md](docs/archive/research/ALGORITHM_INNOVATION_RESEARCH.md)
 
 ### Phase A：快速勝利（無需 ML）
 - [ ] A1: BM25 排序取代 term overlap（`_calculate_relevance()`）

@@ -1,0 +1,297 @@
+{
+  "schema_version": 1,
+  "categories": [
+    {
+      "name": "root-entrypoints-and-configuration",
+      "status": "current",
+      "prefixes": [],
+      "files": [
+        ".bandit",
+        ".env.service.example",
+        ".gitignore",
+        ".instruction_drift_fingerprint",
+        ".ngrok.env",
+        ".pre-commit-config.yaml",
+        "AGENTS.md",
+        "ARCHITECTURE.md",
+        "CHANGELOG.md",
+        "CITATION.cff",
+        "CONSTITUTION.md",
+        "CONTRIBUTING.md",
+        "DEPLOYMENT.md",
+        "Dockerfile",
+        "LICENSE",
+        "README.md",
+        "README.zh-TW.md",
+        "ROADMAP.md",
+        "docker-compose.https.yml",
+        "docker-compose.service.yml",
+        "docker-compose.yml",
+        "pyproject.toml",
+        "run_copilot.py",
+        "run_server.py",
+        "start.sh",
+        "uv.lock",
+        "vulture_whitelist.py"
+      ]
+    },
+    {
+      "name": "product-source",
+      "status": "current",
+      "prefixes": [
+        "src/"
+      ],
+      "files": []
+    },
+    {
+      "name": "verification",
+      "status": "current",
+      "prefixes": [
+        "tests/"
+      ],
+      "files": []
+    },
+    {
+      "name": "maintenance-commands",
+      "status": "current",
+      "prefixes": [
+        "scripts/"
+      ],
+      "files": []
+    },
+    {
+      "name": "user-guides",
+      "status": "current",
+      "prefixes": [
+        "docs/guides/"
+      ],
+      "files": []
+    },
+    {
+      "name": "contributor-guides",
+      "status": "current",
+      "prefixes": [
+        "docs/development/"
+      ],
+      "files": []
+    },
+    {
+      "name": "runtime-contracts",
+      "status": "current",
+      "prefixes": [
+        "docs/architecture/"
+      ],
+      "files": []
+    },
+    {
+      "name": "provider-contracts",
+      "status": "current",
+      "prefixes": [
+        "docs/providers/"
+      ],
+      "files": []
+    },
+    {
+      "name": "design-records",
+      "status": "status-in-document",
+      "prefixes": [
+        "docs/design/"
+      ],
+      "files": []
+    },
+    {
+      "name": "research-and-evaluation",
+      "status": "dated-evidence",
+      "prefixes": [
+        "docs/research/"
+      ],
+      "files": []
+    },
+    {
+      "name": "measurements-and-audits",
+      "status": "dated-evidence",
+      "prefixes": [
+        "docs/reports/"
+      ],
+      "files": []
+    },
+    {
+      "name": "external-repository-research",
+      "status": "dated-evidence",
+      "prefixes": [
+        "docs/reference-repositories/"
+      ],
+      "files": []
+    },
+    {
+      "name": "historical-records",
+      "status": "historical",
+      "prefixes": [
+        "docs/archive/"
+      ],
+      "files": []
+    },
+    {
+      "name": "planning-history",
+      "status": "historical",
+      "prefixes": [
+        "docs/superpowers/"
+      ],
+      "files": []
+    },
+    {
+      "name": "publication-sources",
+      "status": "draft-not-submitted",
+      "prefixes": [
+        "docs/publication/"
+      ],
+      "files": []
+    },
+    {
+      "name": "documentation-images",
+      "status": "current",
+      "prefixes": [
+        "docs/images/"
+      ],
+      "files": []
+    },
+    {
+      "name": "generated-website-pages",
+      "status": "generated",
+      "prefixes": [
+        "docs/site-content/"
+      ],
+      "files": []
+    },
+    {
+      "name": "maintenance-memory",
+      "status": "current-and-history",
+      "prefixes": [
+        "memory-bank/"
+      ],
+      "files": []
+    },
+    {
+      "name": "github-client-and-ci-assets",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".github/"
+      ],
+      "files": []
+    },
+    {
+      "name": "cline-rules-and-workflows",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".clinerules/"
+      ],
+      "files": []
+    },
+    {
+      "name": "claude-skills",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".claude/"
+      ],
+      "files": []
+    },
+    {
+      "name": "cline-skills",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".cline/"
+      ],
+      "files": []
+    },
+    {
+      "name": "codex-skills",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".codex/"
+      ],
+      "files": []
+    },
+    {
+      "name": "workspace-mcp-settings",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        ".vscode/"
+      ],
+      "files": []
+    },
+    {
+      "name": "installed-asset-ownership",
+      "status": "user-preserving-manifest",
+      "prefixes": [
+        ".asset-aware-mcp/"
+      ],
+      "files": []
+    },
+    {
+      "name": "bundled-pipeline-examples",
+      "status": "current",
+      "prefixes": [
+        "data/"
+      ],
+      "files": []
+    },
+    {
+      "name": "copilot-studio-integration",
+      "status": "current",
+      "prefixes": [
+        "copilot-studio/"
+      ],
+      "files": []
+    },
+    {
+      "name": "reverse-proxy-configuration",
+      "status": "current",
+      "prefixes": [
+        "nginx/"
+      ],
+      "files": []
+    },
+    {
+      "name": "documentation-navigation",
+      "status": "current",
+      "prefixes": [],
+      "files": [
+        "docs/README.md",
+        "docs/document-migrations.json",
+        "docs/repository-layout.json"
+      ]
+    },
+    {
+      "name": "website-application",
+      "status": "current",
+      "prefixes": [],
+      "files": [
+        "docs/.nojekyll",
+        "docs/index.html",
+        "docs/site.js",
+        "docs/site.css"
+      ]
+    },
+    {
+      "name": "generated-website-payload",
+      "status": "generated",
+      "prefixes": [],
+      "files": [
+        "docs/site-content.js"
+      ]
+    },
+    {
+      "name": "legacy-navigation-pointers",
+      "status": "compatibility-pointer",
+      "prefixes": [],
+      "files": [
+        "docs/PHASE_2.1_TOOL_REFACTOR.md",
+        "docs/PHASE_3_PUBTATOR_EUTILS.md",
+        "docs/PHASE_4_IMAGE_SEARCH.md",
+        "docs/IMAGE_SEARCH_API.md",
+        "docs/paper-draft.md",
+        "docs/arxiv-paper/README.md"
+      ]
+    }
+  ]
+}
