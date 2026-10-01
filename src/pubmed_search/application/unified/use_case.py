@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from pubmed_search.application.search.query_analyzer import QueryAnalyzer
     from pubmed_search.domain.entities.article import UnifiedArticle
@@ -172,6 +172,7 @@ class UnifiedSearchUseCase:
         analyzer_factory: Callable[[], QueryAnalyzer],
         enhancer_factory: Callable[[], Any],
         source_registry_factory: Callable[[], Any],
+        fulltext_prefetch: Callable[[Sequence[UnifiedArticle]], dict[str, Any]] | None = None,
     ) -> None:
         self._planner = planner
         self._executor = executor
@@ -180,6 +181,7 @@ class UnifiedSearchUseCase:
         self._analyzer_factory = analyzer_factory
         self._enhancer_factory = enhancer_factory
         self._source_registry_factory = source_registry_factory
+        self._fulltext_prefetch = fulltext_prefetch
 
     async def execute(
         self,
@@ -206,6 +208,13 @@ class UnifiedSearchUseCase:
             enrichment=self._enrichment,
             source_registry=registry,
         )
+        if request.fulltext == "prefetch" and self._fulltext_prefetch is not None:
+            try:
+                metadata = self._fulltext_prefetch(execution.ranked)
+            except Exception:
+                # Optional speculation must not turn successful search results into an error.
+                metadata = {"mode": "prefetch", "status": "unavailable", "articles": []}
+            execution.enrichment_metadata["fulltext_prefetch"] = metadata
         return UnifiedSearchOutcome(request=request, plan=plan, execution=execution)
 
 

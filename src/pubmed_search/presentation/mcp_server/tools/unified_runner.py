@@ -30,6 +30,7 @@ from pubmed_search.shared.credential_sanitizer import redact_credential_assignme
 
 from .agent_output import is_structured_output_format, serialize_structured_payload
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
+from .fulltext_runtime import prefetch_search_fulltext
 from .search_run_journal import (
     SearchRunJournal,
     classify_search_run_status,
@@ -192,6 +193,7 @@ async def run_unified_search(
     pipeline: str | None = None,
     dry_run: bool = False,
     stop_at: str = "",
+    fulltext: Literal["off", "prefetch"] = "off",
     ctx: Context | None = None,
     analyzer_factory: Callable[[], Any] = QueryAnalyzer,
     enhancer_factory: Callable[[], Any] = get_semantic_enhancer,
@@ -217,6 +219,7 @@ async def run_unified_search(
                 options=options,
                 pipeline=pipeline,
                 stop_at=stop_at,
+                fulltext=fulltext,
             )
         except ValueError as exc:
             safe_request = _rejected_request_snapshot(
@@ -230,6 +233,7 @@ async def run_unified_search(
                 pipeline=pipeline,
                 dry_run=dry_run,
                 stop_at=stop_at,
+                fulltext=fulltext,
             )
             safe_query = str(safe_request.get("query") or "[rejected query]")
             journal = await SearchRunJournal.start(query=safe_query, request=safe_request)
@@ -313,6 +317,7 @@ async def run_unified_search(
                 filters=filters,
                 options=options,
                 pipeline=pipeline,
+                fulltext=fulltext,
             )
         except ValueError as exc:
             journal = await SearchRunJournal.start(
@@ -360,6 +365,7 @@ async def run_unified_search(
                 "options": options,
                 "dry_run": dry_run,
                 "stop_at": stop_at,
+                **({"fulltext": fulltext} if fulltext != "off" else {}),
             },
         )
 
@@ -376,6 +382,7 @@ async def run_unified_search(
             analyzer_factory=analyzer_factory,
             enhancer_factory=enhancer_factory,
             source_registry_factory=lambda: registry,
+            fulltext_prefetch=prefetch_search_fulltext if not dry_run else None,
         )
         plan_recorded = False
 

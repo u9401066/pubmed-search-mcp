@@ -1,6 +1,28 @@
 # Active Context
 
-## Current Focus — v0.7.5 published and verified (2026-10-01)
+## Current Focus — v0.7.6 fulltext integration release (2026-10-01)
+
+- User authorized the focused refactor, merging all work for this feature and
+  publishing the next patch, v0.7.6. PR #22 includes the original prefetch changes
+  and this follow-up; unrelated PRs are outside this scope. Master was current
+  at `c0f30ad` when this review began. Publication is pending verification.
+- Retain opt-in top-three bounded XML prefetch and shared demand cache. Queued
+  speculation becomes foreground work when requested; running XML is joined.
+  Provider budgets, deadlines, tenant isolation and cancellation ownership remain.
+- Extracted application `SectionSelection`: missing body titles expose available
+  titles, never substitute abstracts and never cause another download. A single
+  corrected read reuses XML. Abstract-only documents retain normal fallback.
+- Search rows provide native `read_request` arguments and actual candidate limit;
+  the thin tool adapter constructs one request for all identifier kinds.
+- [Assessment](../docs/design/FULLTEXT_PREFETCH.md) and
+  [release review](../docs/reports/release_v076_2026-10-01.md) explain changes,
+  bounds and evidence. New fixed-delay measurements preserve the historical
+  experiment and do not claim WAN, token or agent-performance gains.
+- Focused regressions: 114 passed; all-tool real transport suite: 7 passed;
+  mypy: 440 files clean. Full gate: 4,914 passed, 23 skipped, 30 deselected
+  (123.23 s); docs/skills and wheel/sdist build pass. Merge/publication pending.
+
+## Previous Focus — v0.7.5 published and verified (2026-10-01)
 
 - User authorized a final review, remaining fixes, documentation/website/MEM
   updates, segmented commits, push and publication of the agreed v0.7.5 patch.

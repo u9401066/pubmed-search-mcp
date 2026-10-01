@@ -630,6 +630,11 @@ get_article_references(pmid="12345678")  # What did it cite?
 ```
 
 ### 3. Get Full Text
+
+For planned close reading, use `unified_search(..., fulltext="prefetch")` and read
+a returned PMCID with `get_fulltext` when needed. Do not poll the snapshot.
+Keep prefetch off for broad screening; see `docs/guides/TOOLS_USAGE_GUIDE.md` for bounds.
+
 ```python
 # Structured full text from PMC / Europe PMC
 get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, sections="introduction,results")

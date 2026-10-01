@@ -336,8 +336,13 @@ class DeterministicStrategyGenerator:
 
 
 class DeterministicEuropePMCClient:
+    def __init__(self) -> None:
+        self.fulltext_downloads = 0
+
     async def get_fulltext_xml(self, pmcid: str) -> str:
         _require_fixture(pmcid == "PMC7096777", f"unexpected fulltext PMCID {pmcid!r}")
+        self.fulltext_downloads += 1
+        _require_fixture(self.fulltext_downloads == 1, "prefetched XML was downloaded again")
         return "<article/>"
 
     def parse_fulltext_xml(self, xml: str) -> dict[str, Any]:
@@ -437,6 +442,8 @@ async def _deterministic_pubmed_search(
         title="Deterministic Acceptance Article",
         primary_source="pubmed",
         pmid=PIPELINE_PMID,
+        pmc="PMC7096777",
+        is_open_access=True,
         doi="10.1000/offline-acceptance",
         year=2026,
     )
@@ -549,7 +556,7 @@ def _install_deterministic_dependencies() -> None:
     import pubmed_search.infrastructure.sources as source_package
     from pubmed_search.infrastructure.sources import figure_client, institutional_fetch
     from pubmed_search.infrastructure.sources.openi import OpenIClient
-    from pubmed_search.presentation.mcp_server.tools import europe_pmc, openurl
+    from pubmed_search.presentation.mcp_server.tools import europe_pmc, fulltext_runtime, openurl
 
     searcher = DeterministicSearcher()
     strategy_generator = DeterministicStrategyGenerator()
@@ -557,6 +564,7 @@ def _install_deterministic_dependencies() -> None:
     figure_provider = DeterministicFigureClient()
     extended_client = DeterministicNCBIExtendedClient()
     europe_pmc_module: Any = europe_pmc
+    fulltext_runtime_module: Any = fulltext_runtime
     figure_client_module: Any = figure_client
     source_package_module: Any = source_package
     openi_client_type: Any = OpenIClient
@@ -567,6 +575,7 @@ def _install_deterministic_dependencies() -> None:
     container_module._create_strategy_generator = lambda email, api_key: strategy_generator
     unified_broker._search_pubmed_adapter = _deterministic_pubmed_search
     europe_pmc_module.get_europe_pmc_client = lambda api_key=None: europe_pmc_client
+    fulltext_runtime_module.fetch_prefetch_xml = europe_pmc_client.get_fulltext_xml
     figure_client_module.get_figure_client = lambda: figure_provider
     source_package_module.get_ncbi_extended_client = lambda email=None, api_key=None: extended_client
     openi_client_type._make_request = _deterministic_openi_request

@@ -41,6 +41,12 @@ class AppSettings(BaseSettings):
         ge=256,
         le=200_000,
     )
+    fulltext_prefetch_limit: int = Field(
+        default=3,
+        alias="PUBMED_FULLTEXT_PREFETCH_LIMIT",
+        ge=0,
+        le=3,
+    )
     pipeline_run_timeout_seconds: float = Field(
         default=DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS,
         alias="PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS",

@@ -206,6 +206,7 @@ mcp_server/
     ├── europe_pmc.py
     ├── export.py
     ├── figure_tools.py
+    ├── fulltext_runtime.py
     ├── icd.py
     ├── image_search.py
     ├── ncbi_extended.py

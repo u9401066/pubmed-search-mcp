@@ -49,6 +49,7 @@ def validate_unified_search_input_envelope(
     options: str | None = None,
     pipeline: str | None = None,
     stop_at: str = "",
+    fulltext: str = "off",
 ) -> None:
     """Reject unsafe or unbounded raw values before journaling and parsing.
 
@@ -74,6 +75,7 @@ def validate_unified_search_input_envelope(
         "options": options,
         "pipeline": pipeline,
         "stop_at": stop_at,
+        "fulltext": fulltext,
     }
     for field_name, value in values.items():
         if value is None:
@@ -98,6 +100,10 @@ def validate_unified_search_input_envelope(
     if output_format not in {"markdown", "json", "toon"}:
         msg = f"unsupported output format: {output_format}"
         raise ValueError(msg)
+    if fulltext not in {"off", "prefetch"}:
+        raise ValueError("fulltext must be 'off' or 'prefetch'")
+    if pipeline and fulltext != "off":
+        raise ValueError("fulltext='prefetch' is supported for normal searches; use fulltext='off' with a pipeline")
 
 
 @dataclass(frozen=True)
@@ -131,6 +137,7 @@ class UnifiedSearchRequest:
     exclude_detected_preprints: bool
     auto_relax: bool
     deep_search: bool
+    fulltext: Literal["off", "prefetch"] = "off"
 
     @property
     def retrieval_mode(self) -> Literal["auto", "semantic", "systematic"]:
@@ -167,6 +174,7 @@ def normalize_unified_search_request(
     filters: str | None = None,
     options: str | None = None,
     pipeline: str | None = None,
+    fulltext: Literal["off", "prefetch"] = "off",
 ) -> UnifiedSearchRequest:
     """Normalize raw tool parameters into a request object."""
     validate_unified_search_input_envelope(
@@ -178,6 +186,7 @@ def normalize_unified_search_request(
         filters=filters,
         options=options,
         pipeline=pipeline,
+        fulltext=fulltext,
     )
     normalized_query = (
         query.strip().replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
@@ -244,6 +253,7 @@ def normalize_unified_search_request(
         # change both recall semantics and source provenance.
         auto_relax=False if systematic_search else parsed_options.get("auto_relax", True),
         deep_search=False if explicit_provider_mode else parsed_options.get("deep_search", True),
+        fulltext=fulltext,
     )
 
 

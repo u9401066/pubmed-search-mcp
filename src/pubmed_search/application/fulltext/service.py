@@ -17,7 +17,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from pubmed_search.domain.value_objects.article_identifiers import (
     IdentifierValidationError,
@@ -28,6 +28,7 @@ from pubmed_search.domain.value_objects.article_identifiers import (
 )
 
 from .registry import FulltextRegistry, get_fulltext_registry
+from .sections import SectionSelection, select_sections
 
 logger = logging.getLogger(__name__)
 _SOURCE_KEY_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
@@ -49,6 +50,7 @@ class FulltextRequest:
     include_figures: bool = False
     extended_sources: bool = False
     allow_browser_session: bool | None = None
+    include_pdf_links: bool = True
 
     def normalized(self) -> FulltextRequest:
         """Return a strict, canonical request with exactly one public identifier.
@@ -121,6 +123,7 @@ class FulltextServiceResult:
     """Normalized result returned to the tool formatting layer."""
 
     identifier: str | None = None
+    section_selection: SectionSelection | None = None
     pmcid: str | None = None
     pmid: str | None = None
     doi: str | None = None
@@ -157,6 +160,11 @@ class FulltextServiceResult:
         if any(error.source not in attempted for error in self.source_errors):
             msg = "Fulltext source errors must belong to attempted sources"
             raise ValueError(msg)
+
+    @property
+    def has_retrieved_text(self) -> bool:
+        """A missing section is not a failed download and must not fan out to PDFs."""
+        return bool(self.fulltext_content or (self.section_selection and self.section_selection.body_available))
 
     @property
     def coverage_status(self) -> Literal["complete", "partial", "unavailable"]:
@@ -210,6 +218,7 @@ class FulltextService:
         downloader_factory: Callable[[], Any],
         figure_client_factory: Callable[[], Any] | None = None,
         institutional_client_factory: Callable[[], Any] | None = None,
+        structured_xml_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
     ) -> None:
         self._registry = registry or get_fulltext_registry()
         self._europe_pmc_client_factory = europe_pmc_client_factory
@@ -218,6 +227,7 @@ class FulltextService:
         self._downloader_factory = downloader_factory
         self._figure_client_factory = figure_client_factory
         self._institutional_client_factory = institutional_client_factory
+        self._structured_xml_fetcher = structured_xml_fetcher
 
     async def retrieve(
         self,
@@ -255,20 +265,20 @@ class FulltextService:
                 await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
                 result.record_source_attempted(source)
                 await self._collect_europe_pmc(request, result, log)
-            elif source == "unpaywall" and request.doi:
+            elif source == "unpaywall" and request.doi and (request.include_pdf_links or not result.has_retrieved_text):
                 await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
                 result.record_source_attempted(source)
                 await self._collect_unpaywall(request, result, log)
             elif (
                 source == "institutional"
                 and request.doi
-                and not result.fulltext_content
+                and not result.has_retrieved_text
                 and self._institutional_client_factory is not None
             ):
                 await self._report_progress(progress, 3, 6, "Trying institutional direct/EZproxy fetch...")
                 result.record_source_attempted(source)
                 await self._collect_institutional(request, result, log)
-            elif source == "core" and request.doi and not result.fulltext_content:
+            elif source == "core" and request.doi and not result.has_retrieved_text:
                 await self._report_progress(progress, 4, 6, "Trying CORE fallback...")
                 result.record_source_attempted(source)
                 await self._collect_core(request, result, log)
@@ -279,7 +289,7 @@ class FulltextService:
                 await self._collect_download(request, result, log, source="extended")
             elif (
                 source == "pdf_retrieval_fallback"
-                and not result.fulltext_content
+                and not result.has_retrieved_text
                 and not result.extended_sources_attempted
             ):
                 await self._report_progress(progress, 5.5, 6, "Trying multi-source PDF retrieval fallback...")
@@ -343,7 +353,11 @@ class FulltextService:
         source = "europe_pmc"
         try:
             client = self._europe_pmc_client_factory()
-            xml = await client.get_fulltext_xml(request.pmcid)
+            xml = (
+                await self._structured_xml_fetcher(str(request.pmcid))
+                if self._structured_xml_fetcher is not None
+                else await client.get_fulltext_xml(request.pmcid)
+            )
             if not xml:
                 result.record_source_completed(source)
                 return
@@ -353,15 +367,17 @@ class FulltextService:
                 result.record_source_completed(source)
                 return
 
-            result.content_sections = self._select_sections(parsed, request.sections)
+            result.section_selection = select_sections(parsed, request.sections)
+            result.content_sections = list(result.section_selection.sections)
             result.fulltext_content = self._render_selected_sections(parsed, result.content_sections)
             result.raw_fulltext_content = self._render_selected_sections(
                 parsed, result.content_sections, truncate=False
             )
             result.title = parsed.get("title") or result.title
-            result.fulltext_source_name = self._registry.label_for("europe_pmc")
-            result.fulltext_canonical_host = "PubMed Central"
-            result.fulltext_provenance = "indirect"
+            if result.section_selection.body_available:
+                result.fulltext_source_name = self._registry.label_for("europe_pmc")
+                result.fulltext_canonical_host = "PubMed Central"
+                result.fulltext_provenance = "indirect"
             result.record_source_completed(source)
 
             pmc_num = str(request.pmcid).replace("PMC", "")
@@ -548,7 +564,7 @@ class FulltextService:
                 pmid=request.pmid,
                 pmcid=request.pmcid,
                 doi=request.doi,
-                strategy="links_only" if result.fulltext_content else "extract_text",
+                strategy="links_only" if result.has_retrieved_text else "extract_text",
                 allow_browser_session=request.allow_browser_session,
             )
             link_discovery = extended_result.require_link_discovery()
@@ -568,7 +584,7 @@ class FulltextService:
             for source_error in link_discovery.source_errors:
                 result.record_source_error(source_error.source)
 
-            if not result.fulltext_content and extended_result.text_content:
+            if not result.has_retrieved_text and extended_result.text_content:
                 result.raw_fulltext_content = extended_result.text_content
                 extracted_text = self.truncate_extracted_text(extended_result.text_content)
                 result.fulltext_content = extracted_text
@@ -675,27 +691,10 @@ class FulltextService:
         return text[:max_chars] + f"\n\n_... {truncated_count} characters truncated from extracted PDF text_"
 
     @staticmethod
-    def _select_sections(parsed: dict[str, Any], sections_filter: str | None) -> list[dict[str, Any]]:
-        all_sections = cast("list[dict[str, Any]]", parsed.get("sections", []))
-        if sections_filter:
-            requested = [section.strip().lower() for section in sections_filter.split(",") if section.strip()]
-            filtered: list[dict[str, Any]] = []
-            for section in all_sections:
-                section_title = str(section.get("title") or "").strip().lower()
-                if section_title and any(
-                    requested_name in section_title or section_title in requested_name for requested_name in requested
-                ):
-                    filtered.append(section)
-            all_sections = filtered
-        return all_sections
-
-    @staticmethod
     def _render_selected_sections(
         parsed: dict[str, Any], sections: list[dict[str, Any]], *, truncate: bool = True
     ) -> str:
         if not sections:
-            if parsed.get("abstract"):
-                return f"**Abstract**\n{parsed['abstract']}\n\n"
             return ""
 
         output = ""

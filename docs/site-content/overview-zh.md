@@ -39,6 +39,13 @@
 
 ---
 
+## 背景全文與可靠章節讀取 — v0.7.6
+
+可選的 XML 背景預取與後續 `get_fulltext` 共用下載；讀取尚在排隊的文章會直接改為前景工作。
+搜尋回應提供可直接使用的讀取參數；章節不存在時列出可用標題，不以摘要冒充，也不重複抓取 PDF。
+預取預設關閉，避免浪費未閱讀文章的請求。詳見[完整評估](design/FULLTEXT_PREFETCH.md)
+與[修正版檢查紀錄](reports/release_v076_2026-10-01.md)。
+
 ## 共用輸入防呆 — v0.7.5
 
 全部 41 個工具共用自動校正：JSON 容器、十進位數字字串、明確布林文字、enum
@@ -603,6 +610,10 @@ Provider 上限與 operator data-plane 邊界見[Source Contracts](#/source-cont
 ```
 
 ### 📚 全文、圖表擷取與匯出
+
+預計深入閱讀時，可用 `unified_search(..., fulltext="prefetch")`，在背景準備最多三篇符合
+條件的 PMC XML；後續 `get_fulltext` 共用已完成或進行中的內容。預設關閉，不必輪詢，
+也不預抓 PDF 或啟用瀏覽器登入。[效益、成本與限制](design/FULLTEXT_PREFETCH.md)。
 
 ![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
 
@@ -1458,7 +1469,7 @@ GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/bl
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.5},
+  version = {0.7.6},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

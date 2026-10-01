@@ -231,9 +231,39 @@ determine whether the cited paper supports a claim; read the relevant passage.
 
 Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `prepare_figure_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
 
-When requesting structured sections, empty comma-separated entries are ignored;
-untitled sections cannot match a named section. Extended-source initialization
-or cleanup failures preserve content already retrieved from a successful source.
+For a search you expect to follow with close reading, use
+`unified_search(query="...", fulltext="prefetch")`. Search returns without waiting
+while the server prepares open-access XML for eligible articles among the top
+three results. Default `fulltext="off"` avoids speculative requests.
+
+Read a selected article normally with `get_fulltext`; use the PMCID source shown
+in `enrichment.fulltext_prefetch.articles` to reuse ready or in-flight XML without
+another identifier lookup. This is a snapshot: **do not poll**. XML is cached for
+15 minutes, scoped to the stable tenant and server. It is lost on restart.
+Each row includes `read_request` (`tool`, native `arguments`) for a text-only
+JSON read; add `sections` when needed. A queued prefetch is promoted to foreground
+retrieval; an already-running download remains shared. Provider limits still apply.
+Section filters still operate independently on the complete cached XML.
+
+Prefetch uses one background request at a time, a 15-second queue-inclusive
+deadline, no retries, and no speculative PDF, figure, institutional or browser
+retrieval. Missing IDs and known closed-access articles are skipped. Pipeline
+calls require `fulltext="off"`. Operators can set `PUBMED_FULLTEXT_PREFETCH_LIMIT`
+to 0 to disable speculation or 1–3 to lower its candidate window. Anonymous
+service requests do not keep cross-request background state.
+
+Prefetch can waste requests for unread papers; keep it off during broad screening.
+Fulltext reads share the XML cache even when prefetch is off. Set
+`include_pdf_links=False` when only text is needed: once XML succeeds, the server
+skips extra OA link enrichment. See the [assessment and measured tradeoff](design/FULLTEXT_PREFETCH.md).
+
+When requesting structured sections, `section_selection` reports requested,
+available and unmatched body titles. Missing titles return no substitute abstract
+and do not trigger another PDF download. Use an available title or omit `sections`
+in one corrected read; cached XML is reused. Empty filter entries are ignored,
+empty sections are excluded, and untitled body text is named `Body`. Abstract-only
+XML cannot establish fulltext availability; normal fallbacks still apply.
+Extended-source initialization or cleanup failures preserve successful content.
 
 Use `prepare_figure_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
 

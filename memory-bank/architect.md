@@ -4,6 +4,19 @@
 
 ## Current Runtime Contracts
 
+- v0.7.6 fulltext: `ToolSessionRuntime` owns an application `FulltextCache`.
+  Complete public XML and pending reads are keyed by stable tenant and PMCID;
+  background admission, deadlines, UTF-8 bytes, TTLs and task ownership are bounded.
+  `unified_search(fulltext="prefetch")` injects a restricted Europe PMC adapter,
+  and `get_fulltext` injects the same cache into the fulltext service. Existing
+  provider gates remain shared. Shutdown closes fulltext work before clients.
+  Queued jobs carry an explicit source-start state; only unstarted speculation
+  can be replaced by demand. Application `SectionSelection` separates body
+  availability, section matches and missing titles from upstream coverage, so
+  missing sections do not substitute abstracts or trigger redundant fallback.
+  MCP composition projects native read arguments; public tool count stays 41.
+  See the [assessment](../docs/design/FULLTEXT_PREFETCH.md).
+
 - v0.7.5 MCP input contract v4: shared presentation field annotations delegate
   identifier semantics to domain value objects. One boundary publishes transport
   alternatives, corrects representations, validates before execution and renders

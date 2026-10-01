@@ -202,6 +202,7 @@ def _make_lifespan(
 
                 tool_runtime = runtime_getter()
                 if isinstance(tool_runtime, ToolSessionRuntime):
+                    await tool_runtime.fulltext_cache.aclose()
                     await tool_runtime.host_callbacks.aclose()
                     await tool_runtime.citation_tasks.aclose()
             await source_runtime.close_source_clients()

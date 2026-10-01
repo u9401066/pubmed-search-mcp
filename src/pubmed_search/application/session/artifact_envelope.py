@@ -48,6 +48,7 @@ class UnifiedSearchArtifactRequest:
     deep_search: bool
     retrieval_mode: str = "auto"
     include_clinical_trials: bool = False
+    fulltext: str = "off"
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ def normalize_unified_search_artifact_input(
             deep_search=bool(getattr(request, "deep_search", False)),
             retrieval_mode=str(getattr(request, "retrieval_mode", "auto") or "auto"),
             include_clinical_trials=bool(getattr(request, "include_clinical_trials", False)),
+            fulltext=str(getattr(request, "fulltext", "off")),
         )
 
     if isinstance(plan, UnifiedSearchArtifactPlan):
@@ -401,6 +403,7 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "limit": int(getattr(request, "limit", 0) or 0),
         "retrieval_mode": str(getattr(request, "retrieval_mode", "auto") or "auto"),
         "clinical_trials_requested": bool(getattr(request, "include_clinical_trials", False)),
+        **({"fulltext": request.fulltext} if request.fulltext != "off" else {}),
         "icd_matches": list(getattr(plan, "icd_matches", []) or []),
         "matched_entity_names": list(getattr(plan, "matched_entity_names", []) or []),
         "source_counts": _source_counts_payload(getattr(execution, "source_api_counts", None)),

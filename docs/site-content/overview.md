@@ -34,6 +34,15 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Background fulltext and reliable section reads — v0.7.6
+
+Opt-in XML prefetch shares downloads with later `get_fulltext` calls. Queued
+articles become foreground reads when requested; search returns ready-to-use
+read arguments. Missing sections report available titles without substituting
+abstracts or repeating PDF retrieval. Prefetch remains off by default.
+See the [assessment](design/FULLTEXT_PREFETCH.md) and
+[release review](reports/release_v076_2026-10-01.md).
+
 ## Shared input normalization — v0.7.5
 
 All 41 tools share automatic correction for JSON containers, decimal numeric
@@ -626,6 +635,11 @@ boundaries.
 ```
 
 ### 📚 Full Text, Figure Extraction & Export
+
+For searches followed by close reading, `unified_search(..., fulltext="prefetch")`
+prepares up to three eligible PMC XML articles in the background. Later
+`get_fulltext` calls share ready/in-flight XML. Default is off; no polling or
+speculative PDF/browser access. [Tradeoffs and limits](design/FULLTEXT_PREFETCH.md).
 
 ![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
 
@@ -1565,7 +1579,7 @@ GitHub will show **Cite this repository** from [CITATION.cff](https://github.com
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.5},
+  version = {0.7.6},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

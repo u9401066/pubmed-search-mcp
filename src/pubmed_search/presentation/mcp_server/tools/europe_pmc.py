@@ -53,6 +53,7 @@ from .agent_output import (
 )
 from .article_source import ArticleSource, PubmedSource, normalize_article_source
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
+from .fulltext_runtime import get_cached_fulltext_xml
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -178,6 +179,7 @@ def _format_get_fulltext_json(
     figures: list[dict[str, Any]],
     output_format: OutputFormat = "json",
     artifact_manifest: dict[str, Any] | None = None,
+    section_selection: dict[str, Any] | None = None,
 ) -> str:
     """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
     section_provenance: dict[str, dict[str, Any]] = {
@@ -242,6 +244,7 @@ def _format_get_fulltext_json(
         "fulltext_available": bool(fulltext_content),
         "content": fulltext_content,
         "content_sections": content_sections,
+        "section_selection": section_selection,
         "pdf_links": pdf_links,
         "sources_tried": sources_tried,
         "sources_completed": sources_completed,
@@ -536,8 +539,11 @@ def register_europe_pmc_tools(mcp: MCPServer):
             source: One object such as {"kind":"pmid","value":"12345678"},
                     {"kind":"pmcid","value":"PMC7096777"}, or
                     {"kind":"doi","value":"10.1001/jama.2024.1234"}.
-            sections: Filter sections (e.g., "introduction,methods,results")
-            include_pdf_links: Include PDF download links (default: True)
+            sections: Filter body sections (e.g., "introduction,methods,results").
+                Missing titles are reported with available sections; abstracts are
+                never substituted for missing body evidence.
+            include_pdf_links: Include PDF download links (default: True). False
+                skips link enrichment when structured fulltext is already available.
             include_figures: Include figure metadata with image URLs (default: False)
             extended_sources: Search the extended downloader chain after the standard policy (default: False)
             output_format: Response format - "markdown" (default), "json", or "toon"
@@ -566,30 +572,16 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
         normalized_source = normalize_article_source(source)
         requested_source = {"kind": normalized_source.kind, "value": normalized_source.value}
-        if normalized_source.kind == "pmid":
-            request = FulltextRequest(
-                pmid=normalized_source.value,
-                sections=sections,
-                include_figures=include_figures,
-                extended_sources=extended_sources,
-                allow_browser_session=allow_browser_session,
-            )
-        elif normalized_source.kind == "pmcid":
-            request = FulltextRequest(
-                pmcid=normalized_source.value,
-                sections=sections,
-                include_figures=include_figures,
-                extended_sources=extended_sources,
-                allow_browser_session=allow_browser_session,
-            )
-        else:
-            request = FulltextRequest(
-                doi=normalized_source.value,
-                sections=sections,
-                include_figures=include_figures,
-                extended_sources=extended_sources,
-                allow_browser_session=allow_browser_session,
-            )
+        request = FulltextRequest(
+            pmid=normalized_source.value if normalized_source.kind == "pmid" else None,
+            pmcid=normalized_source.value if normalized_source.kind == "pmcid" else None,
+            doi=normalized_source.value if normalized_source.kind == "doi" else None,
+            include_pdf_links=include_pdf_links,
+            sections=sections,
+            include_figures=include_figures,
+            extended_sources=extended_sources,
+            allow_browser_session=allow_browser_session,
+        )
 
         from pubmed_search.infrastructure.sources.figure_client import get_figure_client
         from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
@@ -599,6 +591,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
         _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
 
+        async def _structured_xml(pmcid: str) -> str | None:
+            return await get_cached_fulltext_xml(pmcid, get_europe_pmc_client().get_fulltext_xml)
+
         service = FulltextService(
             europe_pmc_client_factory=get_europe_pmc_client,
             unpaywall_client_factory=get_unpaywall_client,
@@ -606,6 +601,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             downloader_factory=FulltextDownloader,
             figure_client_factory=get_figure_client if include_figures else None,
             institutional_client_factory=_institutional_factory,
+            structured_xml_fetcher=_structured_xml,
         )
         try:
             retrieval = await service.retrieve(request, progress=_progress, log=_log)
@@ -645,10 +641,23 @@ def register_europe_pmc_tools(mcp: MCPServer):
             include_figures=include_figures,
             output_format=normalized_output_format,
         )
+        selection = retrieval.section_selection
+        if selection and selection.unmatched and selection.body_available:
+            next_tools, next_commands = finalize_next_tools(
+                [
+                    make_next_tool(
+                        "get_fulltext",
+                        "Some requested sections were not found. Omit sections to read the available body from shared XML.",
+                        f'get_fulltext(source={{"kind":"pmcid","value":"{resolved_pmcid}"}}, '
+                        f'include_pdf_links=False, output_format="{preferred_structured_output_format(normalized_output_format)}")',
+                    ),
+                    *next_tools,
+                ]
+            )
         exposed_pdf_links = retrieval.pdf_links if include_pdf_links else []
         source_counts = _build_fulltext_source_counts(
             sources_tried=retrieval.sources_tried,
-            fulltext_source=retrieval.fulltext_source_name,
+            fulltext_source=retrieval.fulltext_source_name if retrieval.fulltext_content else None,
             pdf_links=exposed_pdf_links,
             figures_count=len(retrieval.figures),
         )
@@ -660,6 +669,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "title": retrieval.title,
             "fulltext_content": retrieval.fulltext_content,
             "content_sections": retrieval.content_sections,
+            "section_selection": selection.to_dict() if selection else None,
             "pdf_links": exposed_pdf_links,
             "sources_tried": retrieval.sources_tried,
             "sources_completed": retrieval.sources_completed,
@@ -856,6 +866,13 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     output += f"  _License: {escape_markdown_text(link['license'])}_\n"
             output += "\n"
 
+        if selection and selection.unmatched:
+            missing = ", ".join(escape_markdown_text(title) for title in selection.unmatched)
+            available = ", ".join(escape_markdown_text(title) for title in selection.available) or "none"
+            output += f"**Requested sections not found:** {missing}. **Available body sections:** {available}.\n\n"
+            if selection.body_available:
+                output += "Use one of the available titles or omit sections; the shared XML can be reused.\n\n"
+
         # Fulltext content
         if retrieval.fulltext_content:
             output += "## 📝 Content\n\n"
@@ -866,7 +883,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 )
                 or ""
             )
-        elif retrieval.pdf_links:
+        elif retrieval.pdf_links and not (selection and selection.body_available):
             output += (
                 "_Structured fulltext not available. Use the PDF links above to access the article._\n"
                 if include_pdf_links

@@ -92,6 +92,7 @@ def register_unified_search_tools(
         pipeline: Annotated[str, Field(max_length=MAX_UNIFIED_PIPELINE_CHARS)] | None = None,
         dry_run: bool = False,
         stop_at: Annotated[str, Field(max_length=MAX_UNIFIED_STOP_AT_CHARS)] = "",
+        fulltext: Literal["off", "prefetch"] = "off",
         ctx: Context | None = None,
     ) -> str:
         """
@@ -184,6 +185,12 @@ def register_unified_search_tools(
                 - "recency": Prioritize recent publications
                 - "quality": Prioritize publication-type heuristics (RCTs, meta-analyses); not a quality assessment
             output_format: "markdown" (human-readable), "json", or "toon" (programmatic)
+            fulltext: "off" (default) or "prefetch" for normal searches. Prefetch
+                      prepares open-access XML for up to three top-ranked articles
+                      with known PMCIDs in the background. Search does not wait.
+                      Later get_fulltext calls reuse ready or in-flight XML; no polling
+                      is needed. No speculative PDF, browser or institutional access.
+                      Not supported with pipeline; use "off" for pipeline calls.
             filters: Comma-separated key:value pairs for filtering results.
                      Supported keys:
                        year:2020-2025    → publication year range
@@ -337,6 +344,7 @@ def register_unified_search_tools(
             pipeline=pipeline,
             dry_run=dry_run,
             stop_at=stop_at,
+            fulltext=fulltext,
             ctx=ctx,
             analyzer_factory=QueryAnalyzer,
             enhancer_factory=get_semantic_enhancer,

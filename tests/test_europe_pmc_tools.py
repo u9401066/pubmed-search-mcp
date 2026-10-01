@@ -76,6 +76,44 @@ def _disable_live_institutional_fetch(monkeypatch):
 
 
 class TestGetFulltext:
+    @pytest.mark.parametrize("output_format", ["json", "toon", "markdown"])
+    async def test_missing_sections_report_available_titles_and_support_one_repaired_read(self, tools, output_format):
+        provider = MagicMock()
+        provider.get_fulltext_xml = AsyncMock(return_value="<article/>")
+        provider.parse_fulltext_xml.return_value = {
+            "title": "Evidence",
+            "abstract": "Abstract must not replace missing evidence",
+            "sections": [{"title": "Methods", "content": "Actual body evidence"}],
+        }
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client", return_value=provider
+        ):
+            missing = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"),
+                sections="discussion",
+                include_pdf_links=False,
+                output_format=output_format,
+            )
+            assert "Abstract must not" not in missing
+            assert "Methods" in missing
+            if output_format != "markdown":
+                payload = json.loads(missing) if output_format == "json" else toons.loads(missing)
+                assert payload["fulltext_available"] is False
+                assert payload["section_selection"]["status"] == "not_found"
+                assert payload["section_selection"]["unmatched"] == ["discussion"]
+                assert payload["next_tools"][0]["tool"] == "get_fulltext"
+            else:
+                assert "Requested sections not found" in missing
+                assert "Structured fulltext not available" not in missing
+            corrected = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"),
+                sections="methods",
+                include_pdf_links=False,
+                output_format=output_format,
+            )
+            assert "Actual body evidence" in corrected
+            provider.get_fulltext_xml.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_no_identifier(self, tools):
         with pytest.raises(TypeError, match="source"):

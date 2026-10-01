@@ -1,5 +1,29 @@
 # Decision Log
 
+## [2026-10-01] v0.7.6 focused fulltext integration refactor
+
+- Promote queued prefetch when demanded; join running I/O instead of restarting it.
+- Keep structured section selection separate from download success. Missing titles
+  expose available evidence and preserve XML reuse; abstracts are not fulltext.
+- Return directly usable read arguments, not a polling workflow. Retain explicit
+  opt-in and one read call; avoid new durable jobs or parsed caches without need.
+- Ship as the next patch with reviewed documentation, full gates, verified master
+  tag and publication receipts. Do not relabel old benchmark or review evidence.
+
+
+## 2026-10-01 — Demand XML caching with opt-in bounded prefetch
+
+Keep ordinary searches free of speculative fulltext I/O. Expose
+`unified_search(fulltext="prefetch")` for planned close reading of top-ranked
+known PMCIDs; share complete XML with later `get_fulltext` calls instead of
+adding a polling tool or assuming host task-extension support. Restrict
+speculation to public XML, one attempt and bounded process/tenant-owned work;
+honor source disables and existing provider quotas. Background state is not
+durable, and full papers are not injected into search responses. The
+[assessment](../docs/design/FULLTEXT_PREFETCH.md) documents unused-request costs
+and why unconditional PDF/source fan-out is inappropriate.
+
+
 ## [2026-10-01] Correct unambiguous MCP representations before validation
 
 ### Decision
