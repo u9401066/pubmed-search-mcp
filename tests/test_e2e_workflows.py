@@ -34,7 +34,7 @@ ARTICLE = {
     "pmid": "12345678",
     "pmcid": "PMC7096777",
     "doi": "10.1000/smoke",
-    "title": "Offline smoke: aspirin & stroke",
+    "title": "Offline smoke: aspirin & stroke – β",
     "authorString": "Smith J",
     "journalTitle": "Smoke Journal",
     "pubYear": "2024",
@@ -45,7 +45,7 @@ ARTICLE = {
     "abstractText": "Synthetic abstract, not research evidence.",
 }
 XML = b"""<article><front><article-meta><title-group>
-<article-title>Offline smoke: aspirin &amp; stroke</article-title></title-group>
+<article-title>Offline smoke: aspirin &amp; stroke &#x2013; &#x3b2;</article-title></title-group>
 <abstract><p>Synthetic abstract, not research evidence.</p></abstract></article-meta></front>
 <body><sec><title>Methods</title><p>Synthetic body with <italic>inline</italic> markup.</p></sec>
 <sec><title>Results</title><p>A separate result section.</p></sec></body></article>"""
@@ -56,7 +56,7 @@ PUBMED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <PMID Version="1">12345678</PMID><Article PubModel="Print">
 <Journal><ISSN IssnType="Print">1234-5678</ISSN><JournalIssue CitedMedium="Print">
 <PubDate><Year>2024</Year></PubDate></JournalIssue><Title>Smoke Journal</Title></Journal>
-<ArticleTitle>Offline smoke: aspirin &amp; stroke</ArticleTitle>
+<ArticleTitle>Offline smoke: aspirin &amp; stroke &#x2013; &#x3b2;</ArticleTitle>
 <Abstract><AbstractText>Synthetic abstract, not research evidence.</AbstractText></Abstract>
 <AuthorList><Author ValidYN="Y"><LastName>Smith</LastName><ForeName>John</ForeName><Initials>J</Initials></Author></AuthorList>
 <Language>eng</Language><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType></PublicationTypeList>
@@ -168,10 +168,10 @@ async def test_search_prefetch_read_export_and_session_over_real_provider_http(
             },
         )
         assert not exported.is_error, _result_text(exported)
-        note = (tmp_path / "notes" / "12345678.md").read_text()
+        note = (tmp_path / "notes" / "12345678.md").read_text(encoding="utf-8")
         assert ARTICLE["title"] in note
         assert ARTICLE["abstractText"] in note
-        citations = json.loads((tmp_path / "notes" / "references.csl.json").read_text())
+        citations = json.loads((tmp_path / "notes" / "references.csl.json").read_text(encoding="utf-8"))
         assert citations[0]["PMID"] == ARTICLE["pmid"]
         assert citations[0]["DOI"] == ARTICLE["doi"]
         cached = await client.call_tool("read_session", {"request": {"action": "article", "pmid": "12345678"}})

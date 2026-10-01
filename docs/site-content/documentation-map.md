@@ -12,7 +12,7 @@ describe their own snapshots; they do not override the running tool registry.
 | Install and operate | [README](#/overview), [integrations](#/troubleshooting), [deployment](#/deployment) | User-facing setup |
 | Search and workflows | [user guide](#/user-guide), [tool usage](#/tools-usage-guide), [pipelines](#/pipeline-tutorial) | Current behavior; guides also have zh-TW editions |
 | Architecture and contracts | [architecture](#/architecture), [search architecture](#/unified-search-architecture), [source contracts](#/source-contracts) | Implemented boundaries and provider protections |
-| Development and checks | [contributing](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md), [developer guide](#/developer-guide), [script map](https://github.com/u9401066/pubmed-search-mcp/blob/master/scripts/README.md) | Local validation and maintenance commands |
+| Development and checks | [contributing](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md), [developer guide](#/developer-guide), [testing policy](#/testing), [script map](https://github.com/u9401066/pubmed-search-mcp/blob/master/scripts/README.md) | Local validation and maintenance commands |
 | Provider API contracts | [OpenAlex](#/openalex-api), [Semantic Scholar](#/semantic-scholar-api), [ClinicalKey AI](#/clinicalkey-ai), [images](providers/IMAGE_SEARCH_API.md) | Access modes, limits and response boundaries |
 | Evaluation and evidence | [benchmarks](#/academic-retrieval-benchmarks), [report index](reports/README.md) | Reproducible methods, dated measurements and review ledger |
 | Software citation and paper | [publication workspace](#/publication) | One current manuscript; evidence, bibliography and arXiv preparation |

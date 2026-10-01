@@ -8,7 +8,7 @@ describe their own snapshots; they do not override the running tool registry.
 | Install and operate | [README](../README.md), [integrations](guides/INTEGRATIONS.md), [deployment](../DEPLOYMENT.md) | User-facing setup |
 | Search and workflows | [user guide](guides/USER_GUIDE.md), [tool usage](guides/TOOLS_USAGE_GUIDE.md), [pipelines](guides/PIPELINE_MODE_TUTORIAL.en.md) | Current behavior; guides also have zh-TW editions |
 | Architecture and contracts | [architecture](../ARCHITECTURE.md), [search architecture](architecture/UNIFIED_SEARCH_ARCHITECTURE.md), [source contracts](architecture/SOURCE_CONTRACTS.md) | Implemented boundaries and provider protections |
-| Development and checks | [contributing](../CONTRIBUTING.md), [developer guide](development/DEVELOPER_GUIDE.md), [script map](../scripts/README.md) | Local validation and maintenance commands |
+| Development and checks | [contributing](../CONTRIBUTING.md), [developer guide](development/DEVELOPER_GUIDE.md), [testing policy](development/TESTING.md), [script map](../scripts/README.md) | Local validation and maintenance commands |
 | Provider API contracts | [OpenAlex](providers/OPENALEX_API.md), [Semantic Scholar](providers/SEMANTIC_SCHOLAR_API.md), [ClinicalKey AI](providers/CLINICALKEY_AI_INTEGRATION.md), [images](providers/IMAGE_SEARCH_API.md) | Access modes, limits and response boundaries |
 | Evaluation and evidence | [benchmarks](research/ACADEMIC_RETRIEVAL_BENCHMARKS.md), [report index](reports/README.md) | Reproducible methods, dated measurements and review ledger |
 | Software citation and paper | [publication workspace](publication/README.md) | One current manuscript; evidence, bibliography and arXiv preparation |

@@ -1,0 +1,43 @@
+{
+  "baseline_commit": "c8ac9496a9070e56874c55697e996c63dcb2f8ce",
+  "baseline_local": {
+    "python": "3.10",
+    "passed": 4914,
+    "skipped": 23,
+    "deselected": 30,
+    "seconds": 125.23
+  },
+  "initial_integrated_local": {
+    "passed": 4861,
+    "skipped": 19,
+    "deselected": 31,
+    "seconds": 125.82
+  },
+  "reviewed_removed_tests": 64,
+  "ordinary_smoke_cases_before_per_environment": 254,
+  "ordinary_smoke_cases_after_per_environment": 15,
+  "ordinary_platforms_before": [
+    "ubuntu"
+  ],
+  "ordinary_platforms_after": [
+    "ubuntu",
+    "windows"
+  ],
+  "negative_probes": [
+    {
+      "mutation": "wheel content differs from sdist",
+      "detected": true,
+      "reason": "sdist rebuild differs from the wheel being published"
+    },
+    {
+      "mutation": "installed HTTP console exits before startup",
+      "detected": true,
+      "reason": "Server exited before readiness: 23"
+    }
+  ],
+  "limits": [
+    "Synthetic fixtures, no external literature-provider calls",
+    "No local full-suite speedup claim",
+    "Container verification requires hosted Docker"
+  ]
+}

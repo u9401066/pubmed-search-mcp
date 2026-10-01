@@ -106,6 +106,7 @@ async def test_real_streamable_http_health_protocol_and_rebinding_guards(tmp_pat
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(240)
 @pytest.mark.asyncio
 async def test_installed_stdio_persists_across_restart_and_isolates_data_roots(
     tmp_path: Path, release_installation: ReleaseInstallation
@@ -134,6 +135,7 @@ async def test_installed_stdio_persists_across_restart_and_isolates_data_roots(
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(240)
 @pytest.mark.asyncio
 async def test_installed_http_serves_real_requests(tmp_path: Path, release_installation: ReleaseInstallation) -> None:
     with running_http_server([str(release_installation.entrypoint("pubmed-search-mcp-http"))], tmp_path) as base_url:
@@ -141,6 +143,7 @@ async def test_installed_http_serves_real_requests(tmp_path: Path, release_insta
 
 
 @pytest.mark.slow
+@pytest.mark.timeout(240)
 def test_installed_browser_broker_requires_token_before_startup(
     tmp_path: Path, release_installation: ReleaseInstallation
 ) -> None:
