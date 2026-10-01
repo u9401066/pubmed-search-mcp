@@ -1,5 +1,21 @@
 # Progress (Updated: 2026-10-01)
 
+## 2026-10-01 — Bounded background fulltext optimization
+
+- Evaluated foreground-only, eager bulk retrieval, unconditional background
+  fan-out, bounded XML prefetch and durable task APIs. Implemented demand caching
+  plus opt-in top-three prefetch; no additional MCP tools or polling loop.
+- Added shared XML/in-flight reuse, stable tenant/server isolation, queue/deadline/
+  byte/TTL bounds, cancellation ownership and shutdown. Speculative XML uses one
+  attempt and existing Europe PMC quota/cooldown keys; no PDF or login access.
+- Added 18 focused behavioral regressions and extended all-tool source stdio,
+  HTTP and installed-wheel scenarios to require XML reuse. Full gate: **4,900
+  passed, 23 skipped, 30 deselected** (125.13 s), plus lint/format/async/layout/
+  publication/inventory/mypy gates. The feature is recorded under Unreleased.
+- Added [evaluation and implementation](../docs/design/FULLTEXT_PREFETCH.md),
+  bilingual guides, agent guidance and generated website content. The offline
+  fixture preserves content and makes unused request costs explicit.
+
 ## 2026-10-01 — v0.7.5 agent input contract, published and verified
 
 - Completed the five phases: shared field types, matching transport schemas,

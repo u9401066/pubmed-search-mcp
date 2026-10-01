@@ -1,5 +1,18 @@
 # Decision Log
 
+## 2026-10-01 — Demand XML caching with opt-in bounded prefetch
+
+Keep ordinary searches free of speculative fulltext I/O. Expose
+`unified_search(fulltext="prefetch")` for planned close reading of top-ranked
+known PMCIDs; share complete XML with later `get_fulltext` calls instead of
+adding a polling tool or assuming host task-extension support. Restrict
+speculation to public XML, one attempt and bounded process/tenant-owned work;
+honor source disables and existing provider quotas. Background state is not
+durable, and full papers are not injected into search responses. The
+[assessment](../docs/design/FULLTEXT_PREFETCH.md) documents unused-request costs
+and why unconditional PDF/source fan-out is inappropriate.
+
+
 ## [2026-10-01] Correct unambiguous MCP representations before validation
 
 ### Decision
