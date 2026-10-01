@@ -4,8 +4,6 @@ Tests for CORE API and NCBI Extended Database integration.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 # =============================================================================
 # CORE API Client Tests
 # =============================================================================
@@ -204,114 +202,15 @@ class TestSourcesIntegration:
         assert definition.key == "core"
         assert definition.supports_primary_search is True
 
-    async def test_get_clients(self):
-        """Test client getter functions."""
-        from pubmed_search.infrastructure.sources import (
-            get_core_client,
-            get_ncbi_extended_client,
-        )
-
-        core_client = get_core_client()
-        assert core_client is not None
-
-        ncbi_client = get_ncbi_extended_client()
-        assert ncbi_client is not None
-
-    async def test_core_uses_the_typed_alternate_source_seam(self):
-        """All non-PubMed search orchestration goes through one adapter API."""
-        from pubmed_search.infrastructure.sources import search_alternate_source_adapter
-
-        assert callable(search_alternate_source_adapter)
-
 
 # =============================================================================
 # MCP Tools Tests
 # =============================================================================
 
 
-class TestNCBIExtendedMCPTools:
-    """Test NCBI Extended MCP tools."""
-
-    async def test_tools_registered(self):
-        """Test that NCBI Extended tools can be registered."""
-        from mcp.server.mcpserver import MCPServer
-
-        from pubmed_search.presentation.mcp_server.tools.ncbi_extended import (
-            register_ncbi_extended_tools,
-        )
-
-        mcp = MCPServer(name="test")
-        register_ncbi_extended_tools(mcp)
-
-        # Check tools are registered
-        tool_names = [t.name for t in mcp._tool_manager.list_tools()]
-
-        # Gene tools
-        assert "search_gene" in tool_names
-        assert "get_gene_details" in tool_names
-        assert "get_gene_literature" in tool_names
-
-        # PubChem tools
-        assert "search_compound" in tool_names
-        assert "get_compound_details" in tool_names
-        assert "get_compound_literature" in tool_names
-
-        # ClinVar tools
-        assert "search_clinvar" in tool_names
-
-
-class TestAllToolsRegistration:
-    """Test that all tools are registered properly."""
-
-    async def test_register_all_tools_includes_new_sources(self):
-        """Test register_all_tools includes CORE and NCBI Extended."""
-        from mcp.server.mcpserver import MCPServer
-
-        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-        from pubmed_search.presentation.mcp_server.tools import register_all_tools
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
-
-        mcp = MCPServer(name="test")
-        searcher = LiteratureSearcher(email="test@example.com")
-        register_all_tools(
-            mcp,
-            searcher,
-            image_search_service=MagicMock(),
-            pipeline_runtime=PipelineToolRuntime(base_store=None),
-        )
-
-        tool_names = [t.name for t in mcp._tool_manager.list_tools()]
-
-        # CORE tools are now integrated into unified_search
-        # search_core is internal, unified_search handles multi-source
-        assert "unified_search" in tool_names
-
-        # NCBI Extended tools
-        assert "search_gene" in tool_names
-        assert "search_compound" in tool_names
-        assert "search_clinvar" in tool_names
-
-
 # =============================================================================
 # Server Integration Tests
 # =============================================================================
-
-
-class TestServerIntegration:
-    """Test server includes new tools."""
-
-    async def test_create_server_with_new_tools(self):
-        """Test create_server registers new tools."""
-        from pubmed_search.presentation.mcp_server.server import create_server
-
-        server = create_server(email="test@example.com")
-
-        tool_names = [t.name for t in server._tool_manager.list_tools()]
-
-        # Verify tools are included (search_core integrated into unified_search)
-        assert "unified_search" in tool_names
-        assert "search_gene" in tool_names
-        assert "search_compound" in tool_names
 
 
 async def test_core_available_fulltext_survives_nullable_optional_metadata():

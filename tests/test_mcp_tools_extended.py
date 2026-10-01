@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 def _registered_validate_pico_plan():
     """Register validate_pico_plan on a mock MCP server and return the captured callable."""
@@ -415,20 +413,6 @@ class TestExportTools:
         assert parsed.get("success") is False
         assert "not supported" in str(parsed).lower()
 
-    # v0.1.21: get_article_fulltext_links has been integrated into get_fulltext
-    @pytest.mark.skip(reason="v0.1.21: get_article_fulltext_links integrated into get_fulltext")
-    async def test_get_article_fulltext_links(self):
-        """Test get_article_fulltext_links tool."""
-        # This tool has been integrated into get_fulltext
-
-    # v0.1.21: analyze_fulltext_access has been integrated into get_fulltext
-    @pytest.mark.skip(reason="v0.1.21: analyze_fulltext_access integrated into get_fulltext")
-    async def test_analyze_fulltext_access(self):
-        """Test analyze_fulltext_access tool."""
-        # This tool has been integrated into get_fulltext
-
-
-class TestCommonToolsExtended:
     """Extended tests for common tool utilities."""
 
     async def test_get_last_search_pmids_empty(self):

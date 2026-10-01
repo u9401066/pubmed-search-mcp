@@ -211,35 +211,8 @@ class TestUtilsMixin:
                 await utils_mixin.get_database_info("pubmed")
 
 
-class TestServerModule:
-    """Tests to improve server.py coverage."""
-
-    async def test_server_module_structure(self):
-        """Test server module has expected structure."""
-        from pubmed_search.presentation.mcp_server import server
-
-        # Check for expected attributes
-        assert hasattr(server, "logging")
-
-    async def test_create_mcp_if_exists(self):
-        """Test create_mcp function if it exists."""
-        from pubmed_search.presentation.mcp_server import server
-
-        # If create_mcp exists, test it
-        if hasattr(server, "create_mcp"):
-            # Just verify it's callable
-            assert callable(server.create_mcp)
-
-
 class TestSessionModule:
     """Additional tests for session.py coverage."""
-
-    async def test_session_manager_create(self):
-        """Test SessionManager creation."""
-        from pubmed_search.application.session import SessionManager
-
-        manager = SessionManager()
-        assert manager is not None
 
     async def test_research_session_create(self):
         """Test ResearchSession creation."""

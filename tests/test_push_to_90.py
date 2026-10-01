@@ -4,7 +4,7 @@ Final targeted tests to push coverage from 86% to 90%.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -114,18 +114,6 @@ class TestStrategyExpandSearch:
             assert result["topic"] == "cancer treatment"
 
 
-class TestServerMainPath:
-    """Test server main function path."""
-
-    async def test_main_with_env_vars(self):
-        """Test main gets email from env."""
-        from pubmed_search.presentation.mcp_server import server
-
-        # Verify main function exists
-        assert hasattr(server, "main")
-        assert callable(server.main)
-
-
 class TestCommonCachePaths:
     """Test _common.py cache paths."""
 
@@ -180,100 +168,8 @@ class TestExportHelperFunctions:
         assert isinstance(result, str)
 
 
-class TestDiscoveryErrorPaths:
-    """Test discovery tool error paths."""
-
-    async def test_discovery_module_imports(self):
-        """Test discovery module imports correctly."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            register_discovery_tools,
-        )
-
-        assert callable(register_discovery_tools)
-
-
 class TestFormatsHelperFunctions:
     """Test formats helper functions."""
-
-    async def test_escape_bibtex(self):
-        """Test BibTeX escaping function if it exists."""
-        from pubmed_search.application.export import formats
-
-        # Check for _escape_bibtex or similar
-        if hasattr(formats, "_escape_bibtex"):
-            result = formats._escape_bibtex("Test & Special {chars}")
-            assert isinstance(result, str)
-
-    async def test_export_articles_error(self):
-        """Test export_articles with error."""
-        from pubmed_search.application.export.formats import export_articles
-
-        try:
-            export_articles([], fmt="invalid")
-        except ValueError:
-            pass  # Expected
-
-
-class TestSessionToolsRegister:
-    """Test session tools registration."""
-
-    async def test_register_session_tools(self):
-        """Test session tools registration."""
-        import tempfile
-
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.presentation.mcp_server.session_tools import (
-            register_session_tools,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.tool = Mock(return_value=lambda f: f)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manager = SessionManager(data_dir=tmpdir)
-
-            # Should not raise
-            register_session_tools(mock_mcp, manager)
-
-    async def test_register_session_resources(self):
-        """Test session resources registration."""
-        import tempfile
-
-        from pubmed_search.application.session import SessionManager
-        from pubmed_search.presentation.mcp_server.session_tools import (
-            register_session_resources,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.resource = Mock(return_value=lambda f: f)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manager = SessionManager(data_dir=tmpdir)
-
-            # Should not raise
-            register_session_resources(mock_mcp, manager)
-
-
-class TestPicoModulePaths:
-    """Test pico module paths."""
-
-    async def test_pico_register(self):
-        """Test pico tools registration."""
-        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
-
-        assert callable(register_pico_tools)
-
-
-class TestStrategyToolPaths:
-    """Test strategy tool paths."""
-
-    async def test_strategy_tool_register(self):
-        """Test strategy tools registration."""
-        from pubmed_search.presentation.mcp_server.tools.strategy import (
-            register_strategy_tools,
-        )
-
-        assert callable(register_strategy_tools)
 
 
 class TestLinksWithLookup:

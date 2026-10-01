@@ -139,27 +139,6 @@ class TestCommonToolsLines:
         assert "12345" in result or "Test" in result
 
 
-class TestFormatsMoreLines:
-    """Test formats.py additional lines."""
-
-    async def test_export_functions_exist(self):
-        """Test all export functions exist and are callable."""
-        from pubmed_search.application.export import formats
-
-        assert hasattr(formats, "export_ris")
-        assert hasattr(formats, "export_bibtex")
-        assert hasattr(formats, "export_csv")
-        assert hasattr(formats, "export_json")
-        assert hasattr(formats, "export_medline")
-
-        # All should be callable
-        assert callable(formats.export_ris)
-        assert callable(formats.export_bibtex)
-        assert callable(formats.export_csv)
-        assert callable(formats.export_json)
-        assert callable(formats.export_medline)
-
-
 class TestSearchStrategyEnum:
     """Test SearchStrategy enum."""
 

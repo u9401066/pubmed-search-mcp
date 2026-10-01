@@ -299,27 +299,8 @@ class TestICiteExtended:
         result = icite_searcher.filter_by_citations(articles, min_rcr=1.0)
         assert len(result) == 2
 
-
-class TestServerCoverage:
-    """Tests to improve server.py coverage."""
-
-    async def test_server_imports(self):
-        """Test that server module has expected components."""
-
         # Should have create_mcp function or similar
         # This tests the imports at module level
-
-
-class TestMainModule:
-    """Tests for __main__ module."""
-
-    async def test_main_module_importable(self):
-        """Test that __main__ module can be imported."""
-        import importlib.util
-
-        # Check if module exists without importing
-        spec = importlib.util.find_spec("pubmed_search.presentation.mcp_server.__main__")
-        assert spec is not None or spec is None  # Module may or may not exist
 
 
 async def test_pdf_mime_without_pdf_signature_does_not_overwrite_file(tmp_path):

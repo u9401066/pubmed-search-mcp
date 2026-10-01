@@ -1,0 +1,553 @@
+{
+  "baseline_commit": "c8ac9496a9070e56874c55697e996c63dcb2f8ce",
+  "removed_count": 64,
+  "removals": [
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestServerCreateServer::test_create_server_basic",
+      "reason": "Replaces server and every constructor with mocks, then checks the configured mock exists.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestServerCreateServer::test_create_server_with_security_disabled",
+      "reason": "Replaces server and every constructor with mocks, then checks the configured mock exists.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestServerCreateServer::test_create_server_with_api_key",
+      "reason": "Replaces server and every constructor with mocks, then checks the configured mock exists.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestStrategyGeneratorEdgeCases::test_strategy_generator_init",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_strategy_tools.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestStrategyGeneratorEdgeCases::test_strategy_generate_strategies",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_strategy_tools.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestClientCoverage::test_literature_searcher_init",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_entrez_modules.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ]
+    },
+    {
+      "removed": "tests/test_comprehensive_coverage.py::TestClientCoverage::test_literature_searcher_with_api_key",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_entrez_modules.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ]
+    },
+    {
+      "removed": "tests/test_core_ncbi_extended.py::TestSourcesIntegration::test_get_clients",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_entrez_modules.py",
+        "tests/test_entrez_runtime_isolation.py"
+      ]
+    },
+    {
+      "removed": "tests/test_core_ncbi_extended.py::TestSourcesIntegration::test_core_uses_the_typed_alternate_source_seam",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_source_registry.py",
+        "tests/test_round6_coverage.py"
+      ]
+    },
+    {
+      "removed": "tests/test_core_ncbi_extended.py::TestNCBIExtendedMCPTools::test_tools_registered",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_core_ncbi_extended.py::TestAllToolsRegistration::test_register_all_tools_includes_new_sources",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_source_registry.py",
+        "tests/test_round6_coverage.py"
+      ]
+    },
+    {
+      "removed": "tests/test_core_ncbi_extended.py::TestServerIntegration::test_create_server_with_new_tools",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_final_90.py::TestSessionToolsInternals::test_session_tools_module",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_final_90.py::TestPicoElementExtraction::test_pico_parse_question",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_pdf_and_coverage.py::TestServerCoverage::test_server_imports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_pdf_and_coverage.py::TestMainModule::test_main_module_importable",
+      "reason": "Tautology accepts both success and failure; cannot detect a regression.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestServerMainPath::test_main_with_env_vars",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestDiscoveryErrorPaths::test_discovery_module_imports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestFormatsHelperFunctions::test_escape_bibtex",
+      "reason": "Conditional test passes when the target function is absent; retained special-character export test exercises actual formatting.",
+      "retained": [
+        "tests/test_exports.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestFormatsHelperFunctions::test_export_articles_error",
+      "reason": "Swallows ValueError but also passes if no error is raised; retained test requires ValueError.",
+      "retained": [
+        "tests/test_exports.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestSessionToolsRegister::test_register_session_tools",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestSessionToolsRegister::test_register_session_resources",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestPicoModulePaths::test_pico_register",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_push_to_90.py::TestStrategyToolPaths::test_strategy_tool_register",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_strategy_tools.py"
+      ]
+    },
+    {
+      "removed": "tests/test_reach_90.py::TestFormatsMoreLines::test_export_functions_exist",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_exports.py"
+      ]
+    },
+    {
+      "removed": "tests/test_round5_coverage.py::TestServerModule::test_import",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_round5_coverage.py::TestServerModule::test_create_server",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_round5_coverage.py::TestNCBIStrategy::test_import",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_strategy_tools.py"
+      ]
+    },
+    {
+      "removed": "tests/test_round5_coverage.py::TestNCBIStrategy::test_init",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_strategy_tools.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestMCPServerInit::test_server_module_imports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestMCPServerInit::test_literature_searcher_creation",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestMCPServerInit::test_literature_searcher_has_mixins",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestSessionTools::test_session_tools_module_imports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestSessionTools::test_register_session_tools",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestToolRegistration::test_all_tools_registered",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestToolRegistration::test_register_all_tools_function",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestServerHTTPMode::test_run_server_module_imports",
+      "reason": "Tautology accepts both success and failure; cannot detect a regression.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestServerHTTPMode::test_server_has_mcpserver",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestEntrezInit::test_entrez_init_exports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestEntrezInit::test_literature_searcher_inheritance",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_server_init.py::TestExportsInit::test_exports_init_exports",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_target_90_coverage.py::TestPicoModuleEdgeCases::test_pico_module_structure",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_target_90_coverage.py::TestIciteModuleEdgeCases::test_icite_sorting",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_entrez_modules.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_target_90_coverage.py::TestPdfModuleEdgeCases::test_pdf_mixin_methods",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_pdf_and_coverage.py"
+      ]
+    },
+    {
+      "removed": "tests/test_utils_and_coverage.py::TestServerModule::test_server_module_structure",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_utils_and_coverage.py::TestServerModule::test_create_mcp_if_exists",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_release_transport_smoke.py",
+        "tests/test_all_tools_mcp_acceptance.py"
+      ]
+    },
+    {
+      "removed": "tests/test_utils_and_coverage.py::TestSessionModule::test_session_manager_create",
+      "reason": "Existence/import/registration-only assertion is superseded by exercised public behavior.",
+      "retained": [
+        "tests/test_session.py",
+        "tests/test_release_transport_smoke.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestQuickSearchWorkflow::test_quick_search_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestSystematicReviewWorkflow::test_systematic_review_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestCitationExplorationWorkflow::test_citation_network_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestPICOWorkflow::test_pico_clinical_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestDrugResearchWorkflow::test_drug_compound_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestFullTextAccessWorkflow::test_fulltext_access_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestSessionWorkflow::test_session_management_workflow",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestErrorRecoveryWorkflow::test_network_error_recovery",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestErrorRecoveryWorkflow::test_invalid_pmid_handling",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestErrorRecoveryWorkflow::test_rate_limit_retry",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_e2e_workflows.py::TestCompleteResearchProject::test_full_research_project",
+      "reason": "Only exercises pre-filled mocks/local dictionaries, or was permanently skipped after API changes.",
+      "retained": [
+        "tests/test_e2e_workflows.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_session.py",
+        "tests/test_provider_failure_contracts.py",
+        "tests/test_search_scheduling.py"
+      ]
+    },
+    {
+      "removed": "tests/test_strategy.py::TestSearchStrategyGenerator::test_expand_broader",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    },
+    {
+      "removed": "tests/test_strategy.py::TestSearchStrategyGenerator::test_expand_narrower",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    },
+    {
+      "removed": "tests/test_strategy.py::TestSearchStrategyGenerator::test_expand_with_existing_queries",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    },
+    {
+      "removed": "tests/test_europe_pmc.py::TestEuropePMCMCPTools::test_search_europe_pmc_tool",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    },
+    {
+      "removed": "tests/test_mcp_tools_extended.py::TestExportTools::test_get_article_fulltext_links",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    },
+    {
+      "removed": "tests/test_mcp_tools_extended.py::TestExportTools::test_analyze_fulltext_access",
+      "reason": "Empty pass/docstring placeholder or permanently skipped retired tool, with no executable behavior.",
+      "retained": [
+        "tests/test_strategy.py",
+        "tests/test_all_tools_mcp_acceptance.py",
+        "tests/test_e2e_workflows.py"
+      ]
+    }
+  ]
+}

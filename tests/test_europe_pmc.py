@@ -284,13 +284,6 @@ class TestEuropePMCMCPTools:
         assert "get_fulltext" in tools
         assert "get_text_mined_terms" in tools
 
-    # v0.1.21: search_europe_pmc has been integrated into unified_search
-    # This test is kept as a reminder but skipped
-    @pytest.mark.skip(reason="v0.1.21: search_europe_pmc integrated into unified_search")
-    async def test_search_europe_pmc_tool(self, mcp):
-        """Test search_europe_pmc tool returns formatted results."""
-        # This tool has been integrated into unified_search
-
     async def test_get_fulltext_tool(self, mcp):
         """Test get_fulltext tool parses XML correctly."""
         from unittest.mock import patch
