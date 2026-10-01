@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-10-01
+
+### Changed
+
 - Organize canonical documentation into guides, development, architecture,
   providers, research, design and publication directories. Preserve website routes
   and Wiki page names; record changed repository paths in the document move map.
@@ -19,6 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate whole-repository file ownership and pinned manuscript evidence locally,
   without adding a cloud job or starting a full agent benchmark.
 - Close the mobile documentation menu when selecting the already-active page.
+
+### Fixed
+
+- Apply one input contract across all 41 tools: automatically correct declared
+  JSON containers/code fences, decimal numeric strings, explicit true/false text,
+  and unambiguous enum/discriminator spelling before strict validation.
+- Reuse PMID/PMCID/DOI/NCBI field types across tools. Parse official article URLs,
+  inline identifier backticks, JSON/delimited PMID batches and Markdown lists.
+  Reject entire invalid batches; preserve order and validate before deduplication.
+- Publish accepted transport alternatives in inputSchema (contract metadata v4),
+  with safe normalization metadata that preserves existing success bodies.
+- Return structured pre-execution errors with stable codes, exact JSON Pointers,
+  accepted constraints and recovery guidance; never echo rejected values or keys.
+  Execution failures never claim that nothing ran.
+- Preserve precise JSON syntax/duplicate-key/size errors for PMID batch strings,
+  including typed validators. Match decimal alternatives in integer/number unions;
+  keep enum/string unions from rewriting free text or widening bounded schemas.
+- Include input-contract regressions in the independent CI smoke gate.
+- Anchor PMID prefixes to prevent embedded text becoming a different ID. Reject
+  foreign/ambiguous article URLs, duplicate JSON keys and non-finite constants.
+- Validate native/corrected input schemas and one repaired retry for all 41 tools
+  over real stdio, HTTP and installed-wheel transports. Add regressions for the
+  reported nine-PMID request, partial-batch prevention and concurrent isolation.
 
 ## [0.7.4] - 2026-09-18
 

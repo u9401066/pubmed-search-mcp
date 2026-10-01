@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.7.4"
+version = "0.7.5"
 description = "MCP SDK v2 server for PubMed and multi-source biomedical literature research"
 readme = "README.md"
 license = "Apache-2.0"
@@ -141,6 +141,7 @@ dev = [
     "tomli>=2.0; python_version < '3.11'",
     "pytest-xdist>=3.8.0",
     "pre-commit>=3.8",
+    "jsonschema>=4.23,<5",
 ]
 
 # ─────────────────────────────────────────────────────────────

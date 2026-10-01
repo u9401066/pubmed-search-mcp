@@ -2059,7 +2059,7 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.7.4"
+version = "0.7.5"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
@@ -2095,6 +2095,7 @@ scripts = [
 dev = [
     { name = "bandit" },
     { name = "deptry" },
+    { name = "jsonschema" },
     { name = "mutmut" },
     { name = "mypy" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2143,6 +2144,7 @@ provides-extras = ["browser-broker", "scripts", "institutional"]
 dev = [
     { name = "bandit", specifier = ">=1.8.0" },
     { name = "deptry", specifier = ">=0.24.0" },
+    { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "mutmut", specifier = ">=3.2.0" },
     { name = "mypy", specifier = ">=1.15" },
     { name = "numpy", specifier = "<2.5" },
