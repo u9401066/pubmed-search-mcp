@@ -34,6 +34,15 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Real workflow smoke and local pretest — v0.7.7
+
+Local `pretest` runs the complete regression gate before push. CI focuses on
+Ubuntu/Windows installed artifacts and real MCP/provider workflows; publication
+verifies the exact wheel/sdist and a running non-root container. Removed 64 weak
+or obsolete tests with documented replacement coverage. See the
+[testing policy](#/testing) and
+[phased release review](reports/release_v077_2026-10-01.md).
+
 ## Background fulltext and reliable section reads — v0.7.6
 
 Opt-in XML prefetch shares downloads with later `get_fulltext` calls. Queued
@@ -1579,7 +1588,7 @@ GitHub will show **Cite this repository** from [CITATION.cff](https://github.com
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.6},
+  version = {0.7.7},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

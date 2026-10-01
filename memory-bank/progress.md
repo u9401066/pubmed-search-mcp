@@ -1,5 +1,16 @@
 # Progress (Updated: 2026-10-01)
 
+## 2026-10-01 — v0.7.7 test/CI renovation ready for hosted verification
+
+- Three implementation phases committed: stronger production/provider/artifact
+  smoke; 64 documented weak-test removals; local pretest/cloud release split.
+- Initial full gate: 4,861 passed, 19 skipped, 31 deselected in 125.82 s. Smoke:
+  15 passed; documentation checks: 39 passed; mypy: 442 files clean. Fault injection
+  detects altered wheel contents and broken HTTP startup. Timing is not a speedup.
+- Documentation, website/Wiki, MEM and patch metadata updated. Await final push,
+  PR/mainline CI, real container verification and artifact publication evidence.
+
+
 ## 2026-10-01 — v0.7.6 integration review, published and verified
 
 - Reviewed the prefetch/read handoff; fixed queued demand priority, section/abstract

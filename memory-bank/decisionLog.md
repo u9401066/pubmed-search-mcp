@@ -1,5 +1,18 @@
 # Decision Log
 
+## [2026-10-01] v0.7.7 test ownership and release artifact evidence
+
+- Remove only reviewed weak tests with stronger retained coverage. Empty placeholders,
+  tautologies and mock-only workflows are not evidence of product behavior.
+- Full deterministic validation belongs to local pretest; keep independent real
+  runtime/artifact smoke on Linux and Windows because hooks can be bypassed.
+- Verify the exact wheel/sdist promoted to registries; rebuild parity and one shared
+  clean installation replace duplicate installs. Run container HTTP/MCP, not only help.
+- Reports describe current checks and never authorize skipping. Cloud release requires
+  a merged commit with successful CI; actual publishing/deployment stay hosted.
+- Synthetic HTTP/XML fixtures prove integration, not live provider availability,
+  research quality or WAN/agent efficiency. Preserve historical measurements.
+
 ## [2026-10-01] v0.7.6 focused fulltext integration refactor
 
 - Promote queued prefetch when demanded; join running I/O instead of restarting it.

@@ -1,6 +1,25 @@
 # Active Context
 
-## Current Focus — v0.7.6 published and verified (2026-10-01)
+## Current Focus — v0.7.7 test/CI renovation, release candidate
+
+- Updated from master before editing. Replaced mock-only E2E with actual loopback
+  HTTP/provider parsing and MCP/search/fulltext/notes/session behavior. Production
+  entrypoint smoke covers one-retry repair, restart, isolation and deletion.
+- Removed 64 reviewed weak/obsolete cases; retained regressions are mapped in the
+  [ledger](../docs/reports/test_renovation_removals_v077.json). Full local gate:
+  4,861 passed, 19 skipped, 31 deselected; 442 files pass mypy. Fifteen runtime
+  smoke cases pass; altered-wheel and broken-startup probes fail as required.
+- `pretest` aliases full; reports never bypass execution. CI focuses on Ubuntu/
+  Windows smoke. Tag verification tests the exact distribution pair and real
+  non-root container after successful mainline CI; full regressions stay local.
+- Testing policy and website/Wiki updated. Segmented commits prepared; merged
+  revision, hosted Docker verification and publication remain to be verified.
+  Docker is absent locally. No live literature APIs or paid benchmark runs.
+- [Phased review](../docs/reports/release_v077_2026-10-01.md) records scope and limits;
+  full-suite timing is essentially unchanged, so no local speedup is claimed.
+
+
+## Previous Focus — v0.7.6 published and verified (2026-10-01)
 
 - User authorized the focused refactor, merging all work for this feature and
   publishing the next patch, v0.7.6. PR #22 includes the original prefetch changes

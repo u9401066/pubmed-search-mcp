@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-10-01
+
+### Changed
+
+- Replace mock-only workflow checks with real loopback provider HTTP, JSON/JATS/
+  PubMed XML parsing, fulltext prefetch reuse, note/CSL export and session reads.
+  Production stdio/HTTP smoke now verifies rejected writes, one corrected retry,
+  persisted pipelines across restart, data-root isolation and deletion.
+- Share one fresh production-only installation across artifact tests; rebuild the
+  sdist and compare every wheel entry. Test exact release distributions before
+  publishing them. Container smoke now verifies a running non-root service and
+  real HTTP/MCP calls instead of CLI help alone.
+- Keep lint, types, documentation and full regressions in local `pretest`/`full`;
+  retain independent Ubuntu/Windows artifact/runtime smoke in CI. Tag publication
+  requires merged source with successful mainline CI and no longer repeats the
+  entire unit suite. Release-branch pushes no longer duplicate PR runs.
+- Record per-step validation evidence without caching successful results. Remove
+  64 reviewed vacuous, duplicate or obsolete tests with retained-coverage mappings.
+  Preserve security, malformed-input, cancellation and provider-quota regressions.
+
+### Documentation
+
+- Publish the testing policy, phased review and removal ledger; update website,
+  Wiki, contributor/agent guidance and memory. No tool API or provider-limit change.
+
 ## [0.7.6] - 2026-10-01
 
 ### Added
@@ -3008,7 +3033,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.7...HEAD
+[0.7.7]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.3...v0.7.4
