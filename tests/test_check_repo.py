@@ -42,6 +42,12 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
     assert sum("if" not in job for job in workflow["jobs"].values()) == 1
     platforms = workflow["jobs"]["quality-and-package"]["strategy"]["matrix"]["os"]
     assert "ubuntu-latest" in platforms and "windows-latest" in platforms
+    windows_steps = workflow["jobs"]["quality-and-package"]["steps"]
+    assert any(
+        step.get("if") == "runner.os == 'Windows'"
+        and "test_copilot_hook_integration.py -k powershell" in step.get("run", "")
+        for step in windows_steps
+    )
     publish = yaml.safe_load((root / ".github/workflows/publish.yml").read_text())
     release_commands = "\n".join(step.get("run", "") for step in publish["jobs"]["verify"]["steps"])
     assert "check_repo.py smoke --release-dist dist" in release_commands

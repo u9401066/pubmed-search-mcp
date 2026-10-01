@@ -44,5 +44,6 @@
     "Synthetic fixtures, no external literature-provider calls",
     "No local full-suite speedup claim",
     "Container verification requires hosted Docker"
-  ]
+  ],
+  "windows_additional_real_powershell_cases": 13
 }

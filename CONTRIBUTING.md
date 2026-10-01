@@ -168,7 +168,8 @@ success cache. Hooks are local to each clone and can be bypassed. Package
 installation may access dependency indexes; non-live does not mean air-gapped.
 
 Ordinary PR/master CI runs the shared runtime smoke on **Ubuntu and Windows**.
-It verifies real production entrypoints, all-tool MCP contracts, provider HTTP
+Windows also executes 13 real PowerShell hook cases unavailable on Linux clones
+without PowerShell. CI verifies production entrypoints, all-tool MCP contracts, provider HTTP
 workflows and one fresh installation shared across tests. Lint, types, generated
 docs and the full regression suite belong to local pretest. Release-branch pushes
 do not duplicate PR runs; merged master/main revisions still receive CI.

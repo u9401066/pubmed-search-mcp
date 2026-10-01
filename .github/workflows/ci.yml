@@ -120,6 +120,15 @@ jobs:
       - name: Shared smoke gate
         run: uv run --frozen python scripts/check_repo.py smoke
 
+      # These real wrapper processes are skipped on Linux clones without
+      # PowerShell. Keep this environment boundary in CI instead of losing it
+      # when tag publication stops repeating the complete unit suite.
+      - name: Real PowerShell hook processes
+        if: runner.os == 'Windows'
+        run: |
+          Get-Command powershell.exe -ErrorAction Stop | Out-Null
+          uv run --frozen pytest -q tests/test_copilot_hook_integration.py -k powershell
+
       - name: Preserve smoke evidence
         if: always()
         uses: actions/upload-artifact@v7

@@ -40,6 +40,7 @@ invalid artifacts fail acceptance instead of silently skipping it.
 | File ownership, publication evidence, symbol inventory, generated docs | Required | Pages/Wiki deployment retains its own checks | Already local |
 | All non-live regressions, including security/concurrency/input contracts | Required, single pytest process | Explicit extended matrix only | Already local |
 | Production stdio/HTTP, all-tool wire contract, provider HTTP workflow | Required | Ubuntu and Windows, Python 3.13 | Ubuntu, exact uploaded distributions |
+| PowerShell hook process/UTF-8/privacy/recovery contracts | Runs when PowerShell is installed | 13 real wrapper cases on Windows | Required through mainline CI |
 | Fresh installation and sdist/wheel parity | Required, one shared installation | Independent clean environments | Exact files promoted to PyPI/GitHub |
 | Non-root container, health/readiness, MCP calls and persisted writes | Explicit when Docker is available | Manual extended checks | Required before upload |
 | Actual provider availability/credentials | Explicit opt-in | Manual live integrations | Not a publication dependency |
