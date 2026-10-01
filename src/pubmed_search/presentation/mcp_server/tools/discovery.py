@@ -22,16 +22,12 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import Field
 
 from pubmed_search.domain.value_objects import (
-    MAX_IDENTIFIER_CHARS,
-    MAX_PMID_BATCH_CHARS,
-    MAX_PMIDS_PER_REQUEST,
     IdentifierValidationError,
-    normalize_pmid_batch,
 )
 from pubmed_search.shared.exceptions import APIError, ErrorContext, PubMedSearchError, ServiceUnavailableError
 from pubmed_search.shared.markdown import escape_markdown_text
 
-from ._common import ResponseFormatter, format_search_results
+from ._common import InputNormalizer, ResponseFormatter, format_search_results
 from .agent_output import (
     OutputFormat,
     finalize_next_tools,
@@ -43,6 +39,7 @@ from .agent_output import (
     preferred_structured_output_format,
     serialize_structured_payload,
 )
+from .tool_input import ExplicitPMIDBatchInput, PMIDBatchInput, PMIDText  # noqa: TC001 - runtime MCP schema annotations
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -57,10 +54,6 @@ CitationSortField = Literal[
     "nih_percentile",
     "citations_per_year",
 ]
-PMIDText = Annotated[str, Field(strict=True, min_length=1, max_length=MAX_IDENTIFIER_CHARS)]
-PMIDBatchText = Annotated[str, Field(strict=True, min_length=1, max_length=MAX_PMID_BATCH_CHARS)]
-PMIDList = Annotated[list[PMIDText], Field(min_length=1, max_length=MAX_PMIDS_PER_REQUEST)]
-PMIDBatchInput = PMIDBatchText | PMIDList
 MAX_CITATION_COUNT_FILTER = 2_000_000_000
 MAX_RCR_FILTER = 1_000_000.0
 NonNegativeCitationCount = Annotated[int, Field(strict=True, ge=0, le=MAX_CITATION_COUNT_FILTER)]
@@ -87,12 +80,8 @@ def _public_source_failure(message: str, error: PubMedSearchError, *, operation:
 
 
 def _normalize_public_pmid_batch(value: object, *, allow_last: bool = True) -> list[str]:
-    """Validate the public string-only PMID contract before domain parsing."""
-    if isinstance(value, str):
-        return normalize_pmid_batch(value, allow_last=allow_last)
-    if isinstance(value, list) and value and all(isinstance(item, str) for item in value):
-        return normalize_pmid_batch(value, allow_last=allow_last)
-    raise IdentifierValidationError("PMIDs must be a non-empty string or a non-empty list of strings")
+    """Apply the shared public PMID parser before contacting a provider."""
+    return InputNormalizer.normalize_pmids(value, allow_last=allow_last)
 
 
 def _normalize_public_pmid(value: object) -> str:
@@ -643,7 +632,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def fetch_article_details(
-        pmids: PMIDBatchInput,
+        pmids: ExplicitPMIDBatchInput,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
     ) -> str:
         """
@@ -655,6 +644,8 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                    - "12345678,87654321" (comma-separated)
                    - "PMID:12345678" (with prefix)
                    - ["12345678", "87654321"] (list)
+                   - '["12345678", "87654321"]' (JSON array string)
+                   - Newlines, semicolons, pipes, and Chinese separators are also accepted.
                    Inputs are string-only and fail as a complete batch when any PMID is invalid.
 
         Returns:
@@ -666,7 +657,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         except IdentifierValidationError as exc:
             return ResponseFormatter.error(
                 error=exc,
-                suggestion="Provide one or more valid PMID numbers",
+                suggestion="Use PMID strings, a flat string array, or a JSON array string; every item must be valid",
                 example='fetch_article_details(pmids="12345678,87654321")',
                 tool_name="fetch_article_details",
                 output_format=normalized_output_format,
@@ -786,9 +777,10 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             pmids: PubMed IDs - accepts multiple formats:
                    - "12345678,87654321" (comma-separated)
                    - ["12345678", "87654321"] (list)
+                   - '["12345678", "87654321"]' (JSON array string)
                    - "PMID:12345678" (with prefix)
                    - "last" to use PMIDs from the last search
-                   Batches are fail-closed and limited to 1,000 unique PMIDs.
+                   Batches are fail-closed and limited to 1,000 items before deduplication.
             sort_by: Metric to sort by:
                 - "citation_count": Raw citation count (default)
                 - "relative_citation_ratio": Field-normalized (recommended)
@@ -838,7 +830,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                         tool_name="get_citation_metrics",
                         output_format=normalized_output_format,
                     )
-                pmid_list = normalize_pmid_batch(last_pmids, allow_last=False)
+                pmid_list = InputNormalizer.normalize_pmids(last_pmids, allow_last=False)
             else:
                 pmid_list = normalized_pmids
 

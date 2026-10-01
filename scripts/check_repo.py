@@ -25,6 +25,7 @@ SMOKE_TESTS = (
     "tests/test_search_query_provenance.py",
     "tests/test_search_run_journal.py",
     "tests/test_tool_schema_hardening.py",
+    "tests/test_agent_input_contract.py",
     "tests/test_install_research_skills.py",
     "tests/test_check_repo.py",
     "tests/test_release_transport_smoke.py",

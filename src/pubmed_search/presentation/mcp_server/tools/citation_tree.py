@@ -41,6 +41,7 @@ from pubmed_search.domain.value_objects import IdentifierValidationError, normal
 from pubmed_search.shared.markdown import escape_markdown_text
 
 from ._common import ResponseFormatter
+from .tool_input import PMIDText  # noqa: TC001 - runtime MCP schema annotation
 from .tool_session import get_tool_session_runtime
 
 if TYPE_CHECKING:
@@ -61,7 +62,6 @@ CITATION_TREE_TIMEOUT_SECONDS = 45.0
 SUPPORTED_FORMATS = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
 CitationDirection = Literal["forward", "backward", "both"]
 CitationOutputFormat = Literal["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-CitationPMID = Annotated[str, Field(strict=True, min_length=1, max_length=512)]
 CitationDepth = Annotated[int, Field(strict=True, ge=1, le=MAX_DEPTH)]
 CitationLimit = Annotated[int, Field(strict=True, ge=1, le=20)]
 FORMAT_INFO = {
@@ -470,7 +470,7 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def build_citation_tree(
-        pmid: CitationPMID,
+        pmid: PMIDText,
         depth: CitationDepth = 2,
         direction: CitationDirection = "both",
         limit_per_level: CitationLimit = 5,

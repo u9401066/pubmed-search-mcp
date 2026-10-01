@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pubmed_search.domain.value_objects import ArticleIdentifier, normalize_doi, normalize_pmcid, normalize_pmid
 
+from .tool_input import DOIText, PMCIDText, PMIDText  # noqa: TC001 - runtime Pydantic annotations
+
 
 class _StrictSource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -17,21 +19,21 @@ class PMIDSource(_StrictSource):
     """An explicit PubMed identifier."""
 
     kind: Literal["pmid"]
-    value: Annotated[str, Field(pattern=r"^[1-9][0-9]{0,19}$", max_length=20)]
+    value: PMIDText
 
 
 class PMCIDSource(_StrictSource):
     """An explicit PubMed Central identifier."""
 
     kind: Literal["pmcid"]
-    value: Annotated[str, Field(pattern=r"^PMC[1-9][0-9]{0,19}$", max_length=23)]
+    value: PMCIDText
 
 
 class DOISource(_StrictSource):
     """An explicit DOI."""
 
     kind: Literal["doi"]
-    value: Annotated[str, Field(pattern=r"^10\.[0-9]{4,9}/", min_length=7, max_length=512)]
+    value: DOIText
 
 
 ArticleSource = Annotated[PMIDSource | PMCIDSource | DOISource, Field(discriminator="kind")]

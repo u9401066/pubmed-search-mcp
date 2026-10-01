@@ -14,6 +14,17 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, Icon, InputRequiredResult, TextContent, ToolAnnotations
 from pydantic import ValidationError
 
+from .input_contract import (
+    InputNormalizationError,
+    InvalidToolArgumentsError,
+    accepted_input_schema,
+    invalid_arguments_result,
+    normalization_events,
+    normalize_tool_arguments,
+    record_field_normalizations,
+    validation_issues,
+)
+
 if TYPE_CHECKING:
     from mcp.server.mcpserver import Context
 
@@ -161,9 +172,11 @@ def tool_meta(tool_name: str) -> dict[str, Any]:
         side_effect = "write"
     return {
         "pubmed-search": {
-            "contractVersion": 3,
+            "contractVersion": 4,
             "category": _category_for(tool_name),
             "sideEffect": side_effect,
+            "inputNormalization": "schema-declared JSON containers, decimal numeric strings, explicit boolean text, enum spelling and shared identifier formats",
+            "inputErrors": {"version": 1, "paths": "JSON Pointer", "preExecution": True},
         }
     }
 
@@ -234,11 +247,13 @@ class PubMedMCPServer(MCPServer[Any]):
         failures use the same fail-closed policy because exception messages can
         carry upstream URLs, response bodies, credentials, or local paths.
         """
+        events: list[dict[str, str]] = []
+        token = normalization_events.set(events)
         try:
             result = await super().call_tool(name, arguments, context)
         except ToolError as exc:
-            if not isinstance(exc.__cause__, ValidationError):
-                cause = exc.__cause__
+            cause = exc.__cause__
+            if not isinstance(cause, InvalidToolArgumentsError):
                 logger.warning(
                     "MCP tool execution failed (%s)",
                     type(cause).__name__ if cause is not None else "ToolError",
@@ -247,11 +262,22 @@ class PubMedMCPServer(MCPServer[Any]):
                     content=[TextContent(type="text", text=_TOOL_EXECUTION_ERROR_MESSAGE)],
                     is_error=True,
                 )
+            payload = invalid_arguments_result(cause.errors)
+            details = "; ".join(f"{item['path'] or '/'}: {item['message']}" for item in payload["errors"])
             return CallToolResult(
-                content=[TextContent(type="text", text=_INVALID_ARGUMENTS_MESSAGE)],
+                content=[
+                    TextContent(type="text", text=f"{_INVALID_ARGUMENTS_MESSAGE} {details}\n{json.dumps(payload)}")
+                ],
+                structured_content=payload,
                 is_error=True,
             )
+        finally:
+            normalization_events.reset(token)
         if isinstance(result, CallToolResult):
+            if events:
+                meta = dict(result.meta or {})
+                meta["pubmed-search"] = {**meta.get("pubmed-search", {}), "normalizations": events}
+                result = result.model_copy(update={"meta": meta})
             if _text_response_size(result) > MAX_MCP_TEXT_RESPONSE_CHARS:
                 return CallToolResult(
                     content=[TextContent(type="text", text=_RESPONSE_BUDGET_MESSAGE)],
@@ -305,12 +331,40 @@ class PubMedMCPServer(MCPServer[Any]):
             argument_model.model_config["extra"] = "forbid"
             argument_model.model_config["strict"] = True
             argument_model.model_rebuild(force=True)
-            tool.parameters = argument_model.model_json_schema(by_alias=True)
-            # MCP SDK 2.x intentionally decodes JSON-looking string arguments
-            # for legacy clients before Pydantic sees them. This server's v3
-            # contract is schema-exact: arrays and objects must arrive as real
-            # JSON values, so bypass that compatibility coercion centrally.
-            object.__setattr__(tool.fn_metadata, "pre_parse_json", lambda data: data.copy())
+            schema = argument_model.model_json_schema(by_alias=True)
+            tool.parameters = accepted_input_schema(schema)
+            # Decode only containers declared by this tool's schema, including
+            # nested discriminated requests. Keep strict validation afterwards.
+            # The SDK's generic pre-parser can otherwise alter free-text JSON.
+            object.__setattr__(tool.fn_metadata, "pre_parse_json", lambda data: normalize_tool_arguments(data, schema))
+
+            # Mark errors at the validation call itself. A ValidationError
+            # raised inside a tool must never imply that nothing executed.
+            def validate_arguments(data: dict[str, Any]) -> dict[str, Any]:
+                failures: list[InputNormalizationError] = []
+                try:
+                    normalized = normalize_tool_arguments(data, schema, failures)
+                    issues = [issue for failure in failures for issue in validation_issues(failure, schema)]
+                    try:
+                        validated = argument_model.model_validate(normalized)
+                    except ValidationError as exc:
+                        failed_paths = [issue["path"] for issue in issues]
+                        issues.extend(
+                            issue
+                            for issue in validation_issues(exc, schema)
+                            if not any(
+                                issue["path"] == path or issue["path"].startswith(path + "/") for path in failed_paths
+                            )
+                        )
+                        raise InvalidToolArgumentsError(issues) from None
+                    if issues:
+                        raise InvalidToolArgumentsError(issues)
+                    record_field_normalizations(normalized, validated.model_dump(), schema, schema)
+                    return validated.model_dump_one_level()
+                except (ValidationError, InputNormalizationError) as exc:
+                    raise InvalidToolArgumentsError(validation_issues(exc, schema)) from None
+
+            object.__setattr__(tool.fn_metadata, "validate_arguments", validate_arguments)
             del registered
             return fn
 

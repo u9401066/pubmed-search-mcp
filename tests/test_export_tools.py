@@ -134,7 +134,7 @@ class TestSaveLiteratureNotes:
 
         result = await tools["save_literature_notes"](pmids=["12345678", "not-a-pmid"])
 
-        assert "PMID must be positive ASCII digits" in result
+        assert "complete PMID strings using positive ASCII digits" in result
         searcher.fetch_details.assert_not_awaited()
 
     @pytest.mark.asyncio

@@ -20,10 +20,12 @@ MAX_PMID_BATCH_CHARS = 100_000
 _ASCII_CONTROL_LIMIT = 0x20
 
 _PMID_RE = re.compile(rf"[1-9][0-9]{{0,{MAX_PMID_DIGITS - 1}}}")
-_PMID_PREFIX_RE = re.compile(r"(?:pmid|pubmed)\s*:\s*", re.IGNORECASE)
+_PMID_PREFIX_RE = re.compile(r"^(?:pmid|pubmed)\s*:\s*", re.IGNORECASE)
 _PMCID_RE = re.compile(rf"(?:pmcid\s*:\s*)?(?:pmc)?([1-9][0-9]{{0,{MAX_PMID_DIGITS - 1}}})", re.IGNORECASE)
 _DOI_RE = re.compile(r"10\.[0-9]{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
-_BATCH_SEPARATOR_RE = re.compile(r"[,;|\s]+")
+_PMID_BATCH_ITEM = rf"(?:(?:pmid|pubmed)\s*:\s*)?[1-9][0-9]{{0,{MAX_PMID_DIGITS - 1}}}"
+_PMID_BATCH_RE = re.compile(rf"{_PMID_BATCH_ITEM}(?:[,;|，；、\s]+{_PMID_BATCH_ITEM})*", re.IGNORECASE)
+_PMID_BATCH_ITEM_RE = re.compile(_PMID_BATCH_ITEM, re.IGNORECASE)
 
 
 class IdentifierValidationError(ValueError):
@@ -51,6 +53,28 @@ def _bounded_text(value: object, *, label: str) -> str:
     return text
 
 
+def _article_url_path(text: str, *, hosts: set[str]) -> str:
+    """Read an allowlisted article URL without ever performing network I/O."""
+    try:
+        parsed = urlsplit(text)
+        port = parsed.port
+    except ValueError:
+        raise IdentifierValidationError("Article URL is malformed") from None
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or (parsed.hostname or "").lower() not in hosts
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.query
+        or parsed.fragment
+        or "?" in text
+        or "#" in text
+    ):
+        raise IdentifierValidationError("Use an official article URL without credentials, port, query or fragment")
+    return parsed.path
+
+
 def normalize_pmid(value: object) -> str:
     """Return one canonical PMID or raise on malformed/ambiguous input."""
     if isinstance(value, bool):
@@ -59,7 +83,14 @@ def normalize_pmid(value: object) -> str:
         text = str(value)
     else:
         text = _bounded_text(value, label="PMID")
-        text = _PMID_PREFIX_RE.sub("", text, count=1)
+        if "://" in text:
+            path = _article_url_path(text, hosts={"pubmed.ncbi.nlm.nih.gov"})
+            match = re.fullmatch(r"/([1-9][0-9]{0,19})/?", path)
+            if match is None:
+                raise IdentifierValidationError("PubMed URL must identify exactly one article")
+            text = match.group(1)
+        else:
+            text = _PMID_PREFIX_RE.sub("", text, count=1)
     if _PMID_RE.fullmatch(text) is None:
         raise IdentifierValidationError("PMID must be positive ASCII digits with an optional PMID: prefix")
     return text
@@ -78,6 +109,16 @@ def normalize_pmcid(value: object) -> str:
     if isinstance(value, bool):
         raise IdentifierValidationError("PMCID must not be boolean")
     text = str(value) if isinstance(value, int) else _bounded_text(value, label="PMCID")
+    if "://" in text:
+        path = _article_url_path(text, hosts={"pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov"})
+        # The modern host uses /articles/, the legacy host /pmc/articles/.
+        host = (urlsplit(text).hostname or "").lower()
+        prefix = "/articles/" if host == "pmc.ncbi.nlm.nih.gov" else "/pmc/articles/"
+        if not path.startswith(prefix):
+            raise IdentifierValidationError("PMC URL must identify exactly one article")
+        text = path.removeprefix(prefix).removesuffix("/")
+        if not text.startswith("PMC"):
+            raise IdentifierValidationError("PMC URL must contain a PMC identifier")
     match = _PMCID_RE.fullmatch(text.strip())
     if match is None:
         raise IdentifierValidationError("PMCID must be positive ASCII digits with an optional PMC/PMCID: prefix")
@@ -110,7 +151,7 @@ def normalize_doi(value: object) -> str:
             raise IdentifierValidationError("DOI URL must not contain credentials or a port")
         if (parsed.hostname or "").lower() not in {"doi.org", "dx.doi.org"}:
             raise IdentifierValidationError("DOI URL host must be doi.org")
-        if parsed.query or parsed.fragment:
+        if parsed.query or parsed.fragment or "?" in text or "#" in text:
             raise IdentifierValidationError("DOI URL must not contain a query or fragment")
         text = unquote(parsed.path.lstrip("/"))
 
@@ -152,10 +193,11 @@ def normalize_pmid_batch(value: object, *, allow_last: bool = True) -> list[str]
             if not allow_last:
                 raise IdentifierValidationError("last is not a PMID")
             return ["last"]
-        without_prefixes = _PMID_PREFIX_RE.sub("", text)
-        tokens = [token for token in _BATCH_SEPARATOR_RE.split(without_prefixes) if token]
-        if not tokens:
-            return []
+        if _PMID_BATCH_RE.fullmatch(text) is None:
+            raise IdentifierValidationError(
+                "PMIDs must be positive ASCII digits with optional PMID: prefixes and separators"
+            )
+        tokens = [match.group() for match in _PMID_BATCH_ITEM_RE.finditer(text)]
         combined = [normalize_pmid(token) for token in tokens]
     else:
         raise IdentifierValidationError("PMID batch must be a string, integer, or list")
@@ -175,6 +217,15 @@ def parse_article_identifier(value: object) -> ArticleIdentifier:
         return ArticleIdentifier("pmid", normalize_pmid(value))
     text = _bounded_text(value, label="article identifier")
     lowered = text.casefold()
+    if "://" in text:
+        try:
+            host = (urlsplit(text).hostname or "").lower()
+        except ValueError:
+            raise IdentifierValidationError("Article URL is malformed") from None
+        if host == "pubmed.ncbi.nlm.nih.gov":
+            return ArticleIdentifier("pmid", normalize_pmid(text))
+        if host in {"pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov"}:
+            return ArticleIdentifier("pmcid", normalize_pmcid(text))
     if lowered.startswith(("pmc", "pmcid")):
         return ArticleIdentifier("pmcid", normalize_pmcid(text))
     if lowered.startswith(("10.", "doi:")) or "://" in text:

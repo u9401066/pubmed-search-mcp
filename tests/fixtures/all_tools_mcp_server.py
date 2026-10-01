@@ -225,7 +225,20 @@ class DeterministicSearcher(ICiteMixin):
         )
 
     async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
-        known_pmids = {PRIMARY_PMID, PIPELINE_PMID, "111"}
+        known_pmids = {
+            PRIMARY_PMID,
+            PIPELINE_PMID,
+            "111",
+            "33053718",
+            "36170657",
+            "36707153",
+            "16616769",
+            "18419722",
+            "1688220",
+            "6121568",
+            "25288149",
+            "40378294",
+        }
         _require_fixture(bool(pmids) and set(pmids) <= known_pmids, f"unexpected detail PMIDs {pmids!r}")
         return [_article(str(pmid)) for pmid in pmids]
 

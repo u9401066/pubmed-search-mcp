@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -137,7 +138,7 @@ async def test_every_tool_exposes_a_usable_contract():
     assert by_name["delete_pipeline"].annotations.read_only_hint is False
     assert by_name["build_research_chronicle"].annotations.idempotent_hint is False
     assert by_name["save_pipeline"].annotations.idempotent_hint is False
-    assert by_name["unified_search"].meta["pubmed-search"]["contractVersion"] == 3
+    assert by_name["unified_search"].meta["pubmed-search"]["contractVersion"] == 4
     assert [tool.name for tool in tools if tool.input_schema.get("additionalProperties") is not False] == []
 
 
@@ -262,9 +263,9 @@ async def test_global_transport_budget_rejects_oversized_tool_text():
 @pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
-        ("unified_search", {"query": "abc", "limit": "10"}),
-        ("read_session", {"request": {"action": "summary", "include_history": "true"}}),
-        ("build_research_chronicle", {"topic": "abc", "max_events": "10"}),
+        ("unified_search", {"query": "abc", "limit": "10.5"}),
+        ("read_session", {"request": {"action": "summary", "include_history": "yes"}}),
+        ("build_research_chronicle", {"topic": "abc", "max_events": "10.5"}),
     ],
 )
 async def test_tool_arguments_do_not_coerce_schema_invalid_scalar_types(tool_name, arguments):
@@ -302,18 +303,96 @@ async def test_read_session_exposes_one_strict_discriminated_request():
 @pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
-        ("validate_pico_plan", {"description": "ICU sedation", "sources": '["pubmed"]'}),
+        ("validate_pico_plan", {"description": "ICU sedation", "sources": '["not-a-source"]'}),
         (
             "prepare_figure_search",
             {"source": '{"kind":"base64","data":"YWJj"}'},
         ),
     ],
 )
-async def test_tool_arguments_do_not_decode_stringified_arrays_or_objects(tool_name, arguments):
+async def test_decoded_containers_still_require_valid_contents(tool_name, arguments):
     async with Client(create_server()) as client:
         result = await client.call_tool(tool_name, arguments)
 
     assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_pico_sources_accept_a_json_array_string():
+    async with Client(create_server()) as client:
+        result = await client.call_tool("validate_pico_plan", {"description": "ICU sedation", "sources": '["pubmed"]'})
+    assert result.is_error is False
+    assert json.loads(result.content[0].text)["sources"] == ["pubmed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "encoded_request",
+    [
+        '{"action":"summary","action":"list"}',
+        '{"action":"summary",}',
+        '{"action":"summary","include_history":"no"}',
+        '{"action":"summary","secret-unknown-field":"secret-value"}',
+        '{"action":"secret-discriminator"}',
+        '{"action":"summary","include_history":NaN}',
+        "[]",
+        "null",
+    ],
+)
+async def test_encoded_requests_fail_closed_without_echoing_input(encoded_request, caplog):
+    async with Client(create_server()) as client:
+        result = await client.call_tool("read_session", {"request": encoded_request})
+    text = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert result.is_error is True
+    assert text.startswith("Invalid tool arguments.")
+    assert "secret-" not in text
+    assert "secret-" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_every_tool_rejects_unknown_fields_with_a_safe_hint():
+    async with Client(create_server()) as client:
+        listed = (await client.list_tools()).tools
+        for tool in listed:
+            assert "inputNormalization" in tool.meta["pubmed-search"]
+            result = await client.call_tool(tool.name, {"secret-unknown-field": "secret-value"})
+            text = " ".join(block.text for block in result.content if hasattr(block, "text"))
+            assert result.is_error is True, tool.name
+            assert text.startswith("Invalid tool arguments."), tool.name
+            assert "secret-" not in text, tool.name
+
+
+@pytest.mark.asyncio
+async def test_container_normalization_preserves_json_looking_free_text():
+    server = PubMedMCPServer("free-text-test")
+
+    @server.tool(name="analyze_search_query")
+    def echo_query(query: str) -> str:
+        """Return text verbatim to detect unintended transport coercion."""
+        return query
+
+    async with Client(server) as client:
+        for value in ['["123"]', '{"limit": 10}', '{"invalid":', "true", "10", "  [literal text]  "]:
+            result = await client.call_tool("analyze_search_query", {"query": value})
+            assert result.is_error is False
+            assert result.content[0].text == value
+
+
+@pytest.mark.asyncio
+async def test_container_limits_and_scalar_hints_remain_effective():
+    async with Client(create_server()) as client:
+        oversized = await client.call_tool("fetch_article_details", {"pmids": json.dumps(["123"] * 1001)})
+        invalid_limit = await client.call_tool("unified_search", {"query": "cancer", "limit": "10.5"})
+        invalid_flag = await client.call_tool(
+            "read_session", {"request": '{"action":"summary","include_history":"no"}'}
+        )
+        oversized_json = await client.call_tool("read_session", {"request": '{"action":"summary"}' + " " * 1_000_000})
+    for result in (oversized, invalid_limit, invalid_flag, oversized_json):
+        assert result.is_error is True
+    assert "pmids" in oversized.content[0].text
+    assert "limit: expected a JSON integer" in invalid_limit.content[0].text
+    assert "/request/include_history: expected JSON true or false" in invalid_flag.content[0].text
+    assert "input size limit" in oversized_json.content[0].text
 
 
 @pytest.mark.asyncio
@@ -336,12 +415,12 @@ async def test_institutional_tools_require_exact_discriminated_sources():
     assert diagnosis_schema["required"] == ["source"]
     assert set(link_schema["properties"]) == {"source"}
     assert set(diagnosis_schema["properties"]) == {"source", "try_direct", "try_ezproxy"}
-    assert set(link_schema["properties"]["source"]["discriminator"]["mapping"]) == {
+    assert set(link_schema["properties"]["source"]["anyOf"][0]["discriminator"]["mapping"]) == {
         "doi",
         "metadata",
         "pmid",
     }
-    assert set(diagnosis_schema["properties"]["source"]["discriminator"]["mapping"]) == {
+    assert set(diagnosis_schema["properties"]["source"]["anyOf"][0]["discriminator"]["mapping"]) == {
         "doi",
         "pmid",
     }

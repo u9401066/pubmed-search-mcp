@@ -23,6 +23,7 @@ from pubmed_search.domain.value_objects import (
 )
 
 from ._common import InputNormalizer, ResponseFormatter
+from .tool_input import NcbiIdentifier  # noqa: TC001 - runtime MCP schema annotation
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -31,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 NcbiQuery = Annotated[str, Field(min_length=1, max_length=500)]
 OrganismFilter = Annotated[str, Field(min_length=1, max_length=200)]
-NcbiIdentifier = Annotated[str, Field(min_length=1, max_length=20, pattern=r"^[1-9][0-9]{0,19}$")]
 SearchLimit = Annotated[int, Field(ge=1, le=50)]
 LiteratureLimit = Annotated[int, Field(ge=1, le=100)]
 

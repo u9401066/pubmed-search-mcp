@@ -28,15 +28,13 @@ from pubmed_search.application.export import (
     write_literature_notes,
 )
 from pubmed_search.domain.value_objects import (
-    MAX_IDENTIFIER_CHARS,
-    MAX_PMID_BATCH_CHARS,
-    MAX_PMIDS_PER_REQUEST,
     IdentifierValidationError,
     normalize_pmid_batch,
 )
 from pubmed_search.shared.tenancy import current_tenant
 
-from ._common import ResponseFormatter, get_session_manager, get_session_registry
+from ._common import InputNormalizer, ResponseFormatter, get_session_manager, get_session_registry
+from .tool_input import PMIDBatchInput  # noqa: TC001 - runtime MCP schema annotations
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -52,13 +50,6 @@ OfficialCitationFormat = Literal["ris", "medline", "csl"]
 NoteFormat = Literal["wiki", "foam", "markdown", "medpaper"]
 NotePath = Annotated[str, Field(min_length=1, max_length=4_096)]
 CollectionName = Annotated[str, Field(min_length=1, max_length=200)]
-NotePmidText = Annotated[str, Field(min_length=1, max_length=MAX_PMID_BATCH_CHARS)]
-NotePmidToken = Annotated[str, Field(min_length=1, max_length=MAX_IDENTIFIER_CHARS)]
-NotePmidList = Annotated[
-    list[NotePmidToken],
-    Field(min_length=1, max_length=MAX_PMIDS_PER_REQUEST),
-]
-NotePmidInput = NotePmidText | NotePmidList
 
 
 def _tenant_reference_locator(path_value: object, root: Path) -> dict[str, str]:
@@ -114,7 +105,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def prepare_export(
-        pmids: NotePmidInput,
+        pmids: PMIDBatchInput,
         format: Literal["ris", "medline", "csl", "bibtex", "csv", "json"] = "ris",
         include_abstract: bool = True,
         source: Literal["official", "local"] = "official",
@@ -149,6 +140,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                    - "last" → results from previous search
                    - "12345678,87654321" → comma-separated PMIDs
                    - ["12345678", "87654321"] → list of PMIDs
+                   - '["12345678", "87654321"]' → JSON array string
                    - "PMID:12345678" → with prefix
             format: Export format (default: "ris")
                    - official API: ris, medline, csl
@@ -173,7 +165,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             prepare_export(pmids="last", format="csl", source="official")
         """
         try:
-            normalized_pmids = normalize_pmid_batch(pmids)
+            normalized_pmids = InputNormalizer.normalize_pmids(pmids)
             pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         except IdentifierValidationError as exc:
             return ResponseFormatter.error(
@@ -273,7 +265,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def save_literature_notes(
-        pmids: NotePmidInput = "last",
+        pmids: PMIDBatchInput = "last",
         output_dir: NotePath | None = None,
         note_format: NoteFormat = "wiki",
         include_abstract: bool = True,
@@ -305,7 +297,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         are intentionally ignored.
 
         Args:
-            pmids: Articles to save. Accepts "last", a PMID string, or a JSON array of PMID strings.
+            pmids: Articles to save. Accepts "last", delimited PMID text, a string array, or a JSON array string.
             output_dir: Optional target folder for notes.
             note_format: "wiki" (default, Foam-compatible), "foam", "markdown", or "medpaper".
             include_abstract: Include abstracts in article notes.
@@ -326,7 +318,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             save_literature_notes(pmids="12345678,87654321", template_file="./ref-template.md")
         """
         try:
-            normalized_pmids = normalize_pmid_batch(pmids)
+            normalized_pmids = InputNormalizer.normalize_pmids(pmids)
             pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
         except IdentifierValidationError as exc:
             return ResponseFormatter.error(

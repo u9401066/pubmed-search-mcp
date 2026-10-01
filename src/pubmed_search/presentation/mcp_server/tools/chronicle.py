@@ -43,8 +43,9 @@ from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR
 
-from ._common import ResponseFormatter, get_last_search_pmids, get_session_manager
+from ._common import InputNormalizer, ResponseFormatter, get_last_search_pmids, get_session_manager
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
+from .tool_input import PMIDBatchInput  # noqa: TC001 - runtime MCP schema annotations
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -176,7 +177,6 @@ _SPINE_LIMIT = 12
 
 #: Maximum explicit evidence set accepted in one request.
 _MAX_PMIDS = 500
-_MAX_PMID_DIGITS = 20
 
 #: Machine-readable Chronicle projections. Errors for these modes remain JSON.
 _STRUCTURED_OUTPUTS = frozenset({"json", "chronicle_map", "timeline", "tree", "graph", "evidence", "milestones"})
@@ -185,9 +185,6 @@ _STRUCTURED_OUTPUTS = frozenset({"json", "chronicle_map", "timeline", "tree", "g
 _MAX_PUBLICATION_YEAR = datetime.now(timezone.utc).year + 1
 
 _SAFE_CHRONICLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-_PMID_ITEM_PATTERN = r"(?:(?i:PMID)\s*:\s*)?([0-9]+)"
-_PMID_LIST_RE = re.compile(rf"^\s*{_PMID_ITEM_PATTERN}(?:\s*(?:[,;|]|\s+)\s*{_PMID_ITEM_PATTERN})*\s*$")
-_PMID_ITEM_RE = re.compile(_PMID_ITEM_PATTERN)
 
 
 def _chronicle_store() -> ChronicleStore:
@@ -201,7 +198,7 @@ def _chronicle_store() -> ChronicleStore:
     return ChronicleStore(f"{root}/chronicles")
 
 
-def _resolve_pmids(pmids: str | None) -> list[str]:
+def _resolve_pmids(pmids: PMIDBatchInput | None) -> list[str]:
     """Parse strict PMID tokens, resolving the ``last`` sentinel via session.
 
     Chronicle evidence scope must be reproducible.  In particular, DOI text or
@@ -211,31 +208,13 @@ def _resolve_pmids(pmids: str | None) -> list[str]:
     if pmids is None:
         return []
 
-    raw = pmids.strip()
-    if raw.casefold() == "last":
+    normalized = InputNormalizer.normalize_pmids(pmids)
+    if normalized == ["last"]:
         resolved = get_last_search_pmids()
-        invalid = [
-            value
-            for value in resolved
-            if not isinstance(value, str) or not value.strip().isascii() or not value.strip().isdigit()
-        ]
-        if invalid:
-            raise ValueError("The previous search contains a non-PMID identifier; run a new PubMed search first")
-        tokens = [value.strip() for value in resolved]
-        if any(len(value) > _MAX_PMID_DIGITS or not value.lstrip("0") for value in tokens):
-            raise ValueError(f"PMIDs must be positive integers of at most {_MAX_PMID_DIGITS} digits")
-        return [value.lstrip("0") for value in tokens]
-    if not raw:
-        return []
-    if _PMID_LIST_RE.fullmatch(raw) is None:
-        raise ValueError(
-            "pmids must contain only ASCII digits or an explicit 'PMID:' prefix, "
-            "separated by commas, semicolons, pipes, or whitespace"
-        )
-    tokens = [match.group(1) for match in _PMID_ITEM_RE.finditer(raw)]
-    if any(len(value) > _MAX_PMID_DIGITS or not value.lstrip("0") for value in tokens):
-        raise ValueError(f"PMIDs must be positive integers of at most {_MAX_PMID_DIGITS} digits")
-    return [value.lstrip("0") for value in tokens]
+        if not resolved:
+            return []
+        return InputNormalizer.normalize_pmids(resolved, allow_last=False)
+    return normalized
 
 
 def _build_response_format(output: str) -> str:
@@ -476,7 +455,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
     @mcp.tool()
     async def build_research_chronicle(
         topic: TopicText | None = None,
-        pmids: Annotated[str, Field(max_length=10000)] | None = None,
+        pmids: PMIDBatchInput | None = None,
         max_events: MaxEvents | None = None,
         min_year: PublicationYear | None = None,
         max_year: PublicationYear | None = None,
@@ -512,7 +491,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         Args:
             topic: Research topic (drug, gene, disease, intervention).
                    Required unless `pmids` or a stored `chronicle_id` is supplied.
-            pmids: Comma-separated PMIDs, or "last" to chronicle the previous
+            pmids: Delimited PMIDs, a string array or JSON array string, or "last" to chronicle the previous
                    search results instead of running a new search.
             max_events: Maximum timeline events to consider (topic mode).
                         Omit to inherit the continued revision's value, else 30.
@@ -559,7 +538,6 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         response_format = _build_response_format(output)
         for name, value, max_length in (
             ("topic", topic, 500),
-            ("pmids", pmids, 10_000),
             ("chronicle_id", chronicle_id, 200),
         ):
             string_error = _optional_string_error(name, value, max_length=max_length)

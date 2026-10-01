@@ -9,6 +9,7 @@ description: "Complete reference for all 41 PubMed Search MCP tools. Triggers: �
 所有 41 個 MCP 工具的完整參考，包含參數說明和使用範例。
 
 能力導向使用請先看 `docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md`。
+PMID 格式、JSON 容器字串與整批驗證，依該指南的「輸入格式與防呆」共用契約。
 
 > **⚠️ 注意**：此文件由 `scripts/count_mcp_tools.py --update-docs` 自動生成。
 > 手動修改會在下次執行時被覆蓋。

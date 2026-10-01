@@ -26,6 +26,7 @@ from pubmed_search.shared.tenancy import current_tenant
 
 from ._common import InputNormalizer, ResponseFormatter
 from .article_source import DOISource, PMIDSource, normalize_article_source
+from .tool_input import PMIDText  # noqa: TC001 - runtime MCP schema annotation
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -445,7 +446,7 @@ Test your connection:
 
     @mcp.tool()
     async def test_institutional_access(
-        pmid: Annotated[str, Field(min_length=1, max_length=32)] = "38353755",
+        pmid: PMIDText = "38353755",
     ) -> str:
         """
         Test your institutional link resolver configuration.

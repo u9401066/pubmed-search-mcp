@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 from pubmed_search.shared.settings import load_settings
 
 from .tools.artifact_memory import artifact_locator
+from .tools.tool_input import PMIDText  # noqa: TC001 - runtime Pydantic annotations
 from .tools.tool_runtime import safe_send_resource_updated
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,6 @@ SearchRunStatus = Literal[
     "cancelled",
     "interrupted",
 ]
-PMID = Annotated[str, Field(pattern=r"^[1-9][0-9]{0,19}$", max_length=20)]
 SafeIdentifier = Annotated[
     str,
     Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,511}$", min_length=1, max_length=512),
@@ -94,7 +94,7 @@ class SessionPmidsRequest(_StrictSessionRequest):
 
 class SessionArticleRequest(_StrictSessionRequest):
     action: Literal["article"]
-    pmid: PMID
+    pmid: PMIDText
 
 
 class SessionSummaryRequest(_StrictSessionRequest):
