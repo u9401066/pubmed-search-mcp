@@ -35,6 +35,7 @@ modern MCP SDK v2 protocol, and recover common failures.
     - [Zed AI](#zed-ai)
     - [OpenClaw 🦞](#openclaw-)
     - [Cline](#cline)
+    - [Portable Agent Plugin and MCP Registry](#portable-agent-plugin-and-mcp-registry)
     - [Microsoft Copilot Studio](#microsoft-copilot-studio)
     - [Other MCP Clients](#other-mcp-clients)
   - [Verification \& Troubleshooting](#verification--troubleshooting)
@@ -759,6 +760,33 @@ contract; using this helper here does not change a separately distributed VSIX.
 Git updates to tracked repository assets remain normal version-control merges,
 not installer operations. Keep personal cross-project rules in client user
 configuration and review tracked project-rule updates normally.
+
+---
+
+### Portable Agent Plugin and MCP Registry
+
+[`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/master/plugins/pubmed-search/plugin.json) is an
+[Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
+`mcp.json` (stdio `uvx pubmed-search-mcp@<version>`), and the same research
+skills selected by `install_research_skills.py`. Point a compatible client at
+that directory; installation, enablement, and updates stay client-managed.
+The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
+and standalone installs share sessions, pipelines, and chronicles.
+
+The skill copies and version fields are generated. After editing a research
+skill or bumping the release version, run:
+
+```bash
+uv run python scripts/build_agent_plugin.py          # write
+uv run python scripts/build_agent_plugin.py --check  # report drift only
+```
+
+Root `server.json` is the official
+[MCP Registry](https://registry.modelcontextprotocol.io/) entry
+`io.github.u9401066/pubmed-search-mcp`; GitHub's MCP Registry is fed from
+that registry. The tag release workflow publishes it after PyPI with GitHub
+OIDC. PyPI ownership is proven by the `mcp-name:` comment in `README.md`, so
+the first registry publication needs a PyPI release whose README contains it.
 
 ---
 

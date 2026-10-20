@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.u9401066/pubmed-search-mcp",
+  "title": "PubMed Search",
+  "description": "Multi-source biomedical literature search: PubMed, Europe PMC, OpenAlex, full text, citations",
+  "repository": {
+    "url": "https://github.com/u9401066/pubmed-search-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://u9401066.github.io/pubmed-search-mcp/",
+  "version": "0.7.7",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "pubmed-search-mcp",
+      "version": "0.7.7",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NCBI_EMAIL",
+          "description": "Contact email sent to NCBI E-utilities; defaults to git user.email",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "NCBI_API_KEY",
+          "description": "Optional NCBI API key that raises the E-utilities limit from 3 to 10 requests per second",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

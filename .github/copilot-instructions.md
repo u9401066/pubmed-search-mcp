@@ -272,7 +272,7 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 
 | 類型 | 檔案 |
 |------|------|
-| 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
+| 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock`, `server.json` (MCP Registry) |
 | 狀態 | `.instruction_drift_fingerprint` |
 | 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `AGENTS.md`, `LICENSE` |
 | Entrypoints | `pubmed-search-mcp`, `pubmed-search-mcp-http`, `pubmed-browser-fetch-broker`, `run_copilot.py`, `run_server.py` |

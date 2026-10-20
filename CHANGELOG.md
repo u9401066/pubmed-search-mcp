@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Package the server and research skills as a portable [Agent Plugins 1.0.0](https://agent-plugins.org/) plugin under `plugins/pubmed-search/`, kept in sync by `scripts/build_agent_plugin.py`.
+- Add `server.json` and a tag-release job that publishes `io.github.u9401066/pubmed-search-mcp` to the official MCP Registry, which feeds GitHub's MCP Registry.
+
+### Fixed
+
+- Escape the search query shown in the docs site's empty search result.
+
 ## [0.7.7] - 2026-10-01
 
 ### Changed

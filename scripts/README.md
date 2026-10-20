@@ -17,6 +17,7 @@ policy is in [CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS](../AGENTS.md).
 | Benchmark transport support | `benchmark_agent_server.py` is an evaluation launcher, not another product server |
 | Targeted checks | `check_async_tests.py`, `check_cline_skills.py`, `check_mermaid_rendering.mjs`, `hooks/` |
 | Install research skills | `install_research_skills.py` preserves existing entire user-owned skill folders |
+| Agent plugin and MCP Registry metadata | `build_agent_plugin.py` (`--check`) syncs `plugins/pubmed-search/` skills and versions in `server.json` |
 | Development and deployment helpers | `start-*`, `setup-*`, `run_https_local.py`, `generate-ssl-certs.sh`; see deployment docs before use |
 
 `perf/` contains inspection and performance experiments; `hooks/` contains

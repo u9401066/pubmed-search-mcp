@@ -30,6 +30,7 @@
         "pyproject.toml",
         "run_copilot.py",
         "run_server.py",
+        "server.json",
         "start.sh",
         "uv.lock",
         "vulture_whitelist.py"
@@ -208,6 +209,14 @@
       "status": "shipped-client-assets",
       "prefixes": [
         ".codex/"
+      ],
+      "files": []
+    },
+    {
+      "name": "agent-plugin-package",
+      "status": "shipped-client-assets",
+      "prefixes": [
+        "plugins/"
       ],
       "files": []
     },

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pubmed-search",
+  "version": "0.7.7",
+  "description": "PubMed Search MCP server with research skills for multi-source biomedical literature search, full text, citation networks, exports, pipelines, and research chronicles.",
+  "author": {
+    "name": "u9401066",
+    "url": "https://github.com/u9401066"
+  },
+  "homepage": "https://u9401066.github.io/pubmed-search-mcp/",
+  "repository": "https://github.com/u9401066/pubmed-search-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pubmed",
+    "biomedical",
+    "literature-search",
+    "systematic-review",
+    "europe-pmc",
+    "mcp"
+  ]
+}

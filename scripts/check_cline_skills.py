@@ -14,7 +14,11 @@ if sys.stdout.encoding and sys.stdout.encoding.lower().startswith("cp"):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOTS = (ROOT / ".cline" / "skills", ROOT / ".codex" / "skills")
+SKILL_ROOTS = (
+    ROOT / ".cline" / "skills",
+    ROOT / ".codex" / "skills",
+    ROOT / "plugins" / "pubmed-search" / "skills",
+)
 FRONTMATTER_RE = re.compile(r"\A---\r?\n(?P<body>.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
 
 
