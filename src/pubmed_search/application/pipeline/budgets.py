@@ -30,6 +30,7 @@ class LimitBudget:
 
 
 PIPELINE_OUTPUT_LIMIT = LimitBudget(default=20, maximum=100)
+PIPELINE_SEED_LIMIT = LimitBudget(default=5, maximum=10)
 PIPELINE_ACTION_LIMITS: Mapping[str, LimitBudget] = MappingProxyType(
     {
         "search": LimitBudget(default=50, maximum=100),
@@ -50,6 +51,10 @@ PIPELINE_TEMPLATE_LIMITS: Mapping[str, LimitBudget] = MappingProxyType(
             maximum=min(PIPELINE_ACTION_LIMITS[action].maximum for action in ("related", "citing", "references")),
         ),
         "gene_drug": LimitBudget(default=20, maximum=PIPELINE_ACTION_LIMITS["search"].maximum // 2),
+        "snowball": LimitBudget(
+            default=20,
+            maximum=min(PIPELINE_ACTION_LIMITS[action].maximum for action in ("related", "citing", "references")),
+        ),
     }
 )
 
@@ -174,6 +179,7 @@ __all__ = [
     "DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS",
     "DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS",
     "PIPELINE_OUTPUT_LIMIT",
+    "PIPELINE_SEED_LIMIT",
     "PIPELINE_TEMPLATE_LIMITS",
     "LimitBudget",
     "PipelineBudgetExceededError",

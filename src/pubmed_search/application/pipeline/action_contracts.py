@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
-from pubmed_search.application.pipeline.budgets import PIPELINE_ACTION_LIMITS
+from pubmed_search.application.pipeline.budgets import PIPELINE_ACTION_LIMITS, PIPELINE_SEED_LIMIT
 from pubmed_search.domain.entities.article import ArticleType
 from pubmed_search.domain.entities.pipeline import VALID_ACTIONS
 from pubmed_search.domain.value_objects.ncbi_identifiers import normalize_ncbi_identifier
@@ -34,6 +34,7 @@ VariableReference = Annotated[str, StringConstraints(pattern=_VARIABLE_REFERENCE
 NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
 PipelineYear = Annotated[int, Field(ge=1000, le=9999)]
 NonNegativeInteger = Annotated[int, Field(ge=0)]
+SeedLimit = Annotated[int, Field(ge=PIPELINE_SEED_LIMIT.minimum, le=PIPELINE_SEED_LIMIT.maximum)]
 
 SearchLimit = Annotated[
     int,
@@ -159,6 +160,14 @@ def _require_non_blank(value: str, *, field: str) -> str:
     return value
 
 
+def _require_no_explicit_nulls(value: Any) -> Any:
+    if isinstance(value, dict):
+        null_fields = sorted(str(key) for key, item in value.items() if item is None)
+        if null_fields:
+            raise ValueError(f"explicit null is not allowed for: {', '.join(null_fields)}")
+    return value
+
+
 class _ActionParamsModel(BaseModel):
     """Shared strict, closed-world action parameter settings."""
 
@@ -167,11 +176,7 @@ class _ActionParamsModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_explicit_nulls(cls, value: Any) -> Any:
-        if isinstance(value, dict):
-            null_fields = sorted(str(key) for key, item in value.items() if item is None)
-            if null_fields:
-                raise ValueError(f"explicit null is not allowed for: {', '.join(null_fields)}")
-        return value
+        return _require_no_explicit_nulls(value)
 
 
 class SearchParams(_ActionParamsModel):
@@ -289,44 +294,61 @@ class DetailsParams(_ActionParamsModel):
         return value
 
 
-class RelatedParams(_ActionParamsModel):
+class _DiscoveryParams(_ActionParamsModel):
+    """Mutually exclusive explicit PMID and bounded input seeds."""
+
+    seed_limit: SeedLimit | VariableReference | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_explicit_nulls(cls, value: Any) -> Any:
+        value = _require_no_explicit_nulls(value)
+        if isinstance(value, dict) and "seed_limit" in value:
+            if "pmid" in value:
+                raise ValueError("exactly one of pmid or seed_limit must be present")
+            if value["seed_limit"] is not None:
+                return {**value, "pmid": None}
+        return value
+
+
+class RelatedParams(_DiscoveryParams):
     """Typed related-article discovery parameters."""
 
-    pmid: NonEmptyString | VariableReference
+    pmid: NonEmptyString | VariableReference | None
     limit: RelatedLimit | VariableReference | None = None
 
     @field_validator("pmid")
     @classmethod
-    def _validate_pmid(cls, value: str) -> str:
-        if not is_pipeline_variable_reference(value):
+    def _validate_pmid(cls, value: str | None) -> str | None:
+        if value is not None and not is_pipeline_variable_reference(value):
             normalize_ncbi_identifier(value, label="Pipeline related PMID")
         return value
 
 
-class CitingParams(_ActionParamsModel):
+class CitingParams(_DiscoveryParams):
     """Typed citing-article discovery parameters."""
 
-    pmid: NonEmptyString | VariableReference
+    pmid: NonEmptyString | VariableReference | None
     limit: CitingLimit | VariableReference | None = None
 
     @field_validator("pmid")
     @classmethod
-    def _validate_pmid(cls, value: str) -> str:
-        if not is_pipeline_variable_reference(value):
+    def _validate_pmid(cls, value: str | None) -> str | None:
+        if value is not None and not is_pipeline_variable_reference(value):
             normalize_ncbi_identifier(value, label="Pipeline citing PMID")
         return value
 
 
-class ReferencesParams(_ActionParamsModel):
+class ReferencesParams(_DiscoveryParams):
     """Typed reference discovery parameters."""
 
-    pmid: NonEmptyString | VariableReference
+    pmid: NonEmptyString | VariableReference | None
     limit: ReferencesLimit | VariableReference | None = None
 
     @field_validator("pmid")
     @classmethod
-    def _validate_pmid(cls, value: str) -> str:
-        if not is_pipeline_variable_reference(value):
+    def _validate_pmid(cls, value: str | None) -> str | None:
+        if value is not None and not is_pipeline_variable_reference(value):
             normalize_ncbi_identifier(value, label="Pipeline references PMID")
         return value
 
@@ -453,6 +475,8 @@ def validate_pipeline_step_action_contract(
         model.model_validate(params)
     except ValidationError as exc:
         raise ValueError(_format_action_validation_error(step.action, exc)) from None
+    if issubclass(model, _DiscoveryParams) and "seed_limit" in params and not step.inputs:
+        raise ValueError(f"Invalid {step.action} params: seed_limit requires at least one input step")
 
 
 def validate_pipeline_action_contracts(

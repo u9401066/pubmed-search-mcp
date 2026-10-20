@@ -18,14 +18,18 @@ from pubmed_search.application.pipeline import (
     PipelineStep,
     StepResult,
 )
+from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
 from pubmed_search.application.pipeline.config_parser import (
     parse_pipeline_config_text as _parse_pipeline_config,
 )
 from pubmed_search.application.pipeline.executor import PipelineExecutor
+from pubmed_search.application.pipeline.store import PipelineStore
 from pubmed_search.application.pipeline.templates import (
     PIPELINE_TEMPLATES,
     build_pipeline_from_template,
+    materialize_pipeline_config,
 )
+from pubmed_search.application.pipeline.validator import parse_and_validate_config
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
 from pubmed_search.presentation.mcp_server.tools.unified_pipeline import (
@@ -107,6 +111,155 @@ def mock_searcher():
 # =========================================================================
 
 
+@pytest.mark.parametrize(
+    ("action", "method"),
+    [("related", "get_related_articles"), ("citing", "get_citing_articles"), ("references", "get_article_references")],
+)
+async def test_discovery_snowball_orders_seeds_and_bounds_union(mock_searcher, action: str, method: str) -> None:
+    discovery = getattr(mock_searcher, method)
+    discovery.side_effect = [
+        [{"pmid": pmid, "title": "First"} for pmid in ["101", "202", "303", "404", "404"]],
+        [{"pmid": pmid, "title": "Second"} for pmid in ["202", "404", "505", "606"]],
+    ]
+    step = PipelineStep(id="expand", action=action, inputs=["first", "second"], params={"seed_limit": 2, "limit": 2})
+    inputs = {
+        "second": StepResult(step_id="second", action="search", pmids=["101", "202", "707"]),
+        "first": StepResult(step_id="first", action="search", pmids=["", "bad", "0", " 101", "101", "101"]),
+    }
+    executor = PipelineExecutor(searcher=mock_searcher)
+
+    result = await getattr(executor, f"_action_{action}")(step, inputs)
+
+    assert result.ok
+    assert discovery.await_args_list == [(("101", 2),), (("202", 2),)]
+    assert discovery.await_count == 2
+    assert result.pmids == ["303", "404"]
+    assert [article.title for article in result.articles] == ["First", "First"]
+    assert result.metadata == {"seed_pmids": ["101", "202"], "seed_count": 2, "candidates_before_dedupe": 9}
+
+
+@pytest.mark.parametrize("action", ["related", "citing", "references"])
+async def test_discovery_snowball_empty_seeds_do_not_call_searcher(mock_searcher, action: str) -> None:
+    step = PipelineStep(id="expand", action=action, inputs=["search"], params={"seed_limit": 2})
+    upstream = StepResult(step_id="search", action="search", pmids=["", "token=PRIVATE_SENTINEL", "0"])
+
+    result = await getattr(PipelineExecutor(searcher=mock_searcher), f"_action_{action}")(step, {"search": upstream})
+
+    assert result.error == "No valid seed PMIDs in pipeline inputs"
+    assert mock_searcher.mock_calls == []
+    assert result.articles == []
+
+
+@pytest.mark.parametrize("seed_limit", [0, 11, "five"])
+async def test_discovery_snowball_rejects_out_of_contract_seed_limit_at_runtime(mock_searcher, seed_limit) -> None:
+    step = PipelineStep(id="expand", action="citing", inputs=["search"], params={"seed_limit": seed_limit})
+    upstream = StepResult(step_id="search", action="search", pmids=["101"])
+
+    result = await PipelineExecutor(searcher=mock_searcher)._action_citing(step, {"search": upstream})
+
+    assert result.error == "Invalid pipeline snowball limit"
+    assert result.metadata["error_type"] == "ValueError"
+    assert mock_searcher.mock_calls == []
+
+
+@pytest.mark.parametrize(
+    ("action", "method"),
+    [("related", "get_related_articles"), ("citing", "get_citing_articles"), ("references", "get_article_references")],
+)
+async def test_discovery_snowball_budget_exhaustion_discards_partial_step(
+    mock_searcher, action: str, method: str
+) -> None:
+    mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "101"}, {"pmid": "202"}])
+    discovery = getattr(mock_searcher, method)
+    discovery.return_value = [{"pmid": "303"}]
+    executor = PipelineExecutor(
+        searcher=mock_searcher,
+        execution_policy=PipelineExecutionPolicy(run_timeout_seconds=5, max_external_calls=2),
+    )
+    config = PipelineConfig(
+        steps=[
+            PipelineStep(id="search", action="search", params={"query": "topic", "sources": ["pubmed"]}),
+            PipelineStep(id="expand", action=action, params={"seed_limit": 2}, inputs=["search"]),
+        ]
+    )
+
+    articles, results = await executor.execute(config)
+
+    discovery.assert_awaited_once_with("101", 20 if action != "references" else 50)
+    assert mock_searcher.search_page.await_count == 1
+    assert not results["expand"].ok
+    assert results["expand"].articles == []
+    assert results["expand"].error == "Pipeline external-call quota exhausted"
+    assert results["expand"].metadata["terminal_reason"] == "external_call_quota_exhausted"
+    budget = results["expand"].metadata["run_budget"]
+    assert budget["external_calls_used"] == 2
+    assert budget["external_calls_remaining"] == 0
+    assert budget["exhausted_reason"] == "external_call_quota_exhausted"
+    assert set(_pmids(articles)) == {"101", "202"}
+
+
+@pytest.mark.parametrize(
+    ("action", "method"),
+    [("related", "get_related_articles"), ("citing", "get_citing_articles"), ("references", "get_article_references")],
+)
+@pytest.mark.parametrize("failure", [RuntimeError("token=PRIVATE_SENTINEL"), [{}]])
+async def test_discovery_snowball_provider_failures_match_single_pmid(
+    mock_searcher, action: str, method: str, failure
+) -> None:
+    discovery = getattr(mock_searcher, method)
+    executor = PipelineExecutor(searcher=mock_searcher)
+    upstream = StepResult(step_id="search", action="search", pmids=["101", "202"])
+    handler = getattr(executor, f"_action_{action}")
+    error_type = RuntimeError if isinstance(failure, Exception) else TypeError
+    errors = []
+    for params in [{"pmid": "202"}, {"seed_limit": 2}]:
+        discovery.side_effect = [failure] if "pmid" in params else [[{"pmid": "303"}], failure]
+        step = PipelineStep(id="expand", action=action, params=params, inputs=["search"])
+        with pytest.raises(error_type) as caught:
+            await handler(step, {"search": upstream})
+        errors.append(str(caught.value))
+    assert errors[0] == errors[1]
+
+
+@pytest.mark.parametrize("saved", [False, True])
+@pytest.mark.parametrize("template_mode", [False, True])
+async def test_snowball_template_runs_inline_and_saved(
+    mock_searcher, tmp_path, saved: bool, template_mode: bool
+) -> None:
+    raw = {"template": "snowball", "template_params": {"query": "topic"}}
+    validated = parse_and_validate_config(raw)
+    assert validated.valid, validated.errors
+    assert validated.config is not None
+    config = validated.config if template_mode else materialize_pipeline_config(validated.config)
+    if saved:
+        store = PipelineStore(global_data_dir=tmp_path)
+        config.name = "snowball"
+        store.save("snowball", config)
+        config, _meta = store.load("snowball")
+    config = materialize_pipeline_config(config)
+    assert config.steps[1].params == {"seed_limit": 5, "limit": 20}
+    mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "101"}, {"pmid": "202"}])
+    mock_searcher.get_citing_articles.side_effect = [
+        [{"pmid": "101"}, {"pmid": "303"}, {"pmid": "404"}],
+        [{"pmid": "303"}],
+    ]
+    mock_searcher.get_article_references.side_effect = [
+        [{"pmid": "202"}, {"pmid": "404"}],
+        [{"pmid": "505"}],
+    ]
+
+    articles, results = await PipelineExecutor(searcher=mock_searcher).execute(config)
+
+    assert all(result.ok for result in results.values())
+    assert set(_pmids(articles)) == {"101", "202", "303", "404", "505"}
+    assert len(articles) == 5
+    assert results["citing"].pmids == ["303", "404"]
+    assert results["references"].pmids == ["404", "505"]
+    assert results["merged"].metadata["run_budget"]["external_calls_used"] == 5
+    for method in (mock_searcher.get_citing_articles, mock_searcher.get_article_references):
+        assert method.await_args_list == [(("101", 20),), (("202", 20),)]
+
+
 class TestPipelineStep:
     def test_defaults(self):
         step = PipelineStep(id="s1", action="search")
@@ -186,7 +339,7 @@ class TestConstants:
         assert VALID_ACTIONS == expected
 
     def test_valid_templates(self):
-        assert VALID_TEMPLATES == {"pico", "comprehensive", "exploration", "gene_drug"}
+        assert VALID_TEMPLATES == {"pico", "comprehensive", "exploration", "gene_drug", "snowball"}
 
     def test_max_steps(self):
         assert MAX_PIPELINE_STEPS == 20

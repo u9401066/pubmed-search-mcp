@@ -268,6 +268,12 @@ def register_unified_search_tools(
                        template_params:
                          term: BRCA1
 
+                       template: snowball
+                       template_params:
+                         query: CRISPR gene therapy
+                         seed_limit: 5
+                         limit: 20
+
                      **Custom pipeline — YAML** (full DAG control, max 20 steps):
                        name: My Custom Search
                        steps:
@@ -314,12 +320,14 @@ def register_unified_search_tools(
                        pico        — PICO elements (params: P, I, C, O)
                        expand      — MeSH/synonym expansion (params: topic)
                        details     — fetch article details (params: pmids)
-                       related     — find related articles (params: pmid, limit)
-                       citing      — find citing articles (params: pmid, limit)
-                       references  — get article references (params: pmid, limit)
+                       related     — find related articles (params: pmid OR seed_limit, limit)
+                       citing      — find citing articles (params: pmid OR seed_limit, limit)
+                       references  — get article references (params: pmid OR seed_limit, limit)
                        metrics     — enrich with iCite citation metrics (inputs only)
                        merge       — combine results (params: method=union|intersection|rrf)
                        filter      — post-filter (params: min_year, max_year, article_types, min_citations, has_abstract)
+                     seed_limit (1-10) snowballs from the first unique input PMIDs;
+                     it needs inputs, is exclusive with pmid, and excludes seeds.
 
         Returns:
             Formatted search results with:

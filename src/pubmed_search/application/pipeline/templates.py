@@ -9,6 +9,7 @@ Available templates:
 - **comprehensive**: Multi-source + MeSH expansion → union merge + metrics
 - **exploration**: Seed PMID → related + citing + refs → RRF merge
 - **gene_drug**: Gene/drug term → expanded multi-source → merge + metrics
+- **snowball**: Query → bounded citing + references from input seeds → union merge
 
 Maintenance:
     Template functions should stay declarative and return PipelineConfig only.
@@ -21,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_SEED_LIMIT,
     PIPELINE_TEMPLATE_LIMITS,
     validate_pipeline_budgets,
 )
@@ -317,6 +319,33 @@ def build_gene_drug_pipeline(params: dict[str, Any]) -> PipelineConfig:
     )
 
 
+def build_snowball_pipeline(params: dict[str, Any]) -> PipelineConfig:
+    """Search a query, then union bounded citing/reference expansions of its seeds."""
+    validate_pipeline_template_params("snowball", params)
+    query = params["query"]
+    limit = params.get("limit", PIPELINE_TEMPLATE_LIMITS["snowball"].default)
+    seed_limit = params.get("seed_limit", PIPELINE_SEED_LIMIT.default)
+    return PipelineConfig(
+        name=f"Snowball: {query[:50]}",
+        steps=[
+            PipelineStep(id="search", action="search", params={"query": query, "limit": limit}),
+            PipelineStep(
+                id="citing", action="citing", inputs=["search"], params={"seed_limit": seed_limit, "limit": limit}
+            ),
+            PipelineStep(
+                id="references",
+                action="references",
+                inputs=["search"],
+                params={"seed_limit": seed_limit, "limit": limit},
+            ),
+            PipelineStep(
+                id="merged", action="merge", inputs=["search", "citing", "references"], params={"method": "union"}
+            ),
+        ],
+        output=PipelineOutput(format="markdown", limit=limit, ranking="balanced"),
+    )
+
+
 # =========================================================================
 # Registry
 # =========================================================================
@@ -356,6 +385,12 @@ PIPELINE_TEMPLATES: dict[str, dict[str, Any]] = {
         "description": "Gene/drug term → expanded multi-source → merge + metrics",
         "required_params": ["term"],
         "optional_params": ["sources", "limit", "min_year", "max_year"],
+    },
+    "snowball": {
+        "builder": build_snowball_pipeline,
+        "description": "Query → bounded multi-seed citing + references → union merge",
+        "required_params": ["query"],
+        "optional_params": ["seed_limit", "limit"],
     },
 }
 

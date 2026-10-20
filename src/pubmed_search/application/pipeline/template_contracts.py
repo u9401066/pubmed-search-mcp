@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
-from pubmed_search.application.pipeline.action_contracts import PIPELINE_SEARCH_SOURCES
+from pubmed_search.application.pipeline.action_contracts import PIPELINE_SEARCH_SOURCES, SeedLimit
 from pubmed_search.application.pipeline.budgets import PIPELINE_TEMPLATE_LIMITS
 from pubmed_search.domain.entities.pipeline import VALID_TEMPLATES
 from pubmed_search.domain.value_objects.ncbi_identifiers import normalize_ncbi_identifier
@@ -53,6 +53,10 @@ GeneDrugTemplateLimit = Annotated[
         ge=PIPELINE_TEMPLATE_LIMITS["gene_drug"].minimum,
         le=PIPELINE_TEMPLATE_LIMITS["gene_drug"].maximum,
     ),
+]
+SnowballTemplateLimit = Annotated[
+    int,
+    Field(ge=PIPELINE_TEMPLATE_LIMITS["snowball"].minimum, le=PIPELINE_TEMPLATE_LIMITS["snowball"].maximum),
 ]
 
 
@@ -185,11 +189,25 @@ class GeneDrugTemplateParams(_SearchTemplateParams):
         return _require_non_blank(value, field="term")
 
 
+class SnowballTemplateParams(_TemplateParamsModel):
+    """Typed inputs for bounded multi-seed citation snowballing."""
+
+    query: NonEmptyString
+    seed_limit: SeedLimit | None = None
+    limit: SnowballTemplateLimit | None = None
+
+    @field_validator("query")
+    @classmethod
+    def _validate_query(cls, value: str) -> str:
+        return _require_non_blank(value, field="query")
+
+
 _TEMPLATE_PARAM_MODELS: dict[str, type[_TemplateParamsModel]] = {
     "pico": PicoTemplateParams,
     "comprehensive": ComprehensiveTemplateParams,
     "exploration": ExplorationTemplateParams,
     "gene_drug": GeneDrugTemplateParams,
+    "snowball": SnowballTemplateParams,
 }
 if frozenset(_TEMPLATE_PARAM_MODELS) != VALID_TEMPLATES:  # pragma: no cover - import-time invariant
     missing = sorted(VALID_TEMPLATES - _TEMPLATE_PARAM_MODELS.keys())

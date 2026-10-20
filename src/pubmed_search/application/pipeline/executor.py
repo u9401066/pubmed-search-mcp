@@ -28,10 +28,12 @@ from pubmed_search.application.pipeline.action_contracts import (
     validate_pipeline_discovery_pmid,
 )
 from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_SEED_LIMIT,
     PipelineBudgetExceededError,
     PipelineExecutionPolicy,
     PipelineRunBudget,
     action_limit,
+    validate_bounded_limit,
     validate_pipeline_budgets,
 )
 from pubmed_search.application.pipeline.scheduling import run_ready_steps
@@ -1046,6 +1048,8 @@ class PipelineExecutor:
         )
 
     async def _action_related(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        if "seed_limit" in step.params:
+            return await self._action_snowball(step, inputs)
         raw_pmid = step.params.get("pmid")
         pmid = validate_pipeline_discovery_pmid(raw_pmid, action="related") if raw_pmid is not None else ""
         try:
@@ -1073,6 +1077,8 @@ class PipelineExecutor:
         )
 
     async def _action_citing(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        if "seed_limit" in step.params:
+            return await self._action_snowball(step, inputs)
         raw_pmid = step.params.get("pmid")
         pmid = validate_pipeline_discovery_pmid(raw_pmid, action="citing") if raw_pmid is not None else ""
         try:
@@ -1098,6 +1104,8 @@ class PipelineExecutor:
         )
 
     async def _action_references(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        if "seed_limit" in step.params:
+            return await self._action_snowball(step, inputs)
         raw_pmid = step.params.get("pmid")
         pmid = validate_pipeline_discovery_pmid(raw_pmid, action="references") if raw_pmid is not None else ""
         try:
@@ -1122,6 +1130,65 @@ class PipelineExecutor:
             action="references",
             articles=articles,
             pmids=[a.pmid for a in articles if a.pmid],
+        )
+
+    async def _action_snowball(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        try:
+            seed_limit = validate_bounded_limit(
+                step.params["seed_limit"], PIPELINE_SEED_LIMIT, field="Pipeline seed_limit"
+            )
+            limit = action_limit(step.action, step.params.get("limit"))
+        except ValueError as exc:
+            message, metadata = _query_safe_action_failure(
+                step.action,
+                exc,
+                unexpected_message="Invalid pipeline snowball limit",
+            )
+            return StepResult(step_id=step.id, action=step.action, error=message, metadata=metadata)
+        seeds: dict[str, None] = {}
+        for input_id in step.inputs:
+            result = inputs.get(input_id)
+            if result is None or not result.ok:
+                continue
+            for raw_pmid in result.pmids:
+                try:
+                    pmid = validate_pipeline_discovery_pmid(raw_pmid, action=step.action)
+                except ValueError:
+                    continue
+                seeds.setdefault(pmid, None)
+                if len(seeds) == seed_limit:
+                    break
+            if len(seeds) == seed_limit:
+                break
+
+        if not seeds:
+            return StepResult(step_id=step.id, action=step.action, error="No valid seed PMIDs in pipeline inputs")
+        if not self._searcher:
+            return StepResult(step_id=step.id, action=step.action, error="No PMID or searcher")
+
+        operation = {
+            "related": "get_related_articles",
+            "citing": "get_citing_articles",
+            "references": "get_article_references",
+        }[step.action]
+        articles: dict[str, UnifiedArticle] = {}
+        candidates = 0
+        for pmid in seeds:
+            await self._reserve_external_call()
+            raw = await getattr(self._searcher, operation)(pmid, limit)
+            for row in self._require_pubmed_rows(raw, operation=operation):
+                article = article_from_pubmed(row)
+                candidates += 1
+                if article.pmid and article.pmid not in seeds:
+                    articles.setdefault(article.pmid, article)
+
+        merged = list(articles.values())[:limit]
+        return StepResult(
+            step_id=step.id,
+            action=step.action,
+            articles=merged,
+            pmids=[article.pmid for article in merged if article.pmid],
+            metadata={"seed_pmids": list(seeds), "seed_count": len(seeds), "candidates_before_dedupe": candidates},
         )
 
     @staticmethod

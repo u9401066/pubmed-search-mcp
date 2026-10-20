@@ -46,6 +46,7 @@ VALID_TEMPLATES: frozenset[str] = frozenset(
         "pico",
         "comprehensive",
         "exploration",
+        "snowball",
         "gene_drug",
     }
 )

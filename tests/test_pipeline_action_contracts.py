@@ -126,8 +126,57 @@ VALID_TEMPLATE_PARAMS: tuple[tuple[str, dict[str, Any]], ...] = (
         {"query": "CRISPR therapy", "sources": ["pubmed", "europe_pmc"], "limit": 30, "min_year": 2020},
     ),
     ("exploration", {"pmid": "33475315", "limit": 20}),
+    ("snowball", {"query": "CRISPR", "seed_limit": 10, "limit": 50}),
     ("gene_drug", {"term": "BRCA1", "sources": ["pubmed", "openalex"], "limit": 20, "max_year": 2026}),
 )
+
+
+@pytest.mark.parametrize("action", ["related", "citing", "references"])
+@pytest.mark.parametrize(
+    ("params", "inputs", "message"),
+    [
+        ({"pmid": "123", "seed_limit": 2}, ["search"], "exactly one of pmid or seed_limit"),
+        ({}, ["search"], "pmid: Field required"),
+        ({"seed_limit": 2}, [], "seed_limit requires at least one input step"),
+        ({"seed_limit": 0}, ["search"], "greater than or equal to 1"),
+        ({"seed_limit": 11}, ["search"], "less than or equal to 10"),
+        ({"seed_limit": True}, ["search"], "valid integer"),
+        ({"seed_limit": None}, ["search"], "explicit null"),
+        ({"pmid": None}, ["search"], "explicit null"),
+    ],
+)
+def test_discovery_seed_contract_rejects_invalid_sources(
+    action: str, params: dict[str, Any], inputs: list[str], message: str
+) -> None:
+    result = parse_and_validate_config(
+        {
+            "steps": [
+                {"id": "search", "action": "search", "params": {"query": "topic"}},
+                {"id": "expand", "action": action, "params": params, "inputs": inputs},
+            ]
+        }
+    )
+
+    assert not result.valid
+    assert any(message in error for error in result.errors), result.errors
+
+
+@pytest.mark.parametrize("action", ["related", "citing", "references"])
+@pytest.mark.parametrize("seed_limit", [1, 10, "${seeds}"])
+def test_discovery_seed_contract_accepts_bounds_and_typed_variables(action: str, seed_limit: int | str) -> None:
+    config = PipelineConfig(
+        variables={"seeds": 2},
+        steps=[
+            PipelineStep(id="search", action="search", params={"query": "topic"}),
+            PipelineStep(id="expand", action=action, params={"seed_limit": seed_limit}, inputs=["search"]),
+        ],
+    )
+
+    _articles, results = PipelineExecutor().dry_run(config)
+
+    assert results["expand"].metadata["resolved_params"]["seed_limit"] == (
+        2 if isinstance(seed_limit, str) else seed_limit
+    )
 
 
 @pytest.mark.parametrize(("template", "params"), VALID_TEMPLATE_PARAMS)
@@ -155,6 +204,11 @@ def test_every_template_rejects_unknown_param_keys(template: str, params: dict[s
         ("comprehensive", {"query": 123}),
         ("comprehensive", {"query": "CRISPR", "min_year": "2020"}),
         ("exploration", {"pmid": 33475315}),
+        ("snowball", {}),
+        ("snowball", {"query": " "}),
+        ("snowball", {"query": "CRISPR", "seed_limit": 0}),
+        ("snowball", {"query": "CRISPR", "seed_limit": 11}),
+        ("snowball", {"query": "CRISPR", "limit": 51}),
         ("gene_drug", {"term": "BRCA1", "sources": "pubmed"}),
     ],
 )
