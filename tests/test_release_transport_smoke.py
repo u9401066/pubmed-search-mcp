@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
+import zipfile
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -17,11 +19,13 @@ from jsonschema import Draft202012Validator
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from tests.fixtures.release_support import ReleaseInstallation, running_http_server, smoke_env
+from tests.fixtures.release_support import (
+    PASSTHROUGH_ENV_KEYS,
+    ReleaseInstallation,
+    running_http_server,
+    smoke_env,
+)
 from tests.test_all_tools_mcp_acceptance import EXPECTED_TOOLS, PIPELINE_CONFIG
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def result_text(result: Any) -> str:
@@ -140,6 +144,50 @@ async def test_installed_stdio_persists_across_restart_and_isolates_data_roots(
 async def test_installed_http_serves_real_requests(tmp_path: Path, release_installation: ReleaseInstallation) -> None:
     with running_http_server([str(release_installation.entrypoint("pubmed-search-mcp-http"))], tmp_path) as base_url:
         await assert_http_contract(base_url, version=release_installation.version)
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(240)
+@pytest.mark.asyncio
+async def test_registry_and_plugin_metadata_launch_the_exact_published_wheel(
+    tmp_path: Path, release_installation: ReleaseInstallation
+) -> None:
+    """Registry/plugin hosts start ``uvx <identifier>@<version>`` with only declared env."""
+    root = Path(__file__).resolve().parents[1]
+    server = json.loads((root / "server.json").read_text(encoding="utf-8"))
+    plugin = json.loads((root / "plugins/pubmed-search/mcp.json").read_text(encoding="utf-8"))
+    (package,) = server["packages"]
+    version = release_installation.version
+    assert server["version"] == package["version"] == version
+    assert (package["registryType"], package["runtimeHint"], package["transport"]) == ("pypi", "uvx", {"type": "stdio"})
+    launcher = plugin["mcpServers"]["pubmed-search"]
+    assert (launcher["command"], launcher["args"]) == ("uvx", [f"{package['identifier']}@{version}"])
+
+    with zipfile.ZipFile(release_installation.wheel) as wheel:
+        dist_info = next(name.split("/")[0] for name in wheel.namelist() if name.endswith(".dist-info/METADATA"))
+        metadata = wheel.read(f"{dist_info}/METADATA").decode("utf-8")
+        entry_points = wheel.read(f"{dist_info}/entry_points.txt").decode("utf-8")
+    # The registry proves PyPI ownership from this marker in the uploaded long description.
+    assert f"<!-- mcp-name: {server['name']} -->" in metadata
+    assert f"Name: {package['identifier']}\n" in metadata
+    assert any(line.split("=")[0].strip() == package["identifier"] for line in entry_points.splitlines())
+
+    declared = {item["name"] for item in package["environmentVariables"]}
+    assert all(not name.startswith("PUBMED_") for name in declared)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {key: value for key, value in smoke_env(tmp_path).items() if key in PASSTHROUGH_ENV_KEYS}
+    env.update({"HOME": str(home), "USERPROFILE": str(home), "NCBI_EMAIL": "release-smoke@example.com"})
+    parameters = StdioServerParameters(
+        command=str(release_installation.entrypoint(package["identifier"])),
+        cwd=tmp_path,
+        env=env,
+    )
+    async with Client(stdio_client(parameters), read_timeout_seconds=30) as client:
+        listed = (await client.list_tools()).tools
+        assert {tool.name for tool in listed} == EXPECTED_TOOLS
+        analysis = await client.call_tool("analyze_search_query", {"query": "aspirin stroke prevention"})
+        assert analysis.is_error is False, result_text(analysis)
 
 
 @pytest.mark.slow

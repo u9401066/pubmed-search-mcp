@@ -53,6 +53,14 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
     assert "check_repo.py smoke --release-dist dist" in release_commands
     assert "check_repo.py container --container-image" in release_commands
     assert "--help" not in release_commands
+    # Registry metadata must fail the tag before the irreversible PyPI upload.
+    assert "mcp-publisher validate server.json" in release_commands
+    assert "build_agent_plugin.py --check" in release_commands
+    assert publish["jobs"]["publish"]["needs"] == "verify"
+    assert publish["jobs"]["mcp-registry"]["needs"] == "publish"
+    registry_commands = "\n".join(step.get("run", "") for step in publish["jobs"]["mcp-registry"]["steps"])
+    assert "sha256sum --check" in registry_commands
+    assert "sha256sum --check" in release_commands
     for name in ("mermaid-rendering", "test-matrix", "container-smoke"):
         condition = workflow["jobs"][name]["if"]
         assert "github.event_name == 'workflow_dispatch'" in condition
