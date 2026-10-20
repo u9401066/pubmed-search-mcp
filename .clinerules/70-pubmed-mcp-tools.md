@@ -20,6 +20,9 @@ paths:
 ## Research Workflow Rules
 
 - Use `generate_search_queries` and `analyze_search_query` before complex/systematic searches.
+- For iterative normal searches, `options="exclude_seen"` filters earlier completed/partial session results by PMID/normalized DOI before `limit`; disclose counts or history warnings. It is rejected with `pipeline=`.
+- For multi-seed exploration use pipeline template `snowball` (`query`, optional `seed_limit` 1–10/default 5, `limit` default 20): search → citing + references → union merge. Scheduled `diff_mode` reports bounded changes since the previous successful run; `notify` retains local run/count summaries, not external push delivery.
+- Chronicle rebuilds add predecessor changes only to default summary output (up to five added titles). An unreadable predecessor degrades to `Change summary unavailable`; corrupt latest revisions still fail loudly.
 - For clinical comparison questions, extract P/I/C/O in the agent, then use `validate_pico_plan` to validate the structured handoff and obtain a runnable PICO pipeline.
 - `build_research_chronicle` is the single research-evolution entry point; the old timeline tools were folded into it. Use `output="mermaid"` for the horizontal time-spine/lineage map. Preserve warnings from `mermaid_validation.json` when a safe/minimal tier is used or visual items are omitted, and preserve audit warnings for research-stage fallback, capped/unknown source coverage, or at least 20% multi-signal branch overlap. In diffs, absence is `not_observed_in_revision`, never conclusive retirement. Read stored chronicles with `read_research_chronicle` (`load` / `list` / `diff` / `narrate` / `milestones` / `compare`) instead of rebuilding.
 - When `unified_search` returns an `artifact_summary`, preserve the user-facing summary and use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})` for deeper audit files.

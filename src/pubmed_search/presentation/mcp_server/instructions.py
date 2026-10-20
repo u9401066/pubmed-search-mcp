@@ -91,10 +91,14 @@ find_citing_articles(pmid="12345678")   # 引用這篇的後續研究 (forward)
 get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 ```
 
+多種子探索可用 pipeline 模板 snowball：query 必填、seed_limit 1–10（預設 5）、limit 預設 20；search → citing + references → union merge。
+
 ## 情境 5️⃣: 預印本搜尋 (用戶想找最新尚未同行審查的研究)
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "最新研究", "preprint", "預印本", "arXiv", "medRxiv", "bioRxiv",
           "尚未發表的", "最前沿的研究"
+
+一般搜尋可用 options="exclude_seen" 在 limit 前排除本 session 先前 completed/partial 搜尋回傳的 PMID/正規化 DOI；回報排除數或歷史提示，不可搭配 pipeline=。
 
 unified_search 支援透過 options 參數控制預印本行為：
 - options="preprints": 額外搜尋 arXiv、medRxiv、bioRxiv 預印本伺服器

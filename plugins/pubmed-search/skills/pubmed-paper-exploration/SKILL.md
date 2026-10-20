@@ -125,6 +125,23 @@ build_citation_tree(
 
 ---
 
+## 多種子替代方案
+
+從主題搜尋的多篇種子向外擴展，可使用既有 pipeline，不必逐篇手動呼叫：
+
+```python
+unified_search(pipeline="""
+template: snowball
+template_params:
+    query: remimazolam ICU sedation
+    seed_limit: 5
+    limit: 20
+""")
+```
+
+`snowball` 執行 search → citing + references → union merge（含原始結果）；`seed_limit` 為 1–10、預設 5，`limit` 預設 20。
+自訂 DAG 的 `related`／`citing`／`references` 可用 `inputs` + `seed_limit` 取前幾個不重複 PMID，不能同時指定 `pmid`。每個種子消耗一次外部呼叫預算；各 action 合併去重、排除 seeds 後以 `limit` 截斷。
+
 ## 如果想看時間演化
 
 ### 以單篇或一組 PMID 建編年史

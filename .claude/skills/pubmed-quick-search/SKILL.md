@@ -134,6 +134,11 @@ options="preprints,shallow"
 - `no_scores`: 不顯示分數
 - `no_relax`: 關閉零結果時的自動放寬
 - `shallow`: 關閉深搜，速度較快
+- `exclude_seen`: 排除本 session 先前 completed／partial 搜尋已回傳的 PMID 或正規化 DOI；在 `limit` 截斷前過濾，回報排除數量或無歷史／歷史不可用提示。不可搭配 `pipeline=`。
+
+```python
+unified_search(query="remimazolam ICU sedation", options="exclude_seen", limit=10)
+```
 
 ---
 

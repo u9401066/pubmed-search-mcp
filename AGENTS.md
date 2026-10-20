@@ -43,6 +43,8 @@ tool-native locations such as `.github/copilot-instructions.md` or
 - `.github/copilot-instructions.md`: GitHub Copilot-specific runtime guidance
 - `.clinerules/`: Cline-specific rules and workflows
 - `.vscode/mcp.json`: workspace MCP setup for VS Code / Copilot Chat
+- `plugins/pubmed-search/`: generated Agent Plugin; regenerate with `uv run python scripts/build_agent_plugin.py`
+- `server.json`: MCP Registry metadata, validated in the release workflow
 - `.claude/skills/pipeline-persistence/references/`: packaged tutorial copies
   for agent bundles and VSIX integrations that do not read `docs/site-content/`
 - `scripts/setup-vscode-ai-harness.sh`: install recommended VS Code extensions

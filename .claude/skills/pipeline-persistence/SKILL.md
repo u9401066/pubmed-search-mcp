@@ -7,7 +7,7 @@ description: "Pipeline persistence — save, load, and reuse structured search p
 
 ## 描述
 將複雜的搜尋流程保存為可重複使用的 Pipeline YAML 配置。支援：
-- 從模板快速建立（PICO、comprehensive、exploration、gene_drug）
+- 從模板快速建立（pico、comprehensive、exploration、gene_drug、snowball）
 - 自訂 DAG（有向無環圖）多步驟管道
 - 雙層儲存（workspace + global）
 - Schema-exact 驗證 + 有限度的安全 normalization
@@ -142,6 +142,9 @@ get_pipeline_history(name="weekly_remimazolam", limit=5)
 schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 ```
 
+`diff_mode=True` 會在排程報告附上與前次成功執行的差異：新增文章與移除 PMID 各最多 20 筆，首次執行標示 baseline。Partial/error 不據以推論移除。
+`notify=True` 保存最後 run ID 與新增／移除數量；`list_pipelines` 顯示新增文章數並引導至 `get_pipeline_history`，不是外部推播。停用通知會清除舊摘要。
+
 ### unschedule_pipeline — 移除排程
 
 ```python
@@ -150,7 +153,7 @@ unschedule_pipeline(name="weekly_remimazolam")
 
 ---
 
-## 4 個內建模板
+## 5 個內建模板
 
 ### pico — PICO 臨床問題
 
@@ -218,6 +221,20 @@ template_params:
 
 ---
 
+### snowball — 多種子引用擴展
+
+```yaml
+template: snowball
+template_params:
+  query: remimazolam ICU sedation
+  seed_limit: 5  # 可選，1–10，預設 5
+  limit: 20      # 可選，預設 20
+```
+
+流程：search → citing + references → union merge（含原始搜尋結果）。
+`related`／`citing`／`references` 也可透過 `inputs` 搭配 `seed_limit`，但不可同時給 `pmid`。
+依輸入順序取前幾個不重複 PMID，每個 seed 消耗一次外部呼叫預算；合併去重後排除 seeds，並以 `limit` 截斷該 action 的結果。
+
 ## 10 個可用 Action
 
 | Action | 說明 | 主要參數 |
@@ -226,9 +243,9 @@ template_params:
 | `pico` | Agent-provided PICO handoff search | `P`, `I`, optional `C`, recommended `O` |
 | `expand` | MeSH/同義詞擴展 | `topic` |
 | `details` | 取得文章詳情 | `pmids` |
-| `related` | 相關文章 | `pmid`, `limit` |
-| `citing` | 引用文章 | `pmid`, `limit` |
-| `references` | 參考文獻 | `pmid`, `limit` |
+| `related` | 相關文章 | `pmid` 或 `inputs` + `seed_limit`，`limit` |
+| `citing` | 引用文章 | `pmid` 或 `inputs` + `seed_limit`，`limit` |
+| `references` | 參考文獻 | `pmid` 或 `inputs` + `seed_limit`，`limit` |
 | `metrics` | iCite 引用指標 | （從 inputs 取得） |
 | `merge` | 合併結果 | `method`: `union` / `intersection` / `rrf` |
 | `filter` | 過濾結果 | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` |

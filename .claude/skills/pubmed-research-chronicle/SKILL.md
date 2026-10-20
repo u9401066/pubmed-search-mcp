@@ -53,6 +53,9 @@ build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
 回傳的 `summary` 開頭就是**時序主軸 (Chronological Spine)**，下面才是研究分支。
 Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要用它。
 
+重建時，預設 `output="summary"` 附上 `Changes since revision N-1`：entry 新增／本次未觀察到／更新、證據與分支差異、scope 與 audit 狀態變化，最多列出 5 個新增標題；無差異時明確說明。機器輸出不變。
+若前一版無法讀取，摘要顯示 `Change summary unavailable`；這不會放寬 store 對損壞最新 revision 的錯誤處理。本次未觀察到不代表研究已退場。
+
 ### 輸出格式 (`output`)
 
 | 格式 | 用途 |

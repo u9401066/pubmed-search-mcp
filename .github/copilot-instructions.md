@@ -621,6 +621,8 @@ unified_search(query="<combined_boolean_query>")
 unified_search(query="remimazolam ICU sedation", limit=10)
 ```
 
+For iterative normal searches, `options="exclude_seen"` filters PMID/normalized DOI identities returned by earlier completed/partial searches in this session before `limit`; report the count or history warning. It is rejected with `pipeline=`.
+
 ### 2. Explore from a Key Paper
 ```python
 # Found an important paper (PMID: 12345678)
@@ -628,6 +630,8 @@ find_related_articles(pmid="12345678")   # Similar papers
 find_citing_articles(pmid="12345678")    # Who cited this?
 get_article_references(pmid="12345678")  # What did it cite?
 ```
+
+For multiple seeds, use the `snowball` pipeline template (`query` required, `seed_limit` 1–10/default 5, `limit` default 20): search → citing + references → union merge. No additional tool is needed.
 
 ### 3. Get Full Text
 
