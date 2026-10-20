@@ -1,5 +1,18 @@
 # Active Context
 
+## Current Task - Scheduled pipeline changes and notifications (2026-10-20)
+
+- Implemented opt-in saved-report diffs in the application layer; scheduler
+  forwards its existing `diff_mode` while manual runs retain their report format.
+- Schedule entries persist notification run IDs/counts, load legacy JSON defaults,
+  and clear summaries when notification is disabled. Partial/error runs cannot
+  claim removals; list output exposes new-article summaries without new tools.
+- Focused pipeline regressions: 211 passed; Ruff lint/format, mypy (443 files),
+  and async consistency pass. Full regression: 4,871 passed, 19 skipped,
+  31 deselected, with two upstream MCP logging deprecation warnings.
+- Behavior documentation lives in application/domain docstrings; generated guides
+  are unchanged. No commits, branches, pushes, tool-sync or site generation performed.
+
 ## Current Focus — v0.7.7 test/CI renovation, published and verified
 
 - Updated from master before editing. Replaced mock-only E2E with actual loopback

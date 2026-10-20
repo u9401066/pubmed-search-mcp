@@ -11,6 +11,7 @@ import pytest
 
 from pubmed_search.application.pipeline.runner import StoredPipelineRunner
 from pubmed_search.application.pipeline.store import PipelineStore
+from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineStep, StepResult
 
 if TYPE_CHECKING:
@@ -27,6 +28,69 @@ def pipeline_store(tmp_path: Path) -> PipelineStore:
 
 
 class TestStoredPipelineRunner:
+    async def test_saved_report_diff_lists_changes_with_bounded_new_articles(
+        self, pipeline_store: PipelineStore, tmp_path: Path
+    ) -> None:
+        pipeline_store.save(
+            name="changes",
+            config=PipelineConfig(steps=[PipelineStep(id="search", action="search", params={"query": "topic"})]),
+        )
+        baseline = [
+            UnifiedArticle(pmid=str(number), title=f"Paper {number}", primary_source="pubmed") for number in (1, 2)
+        ]
+        current = [
+            UnifiedArticle(pmid=str(number), title=f"Paper {number}", primary_source="pubmed")
+            for number in [1, *range(3, 25)]
+        ]
+        runner = StoredPipelineRunner(store=pipeline_store, searcher=AsyncMock())
+        with patch(
+            "pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new_callable=AsyncMock
+        ) as execute:
+            execute.side_effect = [(baseline, {}), (current, {})]
+            await runner.execute_saved_pipeline("changes", diff_mode=True)
+            run = await runner.execute_saved_pipeline("changes", diff_mode=True)
+
+        report = next(tmp_path.rglob(f"{run.run_id}.md")).read_text(encoding="utf-8")
+        changes = report.split("## Changes since previous successful run", 1)[1]
+        assert run.new_pmids == [str(number) for number in range(3, 25)]
+        assert run.removed_pmids == ["2"]
+        assert "- PMID 3: Paper 3" in changes
+        assert "- PMID 22: Paper 22" in changes
+        assert "- PMID 23:" not in changes
+        assert "+2 more" in changes
+        assert "### Removed PMIDs (1)\n\n- PMID 2" in changes
+        assert "baseline" not in changes.lower()
+
+    @pytest.mark.parametrize("diff_mode", [True, False])
+    async def test_saved_report_diff_baseline_is_opt_in(
+        self, pipeline_store: PipelineStore, tmp_path: Path, diff_mode: bool
+    ) -> None:
+        pipeline_store.save(
+            name="baseline",
+            config=PipelineConfig(
+                name="baseline",
+                steps=[PipelineStep(id="search", action="search", params={"query": "topic"})],
+            ),
+            scope="workspace",
+        )
+        runner = StoredPipelineRunner(store=pipeline_store, searcher=AsyncMock())
+        with patch(
+            "pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new_callable=AsyncMock
+        ) as execute:
+            execute.return_value = ([], {})
+            run = (
+                await runner.execute_saved_pipeline("baseline", diff_mode=True)
+                if diff_mode
+                else await runner.execute_saved_pipeline("baseline")
+            )
+
+        report = next(tmp_path.rglob(f"{run.run_id}.md")).read_text(encoding="utf-8")
+        if diff_mode:
+            assert "## Changes since previous successful run" in report
+            assert "This run is the baseline; there is no previous successful run." in report
+        else:
+            assert "## Changes since previous successful run" not in report
+
     async def test_execute_saved_pipeline_binds_full_execution_context(self, pipeline_store: PipelineStore):
         pipeline_store.save(
             name="runtime_bound",

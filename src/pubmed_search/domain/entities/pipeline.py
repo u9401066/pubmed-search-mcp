@@ -215,7 +215,12 @@ class PipelineRun:
 
 @dataclass
 class ScheduleEntry:
-    """Persistent schedule metadata for a saved pipeline."""
+    """Persistent schedule metadata for a saved pipeline.
+
+    Notifications are local last-run/count summaries, not external pushes.
+    Disabled notifications clear their summary; failed runs have zero counts,
+    and only successful runs can establish removals from the observed results.
+    """
 
     pipeline_name: str
     cron: str
@@ -227,6 +232,9 @@ class ScheduleEntry:
     last_run: datetime | None = None
     last_status: Literal["scheduled", "success", "partial", "error"] = "scheduled"
     last_error: str | None = None
+    last_run_id: str | None = None
+    last_new_count: int = 0
+    last_removed_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON storage."""
@@ -241,6 +249,9 @@ class ScheduleEntry:
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "last_status": self.last_status,
             "last_error": self.last_error,
+            "last_run_id": self.last_run_id,
+            "last_new_count": self.last_new_count,
+            "last_removed_count": self.last_removed_count,
         }
 
     @classmethod
@@ -257,6 +268,9 @@ class ScheduleEntry:
             last_run=parse_iso8601_datetime(data["last_run"]) if data.get("last_run") else None,
             last_status=data.get("last_status", "scheduled"),
             last_error=data.get("last_error"),
+            last_run_id=data.get("last_run_id"),
+            last_new_count=data.get("last_new_count", 0),
+            last_removed_count=data.get("last_removed_count", 0),
         )
 
 

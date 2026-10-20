@@ -647,6 +647,9 @@ class PipelineStore:
         last_status: Literal["scheduled", "success", "partial", "error"],
         last_error: str | None,
         next_run: datetime | None,
+        last_run_id: str | None = None,
+        last_new_count: int = 0,
+        last_removed_count: int = 0,
     ) -> None:
         """Update run status atomically without recreating a removed schedule."""
         name = self._validate_name(name)
@@ -658,6 +661,9 @@ class PipelineStore:
         current.last_status = last_status
         current.last_error = last_error
         current.next_run = next_run
+        current.last_run_id = last_run_id if current.notify else None
+        current.last_new_count = last_new_count if current.notify and last_status in {"success", "partial"} else 0
+        current.last_removed_count = last_removed_count if current.notify and last_status == "success" else 0
         self._save_schedules(schedules)
 
     def _load_schedules(self) -> dict[str, ScheduleEntry]:

@@ -217,6 +217,17 @@ def _list_pipelines_impl(
         )
         parts.append(f"| {pipeline.name} | {pipeline.scope.value} | {desc} | {tags_str} | {pipeline.run_count} |")
 
+    schedules = {entry.pipeline_name: entry for entry in store.list_schedules()}
+    for pipeline in pipelines:
+        entry = schedules.get(pipeline.name)
+        if entry is not None and entry.last_new_count > 0:
+            last_run = entry.last_run.isoformat() if entry.last_run else "unknown"
+            parts.append("")
+            parts.append(
+                f"🔔 {entry.last_new_count} new articles in the last scheduled run ({last_run})"
+                f' — get_pipeline_history(name="{pipeline.name}")'
+            )
+
     parts.append("")
     parts.append('💡 Load: load_pipeline(source="<name>")')
     parts.append('💡 Execute: unified_search(pipeline="saved:<name>")')

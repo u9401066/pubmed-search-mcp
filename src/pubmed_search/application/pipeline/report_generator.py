@@ -30,7 +30,7 @@ from pubmed_search.shared.markdown import (
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
-    from pubmed_search.domain.entities.pipeline import PipelineConfig, StepResult
+    from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineRun, StepResult
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,31 @@ def generate_pipeline_report(
     parts.append(_section_articles(articles, config))
     parts.append(_section_methodology_notes(articles, step_results, config))
 
+    return "\n".join(parts)
+
+
+def generate_pipeline_changes(
+    articles: list[UnifiedArticle], run: PipelineRun, *, previous_run: PipelineRun | None
+) -> str:
+    """Render observed changes against the previous successful execution."""
+    parts = ["## Changes since previous successful run\n"]
+    if previous_run is None:
+        parts.append("This run is the baseline; there is no previous successful run.\n")
+        return "\n".join(parts)
+
+    new_pmids = set(run.new_pmids)
+    new_articles = [article for article in articles if article.pmid in new_pmids]
+    parts.append(f"### New articles ({len(new_articles)})\n")
+    for article in new_articles[:20]:
+        parts.append(f"- PMID {escape_markdown_text(article.pmid)}: {escape_markdown_text(article.title)}")
+    if len(new_articles) > 20:
+        parts.append(f"+{len(new_articles) - 20} more")
+    if run.removed_pmids:
+        parts.append(f"\n### Removed PMIDs ({len(run.removed_pmids)})\n")
+        parts.extend(f"- PMID {escape_markdown_text(pmid)}" for pmid in run.removed_pmids[:20])
+        if len(run.removed_pmids) > 20:
+            parts.append(f"+{len(run.removed_pmids) - 20} more")
+    parts.append("")
     return "\n".join(parts)
 
 

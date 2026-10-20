@@ -1,5 +1,19 @@
 # Progress (Updated: 2026-10-01)
 
+## 2026-10-20 - Scheduled pipeline diff/notification implementation
+
+- Done: bounded baseline/change reports, scheduler option propagation, legacy-safe
+  notification persistence/reset, and scheduled-new-article list output.
+- Added eight behavior cases across four tests using real stores, runners,
+  scheduler execution and MCP tool functions; only executor I/O is replaced.
+- Focused pipeline suite: 211 passed. Ruff lint/format, mypy (443 files), and
+  async consistency pass. Full suite: 4,871 passed, 19 skipped, 31 deselected;
+  two upstream MCP logging deprecation warnings.
+- An initial full run detected guide/generated-site drift. Reverted only this
+  task's guide addition, documented behavior in code docstrings, and confirmed
+  the document-sync suite passes without invoking the prohibited generators.
+- No Git publication operations or generated documentation commands performed.
+
 ## 2026-10-01 — v0.7.7 test/CI renovation, published and verified
 
 - Three implementation phases committed: stronger production/provider/artifact

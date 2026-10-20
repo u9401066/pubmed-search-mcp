@@ -91,6 +91,9 @@ class APSPipelineScheduler:
             last_run=existing.last_run if existing else None,
             last_status=existing.last_status if existing else "scheduled",
             last_error=existing.last_error if existing else None,
+            last_run_id=existing.last_run_id if existing and notify else None,
+            last_new_count=existing.last_new_count if existing and notify else 0,
+            last_removed_count=existing.last_removed_count if existing and notify else 0,
         )
         self._store.save_schedule(entry)
 
@@ -156,8 +159,15 @@ class APSPipelineScheduler:
             logger.warning("Skipping scheduled run for missing or disabled entry: %s", pipeline_name)
             return
 
+        entry.last_run_id = None
+        entry.last_new_count = 0
+        entry.last_removed_count = 0
         try:
-            run = await self._runner.execute_saved_pipeline(pipeline_name)
+            run = await self._runner.execute_saved_pipeline(pipeline_name, diff_mode=entry.diff_mode)
+            if entry.notify:
+                entry.last_run_id = run.run_id
+                entry.last_new_count = len(run.new_pmids) if run.status in {"success", "partial"} else 0
+                entry.last_removed_count = len(run.removed_pmids) if run.status == "success" else 0
             entry.last_run = run.finished or run.started or datetime.now(timezone.utc)
             if run.status == "success":
                 entry.last_status = "success"
@@ -193,7 +203,17 @@ class APSPipelineScheduler:
                 last_status=entry.last_status,
                 last_error=entry.last_error,
                 next_run=job.next_run_time if job is not None else None,
+                last_run_id=entry.last_run_id,
+                last_new_count=entry.last_new_count,
+                last_removed_count=entry.last_removed_count,
             )
+            if entry.notify:
+                logger.info(
+                    "Scheduled pipeline %s: new=%d removed=%d",
+                    pipeline_name,
+                    entry.last_new_count,
+                    entry.last_removed_count,
+                )
 
     def _build_trigger(self, cron: str, *, timezone_name: str | None = None) -> CronTrigger:
         """Build a validated cron trigger from a 5-field crontab expression."""

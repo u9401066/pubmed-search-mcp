@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,12 +25,16 @@ from pubmed_search.application.pipeline import (
     ScheduleEntry,
     ValidationResult,
 )
+from pubmed_search.application.pipeline.runner import StoredPipelineRunner
 from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
+from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
+from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
 from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
     PipelineToolRuntime,
     register_pipeline_tools,
 )
+from pubmed_search.shared.settings import AppSettings
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
 if TYPE_CHECKING:
@@ -250,6 +254,37 @@ class TestSavePipeline:
 
 class TestListPipelines:
     """Tests for list_pipelines tool."""
+
+    async def test_list_shows_persisted_scheduled_notification_and_history(
+        self, mcp, real_store, runtime, tmp_path: Path
+    ) -> None:
+        real_store.save(
+            "updates",
+            PipelineConfig(steps=[PipelineStep(id="search", action="search", params={"query": "topic"})]),
+        )
+        runner = StoredPipelineRunner(store=real_store, searcher=AsyncMock())
+        runtime.scheduler = APSPipelineScheduler(store=real_store, runner=runner, settings=AppSettings())
+        mcp["schedule_pipeline"](name="updates", cron="0 9 * * 1", diff_mode=False)
+        article = UnifiedArticle(pmid="123", title="New evidence", primary_source="pubmed")
+        with patch(
+            "pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new_callable=AsyncMock
+        ) as execute:
+            execute.return_value = ([], {})
+            await runtime.scheduler._execute_job("updates")
+            assert "🔔" not in mcp["list_pipelines"]()
+            execute.return_value = ([article], {})
+            await runtime.scheduler._execute_job("updates")
+
+        entry = real_store.get_schedule("updates")
+        assert entry is not None and entry.last_run is not None
+        output = mcp["list_pipelines"]()
+        assert f"\n\n🔔 1 new articles in the last scheduled run ({entry.last_run.isoformat()})" in output
+        assert 'get_pipeline_history(name="updates")' in output
+        assert "+1" in mcp["get_pipeline_history"](name="updates")
+        report = next(tmp_path.rglob(f"{entry.last_run_id}.md")).read_text(encoding="utf-8")
+        assert "## Changes since previous successful run" not in report
+        mcp["schedule_pipeline"](name="updates", cron="0 9 * * 1", notify=False)
+        assert "🔔" not in mcp["list_pipelines"]()
 
     def test_list_empty(self, mcp, mock_store):
         mock_store.list_pipelines.return_value = []

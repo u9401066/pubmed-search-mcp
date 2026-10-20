@@ -13,7 +13,7 @@ from pubmed_search.application.pipeline.executor import (
     pipeline_outcome_message,
     pipeline_run_status,
 )
-from pubmed_search.application.pipeline.report_generator import generate_pipeline_report
+from pubmed_search.application.pipeline.report_generator import generate_pipeline_changes, generate_pipeline_report
 from pubmed_search.application.pipeline.templates import materialize_pipeline_config
 from pubmed_search.domain.entities.pipeline import PipelineRun
 
@@ -51,8 +51,13 @@ class StoredPipelineRunner:
         self._execution_policy = execution_policy
         self._execution_context = execution_context or nullcontext
 
-    async def execute_saved_pipeline(self, name: str) -> PipelineRun:
-        """Execute one saved pipeline and persist report + run history."""
+    async def execute_saved_pipeline(self, name: str, *, diff_mode: bool = False) -> PipelineRun:
+        """Execute one saved pipeline and persist report plus run history.
+
+        Opt-in diff reports compare against the previous successful run, or
+        identify a baseline when none exists. Partial runs never prove removals.
+        Manual callers retain the existing report format by default.
+        """
         config, meta = self._store.load(name)
         config = materialize_pipeline_config(config, default_name=meta.name)
 
@@ -91,6 +96,8 @@ class StoredPipelineRunner:
                 error_message=pipeline_outcome_message(outcome_status),
                 top_articles=self._summarize_articles(articles),
             )
+            if diff_mode:
+                report += "\n" + generate_pipeline_changes(articles, run, previous_run=previous_run)
             self._store.save_report(meta.name, run_id, report)
             self._store.save_run(meta.name, run)
             return run

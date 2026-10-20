@@ -1,5 +1,14 @@
 # Decision Log
 
+## [2026-10-20] Consume scheduled pipeline diff and notify options
+
+- Render bounded article changes in the application report generator, using the
+  runner's previous successful result; scheduler only forwards its diff option.
+- Notification means a persisted local run/count summary plus one name/count-only
+  INFO log, not an external push channel. Disabling it clears stale summaries.
+- Persist safe counts atomically with schedule status, retain legacy JSON defaults,
+  and never infer removals from partial/error runs. Keep the 41-tool registry intact.
+
 ## [2026-10-01] v0.7.7 test ownership and release artifact evidence
 
 - Remove only reviewed weak tests with stronger retained coverage. Empty placeholders,
