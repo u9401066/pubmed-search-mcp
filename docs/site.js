@@ -1841,11 +1841,16 @@ function renderSearchResults(query) {
   });
 
   if (!results.length) {
-    modalSearchResults.innerHTML = `
-      <p class="modal-search-empty">
-        ${activeLang === "zh" ? `找不到與「<strong>${query}</strong>」相關的結果` : `No results found for "<strong>${query}</strong>"`}
-      </p>
-    `;
+    const empty = document.createElement("p");
+    empty.className = "modal-search-empty";
+    const strong = document.createElement("strong");
+    strong.textContent = query;
+    if (activeLang === "zh") {
+      empty.append("找不到與「", strong, "」相關的結果");
+    } else {
+      empty.append('No results found for "', strong, '"');
+    }
+    modalSearchResults.replaceChildren(empty);
     return;
   }
 
