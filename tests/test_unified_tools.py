@@ -1138,6 +1138,104 @@ def _capture_tools(mcp, searcher):
 
 
 class TestUnifiedSearch:
+    async def test_exclude_seen_pages_final_candidates_and_persists_filtered_results(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        searcher = AsyncMock()
+        searcher.search_page.return_value = _pubmed_page(
+            [{"pmid": str(100 + index), "title": f"Distinct study {index}"} for index in range(5)],
+            total=500,
+        )
+        tool = _capture_tools(MagicMock(), searcher)["unified_search"]
+        set_session_manager(manager)
+        try:
+            first = await tool(query="diabetes", sources="pubmed", limit=2, options="shallow,no_oa")
+            first_run = manager.list_search_runs(limit=1)[0]
+            assert len(first_run["result"]["pmids"]) == 2
+            assert "exclude_seen" not in first
+            second = await tool(query="diabetes", sources="pubmed", limit=3, options="shallow,no_oa,exclude_seen")
+            second_run = manager.list_search_runs(limit=1)[0]
+            assert "Excluded 2 previously seen article(s) (exclude_seen)." in second
+            assert "**Sources**: pubmed (5/500)" in first
+            assert "**Sources**: pubmed (5/500)" in second
+            assert len(second_run["result"]["pmids"]) == 3
+            assert not set(first_run["result"]["pmids"]) & set(second_run["result"]["pmids"])
+            strategy = manager.read_artifact(second_run["artifact"]["artifact_id"], file_name="query_strategy.json")
+            assert json.loads(strategy["content"])["result_filter_counts"]["excluded_seen_count"] == 2
+            third = json.loads(
+                await tool(
+                    query="diabetes", sources="pubmed", options="shallow,no_oa,exclude_seen", output_format="json"
+                )
+            )
+            assert third["articles"] == []
+            assert third["result_filter_counts"]["excluded_seen_count"] == 5
+            assert third["exclude_seen_message"] == "Excluded 5 previously seen article(s) (exclude_seen)."
+        finally:
+            set_session_manager(None)
+
+    @pytest.mark.parametrize("output_format", ["markdown", "json", "toon"])
+    async def test_exclude_seen_no_history_then_history_without_identifiers(self, output_format):
+        manager = SessionManager()
+        searcher = AsyncMock()
+        tool = _capture_tools(MagicMock(), searcher)["unified_search"]
+        set_session_manager(manager)
+        try:
+            with patch(
+                "pubmed_search.infrastructure.sources.unified_broker._search_openalex_adapter",
+                new_callable=AsyncMock,
+                return_value=SourceAdapterResult(
+                    source="openalex",
+                    operation="search",
+                    status="ok",
+                    total_count=1,
+                    items=[UnifiedArticle(title="Study without identifiers", primary_source="openalex")],
+                ),
+            ):
+                first = await tool(
+                    query="diabetes",
+                    sources="openalex",
+                    options="shallow,no_oa,exclude_seen",
+                    output_format=output_format,
+                )
+                assert "exclude_seen: no earlier searches in this session; nothing excluded." in first
+                second = await tool(
+                    query="diabetes",
+                    sources="openalex",
+                    options="shallow,no_oa,exclude_seen",
+                    output_format=output_format,
+                )
+            assert "Excluded 0 previously seen article(s) (exclude_seen)." in second
+            assert "Study without identifiers" in second
+        finally:
+            set_session_manager(None)
+
+    @pytest.mark.parametrize("failure", ["no_manager", "read_failure"])
+    async def test_exclude_seen_unavailable_preserves_results_and_sanitizes_logs(self, failure, caplog):
+        manager = SessionManager() if failure == "read_failure" else None
+        searcher = AsyncMock()
+        searcher.search_page.return_value = _pubmed_page([{"pmid": "123", "title": "Available study"}])
+        tool = _capture_tools(MagicMock(), searcher)["unified_search"]
+        set_session_manager(manager)
+        try:
+            with patch.object(SessionManager, "seen_article_identifiers", side_effect=OSError("PRIVATE_SENTINEL")):
+                result = await tool(query="diabetes", sources="pubmed", options="shallow,no_oa,exclude_seen")
+            assert "exclude_seen unavailable: session history could not be read; nothing excluded." in result
+            assert "Available study" in result
+            warnings = [record for record in caplog.records if "exclude_seen history unavailable" in record.message]
+            assert len(warnings) == 1
+            assert warnings[0].levelname == "WARNING"
+            assert ("OSError" if manager is not None else "no session manager") in warnings[0].message
+            assert "PRIVATE_SENTINEL" not in caplog.text
+        finally:
+            set_session_manager(None)
+
+    async def test_exclude_seen_pipeline_returns_explicit_option_error(self):
+        searcher = AsyncMock()
+        tool = _capture_tools(MagicMock(), searcher)["unified_search"]
+        result = json.loads(await tool(pipeline="steps: []", options="exclude_seen", output_format="json"))
+        assert result["success"] is False
+        assert "option 'exclude_seen' is not supported with pipeline" in result["error"]
+        searcher.search_page.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_empty_query(self):
         mcp = MagicMock()

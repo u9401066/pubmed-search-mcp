@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pubmed_search.application.search.query_analyzer import QueryAnalyzer
@@ -154,6 +155,7 @@ async def persist_unified_search_artifact(
             result_filter_counts=dict(getattr(execution, "result_filter_counts", {}) or {}),
             clinical_trials_coverage=execution.clinical_trials_coverage,
             prefetched_trials=execution.prefetched_trials,
+            exclude_seen_message=getattr(execution, "exclude_seen_message", None),
         )
     except Exception as exc:
         logger.warning("Failed to prepare unified_search artifact payload (%s)", type(exc).__name__)
@@ -369,6 +371,20 @@ async def run_unified_search(
             },
         )
 
+        if request.exclude_seen and journal.manager is None:
+            logger.warning("exclude_seen history unavailable (no session manager)")
+        if request.exclude_seen and journal.manager is not None:
+            try:
+                seen_pmids, seen_dois, seen_runs = await asyncio.to_thread(journal.manager.seen_article_identifiers)
+                request = replace(
+                    request,
+                    seen_pmids=seen_pmids,
+                    seen_dois=seen_dois,
+                    seen_search_count=seen_runs,
+                )
+            except Exception as exc:
+                logger.warning("exclude_seen history unavailable (%s)", type(exc).__name__)
+
         registry = source_registry_factory()
         source_broker = UnifiedSourceBroker(
             searcher=searcher,
@@ -476,6 +492,7 @@ async def run_unified_search(
                 artifact_manifest=artifact,
                 search_run_handoff=search_run_handoff,
                 result_filter_counts=execution.result_filter_counts,
+                exclude_seen_message=execution.exclude_seen_message,
                 clinical_trials_coverage=execution.clinical_trials_coverage,
                 prefetched_trials=execution.prefetched_trials,
             )
@@ -503,6 +520,7 @@ async def run_unified_search(
             enrichment_metadata=execution.enrichment_metadata,
             counts_first=request.counts_first,
             result_filter_counts=execution.result_filter_counts,
+            exclude_seen_message=execution.exclude_seen_message,
         )
         # Markdown rendering can add a typed adjunct-format failure. Refresh
         # the provisional terminal state before embedding it in the artifact.

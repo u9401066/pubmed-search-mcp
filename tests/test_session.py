@@ -23,6 +23,37 @@ from pubmed_search.application.session import (
 )
 
 
+def test_seen_article_identifiers_use_only_current_completed_and_partial_runs(tmp_path) -> None:
+    manager = SessionManager(data_dir=str(tmp_path))
+    assert manager.seen_article_identifiers() == (frozenset(), frozenset(), 0)
+    for status, pmid, doi in [
+        ("completed", "101", " HTTPS://DOI.ORG/10.1/ABC "),
+        ("partial", "102", " doi:10.1/abc "),
+        ("failed", "103", "10.1/failed"),
+        ("cancelled", "104", "10.1/cancelled"),
+    ]:
+        run = manager.start_search_run("topic")
+        manager.complete_search_run(
+            run["run_id"],
+            pmids=[pmid],
+            result_refs=[{"pmid": pmid + "0", "doi": doi}],
+            status=status,
+        )
+    manager.start_search_run("in flight")
+    assert manager.seen_article_identifiers() == (
+        frozenset({"101", "1010", "102", "1020"}),
+        frozenset({"10.1/abc"}),
+        2,
+    )
+    current = manager.get_current_session()
+    assert current is not None
+    reloaded = SessionManager(data_dir=str(tmp_path))
+    reloaded.switch_session(current.session_id)
+    assert reloaded.seen_article_identifiers() == manager.seen_article_identifiers()
+    manager.create_session("other topic")
+    assert manager.seen_article_identifiers() == (frozenset(), frozenset(), 0)
+
+
 class TestCachedArticle:
     """Tests for CachedArticle dataclass."""
 

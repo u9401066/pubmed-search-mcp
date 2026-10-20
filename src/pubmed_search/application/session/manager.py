@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.domain.entities.article import Author
+from pubmed_search.shared.article_identity import normalize_article_doi
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
 from pubmed_search.shared.credential_sanitizer import is_credential_field, redact_credential_assignments
 from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
@@ -1414,6 +1415,26 @@ class SessionManager:
             runs = [run for run in runs if str(run.get("status") or "").lower() == normalized]
         runs.sort(key=lambda run: (str(run.get("created_at") or ""), str(run.get("run_id") or "")))
         return runs[-limit:]
+
+    @synchronized
+    def seen_article_identifiers(self) -> tuple[frozenset[str], frozenset[str], int]:
+        """Return PMIDs, DOIs, and run count from completed or partial runs in this session."""
+        session = self._current_session()
+        pmids: set[str] = set()
+        dois: set[str] = set()
+        run_count = 0
+        for run in session.search_runs if session is not None else []:
+            if run.get("status") not in {"completed", "partial"}:
+                continue
+            run_count += 1
+            result = run.get("result") or {}
+            pmids.update(str(pmid).strip() for pmid in result.get("pmids", []) if pmid)
+            for reference in result.get("references", []):
+                if pmid := str(reference.get("pmid") or "").strip():
+                    pmids.add(pmid)
+                if doi := normalize_article_doi(reference.get("doi")):
+                    dois.add(doi)
+        return frozenset(pmids), frozenset(dois), run_count
 
     @synchronized
     def get_search_run_status_counts(self, *, session_id: str | None = None) -> dict[str, int]:

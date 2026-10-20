@@ -4,12 +4,56 @@ from __future__ import annotations
 
 import pytest
 
+from pubmed_search.application.unified.helpers import _parse_options_detailed
+from pubmed_search.application.unified.policies import exclude_seen_articles
 from pubmed_search.application.unified.request import (
     MAX_UNIFIED_QUERY_CHARS,
     normalize_unified_search_request,
     validate_unified_search_input_envelope,
 )
+from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.presentation.mcp_server.tools.unified_runner import _rejected_request_snapshot
+
+
+def test_exclude_seen_keeps_identifierless_candidates_and_fills_limit() -> None:
+    candidates = [
+        UnifiedArticle(title="Seen PMID", primary_source="pubmed", pmid="1"),
+        UnifiedArticle(title="Seen DOI only", primary_source="openalex", doi=" HTTPS://DOI.ORG/10.1/ABC "),
+        UnifiedArticle(title="No identifiers", primary_source="openalex"),
+        UnifiedArticle(title="New PMID", primary_source="pubmed", pmid="2"),
+        UnifiedArticle(title="New DOI", primary_source="openalex", doi="doi:10.1/new"),
+    ]
+    filtered = exclude_seen_articles(candidates, frozenset({"1"}), frozenset({"10.1/abc"}))
+    assert filtered[:3] == candidates[2:]
+    assert len(candidates) == 5
+
+
+def test_exclude_seen_pipeline_rejected_before_execution() -> None:
+    with pytest.raises(ValueError, match="option 'exclude_seen' is not supported with pipeline"):
+        validate_unified_search_input_envelope(query="", options="exclude_seen", pipeline="steps: []")
+
+
+def test_pipeline_preserves_ignored_options_without_exclude_seen() -> None:
+    validate_unified_search_input_envelope(query="", options="legacy_unknown, shallow", pipeline="steps: []")
+
+
+@pytest.mark.parametrize(
+    ("options", "diagnostic"),
+    [
+        ("exclude_seen,shallow", None),
+        (" exclude_seen", "surrounding whitespace"),
+        ("exclude_seen,exclude_seen", "duplicated"),
+        ("exclude_seen,unknown", "unknown option"),
+    ],
+)
+def test_exclude_seen_uses_strict_option_diagnostics(options: str, diagnostic: str | None) -> None:
+    parsed, diagnostics = _parse_options_detailed(options)
+    if diagnostic is None:
+        assert parsed == {"exclude_seen": True, "deep_search": False}
+        assert diagnostics == ()
+    else:
+        assert len(diagnostics) == 1
+        assert diagnostic in diagnostics[0]
 
 
 @pytest.mark.parametrize(

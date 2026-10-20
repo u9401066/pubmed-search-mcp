@@ -436,6 +436,7 @@ async def _format_unified_results(
     enrichment_metadata: dict[str, Any] | None = None,
     counts_first: bool = False,
     result_filter_counts: Mapping[str, int] | None = None,
+    exclude_seen_message: str | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -445,6 +446,8 @@ async def _format_unified_results(
             - total_available: how many total matches the API reports (None if unknown)
     """
     output_parts: list[str] = []
+    if exclude_seen_message is not None:
+        output_parts.append(exclude_seen_message + "\n")
     mutable_source_errors = source_errors if source_errors is not None else []
     clinical_trials_section = _prepare_clinical_trials_section(
         include_trials=include_trials,
@@ -1143,6 +1146,7 @@ def _format_as_json(
     result_filter_counts: Mapping[str, int] | None = None,
     clinical_trials_coverage: ClinicalTrialsCoverage | None = None,
     prefetched_trials: list[dict[str, Any]] | None = None,
+    exclude_seen_message: str | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
@@ -1173,6 +1177,8 @@ def _format_as_json(
             "search_status": search_status,
             "result_filter_counts": dict(result_filter_counts or {}),
         }
+        if exclude_seen_message is not None:
+            cap_context["exclude_seen_message"] = exclude_seen_message
         if source_errors:
             cap_context["source_errors"] = source_errors
         if clinical_trials_payload is not None:
@@ -1210,6 +1216,8 @@ def _format_as_json(
         "search_status": search_status,
         "result_filter_counts": dict(result_filter_counts or {}),
     }
+    if exclude_seen_message is not None:
+        result["exclude_seen_message"] = exclude_seen_message
     if include_analysis:
         result["analysis"] = analysis.to_dict()
     if include_next_tools:

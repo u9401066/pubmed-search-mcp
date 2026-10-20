@@ -377,6 +377,7 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     "include_detected_preprints": ("include_detected_preprints", True),
     "clinical_trials": ("include_clinical_trials", True),
     "counts_first": ("counts_first", True),
+    "exclude_seen": ("exclude_seen", True),
     # Provider-neutral retrieval policies.  These remain options on the one
     # unified_search facade; they never become provider-shaped MCP tools.
     "native_semantic": ("native_semantic", True),

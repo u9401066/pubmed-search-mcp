@@ -229,6 +229,7 @@ def register_unified_search_tools(
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
                        no_relax       → disable auto-relaxation on 0 results
+                       exclude_seen   → omit prior session results by PMID/DOI (not supported with pipeline)
                        native_semantic → use provider-native semantic retrieval;
                                          currently OpenAlex, max 50 results
                        systematic     → use deterministic bulk/cursor retrieval where

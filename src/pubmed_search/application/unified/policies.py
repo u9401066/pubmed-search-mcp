@@ -5,10 +5,28 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from pubmed_search.shared.article_identity import normalize_article_doi
+
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
 
 logger = logging.getLogger(__name__)
+
+
+def exclude_seen_articles(
+    articles: list[UnifiedArticle],
+    seen_pmids: frozenset[str],
+    seen_dois: frozenset[str],
+) -> list[UnifiedArticle]:
+    """Keep ranked candidates without a previously returned PMID or DOI."""
+    return [
+        article
+        for article in articles
+        if not (
+            (article.pmid and article.pmid.strip() in seen_pmids)
+            or (normalize_article_doi(article.doi) or None) in seen_dois
+        )
+    ]
 
 
 def is_preprint(article: UnifiedArticle, article_type_class: type) -> bool:  # type: ignore[type-arg]

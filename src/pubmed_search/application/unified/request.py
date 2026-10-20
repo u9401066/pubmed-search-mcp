@@ -104,6 +104,12 @@ def validate_unified_search_input_envelope(
         raise ValueError("fulltext must be 'off' or 'prefetch'")
     if pipeline and fulltext != "off":
         raise ValueError("fulltext='prefetch' is supported for normal searches; use fulltext='off' with a pipeline")
+    if pipeline and options is not None and any(token.strip() == "exclude_seen" for token in options.split(",")):
+        parsed_options, diagnostics = _parse_options_detailed(options)
+        if parsed_options.get("exclude_seen"):
+            diagnostics = (*diagnostics, "option 'exclude_seen' is not supported with pipeline")
+        if diagnostics:
+            raise ValueError("Invalid unified_search input: " + "; ".join(diagnostics))
 
 
 @dataclass(frozen=True)
@@ -138,6 +144,10 @@ class UnifiedSearchRequest:
     auto_relax: bool
     deep_search: bool
     fulltext: Literal["off", "prefetch"] = "off"
+    exclude_seen: bool = False
+    seen_pmids: frozenset[str] = frozenset()
+    seen_dois: frozenset[str] = frozenset()
+    seen_search_count: int | None = None
 
     @property
     def retrieval_mode(self) -> Literal["auto", "semantic", "systematic"]:
@@ -254,6 +264,7 @@ def normalize_unified_search_request(
         auto_relax=False if systematic_search else parsed_options.get("auto_relax", True),
         deep_search=False if explicit_provider_mode else parsed_options.get("deep_search", True),
         fulltext=fulltext,
+        exclude_seen=parsed_options.get("exclude_seen", False),
     )
 
 

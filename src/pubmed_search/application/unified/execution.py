@@ -38,7 +38,7 @@ from .clinical_trials import (
     validate_clinical_trials_rows,
 )
 from .helpers import DispatchStrategy, RelaxationResult, SearchDepthMetrics
-from .policies import enrich_with_rank_percentiles, is_preprint
+from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint
 
 if TYPE_CHECKING:
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
@@ -85,6 +85,7 @@ class UnifiedSearchExecutionResult:
     source_metadata: dict[str, dict[str, Any]]
     result_filter_counts: dict[str, int]
     enrichment_metadata: dict[str, Any]
+    exclude_seen_message: str | None = None
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -520,6 +521,20 @@ async def execute_unified_search(
             plan.ranking_config,
             plan.query,
         )
+        excluded_seen_count = 0
+        exclude_seen_message = None
+        if request.exclude_seen:
+            if request.seen_search_count is None:
+                exclude_seen_message = "exclude_seen unavailable: session history could not be read; nothing excluded."
+            else:
+                before_seen_filter = len(ranked)
+                ranked = exclude_seen_articles(ranked, request.seen_pmids, request.seen_dois)
+                excluded_seen_count = before_seen_filter - len(ranked)
+                exclude_seen_message = (
+                    f"Excluded {excluded_seen_count} previously seen article(s) (exclude_seen)."
+                    if request.seen_search_count
+                    else "exclude_seen: no earlier searches in this session; nothing excluded."
+                )
         if request.limit and len(ranked) > request.limit:
             ranked = ranked[: request.limit]
 
@@ -529,6 +544,9 @@ async def execute_unified_search(
             "eligible_unique": len(articles),
             "returned": len(ranked),
         }
+        if request.exclude_seen:
+            result_filter_counts["excluded_seen_count"] = excluded_seen_count
+            result_filter_counts["eligible_unique"] -= excluded_seen_count
 
         if request.include_rank_scores:
             enrich_with_rank_percentiles(ranked)
@@ -595,6 +613,7 @@ async def execute_unified_search(
                 source_errors.append(error_payload)
 
         return UnifiedSearchExecutionResult(
+            exclude_seen_message=exclude_seen_message,
             ranked=ranked,
             stats=stats,
             pubmed_total_count=pubmed_total_count,
