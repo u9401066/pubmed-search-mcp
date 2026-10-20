@@ -11,6 +11,7 @@ faked in tests without touching chronicle logic.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -37,6 +38,8 @@ if TYPE_CHECKING:
     from pubmed_search.domain.entities.timeline import ResearchTimeline
 
     from .store import ChronicleStore
+
+logger = logging.getLogger(__name__)
 
 #: File names written for every persisted chronicle revision.
 CHRONICLE_ARTIFACT_FILES = (
@@ -378,6 +381,17 @@ class ChronicleService:
             msg = f"Revision {' and '.join(missing)} not found for chronicle {chronicle_id}. {available}."
             raise ValueError(msg)
         return diff_chronicles(before, after)
+
+    def changes_since_previous(self, snapshot: ChronicleSnapshot) -> dict[str, Any] | None:
+        """Compare a built snapshot to its predecessor without failing the build."""
+        if snapshot.revision <= 1:
+            return None
+        try:
+            previous = self._store.load(snapshot.chronicle_id, snapshot.revision - 1)
+            return diff_chronicles(previous, snapshot) if previous is not None else None
+        except Exception as exc:
+            logger.warning("Chronicle change summary unavailable (%s)", type(exc).__name__)
+            return None
 
     def narrate(self, snapshot: ChronicleSnapshot, *, mode: str = "brief") -> str:
         """Render *snapshot* as evidence-backed Markdown."""

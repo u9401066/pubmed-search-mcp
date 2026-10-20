@@ -278,7 +278,58 @@ def _artifact_failure() -> dict[str, str]:
     }
 
 
-def _format_summary(snapshot: ChronicleSnapshot) -> str:
+def _format_changes(changes: dict[str, Any]) -> list[str]:
+    """Format existing differ categories without treating absence as retirement."""
+    entries = changes["entries"]
+    evidence = changes["evidence"]
+    branches = changes["branches"]
+    previous_revision = changes["from_revision"]
+    if not (
+        entries["added"]
+        or entries["not_observed_in_revision"]
+        or entries["updated"]
+        or evidence["added"]
+        or evidence["removed"]
+        or evidence["updated"]
+        or branches["added"]
+        or branches["removed"]
+        or branches["updated"]
+        or changes["scope_changed"]
+        or changes["audit"]["from"] != changes["audit"]["to"]
+    ):
+        return [f"No changes since revision {previous_revision}.", ""]
+    lines = [
+        f"## Changes since revision {previous_revision}",
+        "",
+        f"- Entries: {len(entries['added'])} added, "
+        f"{len(entries['not_observed_in_revision'])} not observed, {len(entries['updated'])} updated",
+        f"- Evidence: {len(evidence['added'])} added, "
+        f"{len(evidence['removed'])} removed, {len(evidence['updated'])} updated",
+    ]
+    if branches["added"] or branches["removed"] or branches["updated"]:
+        lines.append(
+            f"- Branches: {len(branches['added'])} added, "
+            f"{len(branches['removed'])} removed, {len(branches['updated'])} updated"
+        )
+    if changes["scope_changed"]:
+        lines.append("- Input scope changed; differences may reflect retrieval scope.")
+    if changes["audit"]["from"] != changes["audit"]["to"]:
+        lines.append(
+            f"- Audit: {escape_markdown_text(changes['audit']['from'])}"
+            f" to {escape_markdown_text(changes['audit']['to'])}"
+        )
+    for entry in entries["added"][:5]:
+        lines.append(f"- {escape_markdown_text(entry['title'])} `[{escape_markdown_code(entry['entry_id'])}]`")
+    lines.append("")
+    return lines
+
+
+def _format_summary(
+    snapshot: ChronicleSnapshot,
+    *,
+    changes: dict[str, Any] | None = None,
+    include_changes: bool = False,
+) -> str:
     """Render the compact Markdown index card for a chronicle revision."""
     year_range = snapshot.year_range
     span = f"{year_range[0]}\u2013{year_range[1]}" if year_range else "n/a"
@@ -305,6 +356,13 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         f"- Audit: **{escape_markdown_text(snapshot.audit.status)}**",
         "",
     ]
+
+    if include_changes and snapshot.revision > 1:
+        lines.extend(
+            _format_changes(changes)
+            if changes is not None
+            else ["Change summary unavailable: previous revision could not be read", ""]
+        )
 
     spine = sorted(snapshot.entries, key=chronology_key)
     if spine:
@@ -353,13 +411,17 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         lines.extend(f"- {escape_markdown_text(warning)}" for warning in snapshot.audit.warnings)
         lines.append("")
 
-    lines.append(
+    next_hint = (
         'Next: `read_research_chronicle(request={"action":"load",'
         f'"chronicle_id":"{snapshot.chronicle_id}","output":"mermaid"}})` '
-        "for the horizontal time-spine/lineage map, or "
-        '`read_research_chronicle(request={"action":"diff",'
-        f'"chronicle_id":"{snapshot.chronicle_id}","from_revision":1}})`'
+        "for the horizontal time-spine/lineage map"
     )
+    if snapshot.revision > 1:
+        next_hint += (
+            ', or `read_research_chronicle(request={"action":"diff",'
+            f'"chronicle_id":"{snapshot.chronicle_id}","from_revision":{snapshot.revision - 1}}})`'
+        )
+    lines.append(next_hint)
     return "\n".join(lines)
 
 
@@ -612,7 +674,8 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
 
         try:
             await safe_report_progress(ctx, 1, 3, "Retrieving chronicle evidence...")
-            snapshot = await service().build(
+            chronicle_service = service()
+            snapshot = await chronicle_service.build(
                 topic=topic,
                 pmids=pmid_list or None,
                 max_events=max_events,
@@ -629,7 +692,11 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             )
 
             await safe_report_progress(ctx, 2, 3, "Rendering chronicle projection...")
-            body = _render_output(snapshot, output)
+            if output == "summary":
+                changes = await asyncio.to_thread(chronicle_service.changes_since_previous, snapshot)
+                body = _format_summary(snapshot, changes=changes, include_changes=True)
+            else:
+                body = _render_output(snapshot, output)
 
             await safe_report_progress(ctx, 3, 3, "Persisting chronicle artifact...")
             persistence_expected = artifact_persistence_enabled()

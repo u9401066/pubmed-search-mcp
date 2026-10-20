@@ -6,6 +6,7 @@ import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -157,6 +158,28 @@ def build_snapshot(events: list[TimelineEvent], topic: str = "drug X") -> Chroni
 def store(tmp_path) -> ChronicleStore:
     """Return a chronicle store rooted in a temporary directory."""
     return ChronicleStore(tmp_path / "chronicles")
+
+
+@pytest.fixture
+def rebuild_tools(monkeypatch, tmp_path):
+    """Register real Chronicle tools with local storage and provider-only mocking."""
+    from pubmed_search.application.session import SessionManager
+    from pubmed_search.presentation.mcp_server.tool_contracts import PubMedMCPServer
+    from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
+    from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
+
+    events = list(BASE_EVENTS)
+
+    async def retrieve_evidence(**kwargs: Any) -> ResearchTimeline:
+        return ResearchTimeline(topic=kwargs["topic"], events=list(events))
+
+    provider = AsyncMock(side_effect=retrieve_evidence)
+    monkeypatch.setattr(chronicle_tools.TimelineBuilder, "build_timeline", provider)
+    with bind_tool_session_runtime(ToolSessionRuntime(session_manager=SessionManager(data_dir=str(tmp_path)))):
+        mcp = PubMedMCPServer(name="chronicle-rebuild-test")
+        chronicle_tools.register_chronicle_tools(mcp, object())
+        tools = {name: getattr(tool.fn, "__wrapped__", tool.fn) for name, tool in mcp._tool_manager._tools.items()}
+        yield tools, events, provider
 
 
 # ── Domain entities ─────────────────────────────────────────────────────────
@@ -1216,6 +1239,81 @@ class TestChronicleTools:
         assert "# Research Chronicle: drug X" in result
         assert "Revision: 1" in result
         assert "Audit: **pass**" in result
+
+    async def test_rebuild_summary_reports_added_evidence_and_escapes_titles(self, rebuild_tools, tmp_path):
+        tools, events, _provider = rebuild_tools
+        first = await tools["build_research_chronicle"](topic="drug X")
+        assert "Changes since revision" not in first
+        assert '"action":"diff"' not in first
+
+        events.append(make_event("4", 2023, MilestoneType.SAFETY_ALERT, "New [trial]", title="New [trial]"))
+        second = await tools["build_research_chronicle"](topic="drug X")
+        store = ChronicleStore(tmp_path / "chronicles")
+        snapshot = store.load(derive_chronicle_id("drug X"))
+        added = next(entry for entry in snapshot.entries if any(a.pmid == "4" for a in entry.evidence.all_articles))
+        changes = second.split("## Changes since revision 1", 1)[1].split("## Chronological Spine", 1)[0]
+        assert "Entries: 1 added, 0 not observed, 0 updated" in changes
+        assert "Evidence: 1 added, 0 removed, 0 updated" in changes
+        assert "New \\[trial\\]" in changes
+        assert added.entry_id in changes
+        assert second.index("Audit:") < second.index("## Changes") < second.index("## Chronological Spine")
+
+        third = await tools["build_research_chronicle"](topic="drug X")
+        assert "No changes since revision 2." in third
+        assert '"from_revision":2' in third
+        assert '"from_revision":1' not in third
+
+    @pytest.mark.parametrize("output", ["json", "timeline", "graph", "narrative", "mermaid"])
+    async def test_rebuild_outputs_preserve_existing_rendering(self, rebuild_tools, tmp_path, output):
+        tools, _events, _provider = rebuild_tools
+        await tools["build_research_chronicle"](topic="drug X")
+        result = await tools["build_research_chronicle"](topic="drug X", output=output)
+        snapshot = ChronicleStore(tmp_path / "chronicles").load(derive_chronicle_id("drug X"))
+        assert snapshot.revision == 2
+        expected = ChronicleService.render(snapshot, output)
+        if isinstance(expected, dict):
+            artifact = json.loads(result)["artifact"]
+            assert result == json.dumps({**expected, "artifact": artifact}, indent=2, ensure_ascii=False)
+        else:
+            if output == "mermaid":
+                expected = f"```mermaid\n{expected}\n```"
+            assert result.startswith(expected)
+            assert result[len(expected) :].startswith("\n---\n## Persistent Artifact")
+        assert "Changes since revision" not in result
+        assert "Change summary unavailable" not in result
+
+    async def test_rebuild_summary_limits_added_entries_to_five(self, rebuild_tools):
+        tools, events, _provider = rebuild_tools
+        await tools["build_research_chronicle"](topic="drug X")
+        events.extend(
+            make_event(str(number), 2020 + number, MilestoneType.SAFETY_ALERT, f"Added entry {number}")
+            for number in range(4, 10)
+        )
+        result = await tools["build_research_chronicle"](topic="drug X")
+        changes = result.split("## Changes since revision 1", 1)[1].split("## Chronological Spine", 1)[0]
+        assert "Entries: 6 added, 0 not observed, 0 updated" in changes
+        assert changes.count("`[entry-") == 5
+        assert "Added entry 8" in changes
+        assert "Added entry 9" not in changes
+
+    async def test_change_summary_degrades_when_predecessor_becomes_unreadable(self, rebuild_tools, tmp_path):
+        from pubmed_search.presentation.mcp_server.tools.chronicle import _format_summary
+
+        tools, _events, _provider = rebuild_tools
+        chronicle_id = json.loads(await tools["build_research_chronicle"](topic="drug X", output="json"))[
+            "chronicle_id"
+        ]
+        await tools["build_research_chronicle"](chronicle_id=chronicle_id, output="json")
+        store = ChronicleStore(tmp_path / "chronicles")
+        (store.root_dir / chronicle_id / "revision-1.json").write_text("{broken", encoding="utf-8")
+        latest = store.load(chronicle_id, 2)
+
+        changes = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).changes_since_previous(latest)
+
+        assert changes is None
+        rendered = _format_summary(latest, changes=changes, include_changes=True)
+        assert "Change summary unavailable: previous revision could not be read" in rendered
+        assert "## Changes since revision" not in rendered
 
     async def test_build_rejects_unknown_output(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
