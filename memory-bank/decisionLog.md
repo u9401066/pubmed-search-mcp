@@ -1,6 +1,27 @@
 # Decision Log
 
-## [2026-10-20] Consume scheduled pipeline diff and notify options
+## [2026-10-20] v0.8.0 automation and release contracts
+
+- Keep Chronicle store fail-loud on a corrupt latest revision; only the bounded
+  predecessor change summary degrades to an unavailable notice. Machine outputs
+  remain unchanged; missing entries never prove research retirement.
+- Reject `exclude_seen` in pipeline mode; normal searches use completed/partial
+  session PMID/normalized DOI identities before limit truncation.
+- Snowball reuses existing discovery actions with bounded multi-seed calls and a
+  declarative template, rather than adding a tool. Registry stays at 41 tools.
+- Validate registry metadata with a pinned/checksum-verified publisher and plugin
+  drift before irreversible PyPI upload; publish Registry afterward via GitHub OIDC.
+- Generate plugin/site/reference copies from source skills and canonical docs;
+  preserve the pre-existing 0.8.0 version files and README ownership marker.
+- Run the requested plugin → site generation order, then resync Plugin references
+  after site generation updates their canonical copies. Keep website asset cache
+  keys at the release date/version; fix docs, not test expectations.
+- Defer systematic-review template until a PRISMA contract exists; elicitation/
+  sampling until safe client fallback; default iCite because it changes output
+  and adds I/O; MCP Tasks for protocol/persistence design; automatic export
+  verification because plain-text bibliography validation is not record validation.
+
+### Scheduled pipeline diff and notify options
 
 - Render bounded article changes in the application report generator, using the
   runner's previous successful result; scheduler only forwards its diff option.

@@ -1,6 +1,30 @@
 # Active Context
 
-## Current Task - Scheduled pipeline changes and notifications (2026-10-20)
+## Current Task - v0.8.0 automation and release documentation (2026-10-20)
+
+- Release date: 2026-10-20; branch `feat/automation-0.8`. Version is already 0.8.0;
+  preserve existing version metadata changes. No commit or publication requested.
+- Verified portable Agent Plugin and MCP Registry metadata/workflow, multi-seed
+  `snowball`, session `exclude_seen`, scheduled diffs/local notification summaries,
+  Chronicle predecessor summaries, and docs-site empty-query escaping in code.
+- Release rigor: pinned/checksum-verified registry validation and plugin drift check
+  before PyPI; registry publication afterward via GitHub OIDC. Exact-wheel smoke
+  checks ownership METADATA and the installed 41-tool registry environment contract.
+- Synchronized bilingual README/guides, source skills, harness instructions and
+  generated copies. Tool sync: 41 tools/16 categories; Cline/frontmatter/evolution/
+  tool-sync/layout checks pass (847/847 paths; four informational hook-version
+  warnings). Existing instruction fingerprint is current; no refresh was needed.
+- Documentation suite: 114 passed after updating the website cache key to
+  `20261020-v080`; no tests changed. Website generation updates packaged pipeline
+  references, so reran the plugin generator afterward; final drift check passes.
+- Full `uv run pytest -q`: 4,957 passed, 50 skipped, two upstream MCP logging
+  deprecation warnings (138.49 s). Ruff lint passes; 486 files pass format check.
+  No live-provider, hosted publication/OIDC, or container deployment was attempted.
+- Deferred: systematic-review template (PRISMA contract first); elicitation/sampling
+  (uneven client support); default iCite (output/network change); MCP Tasks
+  (protocol/persistence scope); export auto-verification (bibliography verifier
+  does not validate exported records). Latest-revision corruption remains fatal;
+  only predecessor change-summary reads degrade.
 
 - Implemented opt-in saved-report diffs in the application layer; scheduler
   forwards its existing `diff_mode` while manual runs retain their report format.
@@ -10,8 +34,8 @@
 - Focused pipeline regressions: 211 passed; Ruff lint/format, mypy (443 files),
   and async consistency pass. Full regression: 4,871 passed, 19 skipped,
   31 deselected, with two upstream MCP logging deprecation warnings.
-- Behavior documentation lives in application/domain docstrings; generated guides
-  are unchanged. No commits, branches, pushes, tool-sync or site generation performed.
+- The earlier implementation pass left guides/generated assets unchanged; this
+  release-documentation pass now synchronizes them. No commits, branches or pushes.
 
 ## Current Focus — v0.7.7 test/CI renovation, published and verified
 

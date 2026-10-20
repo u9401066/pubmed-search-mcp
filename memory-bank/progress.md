@@ -1,6 +1,28 @@
-# Progress (Updated: 2026-10-01)
+# Progress (Updated: 2026-10-20)
 
-## 2026-10-20 - Scheduled pipeline diff/notification implementation
+## 2026-10-20 - v0.8.0 automation and release documentation
+
+- Done: verified the shipped Plugin/Registry flow, scheduled diff/notify,
+  Chronicle rebuild changes, multi-seed snowball, `exclude_seen`, exact-wheel
+  release smoke and docs-site query escaping against implementation.
+- Done: 0.8.0 changelog dated 2026-10-20, bilingual README and guides, source
+  skills, agent instructions and ROADMAP shipped/deferred entries.
+- Deferred: systematic-review template pending PRISMA contract; elicitation/sampling
+  pending safe client fallback; default iCite due to output/network cost; MCP Tasks
+  due to protocol/persistence scope; export verification needs a record-level design.
+- Done: tool/plugin/site generation and all requested Cline/frontmatter/evolution/
+  tool-sync/layout checks. Registry remains 41 tools/16 categories; layout 847/847
+  files, zero errors. Four hook-version reminders are informational.
+- Done: documentation tests 114 passed; full suite 4,957 passed, 50 skipped,
+  two upstream MCP logging warnings (138.49 s). Ruff lint passes; 486 files formatted.
+- Resolved checks: website cache key updated to `20261020-v080` without changing
+  tests; reran plugin sync/check after website generation updated both references.
+  Existing instruction fingerprint was already current. `git diff --check` passes.
+- No tests, application behavior or protected version contents changed in this
+  pass; no commit/publication, live-provider or container run. Only permitted
+  server instructions changed under `src/`.
+
+### Earlier scheduled pipeline implementation validation
 
 - Done: bounded baseline/change reports, scheduler option propagation, legacy-safe
   notification persistence/reset, and scheduled-new-article list output.
@@ -12,7 +34,8 @@
 - An initial full run detected guide/generated-site drift. Reverted only this
   task's guide addition, documented behavior in code docstrings, and confirmed
   the document-sync suite passes without invoking the prohibited generators.
-- No Git publication operations or generated documentation commands performed.
+- That implementation pass performed no Git publication or generation; generation
+  is now included in the 0.8.0 documentation pass above.
 
 ## 2026-10-01 — v0.7.7 test/CI renovation, published and verified
 
