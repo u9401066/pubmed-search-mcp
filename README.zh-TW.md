@@ -21,6 +21,7 @@
 - 📖 **GitHub Wiki** - 同一組 canonical docs 的 GitHub 內建文件鏡像，入口在 [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **26 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
+- **研究自動化** - 排程 pipeline 差異與本機通知、Chronicle 重建摘要、多種子引用 snowball，以及可選的 `options="exclude_seen"` session 去重。
 
 **🌐 語言**: [English](README.md) | **繁體中文**
 
@@ -34,6 +35,18 @@
 
 
 ---
+
+## 研究自動化與可攜式安裝 — v0.8.0
+
+排程 pipeline 提供有上限的差異報告與本機通知摘要。Chronicle 重建摘要比較前一版；
+`snowball` pipeline 從多個種子擴展引用。一般搜尋可用 `options="exclude_seen"`，
+在 `limit` 截斷前排除本 session 已回傳的 PMID／DOI；不可搭配 `pipeline=`。
+工具介面維持 41 個。詳見[使用指南](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md)
+與 [pipeline 教學](docs/guides/PIPELINE_MODE_TUTORIAL.md)。
+
+PyPI 上傳前驗證 Registry metadata 與 plugin 同步；release smoke 檢查實際 wheel
+的 ownership marker，以及 Registry 環境契約下全部 41 個已安裝工具。
+Registry 發布在 PyPI 之後透過 GitHub OIDC 執行。
 
 ## 真實流程 smoke 與本機 pretest — v0.7.7
 
@@ -83,6 +96,17 @@ Agent 套件效果。先前公開 BEIR NFCorpus 的 BM25 元件實驗，test nDC
 fingerprints。引用驗證確認書目一致性，論文是否支持某項論述仍需閱讀相關原文。
 
 ## 🚀 快速安裝
+
+### MCP Registry 與 Agent Plugin
+
+版本發布後，可在支援[官方 MCP Registry](https://registry.modelcontextprotocol.io/)
+或 [GitHub MCP Registry](https://github.com/mcp) 的客戶端查找
+`io.github.u9401066/pubmed-search-mcp`。Registry metadata 以 stdio 啟動
+`uvx pubmed-search-mcp@0.8.0`；請在客戶端設定 `NCBI_EMAIL`，並視需要設定 `NCBI_API_KEY`。
+
+支援 Agent Plugins 1.0.0 的客戶端可透過自身的 plugin 安裝功能載入本倉庫
+[`plugins/pubmed-search/`](plugins/pubmed-search/) 目錄，其中包含固定版本的 MCP
+啟動設定與研究技能。各客戶端支援程度與安裝介面不同，詳見[整合指南](docs/guides/INTEGRATIONS.md)。
 
 ### 前置需求
 
@@ -1472,7 +1496,7 @@ GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.7},
+  version = {0.8.0},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

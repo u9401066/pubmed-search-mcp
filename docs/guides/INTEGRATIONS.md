@@ -763,7 +763,7 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](../../plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@<version>`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.8.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
@@ -783,6 +783,18 @@ Root `server.json` is the official
 that registry. The tag release workflow publishes it after PyPI with GitHub
 OIDC. PyPI ownership is proven by the `mcp-name:` comment in `README.md`, so
 the first registry publication needs a PyPI release whose README contains it.
+Once published, look up that exact server name in a registry-enabled client's
+installer (including [GitHub MCP Registry](https://github.com/mcp)); configure
+`NCBI_EMAIL` and optionally `NCBI_API_KEY`. Plugin installation additionally
+requires an Agent Plugins 1.0.0-compatible client; use its directory installer,
+not an assumed universal install command.
+
+Before PyPI upload, the tag workflow checks plugin drift and runs
+`mcp-publisher validate server.json` with a pinned, SHA-256-verified publisher.
+Release smoke verifies that registry/plugin metadata names the exact wheel,
+its METADATA contains the ownership marker, and its installed console script
+serves all 41 tools with only registry-declared application environment variables.
+These are release checks, not proof that a release has already been published.
 
 ---
 

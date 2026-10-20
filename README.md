@@ -23,6 +23,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **26 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
+- **Research automation** - Scheduled pipeline diffs/local notifications, Chronicle rebuild summaries, multi-seed citation snowballing, and opt-in session deduplication with `options="exclude_seen"`.
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
@@ -31,6 +32,20 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 [Documentation map](docs/README.md) · [Maintenance scripts](scripts/README.md)
 
 ---
+
+## Research automation and portable installation — v0.8.0
+
+Scheduled pipelines report bounded changes and retain local notification summaries.
+Chronicle rebuild summaries compare the previous revision; `snowball` pipelines
+expand multiple citation seeds. Normal searches can opt into `options="exclude_seen"`
+to filter previously returned PMID/DOI identities in this session before `limit`;
+the option is rejected with `pipeline=`. The interface remains 41 tools.
+See the [usage guide](docs/guides/TOOLS_USAGE_GUIDE.md) and
+[pipeline tutorial](docs/guides/PIPELINE_MODE_TUTORIAL.en.md).
+
+Registry metadata and plugin drift are checked before PyPI upload. Release smoke
+verifies the exact wheel's ownership marker and all 41 installed tools under the
+registry environment contract; registry publication follows PyPI via GitHub OIDC.
 
 ## Real workflow smoke and local pretest — v0.7.7
 
@@ -93,6 +108,19 @@ checks bibliographic consistency; confirming that a paper supports a claim still
 requires inspecting the relevant passage.
 
 ## 🚀 Quick Install
+
+### MCP Registry and Agent Plugin
+
+In clients that support the [official MCP Registry](https://registry.modelcontextprotocol.io/)
+or [GitHub MCP Registry](https://github.com/mcp), look up
+`io.github.u9401066/pubmed-search-mcp` once the release is published. Registry
+metadata launches `uvx pubmed-search-mcp@0.8.0` over stdio; configure `NCBI_EMAIL`
+and optionally `NCBI_API_KEY` in the client.
+
+For Agent Plugins 1.0.0-compatible clients, install the repository's
+[`plugins/pubmed-search/`](plugins/pubmed-search/) directory using the client's
+plugin installer. It bundles the version-pinned MCP launcher and research skills;
+client plugin support and installation UI vary. See [integrations](docs/guides/INTEGRATIONS.md).
 
 ### Prerequisites
 
@@ -1586,7 +1614,7 @@ GitHub will show **Cite this repository** from [CITATION.cff](CITATION.cff). If 
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.7.7},
+  version = {0.8.0},
   year = {2026},
   url = {https://github.com/u9401066/pubmed-search-mcp}
 }

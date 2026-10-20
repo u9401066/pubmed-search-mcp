@@ -11,7 +11,7 @@
 > labels, not current public MCP search tools.
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-09-01
+> **最後更新**: 2026-10-20
 
 > [!IMPORTANT]
 > **v0.6.2 現況補記**：Phase 13 的 timeline 規格是歷史提案，現已由持久化、
@@ -21,6 +21,25 @@
 > 或「整個領域首篇／完整因果譜系」的產品保證。
 
 ---
+
+## v0.8.0 - 2026-10-20
+
+- [x] Portable Agent Plugin：Agent Plugins 1.0.0 metadata、固定版本 uvx launcher 與研究技能副本，提供同步／drift check。
+- [x] 官方 MCP Registry metadata 與 tag 發布流程：PyPI 前驗證 pinned/checksum-verified publisher 與 plugin，同步完成後以 GitHub OIDC 發布 Registry。
+- [x] 排程 `diff_mode` 報告（新增／移除各最多 20 筆、首次 baseline）與 `notify` 本機 run/count 摘要。
+- [x] Chronicle 重建預設摘要比較前一版，最多列出 5 個新增標題；前一版讀取失敗只降級摘要，機器輸出不變。
+- [x] Pipeline `seed_limit`（1–10）與 `snowball` 模板，重用既有引用 actions，不新增工具。
+- [x] `unified_search(options="exclude_seen")`：本 session 已回傳 PMID／正規化 DOI 去重，在 `limit` 前過濾；不支援 pipeline 模式。
+- [x] Release smoke：Registry/plugin 指向實際 wheel、METADATA ownership marker、Registry 環境下啟動全部 41 個工具。
+- [x] 文件站搜尋空結果訊息安全顯示查詢文字。
+
+### 延後項目
+
+- [ ] Systematic-review template：既有 `comprehensive`／`pico` 與 `generate_search_queries` 已涵蓋大部分流程，先定義 PRISMA-style 契約。
+- [ ] MCP elicitation／sampling：客戶端支援不一，需先確保安全降級。
+- [ ] 預設啟用 iCite metrics：會改變預設輸出，且每次搜尋增加網路呼叫。
+- [ ] MCP Tasks：長時間搜尋／Chronicle 需要較大的協定與持久化設計變更。
+- [ ] 匯出自動驗證引用：`verify_reference_list` 驗證純文字書目，非匯出 records，須另行設計。
 
 ## 🎨 設計原則：Agent vs MCP 職責劃分
 

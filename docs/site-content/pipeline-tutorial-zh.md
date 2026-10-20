@@ -107,7 +107,7 @@ JSON 回應會包含 `summary`、`steps`、每個 step 的 `metadata`、以及 s
 
 Template pipeline 適合 80% 的常見需求。它不是把 YAML 原封不動送進 executor，而是先展開成真正的 step DAG。
 
-### 目前可用的 4 個 templates
+### 目前可用的 5 個 templates
 
 | Template | 必填參數 | 常用可選參數 | 用途 |
 | -------- | -------- | ------------ | ---- |
@@ -115,6 +115,7 @@ Template pipeline 適合 80% 的常見需求。它不是把 YAML 原封不動送
 | `comprehensive` | `query` | `sources`, `limit`, `min_year`, `max_year` | 多來源全面搜尋 |
 | `exploration` | `pmid` | `limit` | 從一篇 seed paper 往外探索 |
 | `gene_drug` | `term` | `sources`, `limit`, `min_year`, `max_year` | 基因或藥物主題搜尋 |
+| `snowball` | `query` | `seed_limit`, `limit` | 多種子 citing／references 擴展 |
 
 ### Canonical `template_params`
 
@@ -190,6 +191,19 @@ output:
 ```
 
 注意目前正確欄位是 `term`，不是 `topic`。
+
+### `snowball`
+
+```yaml
+template: snowball
+template_params:
+  query: remimazolam ICU sedation
+  seed_limit: 5
+  limit: 20
+```
+
+流程：search → citing + references → union merge（含原始搜尋結果）。
+`seed_limit` 預設 5（1–10）；`limit` 預設 20。
 
 ### 範例檔
 
@@ -280,6 +294,10 @@ output:
 | `metrics` | 無需額外 params | 補 iCite metrics |
 | `merge` | `method=union / intersection / rrf` | 合併多路結果 |
 | `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | 帶 diagnostics 的後處理篩選 |
+
+`related`／`citing`／`references` 也支援 `inputs` + `seed_limit`（1–10），
+與 `pmid` 互斥。依輸入順序取前幾個不重複 PMID，每個 seed 消耗一次外部呼叫預算；
+各 action 合併去重、排除 seeds 後，以 `limit` 截斷輸出。
 
 ### Shared globals 與 variables
 
@@ -451,6 +469,12 @@ schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 schedule_pipeline(name="monthly_crispr_review", cron="0 8 1 * *")
 schedule_pipeline(name="watch_icu_sedation", cron="0 */6 * * *")
 ```
+
+`diff_mode=True`（預設）在報告附上與前次成功執行的差異：新增文章與移除 PMID
+各最多 20 筆，首次為 baseline；partial/error 不據以推論移除。
+`notify=True`（預設）保存最後 run ID 與新增／移除數量；`list_pipelines` 顯示
+「N new articles in the last scheduled run」並引導至 `get_pipeline_history`。
+通知是本機摘要與 log，不是外部推播；停用時清除舊摘要。手動執行的報告格式不變。
 
 Cron 格式是標準 5 欄位:
 

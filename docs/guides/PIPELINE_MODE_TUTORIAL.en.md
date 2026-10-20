@@ -105,7 +105,7 @@ The JSON response contains `summary`, `steps`, per-step `metadata`, and structur
 
 Template pipelines cover roughly 80% of normal use cases. The YAML is not sent directly into the executor as-is. It is first expanded into a real step DAG.
 
-### 4 templates currently available
+### 5 templates currently available
 
 | Template | Required parameters | Common optional parameters | Purpose |
 | -------- | -------- | ------------ | ---- |
@@ -113,6 +113,7 @@ Template pipelines cover roughly 80% of normal use cases. The YAML is not sent d
 | `comprehensive` | `query` | `sources`, `limit`, `min_year`, `max_year` | Broad multi-source search |
 | `exploration` | `pmid` | `limit` | Explore outward from one seed paper |
 | `gene_drug` | `term` | `sources`, `limit`, `min_year`, `max_year` | Gene- or drug-focused search |
+| `snowball` | `query` | `seed_limit`, `limit` | Multi-seed citing/reference expansion |
 
 ### Canonical `template_params`
 
@@ -188,6 +189,19 @@ output:
 ```
 
 The correct field today is `term`, not `topic`.
+
+### `snowball`
+
+```yaml
+template: snowball
+template_params:
+  query: remimazolam ICU sedation
+  seed_limit: 5
+  limit: 20
+```
+
+Search → citing + references → union merge (including original search results).
+`seed_limit` defaults to 5 (1–10); `limit` defaults to 20.
 
 ### Example files
 
@@ -278,6 +292,11 @@ output:
 | `metrics` | none | Add iCite metrics |
 | `merge` | `method=union / intersection / rrf` | Merge multiple result streams |
 | `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | Post-processing filters with diagnostics |
+
+`related`, `citing`, and `references` also accept `inputs` with `seed_limit`
+(1–10), mutually exclusive with `pmid`. The first unique input PMIDs are seeds;
+each consumes one budgeted external call. Each action dedupes the union, removes
+seeds, and caps its output at `limit`.
 
 ### Shared globals and variables
 
@@ -453,6 +472,14 @@ schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 schedule_pipeline(name="monthly_crispr_review", cron="0 8 1 * *")
 schedule_pipeline(name="watch_icu_sedation", cron="0 */6 * * *")
 ```
+
+`diff_mode=True` (default) appends changes since the previous successful run,
+with up to 20 new articles and 20 removed PMIDs; the first run is a baseline.
+Partial/error runs do not imply removals. `notify=True` (default) retains the last
+run ID and new/removed counts. `list_pipelines` shows "N new articles in the last
+scheduled run" with a `get_pipeline_history` hint. Notification is a local
+summary and log, not external push; disabling it clears the old summary.
+Manual execution keeps its existing report format.
 
 Cron format is the standard 5-field form:
 

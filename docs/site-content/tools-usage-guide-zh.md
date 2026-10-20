@@ -145,6 +145,11 @@ provider-specific search tool：
 | Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract 語意檢索；provider 最多 50 筆。 |
 | Systematic | `unified_search(query="melanoma AND immunotherapy", sources="openalex,semantic_scholar", options="systematic")` | 可稽核的有界 provider execution：OpenAlex cursor 與 Semantic Scholar bulk。PubMed 是 keyword-only，此 mode 會拒絕它。 |
 
+反覆搜尋時可用 `unified_search(query="sepsis biomarkers", options="exclude_seen")`，
+在 `limit` 截斷前排除本 session 先前 completed／partial 搜尋已回傳的 PMID 或
+正規化 DOI。回報排除數量、無歷史或歷史不可用狀態；歷史不可用時不排除任何文章。
+不可搭配 `pipeline=`。
+
 `native_semantic` 與 `systematic` 互斥。兩者都會關閉多策略 deep-search
 expansion，保留可稽核的 provider-native plan。明確 source/mode 不相容時，系統在
 network call 前拒絕；自動路由則只保留有能力的 source。Public `limit` 每 source
@@ -269,6 +274,11 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 當使用者要的不是一次性快照，而是一份可以持續回頭維護的研究脈絡時，使用 `build_research_chronicle`。它取代了舊的一次性 timeline 工具：每個不可變 revision 都以原子操作和遞增編號追加，之後重跑就能做版本比對，回答「上次之後改變了什麼」。主軸是時序，分支是同一組 stored entries 的次要投影。
 
+重建時預設 `output="summary"` 附上與 revision N-1 的差異：entry 新增／本次未觀察到／更新、
+證據與分支數量、scope 與 audit 狀態變化，最多 5 個新增標題；無差異時明確說明。
+機器輸出不變。前一版無法讀取時顯示 `Change summary unavailable`，不放寬 store
+對損壞最新 revision 的錯誤處理；本次未觀察到不代表研究已退場。
+
 分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
 每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
@@ -304,6 +314,17 @@ scheduler，除非維運者另外提供單一 external leader/lease。
 
 History read 採 fail-closed。持久化 run record 只要有一筆無法解析，就回報
 sanitized error，不會跳過後產生誤導的部分清單或空歷史。
+
+`snowball` 模板要求 `query`，可選 `seed_limit`（1–10，預設 5）與 `limit`（預設 20）：
+search → citing + references → union merge，保留原始搜尋結果。自訂 DAG 的
+`related`／`citing`／`references` 可用 `inputs` + `seed_limit`，與 `pmid` 互斥；
+依輸入順序取前幾個不重複 PMID，每個 seed 消耗一次外部呼叫預算，合併去重、
+排除 seeds 後以 `limit` 截斷該 action 的結果。
+
+排程 `diff_mode=True` 比較前次成功執行，報告新增文章與移除 PMID 各最多 20 筆，
+首次標示 baseline；partial/error 不據以推論移除。`notify=True` 保存最後 run ID
+與新增／移除數量，`list_pipelines` 顯示新增篇數並引導至 `get_pipeline_history`。
+這是本機摘要而非外部推播，停用通知會清除舊摘要。詳見 [pipeline 教學](#/pipeline-tutorial-zh)。
 
 ### 機構存取
 

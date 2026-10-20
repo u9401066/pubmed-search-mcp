@@ -158,6 +158,12 @@ policy with `options` instead of looking for provider-specific search tools:
 | Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract semantic retrieval; provider maximum 50. |
 | Systematic | `unified_search(query="melanoma AND immunotherapy", sources="openalex,semantic_scholar", options="systematic")` | Deterministic, bounded provider execution: OpenAlex cursor and Semantic Scholar bulk. PubMed is keyword-only and is rejected in this mode. |
 
+For iterative searching, `unified_search(query="sepsis biomarkers", options="exclude_seen")`
+filters PMID or normalized DOI identities returned by earlier completed/partial
+searches in this session, before `limit` truncation. It reports the excluded
+count, no-history, or history-unavailable status; unavailable history excludes
+nothing. This option is rejected with `pipeline=`.
+
 `native_semantic` and `systematic` are mutually exclusive. Both disable the
 multi-strategy deep-search expansion so the selected provider-native plan stays
 auditable. An explicit unsupported source/mode combination fails before the
@@ -302,6 +308,13 @@ Use precise terms:
 
 Use `build_research_chronicle` whenever the user asks how a field evolved. It replaces the older one-shot timeline tools: each immutable revision is appended atomically with a monotonic number, so re-running it later lets you diff revisions and answer "what changed since last time".
 
+Rebuilds with default `output="summary"` include changes since revision N-1:
+entries added/not observed/updated, evidence and branch counts, scope and audit
+status changes, and up to five added titles (or an explicit no-change message).
+Machine outputs are unchanged. An unreadable predecessor yields `Change summary
+unavailable`; corrupt latest revisions still fail loudly in the store. Absence
+in a revision does not establish research retirement.
+
 Chronology is the primary axis and research branches are a secondary projection of the same stored entries. Branches describe patterns observed in the selected query/PMID/source/year scope, not causal descent. `earliest_observed_in_scope` identifies the earliest dated retrieved candidate only; it does not establish the field's true first report. Date-precision intervals must be disjoint before the graph can assert `precedes` or `supersedes`.
 
 Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, graph integrity, chronology gaps, and per-source retrieval counts.
@@ -336,6 +349,20 @@ scheduler. An authenticated service caller can only read saved pipelines from
 its tenant-derived store; process-wide workspace/file reads are blocked, and
 the service Compose profile disables scheduling unless an operator supplies a
 single external leader/lease.
+
+The `snowball` template requires `query`, with `seed_limit=5` (1–10) and
+`limit=20` defaults: search → citing + references → union merge, including the
+original search results. In custom DAGs, `related`, `citing`, and `references`
+accept `inputs` plus `seed_limit`, mutually exclusive with `pmid`. They take the
+first unique input PMIDs, spend one external-call budget per seed, then dedupe
+the union, exclude seeds, and cap the action result at `limit`.
+
+Scheduled `diff_mode=True` appends changes against the previous successful run:
+up to 20 new articles and 20 removed PMIDs, or a first-run baseline. Partial/error
+runs do not imply removals. With `notify=True`, the schedule retains last run ID
+and new/removed counts; `list_pipelines` shows the new-article count and points to
+`get_pipeline_history`. This is a local summary, not external push delivery;
+disabling notification clears the old summary. See the [pipeline tutorial](#/pipeline-tutorial).
 
 History reads are fail-closed. A malformed persisted run record produces a
 sanitized error; it is never skipped to produce a misleading partial or empty
