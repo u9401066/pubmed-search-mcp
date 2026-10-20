@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pubmed-search",
-  "version": "0.7.7",
+  "version": "0.8.0",
   "description": "PubMed Search MCP server with research skills for multi-source biomedical literature search, full text, citation networks, exports, pipelines, and research chronicles.",
   "author": {
     "name": "u9401066",

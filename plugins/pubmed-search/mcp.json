@@ -5,7 +5,7 @@
       "type": "stdio",
       "command": "uvx",
       "args": [
-        "pubmed-search-mcp@0.7.7"
+        "pubmed-search-mcp@0.8.0"
       ]
     }
   }

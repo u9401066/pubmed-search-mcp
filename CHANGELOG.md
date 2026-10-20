@@ -10,10 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-20
+
 ### Added
 
 - Package the server and research skills as a portable [Agent Plugins 1.0.0](https://agent-plugins.org/) plugin under `plugins/pubmed-search/`, kept in sync by `scripts/build_agent_plugin.py`.
 - Add `server.json` and a tag-release job that publishes `io.github.u9401066/pubmed-search-mcp` to the official MCP Registry, which feeds GitHub's MCP Registry.
+- Add `options="exclude_seen"` to normal `unified_search` calls: exclude articles
+  returned by earlier completed/partial searches in this session by PMID or
+  normalized DOI before applying `limit`. Report excluded counts or unavailable
+  history; reject the option with `pipeline=`.
+- Add bounded multi-seed citation expansion with `seed_limit` (1–10) for pipeline
+  `related`, `citing`, and `references` actions, plus a `snowball` template that
+  searches, expands citing/referenced articles, and union-merges results.
+
+### Changed
+
+- Scheduled pipelines honor `diff_mode`: append new articles and removed PMIDs
+  (up to 20 each), or a first-run baseline. With `notify` enabled, persist the last
+  run ID and new/removed counts; `list_pipelines` points to execution history.
+- Chronicle rebuilds include a bounded changes-since-previous-revision section in
+  default summary output: entries, evidence, branches, scope and audit changes,
+  with up to five added titles. Machine outputs are unchanged; an unreadable
+  predecessor produces `Change summary unavailable` without failing the summary.
+- Validate registry metadata with a pinned, checksum-verified `mcp-publisher` and
+  check plugin drift before PyPI upload; publish to the registry afterward using
+  GitHub OIDC. Release smoke checks exact-wheel metadata, the registry ownership
+  marker, and all 41 tools through the installed console script with only
+  registry-declared application environment variables.
 
 ### Fixed
 
