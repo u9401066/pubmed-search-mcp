@@ -157,11 +157,15 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
     assert len(cache_keys) == 1
-    assert re.fullmatch(r"\d{8}-v" + re.escape(__version__.replace(".", "")), next(iter(cache_keys)))
+    assert re.fullmatch(
+        r"\d{8}-v" + re.escape(__version__.replace(".", "")) + r"(?:-[a-z0-9]+)?", next(iter(cache_keys))
+    )
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
     assert "42</strong>" in index_html
-    assert "runtime contracts" in index_html
+    assert "16</strong>" in index_html and "registry categories" in index_html
+    assert "12</strong>" in index_html and "plugin skills" in index_html
+    assert 'href="#/documentation-map#capability-inventory"' in index_html
     assert "function wrapLocalImages()" in site_js
     assert "sidebarBackdrop.addEventListener" in site_js
     assert "grid-template-columns: minmax(0, 1fr) auto" in site_css
@@ -382,7 +386,7 @@ def test_docs_site_links_preserve_fragments_and_route_repo_files() -> None:
             REPO_ROOT / "README.md",
             route_map,
         )
-        == "[Citation](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff)"
+        == "[Citation](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff)"
     )
 
 
@@ -450,6 +454,9 @@ def test_packaged_references_match_generated_sources_and_images_exist() -> None:
             if image_target.startswith(("http://", "https://")):
                 continue
             asset = (target_path.parent / image_target).resolve()
+            assert asset.is_relative_to(target_path.parent)
+            packaged = REPO_ROOT / "plugins/pubmed-search" / asset.relative_to(REPO_ROOT / ".claude")
+            assert packaged.read_text(encoding="utf-8") == (DOCS_ROOT / image_target).read_text(encoding="utf-8")
             if not asset.exists():
                 missing_assets.append(f"{target_path}: {image_target}")
 

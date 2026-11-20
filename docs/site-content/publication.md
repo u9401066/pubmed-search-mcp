@@ -4,7 +4,7 @@
 
 # Publication and citation workspace / 論文與引用
 
-**Status: working manuscript, not submitted.** The manuscript describes the v0.7.4 software surface. It has no arXiv identifier, publication DOI, or acceptance. Cite the version used for a software result using [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff).
+**Status: working manuscript, not submitted.** The manuscript describes the v0.7.4 software surface. It has no arXiv identifier, publication DOI, or acceptance. Cite the version used for a software result using [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff).
 Author and affiliation, confirmed September 21, 2026: **Tz-Ping Gau,
 Kaohsiung Medical University Hospital**.
 
@@ -23,7 +23,7 @@ BM25/RRF/MMR, or demonstrate a general agent-quality improvement.
 | [Reference review](publication/references-review.md) | Primary-source checks, claim scope and corrected old citations |
 | [Evidence map](publication/evidence.md), [hash manifest](publication/evidence.json) | What each existing measurement supports, and what it does not |
 | [Evaluation protocol](publication/evaluation-protocol.md) | Proposed native / original package / current package comparison; not a completed experiment or preregistration |
-| [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) | Canonical **software** citation and release metadata |
+| [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff) | Canonical **software** citation and release metadata |
 | [Historical originals](archive/publication/README.md) | Superseded January draft, old TeX, bibliography and PDF; do not cite their claims as current results |
 
 ## Read the existing evidence correctly
@@ -77,7 +77,7 @@ and inspect the PDF produced by arXiv. No submission is performed by the builder
 
 ## Cite the released software
 
-Use GitHub's **Cite this repository** or [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff), and
+Use GitHub's **Cite this repository** or [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff), and
 record the version or exact commit used by an experiment. The generated BibTeX
 also includes the release version. Cite the software today; add a manuscript
 citation only after an actual public manuscript identifier exists. An arXiv

@@ -77,7 +77,7 @@ The most important rule: start with the research intent, not the tool menu.
 
 ### 1. Start Broad, Then Narrow
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](images/search-query-workflow.svg)
 
 Ask the client to run a modest first pass:
 
@@ -183,7 +183,7 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 
 ### 5. Build A Research Chronicle Or Lineage Tree
 
-![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
+![Cochlear implant sources by publication year and the later revision that recognizes a connection](images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 Use the chronicle tools when the question is not just "what papers exist?" but "how did this field develop?"

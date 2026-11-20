@@ -6,7 +6,7 @@
 
 This guide is for maintainers and contributors. It explains how the codebase is organized, where behavior belongs, how documentation is generated, and which validation commands protect the integration surface.
 
-Read this with [Architecture](#/architecture), [AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/AGENTS.md), and the [Tools Usage Guide](#/tools-usage-guide).
+Read this with [Architecture](#/architecture), [AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/AGENTS.md), and the [Tools Usage Guide](#/tools-usage-guide).
 
 ## Repository Contract
 

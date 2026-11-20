@@ -451,4 +451,4 @@ uv run python scripts/build_docs_site.py
 
 - [ARCHITECTURE.md](#/architecture)
 - [docs/guides/INTEGRATIONS.md](#/troubleshooting)
-- [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
+- [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/copilot-studio/README.md)

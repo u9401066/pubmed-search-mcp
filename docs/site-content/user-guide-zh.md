@@ -77,7 +77,7 @@ PUBMED_NOTES_DIR=/path/to/references
 
 ### 1. 先廣後窄
 
-![搜尋與查詢智能流程](images/search-query-workflow.svg)
+![人工耳蝸 PubMed 案例：逐一放寬 MeSH 條件後新增的篇數](images/search-query-workflow.svg)
 
 可以要求 client 先做中等大小的第一輪搜尋：
 
@@ -182,7 +182,7 @@ Broker 也會強制 loopback bind，並驗證 loopback Host 與 Origin。
 
 ### 5. 建立研究脈絡年表
 
-![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
+![人工耳蝸史料的出版年與後來辨認出關聯的修訂時間](images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 chronicle tools。

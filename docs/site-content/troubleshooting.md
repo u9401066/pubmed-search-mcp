@@ -370,7 +370,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 
 ### Source Selection and Source Gating
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](images/search-query-workflow.svg)
 
 `unified_search` now supports source expressions such as:
 
@@ -766,7 +766,7 @@ configuration and review tracked project-rule updates normally.
 
 ### Portable Agent Plugin and MCP Registry
 
-[`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/master/plugins/pubmed-search/plugin.json) is an
+[`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
 `mcp.json` (stdio `uvx pubmed-search-mcp@0.9.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
@@ -889,7 +889,7 @@ the sole generic search `unified_search` and typed `read_session(request={...})`
 Schema issues must be fixed in that shared contract instead of hidden behind a
 second primitive compatibility surface.
 
-> See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
+> See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 
 ---
 

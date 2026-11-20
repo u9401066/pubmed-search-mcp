@@ -8,6 +8,7 @@ relative links so the wiki remains useful outside the static docs site.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,8 +16,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = REPO_ROOT / "docs"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "build" / "github-wiki"
-REPO_BLOB_BASE = "https://github.com/u9401066/pubmed-search-mcp/blob/master"
-REPO_RAW_BASE = "https://raw.githubusercontent.com/u9401066/pubmed-search-mcp/master"
+SOURCE_REF = json.loads((DOCS_ROOT / "repository-layout.json").read_text(encoding="utf-8"))["documentation_source_ref"]
+REPO_URL = "https://github.com/u9401066/pubmed-search-mcp"
+REPO_BLOB_BASE = f"{REPO_URL}/blob/{SOURCE_REF}"
+REPO_RAW_BASE = f"https://raw.githubusercontent.com/u9401066/pubmed-search-mcp/{SOURCE_REF}"
 DOCS_SITE_URL = "https://u9401066.github.io/pubmed-search-mcp/"
 
 LINK_PATTERN = re.compile(r"(!?)\[([^\]]+)\]\(([^)]+)\)")
@@ -32,6 +35,7 @@ class WikiPage:
 
 
 PAGES: tuple[WikiPage, ...] = (
+    WikiPage("Documentation-Map", "Capabilities, evidence and document sources", DOCS_ROOT / "README.md"),
     WikiPage("Testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
     WikiPage("Publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
     WikiPage("User-Guide", "User Guide", DOCS_ROOT / "guides/USER_GUIDE.md"),
@@ -174,10 +178,11 @@ This wiki is a GitHub-native mirror of the main documentation set. The full
 interactive documentation site remains the preferred reading surface:
 
 - **Docs Site**: {DOCS_SITE_URL}
-- **Repository**: {REPO_BLOB_BASE.rsplit("/blob/master", maxsplit=1)[0]}
+- **Repository**: {REPO_URL}
 
 ## Start Here
 
+- [Team preview capability inventory](Documentation-Map#capability-inventory)
 - [User Guide](User-Guide): practical workflows for search, PICO, full text, exports, local notes, and pipelines
 - [使用者指南](User-Guide.zh-TW): 繁體中文使用者工作流
 - [Advanced Research Workflows](Advanced-Research-Workflows): research timeline/chronicle, Open-i image search, uploaded-image handoff, and persistent query memory
@@ -217,6 +222,7 @@ def _render_sidebar() -> str:
     return f"""# PubMed Search MCP
 
 - [Home](Home)
+- [Capabilities and evidence](Documentation-Map#capability-inventory)
 - [Docs Site]({DOCS_SITE_URL})
 
 ## Users
