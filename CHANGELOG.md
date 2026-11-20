@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin line endings for plugin manifests, mirrored skills and checksummed
   publication sources. Windows validation now handles UTF-8 gate inputs,
   long pytest case names and hosts without symlink creation rights.
+- Isolate the release checks from the Git working tree that invoked the push.
+  Temporary repositories used by tests keep their own index and configuration.
 
 ## [0.8.0] - 2026-10-20
 

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import runpy
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -119,3 +122,66 @@ def test_container_gate_requires_explicit_image(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(SystemExit) as error:
         main()
     assert error.value.code == 2
+
+
+def test_hook_validation_stages_only_in_child_repository(git_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    git = shutil.which("git")
+    assert git is not None
+    caller = git_repository
+    child = caller / "independent"
+    child.mkdir()
+    clean_env = os.environ.copy()
+
+    def git_output(cwd: Path, *args: str) -> str:
+        return subprocess.run(
+            [git, *args], cwd=cwd, env=clean_env, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git_output(child, "init", "--quiet")
+    (caller / "caller.txt").touch()
+    git_output(caller, "add", "caller.txt")
+    for checkout in (child, caller):
+        (checkout / "fixture.txt").touch()
+    # A clean child commit distinguishes the gate's evidence lookup from the
+    # invoking repository's unborn branch. Keep user hooks and signing out of the fixture.
+    git_output(
+        child,
+        "-c",
+        "user.name=Gate",
+        "-c",
+        "user.email=gate@example.org",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        f"core.hooksPath={child / 'no-hooks'}",
+        "commit",
+        "--allow-empty",
+        "-qm",
+        "fixture",
+    )
+    for name, path in {
+        "GIT_DIR": caller / ".git",
+        "GIT_WORK_TREE": caller,
+        "GIT_INDEX_FILE": caller / ".git/index",
+        "GIT_COMMON_DIR": caller / ".git",
+    }.items():
+        monkeypatch.setenv(name, str(path))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "validation.marker")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "preserved")
+    script = (
+        "import subprocess, sys\n"
+        "git = sys.argv[1]\n"
+        "assert subprocess.check_output([git, 'config', 'validation.marker'], text=True).strip() == 'preserved'\n"
+        "subprocess.run([git, 'add', 'fixture.txt'], check=True)\n"
+    )
+    main = runpy.run_path(str(GATE))["main"]
+    monkeypatch.setitem(main.__globals__, "ROOT", child)
+    monkeypatch.setitem(main.__globals__, "commands", lambda _: [("python", "-c", script, git)])
+    monkeypatch.setattr(sys, "argv", [str(GATE), "full"])
+
+    assert main() == 0
+    report = json.loads((child / "build/validation/full.json").read_text())
+    assert report["commit"] == git_output(child, "rev-parse", "HEAD")
+    assert git_output(caller, "ls-files") == "caller.txt"
+    assert git_output(child, "ls-files") == "fixture.txt"

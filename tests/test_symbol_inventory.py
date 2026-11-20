@@ -17,10 +17,9 @@ assert GIT is not None
 
 
 @pytest.fixture
-def repository(tmp_path: Path) -> Path:
-    subprocess.run([GIT, "init", "--quiet", str(tmp_path)], check=True)
-    (tmp_path / "src").mkdir()
-    return tmp_path
+def repository(git_repository: Path) -> Path:
+    (git_repository / "src").mkdir()
+    return git_repository
 
 
 def test_nested_methods_duplicate_definitions_and_hidden_files_are_inventoried(repository: Path) -> None:
