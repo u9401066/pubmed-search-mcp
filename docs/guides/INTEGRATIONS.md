@@ -783,6 +783,8 @@ reused. Choose a fresh output directory after changing a skill or when the
 previous copy contains local customizations. The registry installation launches
 the published version; the checkout launcher includes `research_workspace`.
 
+The proposed first plugin pilot pairs VS Code Copilot and Codex. It exercises the same research handoff with an explicit skill, then measures what a host-specific session hook adds. The roadmap lists the packaged baseline, official specifications, working plugin examples and acceptance criteria. [Agent plugin delivery plan](../../ROADMAP.md#agent-plugin-delivery-plan)
+
 The skill copies and version fields are generated. After editing a research
 skill or bumping the release version, run:
 
