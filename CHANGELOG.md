@@ -10,6 +10,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
+### Added
+
+- Chronicle maps now surface dated topic-divergence candidates, earlier
+  counterexamples, comparative and consensus sources, and yearly branch counts
+  with revision denominators. Milestones expose recorded scoring inputs and
+  reading representatives from smaller branches. The timeline recognizes the
+  PubMed publication type `Consensus Statement`.
+- Chronicle revision diffs identify which records behind each added branch were
+  already present and which were newly observed in the compared revisions.
+  Rebuild summaries show both counts. Evidence projections expose normalized
+  full-text lookup identifiers and count stored full-text artifact links.
+- Agent workflows document optional Zotero library cross-checks, Europe PMC
+  section searches, and passage verification when only an abstract is available.
+
+### Fixed
+
+- An unsuccessful Chronicle evidence refresh now distinguishes a successful
+  empty search from an upstream retrieval failure and suggests a local read.
+- Pin line endings for plugin manifests, mirrored skills and checksummed
+  publication sources. Windows validation now handles UTF-8 gate inputs,
+  long pytest case names and hosts without symlink creation rights.
+- Isolate the release checks from the Git working tree that invoked the push.
+  Temporary repositories used by tests keep their own index and configuration.
+
 ## [0.8.0] - 2026-10-20
 
 ### Added
@@ -3066,7 +3092,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.7...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.7...v0.8.0
 [0.7.7]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.4...v0.7.5

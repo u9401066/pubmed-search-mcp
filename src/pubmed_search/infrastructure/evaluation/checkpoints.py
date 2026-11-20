@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.shared.file_io import atomic_write_text
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import TextIO
 
 # These statuses measure execution infrastructure, not research ability. Keep
 # every attempt but leave its arm pending until a later, explicitly resumed run.
@@ -22,19 +24,29 @@ def write_json(path: Path, value: Any) -> None:
     atomic_write_text(path, json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
 
 
+def _open_experiment_lock(root: Path) -> TextIO:
+    """Open a POSIX run directory and acquire its exclusive, nonblocking lock."""
+    if sys.platform == "win32":
+        raise OSError("The paired experiment runner requires POSIX file locks and process groups.")
+    import fcntl
+
+    root.mkdir(parents=True, exist_ok=True)
+    lock = (root / ".lock").open("a+")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        lock.close()
+        raise
+    return lock
+
+
 class ExperimentStore:
     """Require an identical protocol on resume; preserve every executed attempt."""
 
     def __init__(self, root: Path, manifest: dict[str, Any], *, resume: bool = False):
-        # Keep imports of the evaluation/scoring helpers portable. Execution of
-        # this runner uses POSIX process groups and advisory locks.
-        import fcntl
-
-        root.mkdir(parents=True, exist_ok=True)
         self.root = root
-        self._lock = (root / ".lock").open("a+")
+        self._lock = _open_experiment_lock(root)
         try:
-            fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self._validate_manifest(manifest, resume)
         except BaseException:
             self._lock.close()

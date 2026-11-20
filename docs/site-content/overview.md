@@ -37,6 +37,10 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ---
 
+## Reading the history of a research topic — v0.9.0
+
+Chronicle now links possible research forks to dated papers on each line, including earlier papers that challenge the proposed starting point. See why a landmark was selected, find a representative from a smaller branch, and distinguish a newly recognized connection between old papers from newly retrieved evidence. The cochlear implant example shows how to investigate a documented debate when the indexing alone yields no fork candidate. [Advanced research workflows](#/advanced-workflows)
+
 ## Research automation and portable installation — v0.8.0
 
 Scheduled pipelines report bounded changes and retain local notification summaries.
@@ -118,7 +122,7 @@ requires inspecting the relevant passage.
 In clients that support the [official MCP Registry](https://registry.modelcontextprotocol.io/)
 or [GitHub MCP Registry](https://github.com/mcp), look up
 `io.github.u9401066/pubmed-search-mcp` once the release is published. Registry
-metadata launches `uvx pubmed-search-mcp@0.8.0` over stdio; configure `NCBI_EMAIL`
+metadata launches `uvx pubmed-search-mcp@0.9.0` over stdio; configure `NCBI_EMAIL`
 and optionally `NCBI_API_KEY` in the client.
 
 For Agent Plugins 1.0.0-compatible clients, install the repository's
@@ -730,28 +734,27 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `read_research_chronicle` | Load, list, diff revisions, narrate with citations, analyze milestone distribution, or compare up to five topics |
 
 ```python
-# 1. Build from topic (retrieves PubMed, scores landmarks, clusters lineages)
-build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+# Two comparative studies and the journal version of an NIH consensus statement
+build_research_chronicle(topic="Cochlear implants",
+                         pmids=["3878092", "3753836", "2642379"], output="chronicle_map")
 
-# 2. Continue an existing chronicle (inherits stored topic and filters to produce Revision N+1)
-build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
-
-# 3. Read revision diff, milestone analytics, or cross-topic comparison
-read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-intraoperative-08c229f3","from_revision":1})
-read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-intraoperative-08c229f3"})
-read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
+# Use the chronicle_id returned above to read this revision or compare a later rebuild.
+read_research_chronicle(request={"action":"milestones","chronicle_id":chronicle_id})
+read_research_chronicle(request={"action":"load","chronicle_id":chronicle_id,"output":"evidence"})
 ```
 
-`mermaid` is the canonical combined view: a horizontal year spine (X-axis) with each
-observed research line (Y-axis) branching at its earliest dated paper **within the
-retrieved scope**. This is an explainable grouping, not a causal genealogy or a
-claim about the field's true first paper. Lineages prefer MeSH descriptors and
-author keywords shared by multiple papers; singleton-only or insufficient
-signals trigger a warned research-stage fallback. Same-year display order is
-stable, but does not assert precedence when publication precision cannot prove
-it. See
-[Advanced Research Workflows (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md)](#/advanced-workflows) and
-[docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec).
+In `chronicle_map`, the branch starts on the diagram at its earliest dated entry
+or descendant. `divergence_review` lists papers that can help investigate a
+historical fork. `sources_for_review` surfaces comparative studies and consensus
+documents even when indexing supports only research-stage grouping. Each branch's
+`direct_activity.by_year` gives its entry count and the revision-wide count for
+that year. An adoption claim needs evidence about the community and period being studied.
+
+Read `milestones` for landmark scoring inputs and a reading sample from each
+eligible branch. On a later rebuild, the revision diff gives the publication
+years and identifiers of earlier and newly observed evidence behind added branches.
+[Advanced research workflows](#/advanced-workflows) ·
+[Chronicle specification](#/research-chronicle-rebuild-spec).
 
 Chronicle Mermaid output is built from structured nodes and edges, with safe
 label escaping, cycle/orphan repair, collision-resistant IDs, and bounded graph
@@ -1618,9 +1621,9 @@ GitHub will show **Cite this repository** from [CITATION.cff](https://github.com
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.8.0},
+  version = {0.9.0},
   year = {2026},
-  url = {https://github.com/u9401066/pubmed-search-mcp}
+  url = {https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.9.0}
 }
 ```
 

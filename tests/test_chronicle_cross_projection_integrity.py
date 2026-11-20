@@ -126,6 +126,55 @@ def test_precision_aware_order_is_shared_and_undated_is_last() -> None:
     ] == expected
 
 
+def test_map_branch_activity_uses_direct_entries_and_the_whole_revision_as_denominator() -> None:
+    entries = [
+        _entry("old", "2001", branch_id="parent"),
+        _entry("a", "2002", branch_id="child"),
+        _entry("b", "2002", branch_id="child"),
+        _entry("missing", "2002", branch_id=None),
+        _entry("undated", "Undated", branch_id="child"),
+    ]
+    branches = [
+        ChronicleBranch(branch_id="parent", name="Parent", entry_ids=["old"]),
+        ChronicleBranch(branch_id="child", name="Child", parent_branch_id="parent", entry_ids=["a", "b", "undated"]),
+    ]
+    result = project_chronicle_map(_snapshot(entries, branches))
+    activity = {branch["branch_id"]: branch["direct_activity"] for branch in result["branches"]}
+    assert result["spine"]["undated_entries"] == 1
+    assert activity["child"] == {
+        "total_entries": 3,
+        "undated_entries": 1,
+        "by_year": [{"year": 2002, "branch_entries": 2, "all_revision_entries": 3}],
+    }
+    assert activity["parent"]["by_year"] == [{"year": 2001, "branch_entries": 1, "all_revision_entries": 1}]
+    assert activity["projection-repaired-unassigned"]["by_year"] == [
+        {"year": 2002, "branch_entries": 1, "all_revision_entries": 3}
+    ]
+
+
+def test_map_lists_documentary_leads_without_expecting_a_semantic_branch() -> None:
+    comparison = _entry("comparison", "1986")
+    comparison.provenance["publication_types"] = ["Comparative Study", "Journal Article", "Comparative Study"]
+    statement = _entry("statement", "1989-01")
+    statement.provenance["publication_types"] = ["Consensus Statement", "Review"]
+    unknown = _entry("consensus-in-title-only", "1980")
+    result = project_chronicle_map(_snapshot([statement, unknown, comparison], []))
+    assert result["sources_for_review"] == [
+        {
+            "entry_id": "comparison",
+            "time_start": "1986",
+            "matched_publication_types": ["Comparative Study"],
+            "evidence_ids": ["pmid:s-comparison"],
+        },
+        {
+            "entry_id": "statement",
+            "time_start": "1989-01",
+            "matched_publication_types": ["Consensus Statement"],
+            "evidence_ids": ["pmid:s-statement"],
+        },
+    ]
+
+
 def test_equal_precision_never_invents_precedes_or_supersedes() -> None:
     first = _entry("first", "2020-03-01", status=ChronicleEntryStatus.SUPERSEDED)
     second = _entry("second", "2020-03-01")

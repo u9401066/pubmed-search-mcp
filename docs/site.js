@@ -100,12 +100,12 @@ const DOC_PAGES = [
     title: "Research Chronicle Rebuild Spec",
     titleByLang: { zh: "Research Chronicle 重建規格" },
     blurb:
-      "Implemented contract for the persistent Research Chronicle, horizontal chronological branch map, evidence graph, artifacts, and migration mapping.",
+      "How Chronicle records historical evidence, proposes forks for review, counts branch activity, ranks landmarks, and compares revisions.",
     blurbByLang: {
-      zh: "Persistent Research Chronicle、橫向時序分岔圖、evidence graph、artifact 與 migration mapping 的實作契約。",
+      zh: "編年史如何保存史料、列出待查分流、逐年計算各支線篇數、挑選代表文獻與比對前後版本。",
     },
     keywords:
-      "research chronicle timeline lineage tree context graph preview citation graph artifact read_session rebuild spec",
+      "research chronicle timeline lineage tree divergence forks historical methods sources_for_review direct_activity landmark branch_representatives evidence_observation",
     file: "site-content/research-chronicle-rebuild-spec.md",
   },
   {
@@ -730,10 +730,10 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "研究編年史", en: "Chronicle" },
     icon: "🕰️",
     summary: {
-      zh: "建構持久化、版本化、有證據支撐的研究演化編年史與 X-Y 軸脈絡圖（支援以 topic、PMID 或 chronicle_id 延續）。",
-      en: "Build persisted, versioned Research Chronicle with chronological spine and thematic lineage branches.",
+      zh: "以主題或 PMID 建立可版本比對的編年史。可查看分流候選的文獻與反例，以及各支線每年的收錄數。",
+      en: "Build a versioned Chronicle from a topic or PMIDs. Inspect dated papers for a possible fork and counts for each research line.",
     },
-    example: 'build_research_chronicle(topic="remimazolam intraoperative", output="mermaid")',
+    example: 'build_research_chronicle(pmids="3878092,3753836,2642379", topic="Cochlear implant speech perception", output="chronicle_map")',
     docLink: "advanced-workflows",
   },
   {
@@ -742,8 +742,8 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "研究編年史", en: "Chronicle" },
     icon: "🕰️",
     summary: {
-      zh: "讀取已保存之編年史快照（支援 load, list, diff 版本比對, milestones 里程碑分析, compare 主題比較, narrate 敘事）。",
-      en: "Read stored chronicles: load, list, diff revisions, milestones analysis, multi-topic compare, narrate.",
+      zh: "使用建立時回傳的 ID 讀取已存篇目、關鍵文章評分與支線代表文獻，或比對前後版本才辨認出的關聯。",
+      en: "Use the ID returned by a build to read stored evidence, landmark scores and branch representatives, or compare the papers and relationships observed in two revisions.",
     },
     example: 'read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-ab12cd34","from_revision":1})',
     docLink: "advanced-workflows",

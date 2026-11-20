@@ -38,8 +38,11 @@ from pubmed_search.application.chronicle import (
     landmark_rank_key,
     narrate_chronicle,
 )
+from pubmed_search.application.chronicle.service import ChronicleNoEvidenceError
 from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder
+from pubmed_search.application.timeline.timeline_builder import TimelineRetrievalError
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
+from pubmed_search.shared.exceptions import APIError, DataError
 from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR
 
@@ -311,6 +314,17 @@ def _format_changes(changes: dict[str, Any]) -> list[str]:
             f"- Branches: {len(branches['added'])} added, "
             f"{len(branches['removed'])} removed, {len(branches['updated'])} updated"
         )
+    for branch in branches["added_details"]:
+        observation = branch["evidence_observation"]
+        name = escape_markdown_text(branch["name"])
+        if observation["basis"] == "undetermined":
+            lines.append(f"- {name}: evidence membership is uncertain. See the revision diff.")
+        else:
+            lines.append(
+                f"- {name}: {len(observation['previously_observed'])} evidence records already in "
+                f"revision {previous_revision}, {len(observation['newly_observed'])} newly observed "
+                "in this comparison."
+            )
     if changes["scope_changed"]:
         lines.append("- Input scope changed; differences may reflect retrieval scope.")
     if changes["audit"]["from"] != changes["audit"]["to"]:
@@ -394,11 +408,15 @@ def _format_summary(
             citations = ", ".join(escape_markdown_code(a.evidence_id) for a in entry.evidence.all_articles)
             citations = citations or "no evidence"
             importance = landmark_importance_score(entry)
-            ranking_note = (
-                f"landmark importance {importance:.2f}"
-                if importance is not None
-                else f"citation-count fallback {entry_max_citations(entry)}"
-            )
+            if importance is not None:
+                ranking_note = f"landmark importance {importance:.2f}"
+            else:
+                fallback_count = entry_max_citations(entry)
+                ranking_note = (
+                    f"citation-count fallback {fallback_count}"
+                    if fallback_count
+                    else "chronological tie-break (citation count zero or unknown)"
+                )
             lines.append(
                 f"- {escape_markdown_text(entry.summary_claim)} "
                 f"`[{escape_markdown_code(entry.entry_id)}; {citations}; {escape_markdown_code(ranking_note)}]`"
@@ -414,11 +432,12 @@ def _format_summary(
     next_hint = (
         'Next: `read_research_chronicle(request={"action":"load",'
         f'"chronicle_id":"{snapshot.chronicle_id}","output":"mermaid"}})` '
-        "for the horizontal time-spine/lineage map"
+        'for the diagram. Use `output="chronicle_map"` for dated fork candidates, '
+        'earlier alternatives and sources to read, or `output="milestones"` for branch representatives.'
     )
     if snapshot.revision > 1:
         next_hint += (
-            ', or `read_research_chronicle(request={"action":"diff",'
+            ' Compare revisions with `read_research_chronicle(request={"action":"diff",'
             f'"chronicle_id":"{snapshot.chronicle_id}","from_revision":{snapshot.revision - 1}}})`'
         )
     lines.append(next_hint)
@@ -538,6 +557,8 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         organizing dimension. Both come from the same stored snapshot, and
         preserve shared provenance in `output="timeline"` and `output="tree"`.
         Agreement between projections is not independent evidence verification.
+        Use `output="chronicle_map"` for potential forks, earlier counterexamples,
+        comparative or consensus documents, and annual counts within this revision.
 
         Every entry carries:
         - a one-sentence claim with inline citations
@@ -561,8 +582,8 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             max_year: Latest publication year to include (topic mode).
             chronicle_id: Continue an existing chronicle (creates revision N+1)
                           instead of deriving the ID from the topic. Passing it
-                          alone re-runs the stored scope, so the resulting diff
-                          shows research movement rather than a changed window.
+                          alone re-runs the stored scope. Changes can reflect
+                          revised indexing as well as newly retrieved papers.
             output: "summary" (default compact Markdown with the chronological
                     spine), "json", "chronicle_map", "timeline", "tree",
                     "graph", "evidence", "milestones", "mermaid" (horizontal
@@ -721,6 +742,21 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                 persistence_failed=persistence_failed,
             )
 
+        except (ChronicleNoEvidenceError, TimelineRetrievalError) as exc:
+            public_error = (
+                DataError("The search returned no article evidence. This build saved no revision.")
+                if isinstance(exc, ChronicleNoEvidenceError)
+                else APIError("PubMed evidence retrieval failed. This build saved no revision.", retryable=False)
+            )
+            # A stored revision can be read independently of provider availability.
+            request = {"action": "load", "chronicle_id": chronicle_id} if chronicle_id else {"action": "list"}
+            return ResponseFormatter.error(
+                error=public_error,
+                suggestion="Use a stored revision if available and cite its revision number.",
+                example=f"read_research_chronicle(request={json.dumps(request)})",
+                tool_name="build_research_chronicle",
+                output_format=response_format,
+            )
         except ValueError as exc:
             logger.warning("Chronicle build request failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
@@ -756,12 +792,13 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         - "load": read one revision (defaults to latest) in any output format
         - "list": list stored chronicles, most recently updated first
         - "diff": compare two revisions — added, not observed/removed from the
-          later view, and updated entries, plus evidence churn, branch churn,
-          and the audit status transition. Absence does not prove retirement.
+          later view, and updated entries, evidence, branches and audit status.
+          For each added branch, inspect evidence already in the earlier revision
+          and evidence newly observed in this comparison, with publication years.
         - "narrate": render evidence-backed Markdown where every claim carries
           its entry ID and article identifiers
-        - "milestones": entry-type and status distribution, per-year activity,
-          evidence quality, and landmark entries for one chronicle
+        - "milestones": inspect landmark ranking inputs and a reading sample
+          from each branch with evidence, alongside activity and evidence quality
         - "compare": compare 2-5 chronicles side by side, including the evidence
           articles they share
 

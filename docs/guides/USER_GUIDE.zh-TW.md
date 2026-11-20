@@ -198,9 +198,9 @@ read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazol
 read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`narrative` 與 `json`。Research Chronicle 是唯一的持久研究 lineage 能力；`unified_search` 回傳搜尋證據，不再產生重複的 context projection。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+可用 PubMed 主題或指定 PMID 建立編年史。調查可能的分歧時，讀取 `output="chronicle_map"`。圖上的分支起點是該線或其子線最早能定年的紀錄。每組分流候選都可回查同時涵蓋兩線的文獻、兩線後來各自的文章，以及可能更早就已分流的反例。若索引沒辨認出候選，仍可從 `sources_for_review` 找到當年的比較研究與共識文件。日期精度與檢索範圍會影響能確立哪些先後關係。
 
-Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`earliest_observed_in_scope` 不代表找到整個領域的首篇論文；query、PMID set、年份 filter、來源可用性與結果上限都會限制可觀察範圍。日期 precision 會保留：同年或日期區間重疊的項目可以固定顯示順序，但不會據此推論 `precedes` 或 `supersedes` 關係。
+`direct_activity` 以當年整版收錄數為分母，呈現直接歸入該支線的篇數。`action="milestones"` 說明關鍵文章入選的依據，並提供小支線的代表文獻。重建後讀 `action="diff"`，可以區分已收錄舊文之間新辨認出的關聯，以及本次比較才觀察到的篇目。進階指南以三篇人工耳蝸文獻示範查證步驟。[進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) · [Research Chronicle 實作契約](../design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)
 
 Revision 不可變，並以原子操作追加。`action="compare"` 使用正規化後的完整 stored-topic 名稱；同名對應多個 Chronicle 時必須明確傳 `chronicle_ids`，重複目標會拒絕。Build input 有界限（`max_events` 1–200、明確 PMID 最多 500 個 unique values、topic 最多 500 字元），structured actions 的錯誤也維持結構化。啟用的 session artifact persistence 若在 revision 保存後失敗，回應會揭露失敗，不會回傳誤導性的 locator。
 

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import runpy
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,7 +18,7 @@ GATE = Path(__file__).resolve().parents[1] / "scripts/check_repo.py"
 
 def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -> None:
     root = GATE.parents[1]
-    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
+    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     assert "pre-push" in hooks["default_install_hook_types"]
     push = [hook for repo in hooks["repos"] for hook in repo["hooks"] if "pre-push" in hook.get("stages", [])]
     assert len(push) == 1
@@ -36,7 +39,7 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
     assert not any(command[0] in {"ruff", "mypy"} for command in plans("smoke"))
     assert "slow" not in full_tests[0][-1] and "slow" not in smoke_tests[0][-1]
     assert "not integration" in full_tests[0][-1] and "not integration" in smoke_tests[0][-1]
-    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     # Ordinary CI checks the actual merge result and OS-dependent artifacts;
     # manual extended full matrices remain available without repeating each push.
     assert sum("if" not in job for job in workflow["jobs"].values()) == 1
@@ -48,7 +51,7 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
         and "test_copilot_hook_integration.py -k powershell" in step.get("run", "")
         for step in windows_steps
     )
-    publish = yaml.safe_load((root / ".github/workflows/publish.yml").read_text())
+    publish = yaml.safe_load((root / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
     release_commands = "\n".join(step.get("run", "") for step in publish["jobs"]["verify"]["steps"])
     assert "check_repo.py smoke --release-dist dist" in release_commands
     assert "check_repo.py container --container-image" in release_commands
@@ -119,3 +122,66 @@ def test_container_gate_requires_explicit_image(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(SystemExit) as error:
         main()
     assert error.value.code == 2
+
+
+def test_hook_validation_stages_only_in_child_repository(git_repository: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    git = shutil.which("git")
+    assert git is not None
+    caller = git_repository
+    child = caller / "independent"
+    child.mkdir()
+    clean_env = os.environ.copy()
+
+    def git_output(cwd: Path, *args: str) -> str:
+        return subprocess.run(
+            [git, *args], cwd=cwd, env=clean_env, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git_output(child, "init", "--quiet")
+    (caller / "caller.txt").touch()
+    git_output(caller, "add", "caller.txt")
+    for checkout in (child, caller):
+        (checkout / "fixture.txt").touch()
+    # A clean child commit distinguishes the gate's evidence lookup from the
+    # invoking repository's unborn branch. Keep user hooks and signing out of the fixture.
+    git_output(
+        child,
+        "-c",
+        "user.name=Gate",
+        "-c",
+        "user.email=gate@example.org",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        f"core.hooksPath={child / 'no-hooks'}",
+        "commit",
+        "--allow-empty",
+        "-qm",
+        "fixture",
+    )
+    for name, path in {
+        "GIT_DIR": caller / ".git",
+        "GIT_WORK_TREE": caller,
+        "GIT_INDEX_FILE": caller / ".git/index",
+        "GIT_COMMON_DIR": caller / ".git",
+    }.items():
+        monkeypatch.setenv(name, str(path))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "validation.marker")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "preserved")
+    script = (
+        "import subprocess, sys\n"
+        "git = sys.argv[1]\n"
+        "assert subprocess.check_output([git, 'config', 'validation.marker'], text=True).strip() == 'preserved'\n"
+        "subprocess.run([git, 'add', 'fixture.txt'], check=True)\n"
+    )
+    main = runpy.run_path(str(GATE))["main"]
+    monkeypatch.setitem(main.__globals__, "ROOT", child)
+    monkeypatch.setitem(main.__globals__, "commands", lambda _: [("python", "-c", script, git)])
+    monkeypatch.setattr(sys, "argv", [str(GATE), "full"])
+
+    assert main() == 0
+    report = json.loads((child / "build/validation/full.json").read_text())
+    assert report["commit"] == git_output(child, "rev-parse", "HEAD")
+    assert git_output(caller, "ls-files") == "caller.txt"
+    assert git_output(child, "ls-files") == "fixture.txt"

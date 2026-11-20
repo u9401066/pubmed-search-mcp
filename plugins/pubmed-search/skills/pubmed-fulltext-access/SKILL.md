@@ -6,7 +6,7 @@ description: "Full text access using get_fulltext, figure extraction, and instit
 # 全文取得指南
 
 ## 描述
-目前的全文 workflow 以 `get_fulltext` 為核心。它會自動嘗試 Europe PMC、Unpaywall、CORE，必要時可擴展到更多來源。若需要圖表、文字探勘或機構訂閱連結，則搭配其他專用工具。
+已知文章識別碼時，用 `get_fulltext` 取回可讀正文、來源與連結。若要找出「哪些文章的方法或結果提過某個詞」，先用 Europe PMC 的章節索引找候選，再回到原文核對。
 
 ## 觸發條件
 - 「我要看全文」
@@ -38,6 +38,24 @@ get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 ---
 
 ## 最常用範例
+
+### 以方法段落找候選文獻
+
+例如研究者想知道哪些復健研究在方法中提到步速，可透過既有入口執行這次補搜。Europe PMC 只對已收錄且可辨認章節的全文提供章節檢索。保留原有的標題／摘要檢索及其中尚無正文的候選，以免排除無法取得全文的早期研究。[Europe PMC 檢索範圍](https://blog.europepmc.org/2025/05/making-sense-of-europe-pmc-answers-to-your-biggest-faqs.html) · [章節欄位](https://dev.europepmc.org/doc/EBI_Europe_PMC_Web_Service_Reference.pdf)
+
+```python
+unified_search(
+    query='rehabilitation AND METHODS:"gait speed"',
+    sources="europe_pmc",
+    options="shallow",
+    limit=20,
+    output_format="json"
+)
+```
+
+Europe PMC 的 `METHODS:`、`RESULTS:` 語法只用於該來源。記錄執行日期、實際查詢、筆數上限、來源回報的總數或未知狀態與來源錯誤。命中時先標為「章節索引命中」。要主張研究確實量測步速，下一步必須取得該篇的定義、量測方式及段落位置。零筆命中也要保留這次搜尋的範圍。
+
+例如這個查詢曾找回一篇回顧，Methods 裡的 `gait speed` 是書目檢索詞。引用這段可說明作者如何搜尋文獻；若要擷取參與者的步速，仍需追到實際執行量測的原始研究。[原文 Methods](https://pmc.ncbi.nlm.nih.gov/articles/PMC13748176/#Sec2)
 
 ### 1. 直接抓 PMC 全文
 
@@ -112,19 +130,22 @@ get_text_mined_terms(source={"kind":"pmid","value":"12345678"}, semantic_type="C
 
 ## 沒有 open access 時
 
-### 機構訂閱工作流
+### 使用已配置的機構連結
 
 ```python
-list_resolver_presets()
-configure_institutional_access(preset="exlibris_sfx", base_url="https://your-library...")
-test_institutional_access()
-get_institutional_link(pmid="12345678")
+get_institutional_link(source={"kind":"pmid","value":"12345678"})
 ```
 
-這一組工具適合：
+連結供研究者透過自己的圖書館權限開啟。只有操作者需要設定 resolver 時，才用 `list_resolver_presets()` 查可用預設，或以 `configure_institutional_access(resolver_url=...)` 設定機構提供的網址。已授權的本地 Zotero 附件也可供核讀；先核對文章與版本，再保存頁碼或小節。機構全文或個人 PDF 的分享範圍依該份授權決定。
 
-- 已知機構有訂閱，但文章不是 OA
-- 想把 PubMed/DOI 轉成圖書館 resolver 連結
+### 如何交代實際讀到的證據
+
+| 這次取得的資料 | Agent 可交給下一步的紀錄 |
+| --- | --- |
+| `get_fulltext` 的 JSON 回應含正文 | 核對 `content_sections` 或 `content` 的實際文字，保存 PMID／DOI、來源（`section_provenance`）、可辨認的文章版本及段落／表格位置。有截斷時讀回傳的 artifact。 |
+| 已取得 XML，但指定章節缺失 | 依 `section_selection.available` 修正一次章節名稱，或省略 `sections`；仍缺少時標明哪個章節尚待核對。 |
+| 僅有摘要、索引命中或連結 | 逐篇標明實際可讀範圍；保留文章在 Chronicle／篩選清單，將需要方法或結果佐證的陳述標為待核讀。 |
+| 來源逾時或限流 | 保留已取得的其他證據及 `coverage_status`、`source_errors`，將受影響的文章列為待補；依來源的等候時間，稍後僅重讀所需的文章。 |
 
 ---
 
@@ -192,7 +213,7 @@ get_text_mined_terms(source={"kind":"pmcid","value":"PMC7096777"}, semantic_type
 
 ### 文章不是 OA，但你有圖書館帳號
 
-用 `configure_institutional_access` + `get_institutional_link`
+用 `get_institutional_link` 取得已配置的圖書館入口，讀到所需段落後再更新核讀紀錄。
 
 ---
 

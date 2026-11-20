@@ -216,6 +216,19 @@ class TestMilestoneDetectorPubType:
         assert event is not None
         assert event.milestone_type == MilestoneType.CONSENSUS
 
+    def test_cochlear_consensus_statement_is_identifiable_without_an_abstract(self):
+        article = {
+            "pmid": "2642379",
+            "title": "National Institutes of Health Consensus Development Conference statement on cochlear implants.",
+            "year": 1989,
+            "publication_types": ["Consensus Statement", "Journal Article", "Review"],
+        }
+        event = MilestoneDetector().detect_milestone(article)
+        assert event is not None
+        assert event.milestone_type is MilestoneType.CONSENSUS
+        assert event.metadata["milestone_detection"]["strategy"] == "publication_type"
+        assert event.metadata["milestone_detection"]["matched_value"] == "Consensus Statement"
+
     async def test_pubtype_string_input(self):
         """Test publication type as string (not list)."""
         detector = MilestoneDetector()

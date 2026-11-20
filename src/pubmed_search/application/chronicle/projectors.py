@@ -7,19 +7,39 @@ are read models generated here. Every projection references the same
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
+from pubmed_search.domain.value_objects.article_identifiers import (
+    try_normalize_doi,
+    try_normalize_pmcid,
+    try_normalize_pmid,
+)
 
+from .divergence import project_divergence_review
 from .mermaid import MermaidRenderResult, render_chronicle_mermaid_projection
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
-    from pubmed_search.domain.entities.chronicle import ChronicleBranch, ChronicleSnapshot
+    from pubmed_search.domain.entities.chronicle import (
+        ChronicleBranch,
+        ChronicleEntry,
+        ChronicleSnapshot,
+        EvidenceArticle,
+    )
 
 _MAX_LINEAGE_TREE_DEPTH = 128
 _MAX_LINEAGE_TREE_BRANCHES = 10_000
+_HISTORICAL_REVIEW_PUBLICATION_TYPES = frozenset(
+    {
+        "Comparative Study",
+        "Consensus Statement",
+        "Consensus Development Conference",
+        "Consensus Development Conference, NIH",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -139,6 +159,26 @@ def _index_lineage(branches: list[ChronicleBranch]) -> _LineageProjectionIndex:
 def _entry_sort_key(entry: Any) -> tuple[int, int, int, int, int]:
     """Return the stable ordering shared by Chronicle map rows."""
     return chronology_key(entry)
+
+
+def _sources_for_review(entries: list[ChronicleEntry]) -> list[dict[str, Any]]:
+    """Surface indexed comparisons and consensus documents even when topics cannot be separated."""
+    result = []
+    for entry in entries:
+        types = entry.provenance.get("publication_types")
+        if not isinstance(types, list):
+            continue
+        matches = sorted({t for t in types if isinstance(t, str) and t in _HISTORICAL_REVIEW_PUBLICATION_TYPES})
+        if matches:
+            result.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "time_start": entry.time_start,
+                    "matched_publication_types": matches,
+                    "evidence_ids": sorted({article.evidence_id for article in entry.evidence.supporting_articles}),
+                }
+            )
+    return result
 
 
 def _map_entry_row(entry: Any, global_order: int, branch_order: int | None) -> dict[str, Any]:
@@ -319,7 +359,8 @@ def project_chronicle_map(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     both dimensions in one coordinate contract.  Year anchors form the primary
     horizontal spine.  Every branch records the year at which its first dated
     paper appears, and every paper records both global and within-branch order.
-    Renderers can therefore show divergence without losing chronology.
+    Renderers use those dates as layout anchors. The review fields expose
+    evidence for investigating possible historical divergence separately.
     """
     membership = resolve_chronicle_membership(snapshot)
     ordered_entry_indices = sorted(
@@ -414,6 +455,17 @@ def project_chronicle_map(snapshot: ChronicleSnapshot) -> dict[str, Any]:
         )
         root_branch_ids.append(repair_branch_id)
 
+    for row in branch_rows:
+        years = Counter(entry["year"] for entry in row["entries"])
+        row["direct_activity"] = {
+            "total_entries": len(row["entries"]),
+            "undated_entries": years.pop(None, 0),
+            "by_year": [
+                {"year": year, "branch_entries": count, "all_revision_entries": len(year_entries[year])}
+                for year, count in sorted(years.items())
+            ],
+        }
+
     branch_rows.sort(
         key=lambda branch: (
             branch["branch_point"]["global_order"] or len(snapshot.entries) + 1,
@@ -424,12 +476,16 @@ def project_chronicle_map(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     return {
         "projection": "chronicle_map",
         "layout": "horizontal_time_spine_with_lineage_branches",
+        "branch_point_semantics": "earliest_dated_entry_in_branch_or_descendants",
+        "divergence_review": project_divergence_review(snapshot, membership),
         "chronicle_id": snapshot.chronicle_id,
         "revision": snapshot.revision,
         "topic": snapshot.topic,
         "year_range": list(snapshot.year_range) if snapshot.year_range else None,
         "spine": {
             "orientation": "horizontal",
+            "activity_scope": "Counts use direct entry assignments within each year of this revision.",
+            "undated_entries": len(ordered_entries) - sum(len(ids) for ids in year_entries.values()),
             "ordered_entry_ids": [entry.entry_id for entry in ordered_entries],
             "year_anchors": [
                 {"year": year, "entry_ids": entry_ids} for year, entry_ids in sorted(year_entries.items())
@@ -437,6 +493,7 @@ def project_chronicle_map(snapshot: ChronicleSnapshot) -> dict[str, Any]:
         },
         "root_branch_ids": root_branch_ids,
         "branches": branch_rows,
+        "sources_for_review": _sources_for_review(ordered_entries),
         "unassigned_entry_ids": [snapshot.entries[index].entry_id for index in repaired_indices],
         "unassigned_entries": repaired_rows,
         "membership_diagnostics": _membership_diagnostics(snapshot, membership),
@@ -468,6 +525,16 @@ def project_graph(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     return payload
 
 
+def _fulltext_lookup_source(articles: list[EvidenceArticle]) -> dict[str, str] | None:
+    """Choose a consistent identifier from all occurrences of one evidence ID."""
+    for kind, normalize in (("pmcid", try_normalize_pmcid), ("pmid", try_normalize_pmid), ("doi", try_normalize_doi)):
+        normalized = (normalize(getattr(article, kind)) for article in articles)
+        values = {value for value in normalized if value is not None}
+        if len(values) == 1:
+            return {"kind": kind, "value": values.pop()}
+    return None
+
+
 def project_evidence(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     """Project the deduplicated evidence table backing the chronicle.
 
@@ -477,15 +544,25 @@ def project_evidence(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     Returns:
         A JSON-ready dict mapping every evidence article to the entries it backs.
     """
-    backing: dict[str, list[str]] = {}
+    occurrences: dict[str, list[tuple[str, EvidenceArticle]]] = {}
     for entry in snapshot.entries:
         for article in entry.evidence.all_articles:
-            backing.setdefault(article.evidence_id, []).append(entry.entry_id)
+            occurrences.setdefault(article.evidence_id, []).append((entry.entry_id, article))
 
-    articles = [
-        {**article.to_dict(), "backs_entry_ids": backing.get(article.evidence_id, [])}
-        for article in snapshot.evidence_articles
-    ]
+    articles = []
+    linked_count = 0
+    for group in occurrences.values():
+        records = [article for _, article in group]
+        row = records[0].to_dict()
+        row["backs_entry_ids"] = [entry_id for entry_id, _ in group]
+        row["fulltext_lookup_source"] = _fulltext_lookup_source(records)
+        for record in records:
+            uri = record.fulltext_artifact_uri
+            if isinstance(uri, str) and uri.strip():
+                row["fulltext_artifact_uri"] = uri
+                linked_count += 1
+                break
+        articles.append(row)
     return {
         "projection": "evidence",
         "chronicle_id": snapshot.chronicle_id,
@@ -493,6 +570,11 @@ def project_evidence(snapshot: ChronicleSnapshot) -> dict[str, Any]:
         "topic": snapshot.topic,
         "total_articles": len(articles),
         "articles": articles,
+        "fulltext_coverage": {
+            "total_evidence_ids": len(articles),
+            "with_stored_artifact_uri": linked_count,
+            "scope": "stored_artifact_links_in_this_revision",
+        },
     }
 
 

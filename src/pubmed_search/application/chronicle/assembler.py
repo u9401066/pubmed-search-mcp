@@ -155,7 +155,7 @@ def _build_evidence_article(event: TimelineEvent) -> EvidenceArticle:
         source=str(metadata.get("source") or "pubmed"),
         journal=event.journal,
         article_type=metadata.get("publication_type") or event.milestone_label,
-        citation_count=event.citation_count,
+        citation_count=metadata.get("observed_citation_count", event.citation_count),
         rcr=rcr,
         claim_excerpt=event.description,
     )
@@ -289,6 +289,7 @@ def assemble_chronicle(
                     "evidence_level_basis": event_metadata.get("evidence_level_basis"),
                     "landmark_importance_score": event.landmark_score.overall if event.landmark_score else None,
                     "landmark_score": landmark_score,
+                    "citation_count_observed": event_metadata.get("observed_citation_count") is not None,
                     "landmark_tier": event.landmark_score.tier if event.landmark_score else None,
                     "earliest_observed_in_scope": bool(event_metadata.get("earliest_observed_in_scope")),
                     "earliest_observed_scope_note": event_metadata.get("earliest_observed_scope_note"),

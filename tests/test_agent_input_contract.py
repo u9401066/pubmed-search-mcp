@@ -376,6 +376,7 @@ def test_every_actual_pmid_field_reuses_the_same_validator():
         ('["123", NaN]', "invalid_json"),
         ('["123"]' + " " * 100_000, "input_too_large"),
     ],
+    ids=["trailing-comma", "duplicate-key", "nonfinite-number", "oversized-payload"],
 )
 async def test_batch_transport_errors_keep_their_precise_code(echo_server, value, code):
     server, executions = echo_server

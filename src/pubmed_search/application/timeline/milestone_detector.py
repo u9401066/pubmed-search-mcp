@@ -322,7 +322,7 @@ class MilestoneDetector:
             milestone_label=label,
             description=article.get("abstract", "")[:200] if article.get("abstract") else None,
             evidence_level=evidence_level,
-            citation_count=article.get("citation_count") or article.get("citations", 0),
+            citation_count=event_metadata["observed_citation_count"] or 0,
             journal=article.get("journal") or article.get("source"),
             first_author=first_author,
             doi=article.get("doi"),
@@ -348,7 +348,13 @@ class MilestoneDetector:
             return [str(item) for item in value if str(item).strip()]
 
         publication_types = _strings(article.get("publication_types"))
+        raw_count = article.get("citation_count")
+        if raw_count is None:
+            raw_count = article.get("citations")
         return {
+            "observed_citation_count": (
+                raw_count if isinstance(raw_count, int) and not isinstance(raw_count, bool) and raw_count >= 0 else None
+            ),
             "mesh_terms": _strings(article.get("mesh_terms")),
             "keywords": _strings(article.get("keywords")),
             "publication_types": publication_types,

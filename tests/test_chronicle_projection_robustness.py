@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pubmed_search.application.chronicle.projectors import project_chronicle_map, project_lineage_tree
+from dataclasses import replace
+
+from pubmed_search.application.chronicle.projectors import project_chronicle_map, project_evidence, project_lineage_tree
 from pubmed_search.domain.entities.chronicle import (
     ChronicleBranch,
     ChronicleEntry,
@@ -34,6 +36,48 @@ def _snapshot(*, entries: list[ChronicleEntry], branches: list[ChronicleBranch])
         entries=entries,
         branches=branches,
     )
+
+
+def test_evidence_projection_counts_stored_links_once_and_returns_normalized_lookup_sources() -> None:
+    earlier = EvidenceArticle(title="Earlier metadata", pmid="456", fulltext_artifact_uri="  ")
+    uri = "artifact://example/fulltext"
+    linked = replace(earlier, pmcid="https://pmc.ncbi.nlm.nih.gov/articles/PMC123/", fulltext_artifact_uri=uri)
+    doi_only = EvidenceArticle(title="DOI only", doi="https://doi.org/10.1000/Example")
+    invalid = EvidenceArticle(title="A title mentioning PMC999", pmid="unknown", doi="not a DOI")
+    one = _entry("one", 2020, None)
+    two = _entry("two", 2021, None)
+    one.evidence = EvidenceBundle(supporting_articles=[earlier, doi_only, invalid])
+    two.evidence = EvidenceBundle(updating_articles=[linked], contradicting_articles=[doi_only])
+
+    snapshot = _snapshot(entries=[one, two], branches=[])
+    before = snapshot.to_dict()
+    result = project_evidence(snapshot)
+
+    assert result["fulltext_coverage"] == {
+        "total_evidence_ids": 3,
+        "with_stored_artifact_uri": 1,
+        "scope": "stored_artifact_links_in_this_revision",
+    }
+    first_row, doi_row, invalid_row = result["articles"]
+    assert first_row["title"] == "Earlier metadata"
+    assert first_row["backs_entry_ids"] == ["one", "two"]
+    assert first_row["fulltext_artifact_uri"] == uri
+    assert first_row["fulltext_lookup_source"] == {"kind": "pmcid", "value": "PMC123"}
+    assert doi_row["fulltext_lookup_source"] == {"kind": "doi", "value": "10.1000/example"}
+    assert invalid_row["fulltext_lookup_source"] is None
+    assert snapshot.to_dict() == before
+
+
+def test_conflicting_pmcids_fall_back_to_consistent_pmid_without_fulltext_coverage() -> None:
+    article = EvidenceArticle(title="Shared record", pmid="PMID: 456", pmcid="PMC1", doi="10.1000/example")
+    entry = _entry("shared", 2024, None)
+    entry.evidence = EvidenceBundle(supporting_articles=[article], updating_articles=[replace(article, pmcid="PMC2")])
+
+    result = project_evidence(_snapshot(entries=[entry], branches=[]))
+
+    assert result["articles"][0]["fulltext_lookup_source"] == {"kind": "pmid", "value": "456"}
+    assert result["fulltext_coverage"]["with_stored_artifact_uri"] == 0
+    assert result["fulltext_coverage"]["total_evidence_ids"] == 1
 
 
 def test_duplicate_branch_ids_keep_occurrence_specific_branch_points() -> None:

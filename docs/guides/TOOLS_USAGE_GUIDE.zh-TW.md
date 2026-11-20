@@ -270,23 +270,26 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 當使用者要的不是一次性快照，而是一份可以持續回頭維護的研究脈絡時，使用 `build_research_chronicle`。它取代了舊的一次性 timeline 工具：每個不可變 revision 都以原子操作和遞增編號追加，之後重跑就能做版本比對，回答「上次之後改變了什麼」。主軸是時序，分支是同一組 stored entries 的次要投影。
 
-重建時預設 `output="summary"` 附上與 revision N-1 的差異：entry 新增／本次未觀察到／更新、
-證據與分支數量、scope 與 audit 狀態變化，最多 5 個新增標題；無差異時明確說明。
-機器輸出不變。前一版無法讀取時顯示 `Change summary unavailable`，不放寬 store
-對損壞最新 revision 的錯誤處理；本次未觀察到不代表研究已退場。
+重建後的預設摘要比較前一版，最多顯示五個新增標題。若讀不到前一版，摘要會標示 `Change summary unavailable`。要逐一查核新辨認的分支，讀取 `action="diff"` 的 `branches.added_details[].evidence_observation`。兩個清單分別列出前版已見、本次才觀察到的文獻 ID 與出版年。混合或資料不足時，`basis` 會標為 `mixed` 或 `undetermined`。
+
+| 想查什麼 | 如何讀取已保存的 revision |
+| --- | --- |
+| 當時有分歧嗎？ | `chronicle_map` 的圖上起點來自本線或子線最早有日期的篇目。`divergence_review.candidates` 提供同時涉及兩線的一篇、後來各線一篇，以及兩線可能早已存在的反例。`sources_for_review` 列出可查證當時論點的比較研究與共識文件。 |
+| 哪條支線較活躍？ | `direct_activity` 逐年列出直接歸入該線與整版當年的篇數。若要說明特定群體如何採用某做法，需另查當時的紀錄。 |
+| 能查證內文嗎？ | 讀取 `output="evidence"`，將有值的 `fulltext_lookup_source` 交給 `get_fulltext`。`fulltext_coverage` 統計已存的全文連結。取得失敗時，可記錄存取缺口，或用 PMID／DOI 比對有權使用的本機文庫。 |
 
 分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
 每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
 
-Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。PubMed upstream error 或零篇論文證據會直接回錯，不發布 Chronicle revision。
+Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。上游失敗或零篇回傳時會回報錯誤。PubMed 無法存取期間，可讀取既有 revision 繼續查證，並記下採用的版次。
 
 PMID input 只接受 ASCII digits、可選的 `PMID:` prefix 與明確分隔符；DOI 或任意混合 identifier text 會被拒絕。entry ID 先依 PMID、再依 DOI 作為穩定 evidence identity，因此日期與 milestone 分類修正會成為 update，而不是假的 remove/add churn。Chronicle ID derivation、topic lookup、compare 與 continuity 共用 Unicode normalization、case-folding、空白折疊後的 topic key，但保留已儲存的顯示名稱。
 
-同時符合多個 semantic signals 的論文會有一個 primary branch，並在 lineage diagnostics 保留 explicit secondary cross-links。若全部 entries 或已分派 entries 的重疊比例至少 20%，audit 會警告 branches 並非清楚分離。`confidence` 只代表 milestone detection confidence；landmark ranking 使用明確的 landmark importance，缺少時才退回 citation count，絕不使用 detection confidence。
+同時符合多個 semantic signals 的論文會有一個 primary branch，並在 lineage diagnostics 保留 explicit secondary cross-links。若全部 entries 或已分派 entries 的重疊比例至少 20%，audit 會警告 branches 並非清楚分離。`confidence` 只代表 milestone detection confidence；可從 `landmark_entries[].score_components` 與 `observed_max_citations` 查核關鍵文章的評選依據。`branch_representatives` 也涵蓋未進入全域清單的支線。
 
 - `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：以原子操作建立 revision N+1。啟用 session artifact persistence 時也會寫入 `research-chronicle-artifact/v1` bundle；若寫入失敗，Markdown 或 structured output 的 `artifact.status="failed"` 會明確揭露，而 revision 仍已保存。
-- `build_research_chronicle(chronicle_id=...)`：只傳 `chronicle_id` 即可自動沿用前一版的 topic/PMID 與檢索條件再跑一次，產出乾淨反映研究進展的 Revision N+1。
+- `build_research_chronicle(chronicle_id=...)`：只傳 `chronicle_id` 即可自動沿用前一版的 topic/PMID 與檢索條件再跑一次，建立 Revision N+1。解讀差異時要比對來源涵蓋、出版日期與分類變更。
 - `read_research_chronicle(request={"action":"list"})`：列出已儲存的 chronicles。
 - `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})`：讀取單一 revision 或合併圖。
 - `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})`：回報新增、更新與本次未觀察到的 entries，以及證據／分支變化；缺席絕不等於已證實退場。

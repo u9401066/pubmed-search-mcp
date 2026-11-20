@@ -10,7 +10,7 @@
 
 | 需求 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
-| 看一個主題如何隨時間演進、分支與沉澱 | `build_research_chronicle` | `read_research_chronicle` |
+| 追溯主題各條路線的發表時序與分流依據 | `build_research_chronicle` | `read_research_chronicle` |
 | 用文字找生物醫學圖片（放射線、病理切片） | `search_biomedical_images` | `get_article_figures`, `unified_search` |
 | 上傳圖片，依圖片視覺語意找相關文獻 | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
 | 重新讀取大型搜尋/全文輸出，不重跑外部來源 | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
@@ -23,13 +23,21 @@
 
 ### 1. 核心設計理念與認識論模型
 
-傳統文獻搜尋回傳的是「扁平的列表」，無法回答「這個領域如何從早期地基走向現代臨床應用？」、「關鍵分水嶺在哪裡？」以及「上次搜尋之後有什麼新進展？」。**Research Chronicle** 是 PubMed Search MCP 的核心研究演化系統：
+Chronicle 保存該次主題檢索或明列 PMID 取得的文章、發表日期與分類。各種檢視取自同一份不可變版本，可從 `unified_search` 取得起始篇目。
 
-- **以時序為主脊柱（X 軸）**：年代（Years）構成橫向主軸，串聯起整個領域的歷史演進。
-- **以語意分支為組織維度（Y 軸）**：由多篇論文重複出現的 MeSH descriptors 與作者關鍵字自動聚類出研究路線（Research Lines），從該路線最早觀察到的文獻年份分岔展開。
-- **單一事實來源（Single Source of Truth）**：所有輸出（時序、樹狀圖、Mermaid、敘事、JSON）均來自同一份 `ChronicleSnapshot`，保證不同檢視角度絕不相互矛盾。Research Chronicle 是唯一研究 lineage 能力；`unified_search` 只會建議下一步建立 Chronicle，不會另產生第二套脈絡 projection。
-- **不可變版本持久化（Immutable Revision Store）**：每次重跑同一主題或給定 `chronicle_id` 時，系統以原子鎖寫入 `Revision N+1`，支援版本比對（Diff）。
-- **認識論嚴謹性（Epistemic Audit）**：文獻在不同版本中的缺席嚴格標記為 `not_observed_in_revision`（檢索範圍未觀察到），而非斷言該論文「被學界淘汰」；每份 Chronicle 皆附帶完整度審計報告（Audit）。
+### 如何調查學術分歧
+
+```python
+build_research_chronicle(topic="Cochlear implants",
+                         pmids=["3878092", "3753836", "2642379"], output="chronicle_map")
+```
+
+1. **先讀當年的資料。** 1985 年的論文比較不同裝置，1986 年的論文比較同一裝置上的訊號處理策略。NIH 會議舉辦於 1988 年，聲明的期刊版出版於 1989 年。案例中缺乏足夠標引來產生分流候選，`sources_for_review` 仍列出兩篇比較研究與一篇共識聲明。NIH 聲明原件支持「1988 年當時已有人爭論如何選擇裝置」這項判斷。[實例及原始文件](reports/chronicle_historical_method_2026-11-20.md)
+2. **查核不同解釋。** 圖上的 `branch_point` 標出該線或其子線最早能定年的條目。對每組 `divergence_review.candidates`，檢查跨兩個主題的文章和後來各線的文章，並核對是否早已有獨立文獻。可依當年作者陳述的方法、爭點或採用紀錄來解釋研究何時分流。
+3. **說明計數範圍。** `direct_activity.by_year` 提供直接歸屬該線的條目數及整版同年條目數。要主張多數醫院或研究群已採用某種方法，另找當年的調查或登錄分母。`milestones` 同時提供全域候選和各個有可靠證據分支的閱讀代表，可核對 `score_components`、`observed_max_citations` 與代表文獻的 `selection_basis`。
+4. **留下可覆核的引用。** `evidence` 的 `fulltext_lookup_source` 可交給 `get_fulltext` 尋找正文。`fulltext_coverage` 統計的是已存的全文連結，實際核讀後再記下段落、頁碼或表號。也可用 Europe PMC 章節索引或獲授權的 Zotero Keeper 館藏補查，以 PMID 或 DOI 核對同篇文獻。只有 DOI 的館藏候選先保留在附表，取得 PMID 後再明列建版。
+
+重建可能辨認出兩篇舊文獻的新關聯。在 `diff` 中，新增分支的 `evidence_observation` 列出比較起點已有及本次新觀察的識別碼與發表年。「新觀察」對應所選的兩版。各版皆保存本身證據與檢索範圍。
 
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
@@ -68,169 +76,35 @@ build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 | --- | :---: | --- |
 | `summary` | Markdown | 緊湊摘要（預設）。包含時序主軸、研究分支列表與重大亮點。 |
 | `mermaid` | 圖表 | **標準 X-Y 軸演化樹**。橫向年份軸 + 主題分支 + 論文區塊（Mermaid Flowchart LR）。 |
-| `chronicle_map` | JSON | 包含完整圖形座標契約的結構化 JSON（前端視覺化與繪圖專用）。 |
+| `chronicle_map` | JSON | 圖形座標、可追溯的分流候選、當代資料及逐年分支計數。 |
 | `timeline` | JSON | 時序投影 JSON，依時間嚴格排列。 |
 | `tree` | JSON | 樹狀分支投影 JSON，依主題與子主題層級組織。 |
 | `graph` | JSON | 型別化 Provenance Graph（Topic → Branch → Entry → EvidenceArticle）。 |
-| `evidence` | JSON | 去重後的完整證據論文清單與各來源計數。 |
-| `milestones` | JSON | 里程碑統計、證據分佈、引用量統計與 Landmark 排名。 |
+| `evidence` | JSON | 去重後的證據文獻、全文查找識別碼及已存連結涵蓋量。 |
+| `milestones` | JSON | 里程碑統計、已記錄的排序依據及各個有可靠證據分支的閱讀代表。 |
 | `narrative` | Markdown | 具學術引用的結構化敘事文字。 |
 | `json` | JSON | 包含所有欄位與原始資料的完整快照（Snapshot）。 |
 
 ---
 
-### 3. 完整實例示範：Remimazolam 術中應用研究脈絡
+### 3. 從圖回到當年的文獻
 
-以下以新型靜脈麻醉藥 **Remimazolam（瑞馬唑侖）於手術中麻醉與鎮靜** 為實例，展示各項視覺化與分析產出：
+以人工耳蝸案例的三筆資料為例。查考會議用原始聲明的日期，引用期刊紀錄用該篇的出版年。[1985 年研究](https://pubmed.ncbi.nlm.nih.gov/3878092/) · [1986 年研究](https://pubmed.ncbi.nlm.nih.gov/3753836/) · [NIH 聲明原件](https://files.eric.ed.gov/fulltext/ED350771.pdf) · [1989 年期刊紀錄](https://pubmed.ncbi.nlm.nih.gov/2642379/)
 
-#### 範例 1：X 軸時間線 + Y 軸主題分支樹狀圖 (`output="mermaid"`)
+| 文件日期 | 能從史料查核的內容 |
+| --- | --- |
+| 1985 年 | 作者比較單通道和多通道裝置各三種。 |
+| 1986 年 | 作者在兩位受試者的同款植入裝置上比較五種訊號處理策略。兩篇都談單、多通道，實際比較的技術選擇不同。 |
+| 1988 年會議、1989 年期刊版 | NIH 聲明把選哪一種裝置列為當時的爭點。可以回查導言與設計優缺點的討論，標出該爭議已有明文記載的年份。 |
 
-```mermaid
-flowchart LR
-    n_topic["研究主題: Remimazolam 術中麻醉與鎮靜 (2020-2026)"]
+將建立時回傳的 ID 帶入下列呼叫，可畫出已存版本。若要追問某篇是否被後續研究引用，用引用樹另外查詢，再讀引用它的原文與段落。
 
-    %% 橫向時間軸 (X-axis Time Spine)
-    n_y2020["2020 年"]
-    n_y2021["2021 年"]
-    n_y2022["2022 年"]
-    n_y2023["2023 年"]
-    n_y2024["2024 年"]
-    n_y2025["2025 年"]
-    n_y2026["2026 年"]
-
-    n_topic ==> n_y2020
-    n_y2020 --> n_y2021
-    n_y2021 --> n_y2022
-    n_y2022 --> n_y2023
-    n_y2023 --> n_y2024
-    n_y2024 --> n_y2025
-    n_y2025 --> n_y2026
-
-    %% Y 軸研究主題分支 (Y-axis Lineage Branches)
-    b_propofol["分支: Propofol 對比試驗與血流動力學 (24 篇)"]
-    b_remi["分支: Remimazolam 適應症與專屬研究 (3 篇)"]
-    b_general["分支: 全身麻醉與複雜心血管術式 (5 篇)"]
-    b_sedatives["分支: 催眠鎮靜機制與腦電深度監測 (6 篇)"]
-    b_benzo["分支: 苯二氮䓬類特性與特異性拮抗 (2 篇)"]
-
-    %% 分支分岔時間點
-    n_y2020 --> b_propofol
-    n_y2021 --> b_remi
-    n_y2022 --> b_sedatives
-    n_y2024 --> b_general
-    n_y2025 --> b_benzo
-
-    %% 關鍵文獻區塊 (Entry Blocks)
-    e_2020_phase2["[2020-08] Phase 2/3 Trial (PMID: 32417976)<br/>Doi et al. 全身麻醉療效不劣於 Propofol，低血壓發生率顯著降低"]
-    e_2021_cardiac["[2021-03] Case Study (PMID: 33677710)<br/>心臟外科體外循環 (CPB) 麻醉初探"]
-    e_2022_sedation["[2022-04] Observational Study (PMID: 34999964)<br/>全身麻醉期間腦電 (EEG/BIS) 鎮靜監測特徵"]
-    e_2023_delirium["[2023-01] Safety Alert / RCT (PMID: 36712948)<br/>老年骨科手術術後譫妄 (Delirium) 預防效果"]
-    e_2023_sleep["[2023-08] RCT (PMID: 37055671)<br/>術中應用改善老年全膝置換術後睡眠品質"]
-    e_2024_rct["[2024-03] RCT (PMID: 38541158)<br/>胸腔鏡與腹腔鏡微創手術血流動力學穩定性"]
-    e_2024_meta["[2024-07] Meta-Analysis (PMID: 39069837)<br/>複雜手術對比丙泊酚安全性統合分析"]
-    e_2025_sr["[2025-01] Systematic Review (PMID: 39832842)<br/>圍術期器官保護與神經認知結局回顧"]
-    e_2025_tavi["[2025-03] RCT (PMID: 39715979)<br/>經導管主動脈瓣置換術 (TAVI) 對比 Sevoflurane"]
-    e_2026_seizure["[2026] Clinical Cohort (PMID: 42299573)<br/>清醒開顱手術 (Awake Craniotomy) 術中癲癇發生率比較"]
-
-    %% 連接關鍵論文至其分支與時間軸
-    b_propofol --> e_2020_phase2
-    b_remi --> e_2021_cardiac
-    b_sedatives --> e_2022_sedation
-    b_propofol --> e_2023_delirium
-    b_remi --> e_2023_sleep
-    b_propofol --> e_2024_rct
-    b_propofol --> e_2024_meta
-    b_propofol --> e_2025_sr
-    b_general --> e_2025_tavi
-    b_sedatives --> e_2026_seizure
-
-    n_y2020 -.-> e_2020_phase2
-    n_y2021 -.-> e_2021_cardiac
-    n_y2022 -.-> e_2022_sedation
-    n_y2023 -.-> e_2023_delirium
-    n_y2024 -.-> e_2024_meta
-    n_y2025 -.-> e_2025_tavi
-    n_y2026 -.-> e_2026_seizure
-
-    %% 樣式設定
-    classDef topic fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px;
-    classDef spine fill:#dbeafe,color:#1e3a8a,stroke:#2563eb,stroke-width:2px;
-    classDef branch fill:#ecfeff,color:#164e63,stroke:#0891b2,stroke-width:2px;
-    classDef event fill:#ffffff,color:#111827,stroke:#94a3b8,stroke-width:1px;
-    classDef landmark fill:#fef3c7,color:#92400e,stroke:#f59e0b,stroke-width:2px;
-
-    class n_topic topic;
-    class n_y2020,n_y2021,n_y2022,n_y2023,n_y2024,n_y2025,n_y2026 spine;
-    class b_propofol,b_remi,b_general,b_sedatives,b_benzo branch;
-    class e_2021_cardiac,e_2022_sedation,e_2023_delirium,e_2023_sleep,e_2024_rct,e_2025_tavi,e_2026_seizure event;
-    class e_2020_phase2,e_2024_meta,e_2025_sr landmark;
+```python
+read_research_chronicle(request={"action":"load","chronicle_id":chronicle_id,"output":"mermaid"})
+build_citation_tree(pmid="3878092", depth=1, direction="both", output_format="mermaid")
 ```
 
----
-
-#### 範例 2：核心關鍵論文雙向引用網絡圖 (`build_citation_tree`)
-
-以 2020 年奠基性臨床試驗 **Doi et al. (PMID: 32417976)** 為根節點，向前追蹤後續最新引用，向後回溯基礎藥理學奠基文獻：
-
-```mermaid
-graph TD
-    %% Root Paper
-    pmid_32417976(["<b>Doi Matsuyuki et al. (2020)</b><br/>Efficacy & safety of remimazolam vs propofol<br/>[PMID: 32417976 | Phase IIb/III 關鍵試驗]"])
-
-    %% 後續前向引用 (Forward Citations - 最新臨床應用)
-    pmid_42225960["Ni et al. (2026)<br/>體重調整劑量比例比較"]
-    pmid_41987344["Kimura et al. (2026)<br/>小兒鎮靜與麻醉應用"]
-    pmid_41954614["Morimoto et al. (2026)<br/>效應部位濃度監測 (Ce)"]
-    pmid_41926002["Kotani et al. (2026)<br/>術後血流動力學與器官保護"]
-
-    %% 基礎後向參考 (Backward References - 藥物研發與藥理地基)
-    pmid_23653886("Chitilian et al. (2013)<br/>新型酯鍵代謝麻醉藥物研發")
-    pmid_10215689("Tuk et al. (1999)<br/>GABAA 藥效動力學建模")
-    pmid_22531340("Egan et al. (2012)<br/>代謝不穩定型新型鎮靜劑架構")
-
-    %% 連線
-    pmid_42225960 --> pmid_32417976
-    pmid_41987344 --> pmid_32417976
-    pmid_41954614 --> pmid_32417976
-    pmid_41926002 --> pmid_32417976
-
-    pmid_32417976 --> pmid_23653886
-    pmid_32417976 --> pmid_10215689
-    pmid_23653886 --> pmid_22531340
-
-    %% 樣式
-    style pmid_32417976 fill:#e74c3c,stroke:#c0392b,stroke-width:3px,color:#fff
-    style pmid_42225960 fill:#3498db,stroke:#2980b9,color:#fff
-    style pmid_41987344 fill:#3498db,stroke:#2980b9,color:#fff
-    style pmid_41954614 fill:#3498db,stroke:#2980b9,color:#fff
-    style pmid_41926002 fill:#3498db,stroke:#2980b9,color:#fff
-    style pmid_23653886 fill:#2ecc71,stroke:#27ae60,color:#fff
-    style pmid_10215689 fill:#2ecc71,stroke:#27ae60,color:#fff
-    style pmid_22531340 fill:#2ecc71,stroke:#27ae60,color:#fff
-```
-
----
-
-#### 範例 4：跨主題橫向比較 (`action="compare"`)
-
-比較 `remimazolam intraoperative`（新藥，2020–2026）與 `propofol intraoperative`（經典對照組，1991–2026）：
-
-```json
-{
-  "projection": "comparison",
-  "summary": {
-    "earliest_research": 1991,
-    "latest_research": 2026,
-    "shared_evidence_count": 7
-  },
-  "shared_evidence": [
-    { "evidence_id": "pmid:32417976", "shared_by": ["remimazolam", "propofol"] },
-    { "evidence_id": "pmid:36712948", "shared_by": ["remimazolam", "propofol"] },
-    { "evidence_id": "pmid:38494158", "shared_by": ["remimazolam", "propofol"] },
-    { "evidence_id": "pmid:39832842", "shared_by": ["remimazolam", "propofol"] }
-  ]
-}
-```
+跨主題時，先建立或選取另一份編年史，再把兩個 ID 交給 `action="compare"`，查看共享篇目與各自涵蓋的年份。同一份編年史重建後則以 `action="diff"` 比對兩個版次。
 
 ---
 

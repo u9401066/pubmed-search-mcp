@@ -1,0 +1,12 @@
+# Release manifests and mirrored research skills are compared byte for byte.
+/server.json text eol=lf
+/plugins/pubmed-search/*.json text eol=lf
+/plugins/pubmed-search/skills/**/*.md text eol=lf
+/.claude/skills/pubmed-*/**/*.md text eol=lf
+/.claude/skills/pipeline-persistence/**/*.md text eol=lf
+
+# Publication evidence and archived sources have recorded SHA-256 checksums.
+/docs/reports/*.json text eol=lf
+/docs/archive/publication/*.tex text eol=lf
+/docs/archive/publication/*.bib text eol=lf
+/docs/archive/publication/paper-draft*.md text eol=lf

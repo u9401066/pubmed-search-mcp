@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
+
 from .assembler import canonical_topic_key
 from .ordering import chronology_key
 
@@ -179,6 +181,73 @@ def _branch_summary(branch: ChronicleBranch) -> dict[str, Any]:
     return branch.to_dict()
 
 
+def _publication_years(entries: Iterable[ChronicleEntry]) -> dict[str, int]:
+    """Return a year only when all dated occurrences of the evidence ID agree."""
+    observations: dict[str, set[int]] = {}
+    for entry in entries:
+        for article in entry.evidence.all_articles:
+            if article.year is not None:
+                observations.setdefault(article.evidence_id, set()).add(article.year)
+    return {evidence_id: next(iter(years)) for evidence_id, years in observations.items() if len(years) == 1}
+
+
+def _added_branch_details(
+    snapshot: ChronicleSnapshot, added_branch_ids: list[str], before_evidence: dict[str, EvidenceArticle]
+) -> list[dict[str, Any]]:
+    """Trace each added branch's direct membership to evidence in the compared revisions."""
+    if not added_branch_ids:
+        return []
+    publication_years = _publication_years(snapshot.entries)
+    membership = resolve_chronicle_membership(snapshot)
+    uncertain_owners = {
+        entry.branch_id
+        for entry, owner in zip(snapshot.entries, membership.branch_index_by_entry, strict=True)
+        if owner is None
+    }
+    positions: dict[str, int] = {}
+    for index, branch in enumerate(snapshot.branches):
+        if branch.branch_id in positions:
+            uncertain_owners.add(branch.branch_id)
+        positions[branch.branch_id] = index
+
+    details = []
+    for branch_id in added_branch_ids:
+        index = positions[branch_id]
+        branch = snapshot.branches[index]
+        entries = [snapshot.entries[i] for i in membership.branch_entry_indices[index]]
+        evidence_ids = {article.evidence_id for entry in entries for article in entry.evidence.all_articles}
+        previously_observed: list[dict[str, str | int | None]] = []
+        newly_observed: list[dict[str, str | int | None]] = []
+        for evidence_id in sorted(evidence_ids):
+            target = previously_observed if evidence_id in before_evidence else newly_observed
+            target.append({"evidence_id": evidence_id, "publication_year": publication_years.get(evidence_id)})
+
+        if (
+            not evidence_ids
+            or branch_id in uncertain_owners
+            or len(entries) != len(branch.entry_ids)
+            or any(entry.evidence.is_empty for entry in entries)
+        ):
+            basis = "undetermined"
+        elif previously_observed and newly_observed:
+            basis = "mixed"
+        elif previously_observed:
+            basis = "previously_observed_only"
+        else:
+            basis = "newly_observed_only"
+        details.append(
+            {
+                **_branch_summary(branch),
+                "evidence_observation": {
+                    "basis": basis,
+                    "previously_observed": previously_observed,
+                    "newly_observed": newly_observed,
+                },
+            }
+        )
+    return details
+
+
 def _branch_changes(before: ChronicleBranch, after: ChronicleBranch) -> dict[str, Any]:
     """Return changes in branch labels, ancestry, membership, and confidence."""
     before_fields = before.to_dict()
@@ -281,6 +350,13 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
             "scope_changed": scope_changed,
             "absence_is_conclusive": False,
             "absence_semantics": "not_observed_in_revision",
+            "branch_evidence_semantics": (
+                "An added branch groups evidence attached to its direct entries in to_revision. "
+                "Previously/newly observed compares evidence IDs against all entries in from_revision. "
+                "Publication year dates the article and is null when undated or conflicting in to_revision. "
+                "Observation is relative to these two snapshots. "
+                "The cause of the grouping and the historical origin of the research line remain unknown."
+            ),
             "note": scope_note,
         },
         "entries": {
@@ -292,7 +368,7 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
         "branches": {
             "added": added_branch_ids,
             "removed": removed_branch_ids,
-            "added_details": [_branch_summary(after_branches[key]) for key in added_branch_ids],
+            "added_details": _added_branch_details(after, added_branch_ids, before_evidence),
             "removed_details": [_branch_summary(before_branches[key]) for key in removed_branch_ids],
             "updated": updated_branches,
         },

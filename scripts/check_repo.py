@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import shlex
 import subprocess
@@ -18,6 +19,22 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+# Git hooks export paths for the invoking checkout. Validation also works in
+# other repositories, whose indexes, object stores and refs must stay separate.
+GIT_REPOSITORY_ENV = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_QUARANTINE_PATH",
+    "GIT_GRAFT_FILE",
+    "GIT_SHALLOW_FILE",
+    "GIT_PREFIX",
+    "GIT_NAMESPACE",
+)
 CHECK_PATHS = ("src/", "tests/", "scripts/", "run_server.py", "run_copilot.py")
 SMOKE_TESTS = (
     "tests/test_release_transport_smoke.py",
@@ -46,8 +63,8 @@ def commands(profile: str) -> list[tuple[str, ...]]:
     ]
 
 
-def _git_output(*args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False)
+def _git_output(*args: str, env: dict[str, str]) -> str:
+    result = subprocess.run(["git", *args], cwd=ROOT, env=env, capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
@@ -72,6 +89,7 @@ def main() -> int:
     if args.container_image:
         pytest_args += ("--container-image", args.container_image)
     report_path = args.report or ROOT / "build" / "validation" / f"{args.profile}.json"
+    child_env = {key: value for key, value in os.environ.items() if key not in GIT_REPOSITORY_ENV}
     report: dict[str, Any] = {
         "schema_version": 1,
         "profile": args.profile,
@@ -79,8 +97,8 @@ def main() -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "commit": _git_output("rev-parse", "HEAD"),
-        "dirty": bool(_git_output("status", "--porcelain")),
+        "commit": _git_output("rev-parse", "HEAD", env=child_env),
+        "dirty": bool(_git_output("status", "--porcelain", env=child_env)),
         "steps": [],
     }
 
@@ -98,7 +116,7 @@ def main() -> int:
             continue
         started = time.monotonic()
         try:
-            result = subprocess.run(invocation, cwd=ROOT, check=False)
+            result = subprocess.run(invocation, cwd=ROOT, env=child_env, check=False)
             returncode = result.returncode
         except (OSError, KeyboardInterrupt) as exc:
             returncode = 130 if isinstance(exc, KeyboardInterrupt) else 1

@@ -1,4 +1,12 @@
-# Progress (Updated: 2026-10-20)
+# Progress (Updated: 2026-11-20)
+
+## 2026-11-20 — v0.9.0 Chronicle historical evidence
+
+The November reviews trace scope-limited research forks, dated primary
+sources, branch activity and how to consult public full text or a permitted
+Zotero library. Archived publication inputs now retain their verified bytes
+on Windows checkouts. Release metadata, installation surfaces and citation
+instructions are tracked in the [changelog](../CHANGELOG.md).
 
 ## 2026-10-20 - v0.8.0 automation and release documentation
 

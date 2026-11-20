@@ -179,7 +179,7 @@ build_research_chronicle(pmids="last", topic="My Reading List")
 
 # 只給 chronicle_id 就是「照原本的檢索範圍再跑一次」：
 # topic/pmids 與 max_events/min_year/max_year 都沿用上一版，
-# 所以 diff 看到的是研究進展，而不是被悄悄改掉的檢索窗口。
+# diff 亦可能來自舊文獻補標或來源覆蓋改變。新增分支請查 evidence_observation 的篇目與出版年。
 build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
 
 # 讀取
@@ -212,9 +212,9 @@ artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 a
 | timeline | 時序投影 JSON | 程式處理 |
 | tree | 🌳 研究脈絡樹 JSON | 分支式研究演化 |
 | graph | 型別化 provenance graph | 證據溯源 / 視覺化 |
-| evidence | 去重後的證據表 | 核對引用 |
-| milestones | 里程碑分佈與證據品質統計 | 領域診斷 |
-| chronicle_map | 橫向時間主軸與研究分支座標 JSON | 完整可稽核視覺資料 |
+| evidence | 去重後的證據表與 fulltext_lookup_source | 取回可取得的全文，查核實際段落 |
+| milestones | 里程碑分佈、評選依據與支線代表篇目 | 查核入選原因及小支線 |
+| chronicle_map | 時序座標、分流候選、同期史料與逐年分支篇數 | 查核研究路線 |
 | mermaid | 橫向年份主軸與觀察到的主題分支 | 標準嵌入圖 |
 | narrative | 有證據支撐的敘事 | 寫作 / 報告 |
 | json | 完整 snapshot | API 整合 |
@@ -223,8 +223,10 @@ artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 a
 主題分支優先由多篇論文重複出現的 MeSH descriptor 與作者 keyword 建立；一篇
 論文只有一個 primary branch，但可用 matched signals 與 cross-links 保留跨主題
 關聯。當只有 singleton 或語意訊號不足時，才使用研究階段 fallback，並在 audit
-明確警告。Branch point 只表示本次範圍內最早觀察到的有日期證據，不代表因果、
-研究取代關係或整個領域的 first report。
+明確警告。圖上起點是該線或子線最早能定年的篇目。查核歷史分歧時，讀取 chronicle_map 的
+`divergence_review`，檢查共有篇目、後來各線篇目與更早的反例。`sources_for_review` 提供可供
+查閱的比較研究與共識文件。`direct_activity` 逐年列出直接歸類篇數及同年整版收錄數。
+說明某群體採用某方法時，需另查有群體、年代與母數的記載。
 
 ```
 # 產生研究脈絡樹
@@ -237,7 +239,8 @@ build_research_chronicle(topic="CRISPR", output="mermaid")
 ### Landmark Detection
 里程碑分析優先使用 evidence provider 儲存的明確
 `landmark_importance_score`，缺少時才以引用數作 fallback。Milestone detection
-confidence 只描述分類信心，不會被當成科學重要性。
+confidence 描述分類信心。查核 `score_components` 與 `observed_max_citations`，
+並讀取 `branch_representatives` 為小支線保留的代表篇目。
 
 ```
 # 里程碑分佈統計（讀已儲存的 chronicle，不重跑搜尋）

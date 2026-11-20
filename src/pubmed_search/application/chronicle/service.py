@@ -76,6 +76,10 @@ _MAX_PMID_DIGITS = 20
 DEFAULT_CHRONICLE_EVENTS = 30
 
 
+class ChronicleNoEvidenceError(ValueError):
+    """The retrieval completed without article evidence for a new revision."""
+
+
 def _inherit_filter(requested: int | None, stored: Any, low: int, high: int) -> int | None:
     """Resolve one retrieval filter, keeping a stored value only if still in range.
 
@@ -259,7 +263,7 @@ class ChronicleService:
                 f"No PubMed article evidence was retrieved for {scope_label}; "
                 "no Chronicle revision was saved. Check the identifiers, broaden the topic, or adjust the year range."
             )
-            raise ValueError(msg)
+            raise ChronicleNoEvidenceError(msg)
 
         scope = ChronicleInputScope(
             mode=mode,

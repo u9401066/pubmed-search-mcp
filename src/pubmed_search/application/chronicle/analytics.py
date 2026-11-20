@@ -12,10 +12,12 @@ import math
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
+
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from pubmed_search.domain.entities.chronicle import ChronicleEntry, ChronicleSnapshot
 
@@ -39,10 +41,16 @@ def landmark_importance_score(entry: ChronicleEntry) -> float | None:
     return score if math.isfinite(score) and 0.0 <= score <= 1.0 else None
 
 
+def _stored_citations(entry: ChronicleEntry) -> Iterator[tuple[str, int]]:
+    for article in entry.evidence.all_articles:
+        count = article.citation_count
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            yield article.evidence_id, count
+
+
 def entry_max_citations(entry: ChronicleEntry) -> int:
-    """Return the largest non-negative citation count in an entry's evidence."""
-    counts = [article.citation_count for article in entry.evidence.all_articles]
-    return max((count for count in counts if count is not None and count >= 0), default=0)
+    """Retain the numeric zero fallback used in historical ranking keys."""
+    return max((count for _, count in _stored_citations(entry)), default=0)
 
 
 def landmark_rank_key(entry: ChronicleEntry) -> tuple[int, float, int, tuple[int, int, int, int, int], str]:
@@ -61,6 +69,116 @@ def landmark_rank_key(entry: ChronicleEntry) -> tuple[int, float, int, tuple[int
         chronology_key(entry),
         entry.entry_id,
     )
+
+
+def _recorded_score_components(entry: ChronicleEntry) -> list[dict[str, Any]] | None:
+    """Expose the original scoring inputs when this revision retained them."""
+    score = entry.provenance.get("landmark_score")
+    diagnostics = score.get("diagnostics") if isinstance(score, dict) else None
+    hits = diagnostics.get("component_hits") if isinstance(diagnostics, dict) else None
+    if not isinstance(hits, list) or landmark_importance_score(entry) is None:
+        return None
+    components = []
+    for hit in hits:
+        if (
+            not isinstance(hit, dict)
+            or not isinstance(hit.get("component"), str)
+            or not isinstance(hit.get("policy"), str)
+        ):
+            continue
+        components.append(
+            {
+                "component": hit["component"],
+                "policy": hit["policy"],
+                # The scorer gives unavailable citation inputs a zero contribution.
+                "raw_value": None if hit["policy"] == "none" else hit.get("raw_value"),
+                "weight": hit.get("weight"),
+                "weighted_score": hit.get("weighted_score"),
+            }
+        )
+    return components or None
+
+
+def _observed_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> Iterator[tuple[str, int]]:
+    # Timeline events historically substituted zero for unavailable counts.
+    # The event's provenance describes its source article, not every attached paper.
+    supporting_ids = {article.evidence_id for article in entry.evidence.supporting_articles}
+    zero_is_observed = entry.provenance.get("citation_count_observed") is True or any(
+        hit["component"] == "citation_impact"
+        and hit["policy"] == "citation_count"
+        and not isinstance(hit["raw_value"], bool)
+        and hit["raw_value"] == 0
+        for hit in components or []
+    )
+    for evidence_id, count in _stored_citations(entry):
+        if count > 0 or (zero_is_observed and len(supporting_ids) == 1 and evidence_id in supporting_ids):
+            yield evidence_id, count
+
+
+def _observed_max_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> int | None:
+    return max((count for _, count in _observed_citations(entry, components)), default=None)
+
+
+def _landmark_row(entry: ChronicleEntry) -> dict[str, Any]:
+    importance = landmark_importance_score(entry)
+    components = _recorded_score_components(entry)
+    observed = _observed_max_citations(entry, components)
+    selection_signal = "chronological_display_order_then_entry_id"
+    if importance is not None:
+        selection_signal = "landmark_importance_score"
+    elif observed:
+        selection_signal = "citation_count"
+    return {
+        "entry_id": entry.entry_id,
+        "year": entry.year,
+        "title": entry.title,
+        "landmark_importance_score": importance,
+        "score_components": components,
+        "ranking_basis": "provenance.landmark_importance_score"
+        if importance is not None
+        else "citation_count_fallback",
+        "selection_signal": selection_signal,
+        "milestone_detection_confidence": round(entry.confidence, 3),
+        "confidence_semantics": "milestone_detection_confidence_not_scientific_importance",
+        "citations": entry_max_citations(entry),
+        "observed_max_citations": observed,
+        "evidence_ids": [article.evidence_id for article in entry.evidence.all_articles],
+    }
+
+
+def _branch_representatives(snapshot: ChronicleSnapshot, global_ids: set[str]) -> list[dict[str, Any]]:
+    membership = resolve_chronicle_membership(snapshot)
+    rows = []
+    for branch_index, member_indices in enumerate(membership.branch_entry_indices):
+        members = (snapshot.entries[i] for i in member_indices)
+        ranked = sorted((member for member in members if not member.evidence.is_empty), key=landmark_rank_key)
+        if not ranked:
+            continue
+        branch = snapshot.branches[branch_index]
+        entry = ranked[0]
+        basis = "sole_direct_entry"
+        if len(ranked) > 1:
+            first, second = landmark_rank_key(entry), landmark_rank_key(ranked[1])
+            if first[:2] != second[:2]:
+                basis = "landmark_importance_score"
+            elif first[2] != second[2]:
+                basis = "citation_count"
+            else:
+                basis = "chronological_display_order_then_entry_id"
+        rows.append(
+            {
+                "branch_index": branch_index,
+                "branch_id": branch.branch_id,
+                "branch_name": branch.name,
+                "entry_id": entry.entry_id,
+                "year": entry.year,
+                "evidence_ids": [article.evidence_id for article in entry.evidence.all_articles],
+                "observed_max_citations": _observed_max_citations(entry, _recorded_score_components(entry)),
+                "selection_basis": basis,
+                "in_global_landmarks": entry.entry_id in global_ids,
+            }
+        )
+    return rows
 
 
 def _activity_by_year(snapshot: ChronicleSnapshot) -> dict[str, int]:
@@ -108,7 +226,11 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
         audit status carried over from the snapshot.
     """
     articles = snapshot.evidence_articles
-    citations = [a.citation_count for a in articles if a.citation_count is not None]
+    citations_by_id: dict[str, int] = {}
+    for entry in snapshot.entries:
+        for evidence_id, count in _observed_citations(entry, _recorded_score_components(entry)):
+            citations_by_id[evidence_id] = max(citations_by_id.get(evidence_id, count), count)
+    citations = citations_by_id.values()
     year_range = snapshot.year_range
 
     landmarks = sorted(snapshot.entries, key=landmark_rank_key)[:LANDMARK_LIMIT]
@@ -137,28 +259,23 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
             "median_citations": median(citations) if citations else None,
             "source_distribution": _distribution([a.source for a in articles]),
         },
-        "landmark_entries": [
-            {
-                "entry_id": entry.entry_id,
-                "year": entry.year,
-                "title": entry.title,
-                "landmark_importance_score": landmark_importance_score(entry),
-                "ranking_basis": (
-                    "provenance.landmark_importance_score"
-                    if landmark_importance_score(entry) is not None
-                    else "citation_count_fallback"
-                ),
-                "milestone_detection_confidence": round(entry.confidence, 3),
-                "confidence_semantics": "milestone_detection_confidence_not_scientific_importance",
-                "citations": entry_max_citations(entry),
-                "evidence_ids": [a.evidence_id for a in entry.evidence.all_articles],
-            }
-            for entry in landmarks
-        ],
+        "landmark_entries": [_landmark_row(entry) for entry in landmarks],
+        "branch_representatives": _branch_representatives(snapshot, {entry.entry_id for entry in landmarks}),
         "landmark_ranking": {
             "primary": "provenance.landmark_importance_score",
             "fallback": "maximum evidence citation_count when importance is unavailable",
             "excluded": "milestone detection confidence",
+            "scope": "entries_in_this_revision",
+            "branch_representatives": (
+                "One reading sample per branch with evidence-backed, resolved direct members. Selection basis gives the final "
+                "criterion over the next ranked member. Historical influence requires separate evidence."
+            ),
+            "tie_breakers": ["maximum evidence citation_count", "chronological display order", "entry_id"],
+            "interpretation": (
+                "These are candidates for historical review. A composite can include milestone detection confidence "
+                "as a weighted input. Database agreement measures retrieval overlap. Missing citation counts can "
+                "rank as zero. Citation metrics describe the available snapshot. Contemporary reception requires dated evidence."
+            ),
         },
         "audit_status": snapshot.audit.status,
         "warnings": snapshot.audit.warnings,

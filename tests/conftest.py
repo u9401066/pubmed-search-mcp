@@ -6,13 +6,16 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import shutil
 import socket
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, NoReturn
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from scripts.check_repo import GIT_REPOSITORY_ENV
 
 from pubmed_search.application.search.source_models import SourceSearchPage
 from tests.fixtures.release_support import ReleaseInstallation, install_release
@@ -25,6 +28,17 @@ _LIVE_TEST_OPT_OUT = "SKIP_INTEGRATION"
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--release-dist", type=Path, help="Test exactly one prebuilt wheel/sdist pair in this directory")
     parser.addoption("--container-image", help="Opt into real HTTP smoke of this locally built Docker image")
+
+
+@pytest.fixture
+def git_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Initialize a test-owned repository even when pytest is invoked from a Git hook."""
+    for name in GIT_REPOSITORY_ENV:
+        monkeypatch.delenv(name, raising=False)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "init", "--quiet"], cwd=tmp_path, check=True)
+    return tmp_path
 
 
 @pytest.fixture(scope="session")

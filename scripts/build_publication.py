@@ -135,7 +135,7 @@ def prepare(root: Path, output: Path) -> dict[str, Any]:
         "@software{pubmed_search_mcp,\n"
         f"  author = {{{authors}}},\n  title = {{{citation['title']}}},\n"
         f"  version = {{{citation['version']}}},\n  year = {{{str(citation['date-released'])[:4]}}},\n"
-        f"  url = {{{citation['repository-code']}}}\n}}\n"
+        f"  url = {{{citation['preferred-citation']['url']}}}\n}}\n"
     )
     (output / "software-citation.bib").write_text(software_bib, encoding="utf-8")
     return {

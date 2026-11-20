@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 import zipfile
 from pathlib import Path
 
@@ -16,10 +14,8 @@ from scripts.check_repository_layout import inventory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_layout_detects_new_and_ambiguous_files_but_excludes_ignored_output(tmp_path: Path) -> None:
-    git = shutil.which("git")
-    assert git is not None
-    subprocess.run([git, "init", "--quiet", str(tmp_path)], check=True)
+def test_layout_detects_new_and_ambiguous_files_but_excludes_ignored_output(git_repository: Path) -> None:
+    tmp_path = git_repository
     (tmp_path / ".gitignore").write_text("build/\n", encoding="utf-8")
     (tmp_path / "build").mkdir()
     (tmp_path / "build/private.log").write_text("local output", encoding="utf-8")
