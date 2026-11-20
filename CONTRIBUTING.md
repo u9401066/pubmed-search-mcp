@@ -444,7 +444,7 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 
 ## Pull Request Process
 
-1. Fetch upstream and create your branch from the intended PR base. Use `master` for the maintained release line. Use `feature/research-workspace` for the team preview, including workspace and concept-comparison changes.
+1. Fetch upstream and create your branch from `upstream/master`. The research workspace and MeSH concept comparisons have shipped in v0.10.0 and follow the same contribution process as the other tools.
 
    ```bash
    git fetch upstream
@@ -458,7 +458,9 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
    git push -u origin feature/your-feature
    ```
 
-3. Open a pull request against the base you used in step 1. Describe the change, how to reproduce or verify it, and any effect on clients, documents or provider behavior.
+3. Open a pull request against `master`. Describe the change, how to reproduce or verify it, and any effect on clients, documents or provider behavior.
+
+After merging a release that combines several branches, maintainers can run `git fetch --prune upstream` and `git branch -r --no-merged upstream/master --list 'upstream/*'` to see which upstream branches still contain commits outside the release line.
 
 Contributions intentionally submitted for inclusion follow section 5 of Apache License 2.0 unless explicitly stated otherwise or covered by a separate agreement. For third-party material, identify its source and license. A public PMID or DOI is usually enough to reproduce a research case. [Project license](LICENSE) · [Project history](docs/publication/README.md#project-history)
 
