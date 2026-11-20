@@ -8,6 +8,7 @@
       "files": [
         ".bandit",
         ".env.service.example",
+        ".gitattributes",
         ".gitignore",
         ".instruction_drift_fingerprint",
         ".ngrok.env",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.shared.file_io import atomic_write_text
@@ -22,19 +23,24 @@ def write_json(path: Path, value: Any) -> None:
     atomic_write_text(path, json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
 
 
+def _lock_experiment(fd: int) -> None:
+    """Acquire the POSIX runner's exclusive, nonblocking advisory lock."""
+    if sys.platform == "win32":
+        raise OSError("The paired experiment runner requires POSIX file locks and process groups.")
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
 class ExperimentStore:
     """Require an identical protocol on resume; preserve every executed attempt."""
 
     def __init__(self, root: Path, manifest: dict[str, Any], *, resume: bool = False):
-        # Keep imports of the evaluation/scoring helpers portable. Execution of
-        # this runner uses POSIX process groups and advisory locks.
-        import fcntl
-
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
         self._lock = (root / ".lock").open("a+")
         try:
-            fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_experiment(self._lock.fileno())
             self._validate_manifest(manifest, resume)
         except BaseException:
             self._lock.close()

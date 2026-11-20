@@ -538,14 +538,24 @@ def test_diff_rejects_topic_discontinuity_even_with_same_id() -> None:
         )
 
 
-def test_store_ignores_revision_directories_and_external_symlink_chronicles(tmp_path):
+def test_store_ignores_revision_directories(tmp_path):
     store = ChronicleStore(tmp_path / "store")
     store.save(_snapshot("example", 1))
     (store.root_dir / "example" / "revision-999.json").mkdir()
     assert store.latest_revision("example") == 1
+
+
+def test_store_ignores_external_symlink_chronicles(tmp_path):
+    store = ChronicleStore(tmp_path / "store")
+    store.save(_snapshot("example", 1))
     outside = ChronicleStore(tmp_path / "outside")
     outside.save(_snapshot("external", 1))
-    (store.root_dir / "external").symlink_to(outside.root_dir / "external", target_is_directory=True)
+    try:
+        (store.root_dir / "external").symlink_to(outside.root_dir / "external", target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("This Windows account lacks the Create symbolic links privilege")
+        raise
     assert [row["chronicle_id"] for row in store.list_chronicles()] == ["example"]
 
 

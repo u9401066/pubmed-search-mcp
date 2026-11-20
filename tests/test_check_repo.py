@@ -15,7 +15,7 @@ GATE = Path(__file__).resolve().parents[1] / "scripts/check_repo.py"
 
 def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -> None:
     root = GATE.parents[1]
-    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
+    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     assert "pre-push" in hooks["default_install_hook_types"]
     push = [hook for repo in hooks["repos"] for hook in repo["hooks"] if "pre-push" in hook.get("stages", [])]
     assert len(push) == 1
@@ -36,7 +36,7 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
     assert not any(command[0] in {"ruff", "mypy"} for command in plans("smoke"))
     assert "slow" not in full_tests[0][-1] and "slow" not in smoke_tests[0][-1]
     assert "not integration" in full_tests[0][-1] and "not integration" in smoke_tests[0][-1]
-    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     # Ordinary CI checks the actual merge result and OS-dependent artifacts;
     # manual extended full matrices remain available without repeating each push.
     assert sum("if" not in job for job in workflow["jobs"].values()) == 1
@@ -48,7 +48,7 @@ def test_push_gate_is_installed_and_cloud_does_not_duplicate_the_full_matrix() -
         and "test_copilot_hook_integration.py -k powershell" in step.get("run", "")
         for step in windows_steps
     )
-    publish = yaml.safe_load((root / ".github/workflows/publish.yml").read_text())
+    publish = yaml.safe_load((root / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
     release_commands = "\n".join(step.get("run", "") for step in publish["jobs"]["verify"]["steps"])
     assert "check_repo.py smoke --release-dist dist" in release_commands
     assert "check_repo.py container --container-image" in release_commands

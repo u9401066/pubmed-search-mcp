@@ -49,6 +49,12 @@ coverage.xml
 # Benchmark baselines (pytest-benchmark)
 .benchmarks/
 
+# Local TeX compilation products for the legacy manuscript
+/docs/arxiv-paper/*.aux
+/docs/arxiv-paper/*.bbl
+/docs/arxiv-paper/*.blg
+/docs/arxiv-paper/*.out
+
 # Linter / Type checker caches
 .mypy_cache/
 .ruff_cache/
