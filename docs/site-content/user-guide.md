@@ -308,7 +308,7 @@ or design a single external leader/lease before enabling recurring execution.
 There are two Copilot launch boundaries over one registry:
 
 - public primary MCP surface through authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- loopback-only schema smoke through `run_copilot.py`, using the same 41 strict
+- loopback-only schema smoke through `run_copilot.py`, using the same 42 strict
   tools and canonical `read_session(request={...})` recovery contract
 
 Only the authenticated service is publishable. Use the local launcher to inspect the same schemas, then return to the service launcher for any public endpoint; never tunnel `run_copilot.py`.

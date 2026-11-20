@@ -10,26 +10,26 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 [![CI](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml)
 
-> **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
+> **供 agent 探索與管理生醫文獻的研究外掛**
 
 ![PubMed Search MCP 研究工作流](images/research-workflow.svg)
 
-基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
+PubMed Search 將負責檢索與保存研究紀錄的 MCP server，和引導宿主 agent 操作的可攜式 skills 包成外掛。研究者可以從問題出發，循一篇論文擴展線索，記下查過的原文位置，再將未完成的判讀交給同事。
 
 **✨ 包含內容：**
 
-- 🔧 **41 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及可版本化的**研究編年史**功能
+- 🔧 **42 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及可版本化的**研究編年史**功能
 - 🛡️ **多 Agent 服務模式** - 部署一次供多個 agent 共用：session、快取與 artifact 依租戶隔離，支援 bearer token 認證與各租戶公平配額。詳見 [DEPLOYMENT.md](#/deployment)
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 完整雙語手冊：使用者工作流、架構、41-tool reference、pipeline 教學、source/broker contracts、整合與維運、安全與部署，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📘 **Docs Site** - 完整雙語手冊：使用者工作流、架構、42-tool reference、pipeline 教學、source/broker contracts、整合與維運、安全與部署，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - 同一組 canonical docs 的 GitHub 內建文件鏡像，入口在 [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
-- 📚 **26 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
+- 📚 **研究技能** - 外掛內含 `.claude/skills/` 的文獻研究流程，同目錄也收錄供專案開發者使用的技能。
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 - **研究自動化** - 排程 pipeline 差異與本機通知、Chronicle 重建摘要、多種子引用 snowball，以及可選的 `options="exclude_seen"` session 去重。
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
 
-**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [Unified Search 架構](#/unified-search-architecture-zh) | [41 工具品質稽核](#/tool-quality-audit-zh) | [60 個學術檢索參考 Repo](reference-repositories/README.md) | [Provider 資料平面](#/semantic-scholar-api) | [BioMCP 架構分析](#/biomcp-analysis) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [Unified Search 架構](#/unified-search-architecture-zh) | [42 工具品質稽核](#/tool-quality-audit-zh) | [60 個學術檢索參考 Repo](reference-repositories/README.md) | [Provider 資料平面](#/semantic-scholar-api) | [BioMCP 架構分析](#/biomcp-analysis) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
 
 [文件分類索引](#/documentation-map) · [維護腳本分類](https://github.com/u9401066/pubmed-search-mcp/blob/master/scripts/README.md)
 
@@ -93,7 +93,7 @@ Pipeline 改為依賴完成即可繼續，API 請求頻率上限維持不變。
 ## 研究品質與量化評測 — v0.7.2
 
 這次改進查詢相關性排序與融合、跨來源文獻去重、書目驗證、章節篩選與快取並行抓取，
-維持既有 41 個 MCP 工具介面。
+該版工具介面共 41 項。
 
 [Benchmark 報告](#/academic-retrieval-benchmarks) 分開量測元件品質與完整
 Agent 套件效果。先前公開 BEIR NFCorpus 的 BM25 元件實驗，test nDCG@10 從
@@ -106,6 +106,14 @@ fingerprints。引用驗證確認書目一致性，論文是否支持某項論�
 ## 🚀 快速安裝
 
 ### MCP Registry 與 Agent Plugin
+
+**試用本分支的研究工作區。** 從專案根目錄執行下列指令，再用客戶端的外掛安裝功能載入產生的目錄。這個開發版外掛會啟動目前工作樹的 MCP server，並附上對應的研究技能。
+
+```sh
+uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
+```
+
+可以告訴 agent「幫我建立人工耳蝸研究史的工作區，記下支持一條研究線索的文獻，留一項待查工作給同事。」agent 可在探索、擴展、查證、解釋四種活動之間往返。同事在同一伺服器與租戶下用工作區 ID 即可接續。[案例與接手方法](#/advanced-workflows-zh#%E6%8E%A5%E7%BA%8C%E7%A0%94%E7%A9%B6%E5%B7%A5%E4%BD%9C%E5%8D%80)
 
 版本發布後，可在支援[官方 MCP Registry](https://registry.modelcontextprotocol.io/)
 或 [GitHub MCP Registry](https://github.com/mcp) 的客戶端查找
@@ -537,9 +545,9 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 
 ## 🛠️ MCP 工具概覽
 
-如果你想真正理解這 41 個工具怎麼用，不要從背工具名開始。
+如果你想真正理解這 42 個工具怎麼用，不要從背工具名開始。
 
-先看[工具使用指南](#/tools-usage-guide-zh)：它把目前 41 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
+先看[工具使用指南](#/tools-usage-guide-zh)：它把目前 42 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
 ### 🔍 搜尋與查詢智能
 
@@ -1190,7 +1198,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 
 預建工作流程指南位於 `.claude/skills/`，分為**使用 Skills**（使用 MCP server）和**開發 Skills**（維護專案）：
 
-### 📚 使用 Skills (11) — 給使用此 MCP Server 的 AI Agent
+### 📚 使用 Skills (12) — 給使用此 MCP Server 的 AI Agent
 
 | Skill | 說明 |
 | ----- | ---- |
@@ -1199,6 +1207,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 | `pubmed-pico-search` | 臨床問題分解 |
 | `pubmed-paper-exploration` | 引用樹，相關文章 |
 | `pubmed-research-chronicle` | 持久化、可版本比對的研究脈絡 |
+| `pubmed-research-workspace` | 記錄研究問題、檢索決定與依據，接續他人留下的待辦 |
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE 全文 |
 | `pubmed-export-citations` | RIS/BibTeX/CSV/CSL 匯出指引 |
@@ -1226,13 +1235,13 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 | `test-generator` | 產生測試套件 |
 | `tool-sync` | 同步 MCP registry 與自動產生的工具文件 |
 
-> 📁 **位置**: `.claude/skills/*/SKILL.md`（Claude Code 專屬，也是 repo skills 的唯一來源）
+> 📁 **位置**: `.claude/skills/*/SKILL.md` 是專案技能的維護來源，可攜式外掛把研究技能打包在 `plugins/pubmed-search/skills/`。
 > 不要再另外鏡像或拆分到 `.github/skills/`。
 > 這些 repo skills 屬於 project-scoped 自訂內容，應納入版本控制。跨專案的個人 skills 則應放在 `~/.copilot/skills/` 或 `~/.claude/skills/` 之類的使用者目錄，不要提交到本 repository。
 
 ### 真實 MCP 回歸門檻
 
-41 個公開 tool 都會透過 MCP protocol 被實際呼叫，涵蓋 source-tree
+42 個公開 tool 都會透過 MCP protocol 被實際呼叫，涵蓋 source-tree
 stdio、Streamable HTTP，以及從全新安裝 wheel 啟動的 stdio。Wheel 路徑只從
 空白 virtual environment 匯入 server code；外部 fixture 僅提供 deterministic
 provider seams。Deterministic child server 只替換外部 provider boundaries；
@@ -1436,7 +1445,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 > 📖 **完整文件**: [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 >
-> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；`run_copilot.py` 只供 loopback smoke，使用同一套 canonical 41-tool strict registry，並非另一套相容工具面，禁止接到公網 tunnel。Tunnel 腳本要求已指派的 `NGROK_DOMAIN`、拒絕已占用的 backend port，並只會在 `--mode service` 通過 readiness 與匿名拒絕檢查後公開。
+> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；`run_copilot.py` 只供 loopback smoke，使用同一套 canonical 42-tool strict registry，並非另一套相容工具面，禁止接到公網 tunnel。Tunnel 腳本要求已指派的 `NGROK_DOMAIN`、拒絕已占用的 backend port，並只會在 `--mode service` 通過 readiness 與匿名拒絕檢查後公開。
 >
 > ⚠️ **注意**: SSE transport 自 2025 年 8 月起棄用。使用 `streamable-http`。
 
@@ -1460,7 +1469,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 | ---- | ---- | ---- |
 | **HTTPS** | TLS termination | 遠端憑證必須加密；內建自簽組態僅用於本機 |
 | **Bearer 認證** | 穩定 principal | service mode 強制啟用，並作為 tenant 授權邊界 |
-| **Tenant storage** | 檔案系統隔離 | Session、artifact、export、chronicle 與 pipeline 依已認證 principal 分區 |
+| **Tenant storage** | 檔案系統隔離 | 研究工作區、session、artifact、export、chronicle 與 pipeline 依已認證 principal 分區 |
 | **公平性與 rate policy** | Tenant concurrency + 共用上游預算 | 避免單一呼叫端倍增外部 API 配額 |
 | **Security headers** | Clickjacking/MIME hardening | Reverse-proxy headers 是認證的補強，不是 CSRF 授權 |
 | **Secret handling** | Runtime secret injection | API key 與 bearer token 必須由部署秘密/環境注入，不可 commit 或寫入 log |

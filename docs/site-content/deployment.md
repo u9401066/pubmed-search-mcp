@@ -95,7 +95,7 @@ Agent 端帶上 bearer token：
 Local stdio 與 local loopback HTTP 都使用 `PUBMED_DATA_DIR` 下的 durable `default`
 tenant。MCP transport session identifier 只屬於 protocol lifecycle，**不是 service tenant
 身分或授權邊界**。Service 的 session、article cache、搜尋歷史、`pmids="last"`、artifacts、
-exports、chronicles 與 pipelines 全部依已驗證 principal 分區。
+exports、chronicles、pipelines 與研究工作區全部依已驗證 principal 分區。
 
 MCP SDK v2 的 2026-07-28 request model 會直接送 `tools/list` / `tools/call`，
 不使用 `initialize` handshake 或 `Mcp-Session-Id`。Service 仍必須在每個 protected
@@ -106,6 +106,7 @@ request 驗證 bearer principal；legacy compatibility 不是身分或持久化�
 | Pipeline store | `workspace` / `global` / `auto` | tenant-derived store；`auto` 只解析到該 principal root |
 | Pipeline file | 可讀 `file:path.yaml` | 拒絕 server-host `file:` read |
 | Chronicle revisions | `<tenant-root>/chronicles/` 下不可變 revision | 同一路徑按 principal 隔離；index 可由 revision 重建 |
+| 研究工作區 | `<tenant-root>/research-workspaces.sqlite3` 保存研究記錄與待辦 | 每個 principal 使用獨立的資料庫檔案；備份時納入租戶資料目錄 |
 | Chronicle artifacts | `<tenant-root>/artifacts/` 下的 manifest、JSON 與純 `.mmd` source | 同一路徑按 principal 隔離；不需 server-side Node.js |
 | Note output | 可選 `output_dir` 與 `template_file` | 不接受 host path；使用內建 format 寫入 `<tenant-root>/references/` |
 | Scheduler | 可在可信 local process 啟用 | Service Compose 停用；未來需單一 leader/lease |
@@ -248,7 +249,7 @@ pubmed-search-mcp-http --mode local --transport streamable-http \
 
 這條路線的用途是：
 
-- 保留完整 41-tool primary MCP surface
+- 保留完整 42-tool primary MCP surface
 - 啟用 Copilot 所需的 JSON response/HTTP compatibility，不改變安全合約
 - 與本機 Copilot smoke 共用同一套 strict tool schemas
 
@@ -268,7 +269,7 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 
 - 固定使用 streamable-http
 - 開啟 Copilot compatibility middleware
-- 暴露與 primary server 相同的 41 個 strict tools
+- 暴露與 primary server 相同的 42 個 strict tools
 - 保持唯一 generic literature search 為 `unified_search`
 - 保持 `read_session(request={...})` 等 discriminated request schema，不提供 action-bag aliases
 
@@ -443,8 +444,8 @@ uv run python scripts/build_docs_site.py
 2. `GET /ready` 回傳 ready，`GET /info` 顯示正確 transport/endpoint
 3. Service 未帶 bearer 的 `POST /mcp`、`/api/*`、`/exports` 回傳 401/403
 4. 有效 bearer 可直接完成現代 MCP `tools/list` 與一次 `unified_search`；2026-07-28 transport 不再送 `initialize` 或 `Mcp-Session-Id`
-5. 不同 principal 無法互讀 session、artifact、export、chronicle 或 pipeline
-6. 若是 Copilot Studio，確認 41-tool primary surface 正確被發現
+5. 用兩個 principal 建立同名研究工作區，確認記錄各自獨立；一併核對 session、artifact、export、chronicle 與 pipeline 的隔離。
+6. 若是 Copilot Studio，確認 42-tool primary surface 正確被發現
 
 ## 相關文件
 

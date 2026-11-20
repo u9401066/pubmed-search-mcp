@@ -304,7 +304,7 @@ run，或設計單一 external leader/lease。
 Copilot 有兩個部署邊界，但共用同一份 registry：
 
 - 可公開的 primary MCP surface：透過 authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查同一組 41 個 strict tools，
+- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查同一組 42 個 strict tools，
   並使用 canonical `read_session(request={...})` 回讀 search run、replay arguments 與 artifact
 
 只有 authenticated service 可以公開。本機 launcher 只供檢查同一份 Copilot Studio schema；任何 public endpoint 都必須回到 service launcher，禁止 tunnel `run_copilot.py`。

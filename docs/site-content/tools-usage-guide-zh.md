@@ -4,7 +4,7 @@
 
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 41 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 42 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](#/tools-usage-guide) | **繁體中文**
 
@@ -17,7 +17,7 @@
 
 ## 輸入格式與防呆
 
-全部 41 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+全部 42 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
 可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
 `tools/list.inputSchema` 也會列出可接受的替代表示法。
 
@@ -107,7 +107,7 @@ Agent 應一起修正已列出的欄位，
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `research_workspace`、`read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -122,6 +122,7 @@ Agent 應一起修正已列出的欄位，
 | 全文 synthesis | `get_fulltext` -> `get_text_mined_terms` -> 結構化摘要 |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` 或 Zotero Keeper import tools |
 | 本機知識庫筆記 | `save_literature_notes(pmids="last")` |
+| 接續一項文獻調查 | 用 `research_workspace` 的 `read` 讀回決策、可用的來源查詢與待辦。[接手案例](#/advanced-workflows-zh#%E6%8E%A5%E7%BA%8C%E7%A0%94%E7%A9%B6%E5%B7%A5%E4%BD%9C%E5%8D%80) |
 | 可重複搜尋流程 | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
 Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 official RIS/MEDLINE/CSL JSON、local RIS/BibTeX/CSV/MEDLINE/JSON 匯出與本機 wiki notes；Zotero 匯入、duplicate 處理、library-specific policy 交給 Zotero Keeper 或其他 client。

@@ -36,7 +36,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "Overview",
     blurb: "Quick install, MCP SDK v2 runtime choice, supported clients, and the complete product map.",
-    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 41 tools broker security",
+    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 42 tools broker security",
     file: "site-content/overview.md",
   },
   {
@@ -46,7 +46,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "總覽",
     blurb: "快速安裝、MCP SDK v2 runtime 選擇、支援 client 與完整產品地圖。",
-    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 41 工具 broker 安全",
+    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 42 工具 broker 安全",
     file: "site-content/overview-zh.md",
   },
   {
@@ -202,8 +202,8 @@ const DOC_PAGES = [
     lang: "en",
     audience: "developer",
     title: "Tool Quality Audit",
-    blurb: "Registry-backed audit of all 41 tools, their dependencies, side effects, duplication decisions, and hardening status.",
-    keywords: "41 tools quality audit registry DDD dependency side effect idempotent security Mermaid contract",
+    blurb: "Registry-backed audit of all 42 tools, their dependencies, side effects, duplication decisions, and hardening status.",
+    keywords: "42 tools quality audit registry DDD dependency side effect idempotent security Mermaid contract",
     file: "site-content/tool-quality-audit.md",
   },
   {
@@ -212,8 +212,8 @@ const DOC_PAGES = [
     lang: "zh",
     audience: "developer",
     title: "工具品質稽核",
-    blurb: "由 registry 驗證的 41 工具完整稽核：依賴、side effect、去重決策、契約與強化狀態。",
-    keywords: "41 工具 品質 稽核 registry DDD 依賴 side effect idempotent 安全 Mermaid 契約",
+    blurb: "由 registry 驗證的 42 工具完整稽核：依賴、side effect、去重決策、契約與強化狀態。",
+    keywords: "42 工具 品質 稽核 registry DDD 依賴 side effect idempotent 安全 Mermaid 契約",
     file: "site-content/tool-quality-audit-zh.md",
   },
   {
@@ -235,9 +235,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for all 41 MCP tools across 16 registry categories.",
-    blurbByLang: { zh: "41 個 MCP tools 與 16 個 registry categories 的快速查找。" },
-    keywords: "41 tools 16 categories tool index parameters",
+    blurb: "Fast lookup for all 42 MCP tools across 16 registry categories.",
+    blurbByLang: { zh: "42 個 MCP tools 與 16 個 registry categories 的快速查找。" },
+    keywords: "42 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
   },
   {
@@ -350,7 +350,7 @@ const DOC_PAGES = [
   },
 ];
 
-// Complete 41 Tools Rich Database for Interactive Tool Explorer
+// Complete 42 Tools Rich Database for Interactive Tool Explorer
 const MCP_TOOLS_DATA = [
   {
     name: "unified_search",
@@ -641,6 +641,18 @@ const MCP_TOOLS_DATA = [
     docLink: "user-guide",
   },
   {
+    name: "research_workspace",
+    cat: "session",
+    catName: { zh: "Session 管理", en: "Session" },
+    icon: "📓",
+    summary: {
+      zh: "保存研究問題、支線證據與待辦；新工作階段可接續先前記錄。",
+      en: "Resume a research question with its evidence, linked research records and outstanding actions.",
+    },
+    example: 'research_workspace(request={"action":"read","workspace_id":"implant-history"})',
+    docLink: "advanced-workflows",
+  },
+  {
     name: "configure_institutional_access",
     cat: "institutional",
     catName: { zh: "機構訂閱", en: "Institutional" },
@@ -862,7 +874,7 @@ const UI_COPY = {
     sidebarNote: "Use the language switch for translated pages. Reference pages without a separate translation stay visible in both modes.",
     heroKicker: "Current MCP SDK v2 handbook",
     heroCopy:
-      "Start with a working local search, then move through all 41 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
+      "Start with a working local search, then move through all 42 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
     menu: "Menu",
     outlineTitle: "On This Page",
     noPages: "No pages match this filter.",
@@ -880,22 +892,22 @@ const UI_COPY = {
     journeyLocalTitle: "Run locally",
     journeyLocalCopy: "Install with uvx, connect an AI client, and make the first search.",
     journeyResearchKicker: "Research handbook",
-    journeyResearchTitle: "Use the 41 tools",
+    journeyResearchTitle: "Use the 42 tools",
     journeyResearchCopy: "Choose a capability, search multiple sources, read full text, and preserve evidence.",
     journeyServiceKicker: "Operator runbook",
     journeyServiceTitle: "Deploy safely",
     journeyServiceCopy: "Keep local and authenticated multi-user service contracts separate.",
     journeyLabel: "Documentation quick paths",
-    globalSearchPlaceholder: "Search docs & 41 tools... (Ctrl+K)",
+    globalSearchPlaceholder: "Search docs & 42 tools... (Ctrl+K)",
     topbarSearchLabel: "Search Docs & Tools",
-    toolExplorerTitle: "🛠️ 41 MCP Tools Interactive Explorer",
+    toolExplorerTitle: "🛠️ 42 MCP Tools Interactive Explorer",
     toolExplorerSubtitle: "Filter tools by capability, search keywords in English or Chinese, and copy execution examples with one click.",
     toolSearchPlaceholder: "Search tool name, keyword (e.g. pmid, fulltext, pico, figure, 基因, rct, export)...",
-    allToolsCategory: "All (41)",
+    allToolsCategory: "All (42)",
     copyToolCode: "Copy",
     copiedToolCode: "Copied!",
     hubAll: "All Sections",
-    hubTools: "41 Tools Explorer",
+    hubTools: "42 Tools Explorer",
     hubUnifiedSearch: "Unified Search",
     hubUser: "User Guides",
     hubChronicle: "Research Chronicle",
@@ -917,7 +929,7 @@ const UI_COPY = {
     sidebarNote: "使用語言切換查看翻譯頁；沒有獨立翻譯的 reference 頁會在兩種語言模式都顯示。",
     heroKicker: "當前 MCP SDK v2 完整手冊",
     heroCopy:
-      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 41 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
+      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 42 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
     menu: "選單",
     outlineTitle: "本頁目錄",
     noPages: "沒有符合篩選條件的頁面。",
@@ -935,22 +947,22 @@ const UI_COPY = {
     journeyLocalTitle: "本機執行",
     journeyLocalCopy: "用 uvx 安裝、接上 AI client，並完成第一次搜尋。",
     journeyResearchKicker: "研究操作手冊",
-    journeyResearchTitle: "使用 41 個工具",
+    journeyResearchTitle: "使用 42 個工具",
     journeyResearchCopy: "依能力選工具、平行查多來源、取得全文並保存證據。",
     journeyServiceKicker: "維運手冊",
     journeyServiceTitle: "安全部署",
     journeyServiceCopy: "完整分開本機與認證多人 service 的信任合約。",
     journeyLabel: "文件快速路徑",
-    globalSearchPlaceholder: "搜尋文檔與 41 個工具... (Ctrl+K)",
+    globalSearchPlaceholder: "搜尋文檔與 42 個工具... (Ctrl+K)",
     topbarSearchLabel: "搜尋文檔與工具",
-    toolExplorerTitle: "🛠️ 41 個 MCP 工具互動索引庫",
+    toolExplorerTitle: "🛠️ 42 個 MCP 工具互動索引庫",
     toolExplorerSubtitle: "依能力分類篩選、支援中英文關鍵字即時搜尋，一鍵複製呼叫範例與工具名稱。",
     toolSearchPlaceholder: "搜尋工具名稱、關鍵字（如 pmid, 全文, pico, 圖表, 基因, rct, export）...",
-    allToolsCategory: "全部 (41)",
+    allToolsCategory: "全部 (42)",
     copyToolCode: "複製",
     copiedToolCode: "已複製！",
     hubAll: "全部章節",
-    hubTools: "41 工具庫",
+    hubTools: "42 工具庫",
     hubUnifiedSearch: "Unified Search 架構",
     hubUser: "使用手冊",
     hubChronicle: "研究編年史",
@@ -1654,11 +1666,11 @@ function renderNav(filter = "") {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Interactive 41-Tool Explorer
+// Interactive 42-Tool Explorer
 // ──────────────────────────────────────────────────────────────────────────
 
 const TOOL_CATEGORIES_LIST = [
-  { key: "all", labelZh: "全部 (41)", labelEn: "All (41)" },
+  { key: "all", labelZh: "全部 (42)", labelEn: "All (42)" },
   { key: "search", labelZh: "🔍 核心搜尋 (1)", labelEn: "🔍 Search (1)" },
   { key: "query_intelligence", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
   { key: "discovery", labelZh: "📑 文章探索 (5)", labelEn: "📑 Discovery (5)" },
@@ -1668,7 +1680,7 @@ const TOOL_CATEGORIES_LIST = [
   { key: "ncbi_extended", labelZh: "🧬 基因與化合物 (7)", labelEn: "🧬 Genes & Drugs (7)" },
   { key: "citation_network", labelZh: "🌳 引用網絡 (1)", labelEn: "🌳 Citations (1)" },
   { key: "export", labelZh: "📤 匯出與筆記 (2)", labelEn: "📤 Export (2)" },
-  { key: "session", labelZh: "💾 Session 管理 (1)", labelEn: "💾 Session (1)" },
+  { key: "session", labelZh: "💾 Session 管理 (2)", labelEn: "💾 Session (2)" },
   { key: "institutional", labelZh: "🏥 機構訂閱 (5)", labelEn: "🏥 Library OpenURL (5)" },
   { key: "vision", labelZh: "👁️ 視覺搜尋 (1)", labelEn: "👁️ Vision (1)" },
   { key: "icd", labelZh: "🔄 ICD 轉換 (1)", labelEn: "🔄 ICD-MeSH (1)" },
@@ -1795,7 +1807,7 @@ function renderSearchResults(query) {
   if (!q) {
     modalSearchResults.innerHTML = `
       <p class="modal-search-hint">
-        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 41 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 41 tools..."}
+        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 42 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 42 tools..."}
       </p>
     `;
     return;

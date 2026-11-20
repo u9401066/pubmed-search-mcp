@@ -12,26 +12,26 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 [![CI](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml)
 
-> **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
+> **An agent plugin for biomedical literature research**
 
 ![PubMed Search MCP research workflow](images/research-workflow.svg)
 
-A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
+PubMed Search combines an MCP server for retrieval and persistent research records with portable skills that guide the host agent. A researcher can start with a question, trace a promising paper, record which passage they checked, and hand the investigation to a colleague.
 
 **✨ What's Included:**
 
-- 🔧 **41 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and the versioned **Research Chronicle**
+- 🔧 **42 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and the versioned **Research Chronicle**
 - 🛡️ **Multi-Agent Service Mode** - Deploy once and serve many agents: per-tenant sessions, caches, and artifacts, bearer-token auth, and per-tenant fair-share limits. See [DEPLOYMENT.md](#/deployment)
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse the complete language-switchable handbook: user workflows, architecture, 41-tool reference, pipeline tutorials, source/broker contracts, integrations and operations, security, and deployment at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📘 **Docs Site** - Browse the complete language-switchable handbook: user workflows, architecture, 42-tool reference, pipeline tutorials, source/broker contracts, integrations and operations, security, and deployment at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
-- 📚 **26 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
+- 📚 **Research skills** - The plugin packages the literature workflows from `.claude/skills/`. Contributor skills live alongside them in the repository.
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 - **Research automation** - Scheduled pipeline diffs/local notifications, Chronicle rebuild summaries, multi-seed citation snowballing, and opt-in session deduplication with `options="exclude_seen"`.
 
 **🌐 Language**: **English** | [繁體中文](#/overview-zh)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Unified Search architecture](#/unified-search-architecture) | [41-tool quality audit](#/tool-quality-audit) | [60-repository academic retrieval landscape](reference-repositories/README.md) | [Provider data planes](#/semantic-scholar-api) | [BioMCP architecture analysis](#/biomcp-analysis) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Unified Search architecture](#/unified-search-architecture) | [42-tool quality audit](#/tool-quality-audit) | [60-repository academic retrieval landscape](reference-repositories/README.md) | [Provider data planes](#/semantic-scholar-api) | [BioMCP architecture analysis](#/biomcp-analysis) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
 
 [Documentation map](#/documentation-map) · [Maintenance scripts](https://github.com/u9401066/pubmed-search-mcp/blob/master/scripts/README.md)
 
@@ -118,6 +118,14 @@ requires inspecting the relevant passage.
 ## 🚀 Quick Install
 
 ### MCP Registry and Agent Plugin
+
+**Try the research workspace from this source branch.** Run the following command from the checkout, then install the generated directory with your client's plugin installer. It runs the MCP server from this checkout and includes the matching research skills.
+
+```sh
+uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
+```
+
+Ask the agent to “open a workspace for the history of cochlear implants, save the evidence behind one research lead, and leave the next reading task for a colleague.” Explore, Expand, Examine and Explain are activities the agent can revisit. The colleague can resume by workspace ID on the same server and tenant. [Worked example](#/advanced-workflows#resume-a-research-workspace)
 
 In clients that support the [official MCP Registry](https://registry.modelcontextprotocol.io/)
 or [GitHub MCP Registry](https://github.com/mcp), look up
@@ -563,9 +571,9 @@ For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets ba
 
 ## 🛠️ MCP Tools Overview
 
-If you want to understand the tool surface as a usable system, do not start by memorizing 41 tool names.
+If you want to understand the tool surface as a usable system, do not start by memorizing 42 tool names.
 
-Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the current 41 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the current 42 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -1295,7 +1303,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # View past runs
 
 Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (for using the MCP server) and **Development Skills** (for maintaining the project):
 
-### 📚 Usage Skills (11) — For AI Agents Using This MCP Server
+### 📚 Usage Skills (12) — For AI Agents Using This MCP Server
 
 | Skill | Description |
 | ----- | ----------- |
@@ -1304,6 +1312,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `pubmed-pico-search` | Clinical question decomposition |
 | `pubmed-paper-exploration` | Citation tree, related articles |
 | `pubmed-research-chronicle` | Persistent, versioned research evolution |
+| `pubmed-research-workspace` | Track a question, connect search decisions to evidence and resume the next open task |
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE full text |
 | `pubmed-export-citations` | RIS/BibTeX/CSV/CSL export guidance |
@@ -1331,7 +1340,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `test-generator` | Generate test suites |
 | `tool-sync` | Keep the MCP registry and generated tool documentation aligned |
 
-> 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific, and the single source of truth for repo skills)
+> 📁 **Location**: `.claude/skills/*/SKILL.md` is the canonical source. The portable plugin bundles the research skills under `plugins/pubmed-search/skills/`.
 > Do not mirror or split repo skills into `.github/skills/`.
 > These repo skills are project-scoped and should remain version-controlled. Personal cross-project skills belong in a user directory such as `~/.copilot/skills/` or `~/.claude/skills/`, not in this repository.
 
@@ -1341,7 +1350,7 @@ The [completed ten-phase core review](reports/core_review_2026-09-15.md) covers 
 
 ### Real MCP Regression Gate
 
-Every one of the 41 public tools is called through the MCP protocol over
+Every one of the 42 public tools is called through the MCP protocol over
 source-tree stdio, Streamable HTTP, and stdio from a freshly installed wheel.
 The wheel path imports server code exclusively from its blank virtual
 environment; the external fixture supplies only deterministic provider seams.
@@ -1547,7 +1556,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 > 📖 **Full documentation**: [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 >
-> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; `run_copilot.py` is a loopback-only smoke launcher for the same canonical 41-tool strict registry, not a second compatibility surface. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
+> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; `run_copilot.py` is a loopback-only smoke launcher for the same canonical 42-tool strict registry, not a second compatibility surface. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
 >
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 
@@ -1571,7 +1580,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 | ----- | ------- | ----------- |
 | **HTTPS** | TLS termination | Required for remote credentials; the bundled self-signed profile is local-only |
 | **Bearer authentication** | Stable principal | Mandatory in service mode and used for tenant authorization |
-| **Tenant storage** | Filesystem isolation | Sessions, artifacts, exports, chronicles, and pipelines are stored below the authenticated principal |
+| **Tenant storage** | Filesystem isolation | Research workspaces, sessions, artifacts, exports, chronicles, and pipelines are stored below the authenticated principal |
 | **Fairness and rate policy** | Tenant concurrency + shared upstream budgets | Prevents one caller from multiplying an upstream API allowance |
 | **Security headers** | Clickjacking/MIME hardening | Reverse-proxy headers complement authentication; they are not CSRF authorization |
 | **Secret handling** | Runtime secret injection | API keys and bearer tokens must come from deployment secrets/environment and must not be committed or logged |

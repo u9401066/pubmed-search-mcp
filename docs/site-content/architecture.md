@@ -8,7 +8,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 41 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 42 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -16,6 +16,23 @@ PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器�
 - `get_fulltext`: 唯一的公開全文入口
 - `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`: query intelligence; `validate_pico_plan` validates agent-provided P/I/C/O and returns a runnable PICO pipeline.
 - `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`: 探索層
+
+## Agent Plugin 與研究工作區
+
+使用者以一個可交接的研究題目為工作單位。Agent Plugin 打包研究 skills 與 MCP 啟動設定。
+Agent 決定要追哪條支線、何時回頭與如何解讀證據。MCP 保存資料與執行可重現的讀寫。
+相容的 host 可只用標準 stdio 與 skills，Copilot hooks 是選配的客戶端整合。
+
+| 研究活動 | 既有工具如何參與 | 工作區保存的內容 |
+| --- | --- | --- |
+| Explore 探索 | `unified_search` 或 `read_session` 取得第一批線索 | 問題、搜尋 run 或 artifact、尚待追查的方向 |
+| Expand 擴展 | 沿引用、可重用 pipeline 或 Chronicle 的分歧候選繼續找 | 新線索的父記錄、策略或具體編年史版本 |
+| Examine 查核 | 閱讀摘要、開放全文或有權存取的館藏 | 實際讀到的層級、出處與段落定位、反證及缺口 |
+| Explain 說明 | Agent 整理根據與保留意見，可另外匯出筆記 | 支撐這段解釋的記錄、已處理及仍開放的工作 |
+
+`research_workspace` 對每個租戶保存獨立的 SQLite 工作區。記錄可引用先前記錄並開啟或結束待辦。
+相同識別碼與內容可以重試；有衝突的內容會回報給呼叫者。讀取工作區會提供可辨識來源的工具參數。
+外部 API 呼叫由接手的 agent 決定。文章、搜尋結果與全文繼續由既有系統管理，工作區只保存引用與研究筆記。
 
 ## 產品視角
 
@@ -114,7 +131,7 @@ flowchart LR
   Domain[Domain Layer<br/>article chronicle timeline pipeline entities]
   Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / Unpaywall / institutional]
   DataPlane[Operator Data Plane<br/>release manifest / diff / snapshot checkpoint]
-  Store[Session + Pipeline + Chronicle Store]
+  Store[Session + Pipeline + Chronicle + Research Workspace Store]
 
   Client --> Transport
   Transport --> MCP
@@ -340,7 +357,7 @@ flowchart TB
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、runtime lifecycle 與 stdio 啟動
 ├── http_cli.py        canonical Streamable HTTP/SSE launcher 與 tenant-guarded companion routes
-├── tool_registry.py   41 tools / 16 categories 的權威 registry
+├── tool_registry.py   42 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -372,7 +389,7 @@ flowchart LR
 
 ## 工具分類
 
-目前 registry 定義 16 個 category、41 個公開 MCP tools：
+目前 registry 定義 16 個 category、42 個公開 MCP tools：
 
 | 類別 | 工具數 | 代表工具 |
 | --- | --- | --- |
@@ -385,7 +402,7 @@ flowchart LR
 | NCBI 延伸 | 7 | `search_gene`, `search_compound`, `search_clinvar` |
 | 引用網絡 | 1 | `build_citation_tree` |
 | 匯出工具 | 2 | `prepare_export`, `save_literature_notes` |
-| Session 管理 | 1 | `read_session`（strict discriminated request） |
+| Session 管理 | 2 | `read_session`, `research_workspace` |
 | 機構訂閱 | 5 | `configure_institutional_access`, `get_institutional_link`, `diagnose_institutional_access` |
 | 視覺搜索 | 1 | `prepare_figure_search` |
 | ICD 轉換 | 1 | `convert_icd_mesh` |
@@ -663,8 +680,8 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 41-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
-| `run_copilot.py` | 以相同 41-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
+| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 42-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
+| `run_copilot.py` | 以相同 42-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 
