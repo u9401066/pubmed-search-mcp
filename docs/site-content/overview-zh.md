@@ -4,7 +4,7 @@
 
 # PubMed Search MCP
 
-[English](#/overview) · [文件網站](https://u9401066.github.io/pubmed-search-mcp/) · [版本紀錄](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CHANGELOG.md)
+[English](#/overview) · [文件網站](https://u9401066.github.io/pubmed-search-mcp/) · [版本紀錄](https://github.com/u9401066/pubmed-search-mcp/blob/master/CHANGELOG.md)
 
 供 agent 探索與管理生醫文獻的研究外掛。Agent 決定搜尋範疇、追查引文並解讀證據。MCP server 查詢各資料來源，保存篇目、檢索紀錄和讀過的材料。同事可在相同研究工作區接手尚待查證的問題。
 
@@ -16,14 +16,16 @@ PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`�
 
 | 使用情境 | 安裝方式 |
 | --- | --- |
-| 正式版 v0.9.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.9.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版 registry 有 41 項。 |
-| 團隊試用分支 `feature/research-workspace` | 從本分支執行下方指令。分支提供 **42 個 MCP 工具**，新增持久研究工作區，也讓既有查詢分析工具能實測 PubMed 布林組合的差異。 |
+| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **42 個 MCP 工具**，包含持久研究工作區。 |
+| 開發工作區 | 在 checkout 執行下方指令，以安裝可測試本機變更的 plugin。 |
 
 ```sh
 uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
 ```
 
 在 agent 的 plugin 安裝介面選擇產生的目錄，並保留原始 checkout。這個 launcher 會執行分支程式碼。倉庫內 `plugins/pubmed-search/` 的固定版本 launcher 會執行正式版。[各 client 安裝與設定](#/troubleshooting)
+
+四個回顧主題的盲測記錄了 agent 看過 MeSH 預查後的選擇、找回的已知納入篇目與新增待篩筆數。[方法與逐題結果](#/mesh-preflight)
 
 ## 從研究問題開始
 
@@ -52,18 +54,18 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 | --- | --- |
 | stdio 或本機 HTTP | 可信單使用者使用 durable `default` tenant。本機 HTTP 指令為 `pubmed-search-mcp-http --mode local --host 127.0.0.1`。 |
 | 認證多人服務 | `--mode service` 在缺少 bearer principal 時 fail closed。服務呼叫者不能載入 `file:` pipeline 或自訂主機筆記路徑。service Compose 預設停用排程。[部署指南](#/deployment) |
-| Copilot Studio | 配置 `PUBMED_AUTH_TOKENS` 與指定的 `NGROK_DOMAIN`，再執行 `scripts/start-copilot-studio.sh --with-ngrok`。[Copilot 整合](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/copilot-studio/README.md) |
+| Copilot Studio | 配置 `PUBMED_AUTH_TOKENS` 與指定的 `NGROK_DOMAIN`，再執行 `scripts/start-copilot-studio.sh --with-ngrok`。[Copilot 整合](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
 
 現代 2026-07-28 client 使用 MCP SDK v2 請求。Python 呼叫端可直接使用 `pubmed_search.api`。需要使用已授權瀏覽器 session 時，可另啟動 `pubmed-browser-fetch-broker`。[整合指南](#/troubleshooting) · [Python 介面](#/python-sdk-http-cli-design)
 
 ## Skills 與開發
 
-**使用 Skills (12)** 隨分支 plugin 提供。**開發 Skills (15)** 留在倉庫供貢獻者使用。[Plugin skills](https://github.com/u9401066/pubmed-search-mcp/tree/feature/research-workspace/plugins/pubmed-search/skills) · [架構](#/architecture) · [測試政策](#/testing) · [貢獻指南](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md)
+**使用 Skills (12)** 隨正式版 plugin 提供。**開發 Skills (15)** 留在倉庫供貢獻者使用。[Plugin skills](https://github.com/u9401066/pubmed-search-mcp/tree/master/plugins/pubmed-search/skills) · [架構](#/architecture) · [測試政策](#/testing) · [貢獻指南](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md)
 
 ## 引用與授權
 
-歡迎貢獻程式、可重跑的檢索案例、附史料的 Chronicle 修正或文件翻譯。回報時請附版本或 commit，寫出下一位讀者能重現的觀察。[協作指南](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md) · [GitHub Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+歡迎貢獻程式、可重跑的檢索案例、附史料的 Chronicle 修正或文件翻譯。回報時請附版本或 commit，寫出下一位讀者能重現的觀察。[協作指南](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md) · [GitHub Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
 
-軟體採 Apache License 2.0。再散布時請附上授權文本，保留適用的聲明，並標示修改過的檔案。透過工具取得的論文、圖片與資料集各自適用來源的授權條款。[授權全文](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)
+軟體採 Apache License 2.0。再散布時請附上授權文本，保留適用的聲明，並標示修改過的檔案。透過工具取得的論文、圖片與資料集各自適用來源的授權條款。[授權全文](https://github.com/u9401066/pubmed-search-mcp/blob/master/LICENSE)
 
-請引用實際使用的軟體版本。分支實驗加註 commit，研究主張回引原始文獻。方法論文目前為工作稿。[軟體引用](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff) · [研究稿與評估](#/publication) · [Apache License 2.0](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)
+請引用實際使用的軟體版本。分支實驗加註 commit，研究主張回引原始文獻。方法論文目前為工作稿。[軟體引用](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) · [研究稿與評估](#/publication) · [Apache License 2.0](https://github.com/u9401066/pubmed-search-mcp/blob/master/LICENSE)

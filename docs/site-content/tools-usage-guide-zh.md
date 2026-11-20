@@ -139,6 +139,8 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 #### 比較 PubMed 概念組合
 
+PubMed 標記有問題的詞時，`warning_examples` 最多顯示兩段警告，可先核對保存的翻譯再修正式子。系統性搜尋 skill 隨附離線腳本，可列出差集樣本 PMID、選定的搜尋式和理由。[四題盲測與用法](#/mesh-preflight)
+
 把固定範疇放入 `query`，在 `comparison.blocks` 命名 2–5 個可調概念。基準式要求每個概念都命中。每個差集保留其他全部條件，排除該概念。同義詞可用括號與 OR 寫在同一區塊內。調換區塊輸入順序會產生相同的預查。
 
 ```python

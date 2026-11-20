@@ -766,15 +766,15 @@ configuration and review tracked project-rule updates normally.
 
 ### Portable Agent Plugin and MCP Registry
 
-[`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/plugins/pubmed-search/plugin.json) is an
+[`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/master/plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.9.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.10.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
 and standalone installs share sessions, pipelines, and chronicles.
 
-For the research workspace feature branch, build a development plugin from the
+For local development, build a development plugin from the
 checkout and select the generated directory in a compatible client:
 
 ```bash
@@ -787,7 +787,7 @@ reused. Choose a fresh output directory after changing a skill or when the
 previous copy contains local customizations. The registry installation launches
 the published version; the checkout launcher includes `research_workspace`.
 
-The proposed first plugin pilot pairs VS Code Copilot and Codex. It exercises the same research handoff with an explicit skill, then measures what a host-specific session hook adds. The roadmap lists the packaged baseline, official specifications, working plugin examples and acceptance criteria. [Agent plugin delivery plan](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/ROADMAP.md#agent-plugin-delivery-plan)
+The proposed first plugin pilot pairs VS Code Copilot and Codex. It exercises the same research handoff with an explicit skill, then measures what a host-specific session hook adds. The roadmap lists the packaged baseline, official specifications, working plugin examples and acceptance criteria. [Agent plugin delivery plan](https://github.com/u9401066/pubmed-search-mcp/blob/master/ROADMAP.md#agent-plugin-delivery-plan)
 
 The skill copies and version fields are generated. After editing a research
 skill or bumping the release version, run:
@@ -891,7 +891,7 @@ the sole generic search `unified_search` and typed `read_session(request={...})`
 Schema issues must be fixed in that shared contract instead of hidden behind a
 second primitive compatibility surface.
 
-> See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
+> See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 
 ---
 
@@ -919,7 +919,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; a server built from this branch should enumerate 42 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; a v0.10.0 server should enumerate 42 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.

@@ -178,6 +178,7 @@ docs/reports/chronicle_evidence_review_2026-11-20.md,measurements-and-audits,dat
 docs/reports/chronicle_historical_method_2026-11-20.md,measurements-and-audits,dated-evidence,docs/reports/chronicle_historical_method_2026-11-20.md
 docs/reports/core_review_2026-09-15.md,measurements-and-audits,dated-evidence,docs/reports/core_review_2026-09-15.md
 docs/reports/maintenance_audit_2026-09-15.md,measurements-and-audits,dated-evidence,docs/reports/maintenance_audit_2026-09-15.md
+docs/reports/mesh-preflight-2017/README.md,measurements-and-audits,dated-evidence,docs/reports/mesh-preflight-2017/README.md
 docs/reports/release_v074_2026-09-18.md,measurements-and-audits,dated-evidence,docs/reports/release_v074_2026-09-18.md
 docs/reports/release_v075_2026-10-01.md,measurements-and-audits,dated-evidence,docs/reports/release_v075_2026-10-01.md
 docs/reports/release_v076_2026-10-01.md,measurements-and-audits,dated-evidence,docs/reports/release_v076_2026-10-01.md
@@ -207,6 +208,7 @@ docs/site-content/deployment.md,generated-website-pages,generated,DEPLOYMENT.md
 docs/site-content/developer-guide-zh.md,generated-website-pages,generated,docs/development/DEVELOPER_GUIDE.zh-TW.md
 docs/site-content/developer-guide.md,generated-website-pages,generated,docs/development/DEVELOPER_GUIDE.md
 docs/site-content/documentation-map.md,generated-website-pages,generated,docs/README.md
+docs/site-content/mesh-preflight.md,generated-website-pages,generated,docs/reports/mesh-preflight-2017/README.md
 docs/site-content/openalex-api.md,generated-website-pages,generated,docs/providers/OPENALEX_API.md
 docs/site-content/overview-zh.md,generated-website-pages,generated,README.zh-TW.md
 docs/site-content/overview.md,generated-website-pages,generated,README.md

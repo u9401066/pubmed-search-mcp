@@ -6,7 +6,7 @@
 
 <!-- mcp-name: io.github.u9401066/pubmed-search-mcp -->
 
-[繁體中文](#/overview-zh) · [Documentation site](https://u9401066.github.io/pubmed-search-mcp/) · [Release history](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CHANGELOG.md)
+[繁體中文](#/overview-zh) · [Documentation site](https://u9401066.github.io/pubmed-search-mcp/) · [Release history](https://github.com/u9401066/pubmed-search-mcp/blob/master/CHANGELOG.md)
 
 An agent plugin for biomedical literature research. The host agent chooses a search strategy, follows citations and records what it read. The MCP server queries providers and keeps identifiers, search runs and evidence artifacts. A colleague using the same research workspace can pick up the outstanding reading.
 
@@ -18,14 +18,16 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.9.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.9.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release registry contains 41 entries. |
-| Team preview on `feature/research-workspace` | Build the plugin from this checkout with the command below. This branch exposes **42 MCP Tools** and adds a persistent research workspace and a Boolean comparison mode for PubMed. |
+| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **42 MCP Tools**, including a persistent research workspace. |
+| Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
 uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
 ```
 
 Select the generated directory in your agent's plugin installer. Keep the checkout available. The generated launcher uses this source tree. The version-pinned launcher in `plugins/pubmed-search/` uses the published package. [Client configurations and plugin installation](#/troubleshooting)
+
+Four blinded review cases tested whether MeSH previews improve search decisions. [Methods, screening costs and results](#/mesh-preflight)
 
 ## Start with a research question
 
@@ -54,18 +56,18 @@ The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true
 | --- | --- |
 | stdio or loopback HTTP | Trusted single-user deployment with a durable `default` tenant. The HTTP entry point is `pubmed-search-mcp-http --mode local --host 127.0.0.1`. |
 | Authenticated service | `--mode service` fails closed without a bearer principal. Authenticated callers cannot load `file:` pipelines or choose a server-host note path. The service Compose scheduler is disabled. [Deployment](#/deployment) |
-| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 42-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/copilot-studio/README.md) |
+| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 42-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
 
 Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call `pubmed_search.api` directly. The optional `pubmed-browser-fetch-broker` runs on a machine with an authorized browser session. [Integration guide](#/troubleshooting) · [Python facade](#/python-sdk-http-cli-design)
 
 ## Skills and development
 
-**Usage Skills (12)** are shipped with the branch plugin. **Development Skills (15)** stay in the repository for contributors. [Plugin skills](https://github.com/u9401066/pubmed-search-mcp/tree/feature/research-workspace/plugins/pubmed-search/skills) · [Architecture](#/architecture) · [Testing](#/testing) · [Contributing](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md)
+**Usage Skills (12)** are shipped with the release plugin. **Development Skills (15)** stay in the repository for contributors. [Plugin skills](https://github.com/u9401066/pubmed-search-mcp/tree/master/plugins/pubmed-search/skills) · [Architecture](#/architecture) · [Testing](#/testing) · [Contributing](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md)
 
 ## Citation and license
 
-We welcome patches, reproducible search cases, historically sourced Chronicle corrections and documentation updates. Include the version or commit you used and the observation you want someone else to reproduce. [Contribution guide](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md) · [Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+We welcome patches, reproducible search cases, historically sourced Chronicle corrections and documentation updates. Include the version or commit you used and the observation you want someone else to reproduce. [Contribution guide](https://github.com/u9401066/pubmed-search-mcp/blob/master/CONTRIBUTING.md) · [Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
 
-The software is distributed under Apache License 2.0. When redistributing it, include the license, retain applicable notices and mark files you change. Articles, figures and datasets retrieved through the tools remain subject to their source terms. [License text](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)
+The software is distributed under Apache License 2.0. When redistributing it, include the license, retain applicable notices and mark files you change. Articles, figures and datasets retrieved through the tools remain subject to their source terms. [License text](https://github.com/u9401066/pubmed-search-mcp/blob/master/LICENSE)
 
-Cite the software version used, and the commit for a branch experiment. Cite original papers for research claims. The manuscript is a working draft. [Software citation](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff) · [Manuscript and evaluation](#/publication) · [Apache License 2.0](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)
+Cite the software version used, and the commit for a branch experiment. Cite original papers for research claims. The manuscript is a working draft. [Software citation](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) · [Manuscript and evaluation](#/publication) · [Apache License 2.0](https://github.com/u9401066/pubmed-search-mcp/blob/master/LICENSE)

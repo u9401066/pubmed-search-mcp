@@ -6,7 +6,7 @@
 
 這份指南給 maintainer 與 contributor。它說明 codebase 組織、行為應放在哪一層、文件如何生成，以及哪些驗證命令保護整合面。
 
-請搭配 [架構文件](#/architecture)、[AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/AGENTS.md) 與 [工具使用指南](#/tools-usage-guide-zh) 閱讀。
+請搭配 [架構文件](#/architecture)、[AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/AGENTS.md) 與 [工具使用指南](#/tools-usage-guide-zh) 閱讀。
 
 ## Repository 契約
 

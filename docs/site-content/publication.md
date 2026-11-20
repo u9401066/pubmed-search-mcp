@@ -4,7 +4,7 @@
 
 # Publication and citation workspace / 論文與引用
 
-**Status: working manuscript, not submitted.** The manuscript describes the v0.7.4 software surface. It has no arXiv identifier, publication DOI, or acceptance. Cite the version used for a software result using [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff).
+**Status: working manuscript, not submitted.** The manuscript describes the v0.7.4 software surface. It has no arXiv identifier, publication DOI, or acceptance. Cite the version used for a software result using [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff).
 Author and affiliation, confirmed September 21, 2026: **Tz-Ping Gau,
 Kaohsiung Medical University Hospital**.
 
@@ -24,7 +24,7 @@ The following dates distinguish work in the predecessor project, the creation of
 | 2025-12-02 13:44:15 | GitHub created the standalone repository (21:44:15 in Taiwan). | [GitHub repository metadata, field `created_at`](https://api.github.com/repos/u9401066/pubmed-search-mcp) |
 | 2025-12-02 20:49:06 | The root Git commit records extraction of the library. At 21:14:56 the predecessor added this repository as a submodule. | [Root commit](https://github.com/u9401066/pubmed-search-mcp/commit/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e) · [Submodule change in the predecessor](https://github.com/u9401066/med-paper-assistant/commit/68701dfce294a7ee241ddc6924a7a382313b6140) |
 | 2025-12-08 00:26:46 | PyPI records the upload of the 0.1.0 wheel, followed by the source archive two seconds later. | [PyPI 0.1.0 files](https://pypi.org/project/pubmed-search-mcp/0.1.0/#files) · [File timestamps](https://pypi.org/pypi/pubmed-search-mcp/0.1.0/json) |
-| 2025-12-14 03:25:29 | The v0.1.13 commit declared a switch from MIT to Apache 2.0. Consult the license shipped with the version you use. The team preview restores the standard Apache text, including section 8. | [Root MIT license](https://github.com/u9401066/pubmed-search-mcp/blob/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e/LICENSE) · [v0.1.13 change](https://github.com/u9401066/pubmed-search-mcp/commit/eda59af5c1ce9d227ebf402ba5fd47ac5934b283) · [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+| 2025-12-14 03:25:29 | The v0.1.13 commit declared a switch from MIT to Apache 2.0. Consult the license shipped with the version you use. Release v0.10.0 restores the standard Apache text, including section 8. | [Root MIT license](https://github.com/u9401066/pubmed-search-mcp/blob/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e/LICENSE) · [v0.1.13 change](https://github.com/u9401066/pubmed-search-mcp/commit/eda59af5c1ce9d227ebf402ba5fd47ac5934b283) · [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
 
 To reproduce the creation lookup, run `gh api repos/u9401066/pubmed-search-mcp --jq .created_at`. In a full Git clone, `git log --max-parents=0 --format="%H %cI %s" origin/master` shows the root commit. A registry upload independently dates a distributed artifact. For a historical claim about a particular feature, cite its implementing commit.
 
@@ -41,7 +41,7 @@ The earliest entry in the GitHub Releases list when checked on November 20, 2026
 | [Reference review](publication/references-review.md) | Primary-source checks, claim scope and corrected old citations |
 | [Evidence map](publication/evidence.md), [hash manifest](publication/evidence.json) | What each existing measurement supports, and what it does not |
 | [Evaluation protocol](publication/evaluation-protocol.md) | Proposed native / original package / current package comparison; not a completed experiment or preregistration |
-| [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff) | Canonical **software** citation and release metadata |
+| [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) | Canonical **software** citation and release metadata |
 | [Historical originals](archive/publication/README.md) | Superseded January draft, old TeX, bibliography and PDF; do not cite their claims as current results |
 
 ## Read the existing evidence correctly
@@ -95,7 +95,7 @@ and inspect the PDF produced by arXiv. No submission is performed by the builder
 
 ## Cite the released software
 
-Use GitHub's **Cite this repository** or [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff), and
+Use GitHub's **Cite this repository** or [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff), and
 record the version or exact commit used by an experiment. The generated BibTeX
 also includes the release version. Cite the software today; add a manuscript
 citation only after an actual public manuscript identifier exists. An arXiv
