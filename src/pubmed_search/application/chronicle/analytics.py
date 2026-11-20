@@ -17,7 +17,7 @@ from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from pubmed_search.domain.entities.chronicle import ChronicleEntry, ChronicleSnapshot
 
@@ -41,14 +41,16 @@ def landmark_importance_score(entry: ChronicleEntry) -> float | None:
     return score if math.isfinite(score) and 0.0 <= score <= 1.0 else None
 
 
-def _maximum_stored_citations(entry: ChronicleEntry) -> int | None:
-    counts = (article.citation_count for article in entry.evidence.all_articles)
-    return max((n for n in counts if isinstance(n, int) and not isinstance(n, bool) and n >= 0), default=None)
+def _stored_citations(entry: ChronicleEntry) -> Iterator[tuple[str, int]]:
+    for article in entry.evidence.all_articles:
+        count = article.citation_count
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            yield article.evidence_id, count
 
 
 def entry_max_citations(entry: ChronicleEntry) -> int:
     """Retain the numeric zero fallback used in historical ranking keys."""
-    return _maximum_stored_citations(entry) or 0
+    return max((count for _, count in _stored_citations(entry)), default=0)
 
 
 def landmark_rank_key(entry: ChronicleEntry) -> tuple[int, float, int, tuple[int, int, int, int, int], str]:
@@ -97,18 +99,24 @@ def _recorded_score_components(entry: ChronicleEntry) -> list[dict[str, Any]] | 
     return components or None
 
 
-def _observed_max_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> int | None:
-    maximum = _maximum_stored_citations(entry)
-    if maximum != 0 or entry.provenance.get("citation_count_observed") is True:
-        return maximum
-    # Earlier timeline events defaulted missing counts to zero. A retained
-    # zero-valued citation-count input is independent evidence for a real zero.
-    if any(
-        hit["component"] == "citation_impact" and hit["policy"] == "citation_count" and hit["raw_value"] == 0
+def _observed_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> Iterator[tuple[str, int]]:
+    # Timeline events historically substituted zero for unavailable counts.
+    # The event's provenance describes its source article, not every attached paper.
+    supporting_ids = {article.evidence_id for article in entry.evidence.supporting_articles}
+    zero_is_observed = entry.provenance.get("citation_count_observed") is True or any(
+        hit["component"] == "citation_impact"
+        and hit["policy"] == "citation_count"
+        and not isinstance(hit["raw_value"], bool)
+        and hit["raw_value"] == 0
         for hit in components or []
-    ):
-        return 0
-    return None
+    )
+    for evidence_id, count in _stored_citations(entry):
+        if count > 0 or (zero_is_observed and len(supporting_ids) == 1 and evidence_id in supporting_ids):
+            yield evidence_id, count
+
+
+def _observed_max_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> int | None:
+    return max((count for _, count in _observed_citations(entry, components)), default=None)
 
 
 def _landmark_row(entry: ChronicleEntry) -> dict[str, Any]:
@@ -218,7 +226,11 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
         audit status carried over from the snapshot.
     """
     articles = snapshot.evidence_articles
-    citations = [a.citation_count for a in articles if a.citation_count is not None]
+    citations_by_id: dict[str, int] = {}
+    for entry in snapshot.entries:
+        for evidence_id, count in _observed_citations(entry, _recorded_score_components(entry)):
+            citations_by_id[evidence_id] = max(citations_by_id.get(evidence_id, count), count)
+    citations = citations_by_id.values()
     year_range = snapshot.year_range
 
     landmarks = sorted(snapshot.entries, key=landmark_rank_key)[:LANDMARK_LIMIT]

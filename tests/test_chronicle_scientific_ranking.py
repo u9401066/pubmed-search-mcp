@@ -31,7 +31,7 @@ def _entry(
     year: int,
     *,
     detection_confidence: float,
-    citations: int,
+    citations: int | None,
     importance: Any = _MISSING,
 ) -> ChronicleEntry:
     """Build an entry whose detection and importance signals can disagree."""
@@ -158,7 +158,49 @@ def test_milestones_explain_recorded_scores_and_distinguish_missing_inputs_from_
     assert rows["1"]["observed_max_citations"] is None
     assert rows["2"]["observed_max_citations"] == 0
     assert rows["3"]["observed_max_citations"] is None
+    quality = report["evidence_quality"]
+    assert (quality["with_citation_count"], quality["max_citations"], quality["median_citations"]) == (1, 0, 0)
     assert report["landmark_ranking"]["scope"] == "entries_in_this_revision"
+
+
+def test_legacy_unverified_zero_leaves_revision_citation_statistics_unknown() -> None:
+    entry = _entry("10", 1990, detection_confidence=0.2, citations=0)
+    report = ChronicleService.render(ChronicleSnapshot.from_dict(_snapshot([entry]).to_dict()), "milestones")
+    assert isinstance(report, dict)
+    quality = report["evidence_quality"]
+    assert (quality["with_citation_count"], quality["max_citations"], quality["median_citations"]) == (0, None, None)
+    assert report["landmark_entries"][0]["observed_max_citations"] is None
+
+
+def test_citation_statistics_count_each_observed_paper_once_across_entries_and_roles() -> None:
+    measured_zero = _entry("10", 1990, detection_confidence=0.2, citations=0)
+    measured_zero.provenance["citation_count_observed"] = True
+    measured_zero.evidence.contradicting_articles = [EvidenceArticle("Different paper", pmid="11", citation_count=0)]
+    measured_zero.evidence.updating_articles = [EvidenceArticle("Updated paper", pmid="12")]
+
+    updated = _entry("12", 2005, detection_confidence=0.2, citations=8)
+    updated.evidence.updating_articles = [EvidenceArticle("Updated paper", pmid="12", citation_count=12)]
+
+    ambiguous = _entry("13", 2006, detection_confidence=0.2, citations=0)
+    ambiguous.evidence.supporting_articles.append(EvidenceArticle("Another source", pmid="14", citation_count=0))
+    ambiguous.provenance["citation_count_observed"] = True
+
+    unmeasured = _entry("15", 2007, detection_confidence=0.2, citations=None)
+    unmeasured.provenance["citation_count_observed"] = True
+    unmeasured.evidence.updating_articles = [
+        EvidenceArticle("Unattributed zero", pmid="16", citation_count=0),
+        EvidenceArticle("Invalid negative", pmid="17", citation_count=-1),
+        EvidenceArticle("Invalid boolean", pmid="18", citation_count=True),
+    ]
+
+    entries = [measured_zero, updated, ambiguous, unmeasured]
+    for ordered in (entries, list(reversed(entries))):
+        report = ChronicleService.render(ChronicleSnapshot.from_dict(_snapshot(ordered).to_dict()), "milestones")
+        assert isinstance(report, dict)
+        quality = report["evidence_quality"]
+        assert (quality["with_citation_count"], quality["max_citations"], quality["median_citations"]) == (2, 12, 6)
+        observed = {row["entry_id"]: row["observed_max_citations"] for row in report["landmark_entries"]}
+        assert observed == {"10": 0, "12": 12, "13": None, "15": None}
 
 
 @pytest.mark.asyncio
