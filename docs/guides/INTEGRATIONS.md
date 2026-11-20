@@ -366,7 +366,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 
 ### Source Selection and Source Gating
 
-![Search and query intelligence workflow](../images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](../images/search-query-workflow.svg)
 
 `unified_search` now supports source expressions such as:
 

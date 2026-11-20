@@ -27,8 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS_ROOT = REPO_ROOT / "docs"
 OUTPUT_DIR = DOCS_ROOT / "site-content"
 EMBEDDED_CONTENT_FILE = DOCS_ROOT / "site-content.js"
-REPO_BLOB_BASE = "https://github.com/u9401066/pubmed-search-mcp/blob/master"
-REPO_TREE_BASE = "https://github.com/u9401066/pubmed-search-mcp/tree/master"
+# The team-preview site links source and tests to the matching branch.
+SOURCE_REF = json.loads((DOCS_ROOT / "repository-layout.json").read_text(encoding="utf-8"))["documentation_source_ref"]
+REPO_BLOB_BASE = f"https://github.com/u9401066/pubmed-search-mcp/blob/{SOURCE_REF}"
+REPO_TREE_BASE = f"https://github.com/u9401066/pubmed-search-mcp/tree/{SOURCE_REF}"
 
 PAGES = [
     ("testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
@@ -116,7 +118,7 @@ PACKAGED_REFERENCES: list[PackagedReference] = [
         "target": REPO_ROOT / ".claude/skills/pipeline-persistence/references/pipeline-tutorial.md",
         "replacements": {
             "PIPELINE_MODE_TUTORIAL.md": "pipeline-tutorial.zh-TW.md",
-            "](../images/": "](../../../../docs/images/",
+            "](../images/": "](images/",
         },
     },
     {
@@ -124,7 +126,7 @@ PACKAGED_REFERENCES: list[PackagedReference] = [
         "target": REPO_ROOT / ".claude/skills/pipeline-persistence/references/pipeline-tutorial.zh-TW.md",
         "replacements": {
             "PIPELINE_MODE_TUTORIAL.en.md": "pipeline-tutorial.md",
-            "](../images/": "](../../../../docs/images/",
+            "](../images/": "](images/",
         },
     },
 ]
@@ -298,6 +300,11 @@ def build_site() -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         rendered = _normalize_generated_text(_render_packaged_reference(reference["source"], reference["replacements"]))
         _write_text(target_path, rendered)
+        for bang, _label, link in LINK_PATTERN.findall(rendered):
+            if bang and link.startswith("images/"):
+                asset = target_path.parent / link
+                asset.parent.mkdir(parents=True, exist_ok=True)
+                _write_text(asset, (DOCS_ROOT / link).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

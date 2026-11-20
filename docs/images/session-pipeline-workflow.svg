@@ -42,7 +42,7 @@
   <text class="body" x="880" y="248">diff and notify flags</text>
 
   <rect class="box" x="214" y="398" width="232" height="112" fill="#edf7ff" stroke="#3578a7"/>
-  <text class="label" x="240" y="438">Workspace store</text>
+  <text class="label" x="240" y="438">Local pipeline store</text>
   <text class="body" x="240" y="468">.pubmed-search/pipelines</text>
   <text class="body" x="240" y="490">project-level history</text>
 
@@ -60,7 +60,7 @@
   <path class="soft" d="M 954 274 C 1010 360 1006 452 986 454"/>
 
   <rect x="64" y="560" width="490" height="56" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
-  <text class="small" x="90" y="594">Use session tools for short-lived conversational continuity.</text>
+  <text class="small" x="90" y="594">Use research_workspace for decisions, sources and open actions.</text>
   <rect x="646" y="560" width="490" height="56" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
   <text class="small" x="672" y="594">Use pipelines when the search strategy must be reviewed or rerun.</text>
 </svg>

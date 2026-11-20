@@ -38,7 +38,7 @@
     <rect class="card" x="346" y="134" width="238" height="128" fill="#eef2ff" stroke="#4f68a8"/>
     <text class="label" x="372" y="174">Query intelligence</text>
     <text class="body" x="372" y="204">PICO, MeSH, synonyms</text>
-    <text class="body" x="372" y="226">strategy before execution</text>
+    <text class="body" x="372" y="226">bounded concept differences</text>
   </g>
   <g>
     <rect class="card" x="626" y="134" width="238" height="128" fill="#fff5df" stroke="#b27b21"/>
@@ -61,13 +61,13 @@
   </g>
   <g>
     <rect class="card" x="346" y="498" width="238" height="128" fill="#f1f5e8" stroke="#71883b"/>
-    <text class="label" x="372" y="538">Evaluation timeline</text>
+    <text class="label" x="372" y="538">Research Chronicle</text>
     <text class="body" x="372" y="568">citation metrics, timelines</text>
     <text class="body" x="372" y="590">milestones and comparison</text>
   </g>
   <g>
     <rect class="card" x="626" y="498" width="238" height="128" fill="#f5f1ea" stroke="#947245"/>
-    <text class="label" x="652" y="538">Sessions pipelines</text>
+    <text class="label" x="652" y="538">Sessions and pipelines</text>
     <text class="body" x="652" y="568">resume, audit, rerun</text>
     <text class="body" x="652" y="590">save, load, schedule</text>
   </g>

@@ -142,7 +142,7 @@ Each feature family has a workflow diagram so users and developers can see where
 
 ### Search Entry And Query Intelligence
 
-![Search and query intelligence workflow](../images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](../images/search-query-workflow.svg)
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
@@ -302,7 +302,7 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 ### Evaluation, Timeline, And Comparison
 
-![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
+![Cochlear implant sources by publication year and the later revision that recognizes a connection](../images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](../images/timeline-evaluation-workflow.svg)
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.

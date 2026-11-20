@@ -78,7 +78,7 @@ uv run --frozen python .claude/skills/pubmed-research-workspace/scripts/render_h
 
 ## Research Chronicle / Lineage Tree
 
-![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
+![Cochlear implant sources by publication year and the later revision that recognizes a connection](../images/research-chronicle-lineage-flow.svg)
 
 ### 1. Core Principles & Epistemic Model
 

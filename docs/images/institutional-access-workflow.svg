@@ -42,7 +42,7 @@
   <text class="body" x="344" y="468">user cookies</text>
 
   <rect class="box" x="640" y="224" width="236" height="116" fill="#edf7ff" stroke="#3578a7"/>
-  <text class="label" x="666" y="264">diagnose_access</text>
+  <text class="label" x="666" y="264">Access diagnosis</text>
   <text class="body" x="666" y="294">paywall, login, fulltext,</text>
   <text class="body" x="666" y="316">advice and final URL</text>
 

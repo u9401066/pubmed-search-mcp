@@ -78,7 +78,7 @@ uv run --frozen python .claude/skills/pubmed-research-workspace/scripts/render_h
 
 ## 研究編年史 / Research Chronicle
 
-![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![人工耳蝸史料的出版年與後來辨認出關聯的修訂時間](../images/research-chronicle-lineage-flow.svg)
 
 ### 1. 核心設計理念與認識論模型
 

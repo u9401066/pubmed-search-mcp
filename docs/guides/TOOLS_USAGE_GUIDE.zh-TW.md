@@ -129,7 +129,7 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ### 搜尋入口與查詢智能
 
-![搜尋與查詢智能流程](../images/search-query-workflow.svg)
+![人工耳蝸 PubMed 案例：逐一放寬 MeSH 條件後新增的篇數](../images/search-query-workflow.svg)
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
@@ -268,7 +268,7 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 ### 評估、時間軸與比較
 
-![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![人工耳蝸史料的出版年與後來辨認出關聯的修訂時間](../images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
