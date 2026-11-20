@@ -4,6 +4,8 @@
 /plugins/pubmed-search/skills/**/*.md text eol=lf
 /.claude/skills/pubmed-*/**/*.md text eol=lf
 /.claude/skills/pipeline-persistence/**/*.md text eol=lf
+/plugins/pubmed-search/skills/**/*.py text eol=lf
+/.claude/skills/pubmed-*/**/*.py text eol=lf
 
 # Publication evidence and archived sources have recorded SHA-256 checksums.
 /docs/reports/*.json text eol=lf
