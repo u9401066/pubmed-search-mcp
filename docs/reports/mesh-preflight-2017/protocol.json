@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "cohort": "First four review IDs in lexical order in CLEF TAR 2017 testing/extracted_data. Titles only were inspected when specifying these strategies.",
+  "qrels_url": "https://raw.githubusercontent.com/CLEF-TAR/tar/dbc13d02bb3e2f8ebc90e62ff47f5eb591e5ca20/2017-TAR/testing/qrels/qrel_content_test.txt",
+  "qrels_sha256": "cfe6a968968e3199a43b7974a29ad887a891c00113146414bdfb572fb5ba59f9",
+  "agent": "Single Codex agent, paired sequential decisions, review titles only at baseline. No seed PMIDs, original published strategies, included lists or case-level scores before locking all choices.",
+  "cutoff": "1800:2016[dp]",
+  "sort": "relevance",
+  "screen_cap": 500,
+  "call_cap_per_arm": 4,
+  "decision_instruction": "Keep the original query or omit one adjustable block. Use only the topic, original clauses and the production compact comparison. Balance coverage of synonymous descriptions against additional records to screen at depth 500. A partial preview defaults to keeping the original. Lock all choices before retrieval or scoring.",
+  "estimands": "Primary: within-review difference in known included PMIDs among the first 500 ranked records. Secondary: gained and lost PMIDs separately, candidate records presented (capped), total matched candidates (uncapped), attempted ESearch requests. No independent adjudication of additional candidates.",
+  "cases": [
+    {
+      "id": "CD007431",
+      "title": "Physical examination for lumbar radiculopathy due to disc herniation in patients with low-back pain",
+      "scope": "radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]",
+      "blocks": {
+        "lumbar": "lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh]",
+        "exam": "\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab]"
+      }
+    },
+    {
+      "id": "CD008081",
+      "title": "Optical coherence tomography (OCT) for detection of macular oedema in patients with diabetic retinopathy",
+      "scope": "\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]",
+      "blocks": {
+        "diabetes": "\"Diabetic Retinopathy\"[mh] OR diabet*[tiab]",
+        "edema": "\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab]"
+      }
+    },
+    {
+      "id": "CD008760",
+      "title": "Capsule endoscopy for the diagnosis of oesophageal varices in people with chronic liver disease or portal vein thrombosis",
+      "scope": "\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]",
+      "blocks": {
+        "varices": "\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab]",
+        "liver": "\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab]"
+      }
+    },
+    {
+      "id": "CD008782",
+      "title": "Plasma and cerebrospinal fluid amyloid beta for the diagnosis of Alzheimer's disease dementia and other dementias in people with mild cognitive impairment (MCI)",
+      "scope": "\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]",
+      "blocks": {
+        "mci": "\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab]",
+        "fluid": "\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab]"
+      }
+    }
+  ]
+}
