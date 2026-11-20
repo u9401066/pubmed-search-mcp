@@ -1,0 +1,97 @@
+{
+  "retrieval_sha256": "a95c40b829cd9d0e9a0b2f8005a76d58c873c5a6a99a8246d1872bc9a035f697",
+  "cases": {
+    "CD007431": {
+      "included": 15,
+      "choice": "keep",
+      "calls": [
+        1,
+        4
+      ],
+      "preview_status": "ok",
+      "status": "paired",
+      "recovered": [
+        4,
+        4
+      ],
+      "candidates": [
+        500,
+        500
+      ],
+      "matched": [
+        1590,
+        1590
+      ],
+      "gained": [],
+      "lost": [],
+      "added_to_queue": 0,
+      "displaced_from_queue": 0
+    },
+    "CD008081": {
+      "included": 10,
+      "choice": "edema",
+      "calls": [
+        1,
+        4
+      ],
+      "preview_status": "ok",
+      "status": "paired",
+      "recovered": [
+        7,
+        7
+      ],
+      "candidates": [
+        500,
+        500
+      ],
+      "matched": [
+        1457,
+        2688
+      ],
+      "gained": [],
+      "lost": [],
+      "added_to_queue": 170,
+      "displaced_from_queue": 170
+    },
+    "CD008760": {
+      "included": 9,
+      "choice": "liver",
+      "calls": [
+        1,
+        4
+      ],
+      "preview_status": "ok",
+      "status": "paired",
+      "recovered": [
+        9,
+        9
+      ],
+      "candidates": [
+        72,
+        126
+      ],
+      "matched": [
+        72,
+        126
+      ],
+      "gained": [],
+      "lost": [],
+      "added_to_queue": 54,
+      "displaced_from_queue": 0
+    },
+    "CD008782": {
+      "included": 34,
+      "choice": "keep",
+      "calls": [
+        1,
+        4
+      ],
+      "preview_status": "partial",
+      "status": "incomplete",
+      "arm_status": [
+        "warning",
+        "warning"
+      ]
+    }
+  }
+}

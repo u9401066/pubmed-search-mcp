@@ -35,6 +35,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 
 ## Search Patterns
 
+- For research across sessions, use the [research workspace skill](../../.claude/skills/pubmed-research-workspace/SKILL.md). Read the current workspace and its open actions, execute the appropriate source tool, then append the observation with a stable record ID. Use `resolves` when that observation answers an earlier action.
 - Quick search: call `unified_search` and summarize the best matches.
 - Iterative search: `options="exclude_seen"` filters PMID/normalized DOI identities from earlier completed/partial searches in this session before `limit`; disclose the excluded count or history warning. It is rejected with `pipeline=`.
 - Artifact-backed search: answer from the MCP summary first, then mention the artifact URI for deeper audit or re-reading.

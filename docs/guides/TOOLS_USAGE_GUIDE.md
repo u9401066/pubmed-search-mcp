@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 41-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 42-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 41-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 41 tools use a shared input contract (metadata `contractVersion: 4`).
+All 42 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -116,7 +116,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `read_session` plus the seven pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
+| Persistence and sessions | `research_workspace`, `read_session` and the seven pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -131,6 +131,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full-text synthesis | `get_fulltext` -> `get_text_mined_terms` -> structured summary |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` or Zotero Keeper import tools |
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
+| Resume a literature investigation | `research_workspace` with `read` loads prior decisions, source handoffs and outstanding actions. [Worked example](ADVANCED_RESEARCH_WORKFLOWS.md#resume-a-research-workspace) |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
@@ -141,9 +142,28 @@ Each feature family has a workflow diagram so users and developers can see where
 
 ### Search Entry And Query Intelligence
 
-![Search and query intelligence workflow](../images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](../images/search-query-workflow.svg)
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
+
+#### Compare PubMed concept blocks
+
+If PubMed flags a term, `warning_examples` shows up to two short excerpts. Inspect the stored translation before editing the clause. For offline peer review, the systematic-search skill can render the saved plan, differences, sample PMIDs and chosen query. [Four-review evaluation and usage](../reports/mesh-preflight-2017/README.md)
+
+Pass the fixed scope in `query`. Supply two to five named, adjustable PubMed clauses in `comparison.blocks`. The baseline requires all blocks. Each difference requires every other block and excludes the named block. Keep synonyms that represent one concept inside a parenthesized OR clause. Exchanging the order of the input blocks produces the same probes.
+
+```python
+analyze_search_query(query='"Cochlear Implants"[mh] AND 1980:1990[dp]',
+    comparison={"blocks": {"B": '"Speech Perception"[mh]', "C": '"Speech Intelligibility"[mh]'}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"<returned URI>"},
+    "artifact_file":"drop-B.json"})
+```
+
+On 2026-11-20 this example returned 12 baseline records. Dropping C added 190 and dropping B added 10. Requiring either yielded 212. Three PubMed ESearch requests measured the baseline and both disjoint differences. Counts describe indexing at retrieval time. A count or a sample PMID alone cannot establish eligibility.
+
+The preview returns up to two nonempty differences. Optional `seed_pmids` (up to 16) prioritize differences containing a named reference, followed by added count. A run makes at most six baseline/difference requests and up to five further seed checks within a shared 15-second provider deadline. A partial response identifies unavailable or warned probes. The two-block `either_total` is derived only when all three counts are usable.
+
+Read `plan.json` for all changes and the original query, or `drop-<block>.json` for the relaxed query, difference query, observation time, provider translation and up to three sampled PMIDs. Use `fetch_article_details` to inspect those papers. Save the selected query with `save_pipeline` and link the artifact URI from a `research_workspace` record to preserve the rationale. Without durable storage, the compact response includes sample PMIDs inline. Plain `analyze_search_query(query=...)` continues to run locally.
 
 There is exactly one generic literature-search tool. Choose its retrieval
 policy with `options` instead of looking for provider-specific search tools:
@@ -284,7 +304,7 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 ### Evaluation, Timeline, And Comparison
 
-![Research Chronicle Architecture and Lineage Flow](../images/research-chronicle-lineage-flow.svg)
+![Cochlear implant sources by publication year and the later revision that recognizes a connection](../images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](../images/timeline-evaluation-workflow.svg)
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.

@@ -43,7 +43,7 @@ unified_search(query="remimazolam sedation", limit=10)
 
 流程:
 1. generate_search_queries(topic) → 取得 MeSH 詞彙和同義詞
-2. 根據返回的 suggested_queries 選擇最佳策略
+2. 若有固定範疇與 2–5 個可調概念，用 analyze_search_query(query=固定範疇, comparison={"blocks": 可調概念}) 預查。從差集與已知文獻決定要採用的條件。完整式子與樣本 PMID 可從回傳的 artifact URI 讀取。
 3. unified_search(query=優化後的查詢)
 
 範例:
@@ -336,6 +336,16 @@ search_clinvar("BRCA1", limit=10)
 - `read_session(request={"action":"summary"})`: 查看 session 狀態和可用資料
 - `read_session(request={"action":"log"})`: 查看 activity log 與搜尋歷史摘要
 
+### Research workspaces
+- For a multi-session investigation, call `research_workspace(request={"action":"create","workspace_id":"review","question":"What evidence addresses the question?"})`.
+- Record source identifiers, what you inspected, and the next action using
+  `research_workspace` with action `record` and a stable record ID. Use the
+  activities explore, expand, examine and explain in any order. Link records
+  through parent IDs and resolve an earlier action by its record ID.
+- To resume, use `research_workspace(request={"action":"read","workspace_id":"review"})`.
+  Workspace entries reflect contributor observations. Verify claims against
+  the cited passage before treating an entry as support.
+
 ### Research Artifact Envelope
 - `unified_search` returns a compact answer plus `artifact_summary` / `artifact`
   when durable artifacts were written. The response summary should be detailed
@@ -371,7 +381,7 @@ search_clinvar("BRCA1", limit=10)
 ### 查詢智能
 - validate_pico_plan: Validate agent-provided P/I/C/O and return a runnable PICO pipeline.
 - generate_search_queries: Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
-- analyze_search_query: Analyze a search query without executing the search.
+- analyze_search_query: Analyze a query locally, or preview explicit PubMed Boolean combinations.
 
 ### 文章探索
 - fetch_article_details: Fetch detailed information for one or more PubMed articles.
@@ -402,6 +412,7 @@ search_clinvar("BRCA1", limit=10)
 
 ### Session 管理
 - read_session: Read session data through one schema-exact discriminated request.
+- research_workspace: Create, record, list or resume a research workspace across sessions.
 
 ### 機構訂閱
 - configure_institutional_access: Configure your institution's link resolver for full-text access.

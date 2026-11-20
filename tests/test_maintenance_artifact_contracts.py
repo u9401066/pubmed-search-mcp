@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import zipfile
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from scripts.build_publication import load_evidence, prepare, source_bundle, validate_citations
-from scripts.check_repository_layout import inventory
+from scripts.check_repository_layout import inventory, write_document_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,6 +27,21 @@ def test_layout_detects_new_and_ambiguous_files_but_excludes_ignored_output(git_
     assert result["errors"] == [{"path": "stray.md", "matching_categories": []}]
     layout["categories"].extend({"name": name, "status": "current", "files": ["stray.md"]} for name in ("a", "b"))
     assert inventory(tmp_path, layout)["errors"] == [{"path": "stray.md", "matching_categories": ["a", "b"]}]
+
+
+def test_published_markdown_catalog_covers_tracked_documents(tmp_path: Path) -> None:
+    layout = json.loads((ROOT / "docs/repository-layout.json").read_text(encoding="utf-8"))
+    result = inventory(ROOT, layout, documents_only=True)
+    assert not result["errors"]
+    output = tmp_path / "catalog.csv"
+    write_document_catalog(ROOT, output, result["files"])
+    assert output.read_bytes() == (ROOT / "docs/reports/markdown-catalog.csv").read_bytes()
+    with output.open(encoding="utf-8", newline="") as stream:
+        docs = {row["path"]: row for row in csv.DictReader(stream)}
+    assert docs["docs/site-content/overview.md"]["source"] == "README.md"
+    assert docs["docs/archive/research/roadmap-through-v090.md"]["status"] == "historical"
+    guide = "plugins/pubmed-search/skills/pipeline-persistence/references/pipeline-tutorial.md"
+    assert docs[guide]["source"] == "docs/guides/PIPELINE_MODE_TUTORIAL.en.md"
 
 
 @pytest.mark.parametrize("escape", [False, True])

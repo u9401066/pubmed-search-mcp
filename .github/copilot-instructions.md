@@ -394,7 +394,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **41 MCP Tools** for literature search and analysis
+- **42 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -479,7 +479,7 @@ unified_search(query="<combined_boolean_query>")
 |------|---------|
 | `validate_pico_plan` | Validate agent-provided P/I/C/O and return a runnable PICO pipeline. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
-| `analyze_search_query` | Analyze a search query without executing the search. |
+| `analyze_search_query` | Analyze a query locally, or preview explicit PubMed Boolean combinations. |
 
 
 ### 文章探索
@@ -535,11 +535,12 @@ unified_search(query="<combined_boolean_query>")
 
 
 ### Session 管理
-*PMID 暫存與歷史*
+*PMID 暫存、搜尋歷史與可接手的研究工作區*
 
 | Tool | Purpose |
 |------|---------|
 | `read_session` | Read session data through one schema-exact discriminated request. |
+| `research_workspace` | Create, record, list or resume a research workspace across sessions. |
 
 
 ### 機構訂閱

@@ -173,8 +173,8 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "session": {
         "name": "Session 管理",
-        "description": "PMID 暫存與歷史",
-        "tools": ["read_session"],
+        "description": "PMID 暫存、搜尋歷史與可接手的研究工作區",
+        "tools": ["read_session", "research_workspace"],
     },
     "institutional": {
         "name": "機構訂閱",
@@ -253,7 +253,8 @@ def build_pipeline_runtime(
 
     from .tools.pipeline_tools import PipelineToolRuntime
 
-    data_dir = str(session_manager.data_dir) if session_manager.data_dir else str(Path.home() / ".pubmed-search-mcp")
+    base_dir = session_manager.data_dir  # tenant-ok: PipelineToolRuntime resolves each caller's store from this base.
+    data_dir = str(base_dir or Path.home() / ".pubmed-search-mcp")
     resolved_settings = settings or load_settings()
     configured_workspace_dir = getattr(resolved_settings, "workspace_dir", None)
     effective_workspace_dir = workspace_dir or (

@@ -1,0 +1,24 @@
+name: Research workflow case
+description: Report a missed paper, a historical interpretation, a full-text access result or a workspace handoff.
+body:
+  - type: input
+    id: revision
+    attributes:
+      label: Release or commit and agent host
+      placeholder: v0.9.0 or branch commit, host and transport
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: What did you run?
+      description: Include the query or workflow, source and observation date. Use public identifiers and omit credentials or licensed full text.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What did you expect, and what did you observe?
+      description: A seed PMID, DOI, dated historical source or minimal handoff example helps someone else check the result.
+    validations:
+      required: true

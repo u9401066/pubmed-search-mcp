@@ -63,10 +63,14 @@ class TestCopilotHookPolicy:
         assert contract["evaluationPriority"][:2] == ["structuredContent", "jsonTextContent"]
         assert contract["recovery"]["artifactReader"] == "read_session"
 
-    def test_workflow_steps_cover_all_registered_tools(self):
+    def test_workflow_steps_and_observation_tools_cover_all_registered_tools(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
 
-        assert _flatten_workflow_step_tools(policy["workflowSteps"]) == _all_registry_tools()
+        stages = _flatten_workflow_step_tools(policy["workflowSteps"])
+        observations = set(policy["workflowObservationTools"])
+        assert observations == {"research_workspace"}
+        assert observations.isdisjoint(stages), "Managing a workspace must not complete a research stage"
+        assert stages | observations == _all_registry_tools()
 
     def test_workflow_steps_include_shared_instruction_metadata(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))

@@ -8,8 +8,8 @@ Copilot Studio 使用同一套 strict registry；差異只在部署邊界：
 
 | 模式 | 啟動方式 | 工具面 | 適用情境 |
 | --- | --- | --- | --- |
-| Authenticated service | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 41-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
-| Local Copilot smoke | `uv run python run_copilot.py` | 同一套 41-tool strict registry | 僅供 loopback schema/protocol 診斷；不可發布 |
+| Authenticated service | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 42-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
+| Local Copilot smoke | `uv run python run_copilot.py` | 同一套 42-tool strict registry | 僅供 loopback schema/protocol 診斷；不可發布 |
 
 如果要接 Copilot Studio，使用第一種。第二種只用來在本機重現 transport/schema 問題；它不再維護另一套縮減工具面。
 
@@ -92,7 +92,7 @@ multi-user service，禁止放到 ngrok 或其他公網 tunnel 後方。公開�
 
 ### 完整模式
 
-Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也就是 41 個公開 tools。
+Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也就是 42 個公開 tools。
 
 核心分類包括：
 
@@ -101,7 +101,7 @@ Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也�
 - 文章探索：related、citing、references、citation tree、details
 - 全文與文字探勘：`get_fulltext`、`get_text_mined_terms`
 - NCBI 延伸：gene、compound、clinvar
-- 匯出、Research Chronicle、pipeline、institutional access、image search
+- 匯出、研究工作區、Research Chronicle、pipeline、institutional access、image search
 
 `run_copilot.py` 與正式 service 共用這份 registry，不提供 `search_pubmed`、
 `get_article` 或 action-bag compatibility aliases。所有 discriminated inputs（例如
@@ -125,7 +125,7 @@ Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也�
 2. 工具列表能被發現
 3. 執行一次 `unified_search` 能成功回傳
 4. 用 `read_session(request={"action":"search_run","run_id":"..."})` 回讀該搜尋；需要 replay 時先取得 arguments，再明確呼叫 `unified_search`
-5. 確認 41 個 tool schemas 都能完整 discovery，沒有截斷
+5. 確認 42 個 tool schemas 都能完整 discovery，沒有截斷
 
 ## 常見選擇建議
 

@@ -79,6 +79,7 @@ EXPECTED_TOOLS = frozenset(
         "prepare_export",
         "save_literature_notes",
         "read_session",
+        "research_workspace",
         "configure_institutional_access",
         "get_institutional_link",
         "list_resolver_presets",
@@ -117,7 +118,7 @@ PNG_DATA_URI = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
-EXPECTED_PROTOCOL_CALLS_PER_RUN = 60
+EXPECTED_PROTOCOL_CALLS_PER_RUN = 62
 RETIRED_TOOLS = frozenset(
     {
         "analyze_figure_for_search",
@@ -386,6 +387,28 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
         driver.failures.append("unified_search: response omitted durable search_run.run_id")
     if not artifact_uri.startswith("artifact://"):
         driver.failures.append("unified_search: response omitted a valid artifact_summary.artifact_uri")
+
+    await driver.call(
+        "research_workspace",
+        {"request": {"action": "create", "workspace_id": "offline-review", "question": "Which study addresses this?"}},
+        _expect_json({"workspace_id": "offline-review"}),
+    )
+    await driver.call(
+        "research_workspace",
+        {
+            "request": {
+                "action": "record",
+                "workspace_id": "offline-review",
+                "record_id": "seed",
+                "activity": "explore",
+                "note": "The search returned a candidate.",
+                "source_refs": [f"pmid:{SEARCH_PMID}"],
+                "evidence_scope": "metadata",
+                "next_action": "Inspect the study methods",
+            }
+        },
+        _expect_json({"record.record_id": "seed", "record.source_refs.0": f"pmid:{SEARCH_PMID}", "replayed": False}),
+    )
 
     def validate_pico_handoff(result: Any) -> None:
         payload = _json_document(_result_text(result))

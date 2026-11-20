@@ -93,7 +93,7 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (canonical 41-tool Copilot Studio smoke)
+# Via run_copilot.py (canonical 42-tool Copilot Studio smoke)
 uv run python run_copilot.py --port 8765
 ```
 
@@ -142,7 +142,7 @@ Clients then present the token as a bearer credential:
 ```
 
 Each authenticated principal gets its **own** session, article cache, search
-history, `pmids="last"`, artifacts, exports, chronicles, and pipelines. An MCP
+history, `pmids="last"`, artifacts, exports, chronicles, pipelines and research workspaces. An MCP
 transport session identifier is protocol lifecycle state, not tenant identity or
 authorization, and never grants persistence.
 
@@ -151,6 +151,7 @@ service callers:
 
 | Capability | Local stdio / loopback HTTP | Authenticated service |
 | --- | --- | --- |
+| Research workspaces | The source checkout stores records under the local data root | Workspaces and outstanding actions belong to the verified principal; reconnect with the same identity to resume |
 | Saved pipelines | `workspace`, `global`, or `auto`; caller may load `file:path.yaml` | Tenant-derived store only; `auto` resolves below that principal's data root and `file:` reads are rejected |
 | Literature notes | Caller may choose `output_dir` and `template_file` | Caller cannot choose host paths or read a template file; built-in formats write below `<tenant-root>/references/` |
 | Scheduler | May be enabled for a trusted local process | Disabled by `docker-compose.service.yml`; future scheduling needs one leader/lease, not one scheduler per request worker |
@@ -369,7 +370,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 
 ### Source Selection and Source Gating
 
-![Search and query intelligence workflow](images/search-query-workflow.svg)
+![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](images/search-query-workflow.svg)
 
 `unified_search` now supports source expressions such as:
 
@@ -767,11 +768,26 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/blob/master/plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.9.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.10.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
 and standalone installs share sessions, pipelines, and chronicles.
+
+For local development, build a development plugin from the
+checkout and select the generated directory in a compatible client:
+
+```bash
+uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
+```
+
+Its stdio command runs this checkout with `uv run --project <absolute checkout> --frozen pubmed-search-mcp`.
+Keep the checkout available while using this plugin. An identical build can be
+reused. Choose a fresh output directory after changing a skill or when the
+previous copy contains local customizations. The registry installation launches
+the published version; the checkout launcher includes `research_workspace`.
+
+The proposed first plugin pilot pairs VS Code Copilot and Codex. It exercises the same research handoff with an explicit skill, then measures what a host-specific session hook adds. The roadmap lists the packaged baseline, official specifications, working plugin examples and acceptance criteria. [Agent plugin delivery plan](https://github.com/u9401066/pubmed-search-mcp/blob/master/ROADMAP.md#agent-plugin-delivery-plan)
 
 The skill copies and version fields are generated. After editing a research
 skill or bumping the release version, run:
@@ -797,7 +813,7 @@ Before PyPI upload, the tag workflow checks plugin drift and runs
 `mcp-publisher validate server.json` with a pinned, SHA-256-verified publisher.
 Release smoke verifies that registry/plugin metadata names the exact wheel,
 its METADATA contains the ownership marker, and its installed console script
-serves all 41 tools with only registry-declared application environment variables.
+serves all 42 tools with only registry-declared application environment variables.
 These are release checks, not proof that a release has already been published.
 
 ---
@@ -817,7 +833,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 41-tool primary MCP surface with an assigned ngrok dev/custom domain
+# Option A: Full 42-tool primary MCP surface with an assigned ngrok dev/custom domain
 export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -827,7 +843,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: canonical 41-tool local schema smoke (never tunnel this mode)
+# Option C: canonical 42-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -903,11 +919,11 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; it should enumerate 41 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; a v0.10.0 server should enumerate 42 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.
-5. **Isolation check**: in service mode, verify two bearer principals cannot read each other's session, export, artifact, chronicle, note, or pipeline state.
+5. **Isolation check**: in service mode, verify two bearer principals cannot read each other's research workspace, session, export, artifact, chronicle, note, or pipeline state.
 
 ### Common Issues
 

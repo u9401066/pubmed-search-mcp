@@ -1,5 +1,7 @@
 # Research Artifact Envelope Implementation Plan
 
+Historical implementation checklist, June 2026. For the implemented artifact and replay interface, consult the [current tool guide](../../guides/TOOLS_USAGE_GUIDE.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build complete, auditable MCP research artifacts while keeping MCP responses compact and useful.

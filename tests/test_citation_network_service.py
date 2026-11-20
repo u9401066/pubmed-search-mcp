@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 
 import pytest
@@ -170,34 +169,39 @@ async def test_source_exception_is_reported_without_discarding_other_branches() 
 
 @pytest.mark.asyncio
 async def test_cancellation_swallowing_source_cannot_extend_overall_deadline() -> None:
-    released = asyncio.Event()
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
 
     async def stubborn() -> list[dict[str, Any]]:
+        started.set()
         try:
-            await asyncio.sleep(1)
+            await release.wait()
         except asyncio.CancelledError:
-            await asyncio.sleep(0.15)
-            released.set()
+            cancelled.set()
+            await release.wait()
+        finally:
+            finished.set()
         return [_article("3")]
 
     source = _CitationSource({"1": [_article("2")], "2": stubborn})
     supervisor = CitationTaskSupervisor(max_pending=2)
-    started = time.monotonic()
-    result = await CitationNetworkService(source, task_supervisor=supervisor).build(
-        "1",
-        CitationNetworkConfig(
-            depth=2,
-            direction="forward",
-            limit_per_level=5,
-            timeout_seconds=0.01,
-        ),
+    build = asyncio.create_task(
+        CitationNetworkService(source, task_supervisor=supervisor).build(
+            "1", CitationNetworkConfig(depth=2, direction="forward", limit_per_level=5, timeout_seconds=0.2)
+        )
     )
-    elapsed = time.monotonic() - started
-
-    assert elapsed < 0.08
-    assert result.coverage()["status"] == "partial"
-    assert supervisor.pending_count == 1
-    await asyncio.wait_for(released.wait(), timeout=0.4)
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        result = await asyncio.wait_for(build, timeout=1)
+        assert result.coverage()["status"] == "partial"
+        assert cancelled.is_set() and not finished.is_set()
+        assert supervisor.pending_count == 1
+    finally:
+        release.set()
+        await asyncio.gather(build, return_exceptions=True)
+    await asyncio.wait_for(finished.wait(), timeout=1)
     await asyncio.sleep(0)
     assert supervisor.pending_count == 0
 

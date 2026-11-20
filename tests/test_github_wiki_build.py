@@ -15,8 +15,10 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         assert (tmp_path / page).exists()
 
     expected_pages = {
+        "Documentation-Map.md",
         "Testing.md",
         "Publication.md",
+        "MeSH-Preflight.md",
         "Home.md",
         "_Sidebar.md",
         "User-Guide.md",
@@ -54,6 +56,7 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     sidebar = (tmp_path / "_Sidebar.md").read_text(encoding="utf-8")
 
     assert "https://u9401066.github.io/pubmed-search-mcp/" in home
+    assert "Documentation-Map#capability-inventory" in home and "Documentation-Map#capability-inventory" in sidebar
     assert "[Advanced Research Workflows](Advanced-Research-Workflows)" in home
     assert "[Tools Usage Guide](Tools-Usage-Guide)" in user_guide
     assert "[進階研究工作流](Advanced-Research-Workflows.zh-TW)" in sidebar

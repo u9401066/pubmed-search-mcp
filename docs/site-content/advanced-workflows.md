@@ -4,14 +4,13 @@
 
 # Advanced Research Workflows
 
-This page provides a centralized, in-depth guide to the core advanced workflows
-in PubMed Search MCP: **Research Chronicle (Evolution & Lineage Trees)**,
-**Open-i Image Search**, **Uploaded-Image Handoff**, and **Persistent Query Memory**.
+Use a research workspace to carry a question across sessions. Use a Chronicle to investigate its history, a session artifact to retrieve earlier results, or the image tools to find visual evidence.
 
 ## Quick Map
 
 | Need | Start here | Continue with |
 | --- | --- | --- |
+| Hand a question, evidence trail and unfinished reading to another agent | `research_workspace` with `create` or `list` | `record` decisions, then `read` to resume |
 | Investigate dated papers on the main and alternative lines of a topic | `build_research_chronicle` | `read_research_chronicle` |
 | Find biomedical images from text (X-ray, histology, CT) | `search_biomedical_images` | `get_article_figures`, `unified_search` |
 | Upload or pass an image and search by its visual meaning | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
@@ -19,9 +18,71 @@ in PubMed Search MCP: **Research Chronicle (Evolution & Lineage Trees)**,
 
 ---
 
+## Resume a research workspace
+
+Consider the question “What did ‘single-channel versus multichannel’ describe in early cochlear implant studies?” One paper compares devices, another compares processing strategies. A search hit alone gives the reader little basis for grouping them. [Worked historical case and original sources](reports/chronicle_historical_method_2026-11-20.md)
+
+```python
+research_workspace(request={"action":"create","workspace_id":"implant-history",
+    "question":"What did single-channel versus multichannel describe in the early studies?"})
+```
+
+| Activity | What the agent can do in this investigation |
+| --- | --- |
+| Explore | Run `unified_search`, retain the exact query or saved pipeline and filters, and identify the comparative study PMID 3878092. Record which source supplied it. |
+| Expand | Look up related work or inspect a saved Chronicle revision. Follow the processing-strategy lead, PMID 3753836. Use `parent_ids` to connect the decision to investigate it. The link records how the researcher arrived there. |
+| Examine | Read each abstract. If the device paper's methods are unavailable, identify the missing detail and leave a next action. Try `get_fulltext` or an authorized Zotero Keeper lookup by PMID/DOI. Record `fulltext` and the actual section, page or table only after reading the passage. |
+| Explain | Link the records used to distinguish devices from strategies. Cite each original study, state what the material actually read can support, and carry open methods questions into the handoff. |
+
+For example, after reading the first abstract, write one decision with a stable ID. This call can be retried with the same payload if the connection drops before the response arrives.
+
+```python
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"device-comparison","activity":"explore",
+    "note":"The PubMed abstract describes a comparison of devices. The selection criteria need checking.",
+    "source_refs":["pmid:3878092"],"evidence_scope":"abstract",
+    "next_action":"Locate the methods passage on how devices were selected."})
+```
+
+If work stops here, the next agent uses the same store and tenant. This read works with the saved records even when a literature provider is unavailable.
+
+```python
+research_workspace(request={"action":"read","workspace_id":"implant-history"})
+```
+
+For the `pmid:3878092` reference, inspect the returned `source_handoffs` and call the indicated tool with its `arguments` if you need to reopen the record. Reading the workspace itself performs no provider lookup.
+
+Suppose the colleague checks the second abstract while waiting for the first paper's methods. These three records preserve the path from a lead to a qualified interpretation.
+
+```python
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"strategy-lead","activity":"expand","parent_ids":["device-comparison"],
+    "source_refs":["pmid:3753836"],"evidence_scope":"metadata",
+    "note":"Follow up the 1986 paper to determine what it compared.",
+    "next_action":"Read the abstract to identify the comparison."})
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"strategy-abstract","activity":"examine","parent_ids":["strategy-lead"],
+    "source_refs":["pmid:3753836"],"evidence_scope":"abstract","resolves":["strategy-lead"],
+    "note":"The abstract compares processing strategies in two subjects using the same type of implant."})
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"two-comparisons","activity":"explain","parent_ids":["device-comparison","strategy-abstract"],
+    "source_refs":["pmid:3878092","pmid:3753836"],"evidence_scope":"abstract",
+    "note":"The two abstracts use channel terminology for different comparisons. Device selection criteria remain open."})
+```
+
+Use `open_actions` to pick up the missing passage. Use `open_offset=next_open_offset` for more open actions, and `after=0` followed by `next_after` to read the history in order. The agent can go back to Expand for alternative terms or another source. If a permitted Zotero item yields the passage, a new Examine record can carry the paper ID, the actual item key and passage locator, and `resolves=["device-comparison"]`. If the lookup yields only metadata, keep the action open. Each record remains unverified. For handoff, give the workspace ID, the current interpretation with sources, and the outstanding work.
+
+For a human-readable handoff, save the read result as UTF-8 JSON and run the bundled helper from the checkout. It writes a plain-text summary to stdout with source IDs, passage locators, open actions and pagination information. It also accepts a saved MCP text-content response envelope.
+
+```sh
+uv run --frozen python .claude/skills/pubmed-research-workspace/scripts/render_handoff.py workspace.json
+```
+
+---
+
 ## Research Chronicle / Lineage Tree
 
-![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
+![Cochlear implant sources by publication year and the later revision that recognizes a connection](images/research-chronicle-lineage-flow.svg)
 
 ### 1. Core Principles & Epistemic Model
 
@@ -178,8 +239,9 @@ remote artifact backends.
 
 ## Verification Status
 
-The current primary 41-tool MCP server exposes these tools directly:
+These workflows use the following MCP tools.
 
+- Research workspace and handoff: `research_workspace`
 - Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
 - Uploaded-image handoff: `prepare_figure_search`

@@ -73,7 +73,7 @@ PUBMED_NOTES_DIR=/path/to/references
 
 ### 1. 先廣後窄
 
-![搜尋與查詢智能流程](../images/search-query-workflow.svg)
+![人工耳蝸 PubMed 案例：逐一放寬 MeSH 條件後新增的篇數](../images/search-query-workflow.svg)
 
 可以要求 client 先做中等大小的第一輪搜尋：
 
@@ -178,7 +178,7 @@ Broker 也會強制 loopback bind，並驗證 loopback Host 與 Origin。
 
 ### 5. 建立研究脈絡年表
 
-![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![人工耳蝸史料的出版年與後來辨認出關聯的修訂時間](../images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 chronicle tools。
@@ -300,7 +300,7 @@ run，或設計單一 external leader/lease。
 Copilot 有兩個部署邊界，但共用同一份 registry：
 
 - 可公開的 primary MCP surface：透過 authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查同一組 41 個 strict tools，
+- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查同一組 42 個 strict tools，
   並使用 canonical `read_session(request={...})` 回讀 search run、replay arguments 與 artifact
 
 只有 authenticated service 可以公開。本機 launcher 只供檢查同一份 Copilot Studio schema；任何 public endpoint 都必須回到 service launcher，禁止 tunnel `run_copilot.py`。

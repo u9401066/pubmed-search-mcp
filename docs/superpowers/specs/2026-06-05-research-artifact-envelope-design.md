@@ -1,5 +1,7 @@
 # Research Artifact Envelope Design
 
+June 2026 design record. The [artifact and recovery guide](../../guides/TOOLS_USAGE_GUIDE.md) describes the current behavior.
+
 ## Goal
 
 MCP tools should return a compact, useful response while persisting complete research artifacts that agents can read repeatedly through `read_session` without spending response tokens.

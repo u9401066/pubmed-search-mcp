@@ -20,13 +20,25 @@ const DOC_PAGES = [
     file: "site-content/publication.md",
   },
   {
+    slug: "mesh-preflight",
+    group: "mesh-preflight",
+    lang: "all",
+    audience: "developer",
+    title: "MeSH decision study / 檢索決策盲測",
+    blurb: "Four reviews with frozen labels, original and reviewed searches, screening queues, and API costs.",
+    blurbByLang: { zh: "四個已完成回顧的逐題結果、待篩筆數、API 成本與重跑方式。" },
+    keywords: "MeSH CLEF PubMed preflight recall benchmark 盲測 策略 預查",
+    file: "site-content/mesh-preflight.md",
+  },
+  {
     slug: "documentation-map",
     group: "documentation-map",
     lang: "all",
     audience: "start",
     title: "Documentation Map / 文件分類",
-    blurb: "Current guides, architecture, evidence, maintenance scripts, and historical archives.",
-    keywords: "文件分類 archive 歸檔 reports architecture scripts",
+    blurb: "Capabilities, supporting tests, remaining limits and the source for each document.",
+    blurbByLang: { zh: "依功能查閱測試、研究限制與文件維護來源。" },
+    keywords: "inventory 功能盤點 文件分類 archive 歸檔 reports architecture scripts",
     file: "site-content/documentation-map.md",
   },
   {
@@ -36,7 +48,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "Overview",
     blurb: "Quick install, MCP SDK v2 runtime choice, supported clients, and the complete product map.",
-    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 41 tools broker security",
+    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 42 tools broker security",
     file: "site-content/overview.md",
   },
   {
@@ -46,7 +58,7 @@ const DOC_PAGES = [
     audience: "start",
     title: "總覽",
     blurb: "快速安裝、MCP SDK v2 runtime 選擇、支援 client 與完整產品地圖。",
-    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 41 工具 broker 安全",
+    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 42 工具 broker 安全",
     file: "site-content/overview-zh.md",
   },
   {
@@ -202,8 +214,8 @@ const DOC_PAGES = [
     lang: "en",
     audience: "developer",
     title: "Tool Quality Audit",
-    blurb: "Registry-backed audit of all 41 tools, their dependencies, side effects, duplication decisions, and hardening status.",
-    keywords: "41 tools quality audit registry DDD dependency side effect idempotent security Mermaid contract",
+    blurb: "Registry-backed audit of all 42 tools, their dependencies, side effects, duplication decisions, and hardening status.",
+    keywords: "42 tools quality audit registry DDD dependency side effect idempotent security Mermaid contract",
     file: "site-content/tool-quality-audit.md",
   },
   {
@@ -212,8 +224,8 @@ const DOC_PAGES = [
     lang: "zh",
     audience: "developer",
     title: "工具品質稽核",
-    blurb: "由 registry 驗證的 41 工具完整稽核：依賴、side effect、去重決策、契約與強化狀態。",
-    keywords: "41 工具 品質 稽核 registry DDD 依賴 side effect idempotent 安全 Mermaid 契約",
+    blurb: "由 registry 驗證的 42 工具完整稽核：依賴、side effect、去重決策、契約與強化狀態。",
+    keywords: "42 工具 品質 稽核 registry DDD 依賴 side effect idempotent 安全 Mermaid 契約",
     file: "site-content/tool-quality-audit-zh.md",
   },
   {
@@ -235,9 +247,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for all 41 MCP tools across 16 registry categories.",
-    blurbByLang: { zh: "41 個 MCP tools 與 16 個 registry categories 的快速查找。" },
-    keywords: "41 tools 16 categories tool index parameters",
+    blurb: "Fast lookup for all 42 MCP tools across 16 registry categories.",
+    blurbByLang: { zh: "42 個 MCP tools 與 16 個 registry categories 的快速查找。" },
+    keywords: "42 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
   },
   {
@@ -350,7 +362,7 @@ const DOC_PAGES = [
   },
 ];
 
-// Complete 41 Tools Rich Database for Interactive Tool Explorer
+// Complete 42 Tools Rich Database for Interactive Tool Explorer
 const MCP_TOOLS_DATA = [
   {
     name: "unified_search",
@@ -394,10 +406,10 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "查詢智能", en: "Query Intel" },
     icon: "🧠",
     summary: {
-      zh: "在執行檢索前預先分析 PubMed 對布林查詢字串的實際解析與翻譯邏輯。",
-      en: "Analyze how PubMed actually interprets and translates a Boolean query string before execution.",
+      zh: "分析查詢意圖，或指定固定範疇與可調概念，比較放寬各條件後新增的 PubMed 文獻。",
+      en: "Analyze intent locally or compare the PubMed records added by relaxing one concept at a time.",
     },
-    example: 'analyze_search_query(query=\'"Remimazolam"[MeSH] AND "Sedation"[MeSH]\')',
+    example: 'analyze_search_query(query="Cochlear Implants[mh]", comparison={"blocks":{"B":"Speech Perception[mh]","C":"Speech Intelligibility[mh]"}})',
     docLink: "tools-usage-guide",
   },
   {
@@ -641,6 +653,18 @@ const MCP_TOOLS_DATA = [
     docLink: "user-guide",
   },
   {
+    name: "research_workspace",
+    cat: "session",
+    catName: { zh: "Session 管理", en: "Session" },
+    icon: "📓",
+    summary: {
+      zh: "保存研究問題、支線證據與待辦；新工作階段可接續先前記錄。",
+      en: "Resume a research question with its evidence, linked research records and outstanding actions.",
+    },
+    example: 'research_workspace(request={"action":"read","workspace_id":"implant-history"})',
+    docLink: "advanced-workflows",
+  },
+  {
     name: "configure_institutional_access",
     cat: "institutional",
     catName: { zh: "機構訂閱", en: "Institutional" },
@@ -706,8 +730,8 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "視覺搜索", en: "Vision" },
     icon: "👁️",
     summary: {
-      zh: "接收上傳圖片或圖片 URL，交由 Agent Vision 能力判讀並自動抽取英文生醫關鍵詞執行文獻檢索。",
-      en: "Analyze figure/image via Agent vision and extract English biomedical terms for literature search.",
+      zh: "將圖片交給具視覺能力的宿主 agent 判讀，再由 agent 選詞並呼叫搜尋。",
+      en: "Prepare an image for the host agent to interpret. The agent chooses terms and runs the search.",
     },
     example: 'prepare_figure_search(source={"kind":"url","url":"https://example.org/figure.png"}, search_type="medical")',
     docLink: "advanced-workflows",
@@ -754,8 +778,8 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "圖片搜尋", en: "Image Search" },
     icon: "🖼️",
     summary: {
-      zh: "在 Open-i 與 Europe PMC 跨庫搜尋生醫圖片（X 光、CT、MRI、顯微鏡切片、臨床照片、圖表）。",
-      en: "Search biomedical images across Open-i and Europe PMC (X-ray, CT, MRI, histology, clinical photos).",
+      zh: "用英文詞彙透過 NLM Open-i 查詢生醫圖片，並檢視回應來源與涵蓋狀態。",
+      en: "Search NLM Open-i with English terms and inspect source coverage for the returned images.",
     },
     example: 'search_biomedical_images(query="pneumonia chest X-ray", image_type="x")',
     docLink: "advanced-workflows",
@@ -860,9 +884,9 @@ const UI_COPY = {
     filterLabel: "Filter pages",
     filterPlaceholder: "overview, guide, tutorial, deployment...",
     sidebarNote: "Use the language switch for translated pages. Reference pages without a separate translation stay visible in both modes.",
-    heroKicker: "Current MCP SDK v2 handbook",
+    heroKicker: "Research workspace · v0.10.0",
     heroCopy:
-      "Start with a working local search, then move through all 41 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
+      "A shared research workspace keeps search decisions and evidence across sessions. Compare PubMed concept blocks before committing to a search.",
     menu: "Menu",
     outlineTitle: "On This Page",
     noPages: "No pages match this filter.",
@@ -874,28 +898,31 @@ const UI_COPY = {
     diagramLabel: "diagram",
     markdownFallback: "The Markdown renderer or sanitizer did not load. Raw documentation is preserved below.",
     toolMetric: "MCP tools",
-    routingMetric: "capability families",
-    oaMetric: "runtime contracts",
+    routingMetric: "registry categories",
+    oaMetric: "plugin skills",
+    journeyInventoryKicker: "Implementation and evidence",
+    journeyInventoryTitle: "Explore the inventory",
+    journeyInventoryCopy: "Find each capability, its tests and its remaining limits.",
     journeyLocalKicker: "Start in five minutes",
     journeyLocalTitle: "Run locally",
     journeyLocalCopy: "Install with uvx, connect an AI client, and make the first search.",
     journeyResearchKicker: "Research handbook",
-    journeyResearchTitle: "Use the 41 tools",
+    journeyResearchTitle: "Use the 42 tools",
     journeyResearchCopy: "Choose a capability, search multiple sources, read full text, and preserve evidence.",
     journeyServiceKicker: "Operator runbook",
     journeyServiceTitle: "Deploy safely",
     journeyServiceCopy: "Keep local and authenticated multi-user service contracts separate.",
     journeyLabel: "Documentation quick paths",
-    globalSearchPlaceholder: "Search docs & 41 tools... (Ctrl+K)",
+    globalSearchPlaceholder: "Search docs & 42 tools... (Ctrl+K)",
     topbarSearchLabel: "Search Docs & Tools",
-    toolExplorerTitle: "🛠️ 41 MCP Tools Interactive Explorer",
+    toolExplorerTitle: "🛠️ 42 MCP Tools Interactive Explorer",
     toolExplorerSubtitle: "Filter tools by capability, search keywords in English or Chinese, and copy execution examples with one click.",
     toolSearchPlaceholder: "Search tool name, keyword (e.g. pmid, fulltext, pico, figure, 基因, rct, export)...",
-    allToolsCategory: "All (41)",
+    allToolsCategory: "All (42)",
     copyToolCode: "Copy",
     copiedToolCode: "Copied!",
     hubAll: "All Sections",
-    hubTools: "41 Tools Explorer",
+    hubTools: "42 Tools Explorer",
     hubUnifiedSearch: "Unified Search",
     hubUser: "User Guides",
     hubChronicle: "Research Chronicle",
@@ -915,9 +942,9 @@ const UI_COPY = {
     filterLabel: "篩選頁面",
     filterPlaceholder: "總覽、指南、教學、部署...",
     sidebarNote: "使用語言切換查看翻譯頁；沒有獨立翻譯的 reference 頁會在兩種語言模式都顯示。",
-    heroKicker: "當前 MCP SDK v2 完整手冊",
+    heroKicker: "研究工作區 · v0.10.0",
     heroCopy:
-      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 41 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
+      "在研究工作區留下搜尋決策與證據，供下一位讀者接手。正式檢索前可預查 PubMed 概念組合的差異。",
     menu: "選單",
     outlineTitle: "本頁目錄",
     noPages: "沒有符合篩選條件的頁面。",
@@ -929,28 +956,31 @@ const UI_COPY = {
     diagramLabel: "圖表",
     markdownFallback: "Markdown 渲染器或 sanitizer 未載入；下方保留完整原始文件。",
     toolMetric: "MCP 工具",
-    routingMetric: "能力家族",
-    oaMetric: "執行合約",
+    routingMetric: "工具類別",
+    oaMetric: "隨附技能",
+    journeyInventoryKicker: "實作與證據",
+    journeyInventoryTitle: "查看功能盤點",
+    journeyInventoryCopy: "依功能查閱測試與實際使用限制。",
     journeyLocalKicker: "五分鐘開始",
     journeyLocalTitle: "本機執行",
     journeyLocalCopy: "用 uvx 安裝、接上 AI client，並完成第一次搜尋。",
     journeyResearchKicker: "研究操作手冊",
-    journeyResearchTitle: "使用 41 個工具",
+    journeyResearchTitle: "使用 42 個工具",
     journeyResearchCopy: "依能力選工具、平行查多來源、取得全文並保存證據。",
     journeyServiceKicker: "維運手冊",
     journeyServiceTitle: "安全部署",
     journeyServiceCopy: "完整分開本機與認證多人 service 的信任合約。",
     journeyLabel: "文件快速路徑",
-    globalSearchPlaceholder: "搜尋文檔與 41 個工具... (Ctrl+K)",
+    globalSearchPlaceholder: "搜尋文檔與 42 個工具... (Ctrl+K)",
     topbarSearchLabel: "搜尋文檔與工具",
-    toolExplorerTitle: "🛠️ 41 個 MCP 工具互動索引庫",
+    toolExplorerTitle: "🛠️ 42 個 MCP 工具互動索引庫",
     toolExplorerSubtitle: "依能力分類篩選、支援中英文關鍵字即時搜尋，一鍵複製呼叫範例與工具名稱。",
     toolSearchPlaceholder: "搜尋工具名稱、關鍵字（如 pmid, 全文, pico, 圖表, 基因, rct, export）...",
-    allToolsCategory: "全部 (41)",
+    allToolsCategory: "全部 (42)",
     copyToolCode: "複製",
     copiedToolCode: "已複製！",
     hubAll: "全部章節",
-    hubTools: "41 工具庫",
+    hubTools: "42 工具庫",
     hubUnifiedSearch: "Unified Search 架構",
     hubUser: "使用手冊",
     hubChronicle: "研究編年史",
@@ -1004,6 +1034,9 @@ const toolCardsGrid = document.getElementById("tool-cards-grid");
 const topicHubNav = document.getElementById("topic-hub-nav");
 
 const localizedJourneyElements = {
+  journeyInventoryKicker: document.getElementById("journey-inventory-kicker"),
+  journeyInventoryTitle: document.getElementById("journey-inventory-title"),
+  journeyInventoryCopy: document.getElementById("journey-inventory-copy"),
   journeyLocalKicker: document.getElementById("journey-local-kicker"),
   journeyLocalTitle: document.getElementById("journey-local-title"),
   journeyLocalCopy: document.getElementById("journey-local-copy"),
@@ -1654,11 +1687,11 @@ function renderNav(filter = "") {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Interactive 41-Tool Explorer
+// Interactive 42-Tool Explorer
 // ──────────────────────────────────────────────────────────────────────────
 
 const TOOL_CATEGORIES_LIST = [
-  { key: "all", labelZh: "全部 (41)", labelEn: "All (41)" },
+  { key: "all", labelZh: "全部 (42)", labelEn: "All (42)" },
   { key: "search", labelZh: "🔍 核心搜尋 (1)", labelEn: "🔍 Search (1)" },
   { key: "query_intelligence", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
   { key: "discovery", labelZh: "📑 文章探索 (5)", labelEn: "📑 Discovery (5)" },
@@ -1668,7 +1701,7 @@ const TOOL_CATEGORIES_LIST = [
   { key: "ncbi_extended", labelZh: "🧬 基因與化合物 (7)", labelEn: "🧬 Genes & Drugs (7)" },
   { key: "citation_network", labelZh: "🌳 引用網絡 (1)", labelEn: "🌳 Citations (1)" },
   { key: "export", labelZh: "📤 匯出與筆記 (2)", labelEn: "📤 Export (2)" },
-  { key: "session", labelZh: "💾 Session 管理 (1)", labelEn: "💾 Session (1)" },
+  { key: "session", labelZh: "💾 Session 管理 (2)", labelEn: "💾 Session (2)" },
   { key: "institutional", labelZh: "🏥 機構訂閱 (5)", labelEn: "🏥 Library OpenURL (5)" },
   { key: "vision", labelZh: "👁️ 視覺搜尋 (1)", labelEn: "👁️ Vision (1)" },
   { key: "icd", labelZh: "🔄 ICD 轉換 (1)", labelEn: "🔄 ICD-MeSH (1)" },
@@ -1795,7 +1828,7 @@ function renderSearchResults(query) {
   if (!q) {
     modalSearchResults.innerHTML = `
       <p class="modal-search-hint">
-        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 41 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 41 tools..."}
+        💡 ${activeLang === "zh" ? "輸入關鍵字搜尋文檔章節、概念或 42 個 MCP 工具..." : "Type a keyword to search across documents, headings, and all 42 tools..."}
       </p>
     `;
     return;

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ def expected_files() -> dict[Path, bytes]:
     )
     for skill in skills:
         for source in skill.rglob("*"):
-            if source.is_file():
+            if source.is_file() and "__pycache__" not in source.parts and source.suffix != ".pyc":
                 expected[PLUGIN_ROOT / "skills" / skill.name / source.relative_to(skill)] = source.read_bytes()
     return expected
 
@@ -76,10 +77,52 @@ def sync() -> None:
         path.write_bytes(content)
 
 
+def build_development_plugin(destination: Path) -> Path:
+    """Build a directory-installable plugin that starts the server from this checkout."""
+    if destination.is_symlink():
+        raise ValueError("Choose a development output directory that is not a symlink")
+    destination = destination.resolve()
+    if destination.is_relative_to(PLUGIN_ROOT) or destination.is_relative_to(SKILLS_SOURCE):
+        raise ValueError("Choose an output directory outside the maintained plugin and source skills")
+    files = {path.relative_to(PLUGIN_ROOT): data for path, data in expected_files().items() if path != SERVER_JSON}
+    mcp = json.loads(files[Path("mcp.json")])
+    server = mcp["mcpServers"]["pubmed-search"]
+    server.update(command="uv", args=["run", "--project", str(ROOT), "--frozen", PACKAGE])
+    files[Path("mcp.json")] = _dump(mcp)
+    if destination.exists():
+        # A client may have added or customized skills after installation.
+        if (destination / "mcp.json").is_file():
+            existing = {p.relative_to(destination) for p in destination.rglob("*") if p.is_file() or p.is_symlink()}
+            if existing == files.keys() and all(
+                not (destination / p).is_symlink() and (destination / p).read_bytes() == data
+                for p, data in files.items()
+            ):
+                return destination
+        raise ValueError("Output already exists with different contents. Choose a new directory.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
+        staged = Path(temporary) / "plugin"
+        for relative, content in files.items():
+            target = staged / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        staged.rename(destination)
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Report drift without writing")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="Report drift without writing")
+    mode.add_argument("--dev-output", type=Path, help="Generate a plugin that runs this checkout in a new directory")
     args = parser.parse_args()
+    if args.dev_output:
+        try:
+            destination = build_development_plugin(args.dev_output)
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"{exc}\n")
+        print(f"Development plugin: {destination}")
+        return 0
     if not args.check:
         sync()
     drift = find_drift()

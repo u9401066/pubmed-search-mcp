@@ -1,0 +1,420 @@
+{
+  "parent_sha256": "d931c0907d91e292024eb2084838271a30869595d8f4496390bc1ca99219fbb0",
+  "cases": {
+    "CD007431": {
+      "visible": {
+        "status": "ok",
+        "baseline": 1590,
+        "changes": [
+          {
+            "drop": "exam",
+            "add": 6348
+          },
+          {
+            "drop": "lumbar",
+            "add": 1204
+          }
+        ],
+        "relevance": "unassessed",
+        "either_total": 9142
+      },
+      "evidence": {
+        "drop-exam.json": {
+          "relaxed_query": "((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND (lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh])",
+          "difference": {
+            "query": "(((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND (lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh])) NOT (\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab])",
+            "observed_at": "2026-11-20T10:54:56.328110+00:00",
+            "count": 6348,
+            "pmids": [
+              "27144851",
+              "17119140",
+              "26573288"
+            ],
+            "translation": "((\"Radiculopathy\"[Title/Abstract] OR \"radicular\"[Title/Abstract] OR \"Sciatica\"[Title/Abstract] OR \"Radiculopathy\"[MeSH Terms] OR \"Sciatica\"[MeSH Terms]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"lumbar\"[Title/Abstract] OR \"lumbosacral\"[Title/Abstract] OR \"low back\"[Title/Abstract] OR \"Low Back Pain\"[MeSH Terms] OR \"Lumbar Vertebrae\"[MeSH Terms])) NOT (\"Physical Examination\"[MeSH Terms] OR \"physical exam*\"[Title/Abstract] OR \"straight leg\"[Title/Abstract] OR \"neurologic exam*\"[Title/Abstract] OR \"clinical exam*\"[Title/Abstract] OR \"Lasegue\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "drop-lumbar.json": {
+          "relaxed_query": "((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND (\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab])",
+          "difference": {
+            "query": "(((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND (\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab])) NOT (lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh])",
+            "observed_at": "2026-11-20T10:54:57.652936+00:00",
+            "count": 1204,
+            "pmids": [
+              "27175952",
+              "12544957",
+              "24994052"
+            ],
+            "translation": "((\"Radiculopathy\"[Title/Abstract] OR \"radicular\"[Title/Abstract] OR \"Sciatica\"[Title/Abstract] OR \"Radiculopathy\"[MeSH Terms] OR \"Sciatica\"[MeSH Terms]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Physical Examination\"[MeSH Terms] OR \"physical exam*\"[Title/Abstract] OR \"straight leg\"[Title/Abstract] OR \"neurologic exam*\"[Title/Abstract] OR \"clinical exam*\"[Title/Abstract] OR \"Lasegue\"[Title/Abstract])) NOT (\"lumbar\"[Title/Abstract] OR \"lumbosacral\"[Title/Abstract] OR \"low back\"[Title/Abstract] OR \"Low Back Pain\"[MeSH Terms] OR \"Lumbar Vertebrae\"[MeSH Terms])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "plan.json": {
+          "source": "pubmed",
+          "fixed": "((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp])",
+          "blocks": {
+            "exam": "(\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab])",
+            "lumbar": "(lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh])"
+          },
+          "seed_pmids": [],
+          "baseline": {
+            "query": "((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND (\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab]) AND (lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh])",
+            "observed_at": "2026-11-20T10:54:54.871469+00:00",
+            "count": 1590,
+            "pmids": [
+              "20166095",
+              "20227645",
+              "18391677"
+            ],
+            "translation": "(\"Radiculopathy\"[Title/Abstract] OR \"radicular\"[Title/Abstract] OR \"Sciatica\"[Title/Abstract] OR \"Radiculopathy\"[MeSH Terms] OR \"Sciatica\"[MeSH Terms]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Physical Examination\"[MeSH Terms] OR \"physical exam*\"[Title/Abstract] OR \"straight leg\"[Title/Abstract] OR \"neurologic exam*\"[Title/Abstract] OR \"clinical exam*\"[Title/Abstract] OR \"Lasegue\"[Title/Abstract]) AND (\"lumbar\"[Title/Abstract] OR \"lumbosacral\"[Title/Abstract] OR \"low back\"[Title/Abstract] OR \"Low Back Pain\"[MeSH Terms] OR \"Lumbar Vertebrae\"[MeSH Terms])",
+            "warnings": [],
+            "status": "ok"
+          },
+          "changes": [
+            {
+              "drop": "exam",
+              "add": 6348
+            },
+            {
+              "drop": "lumbar",
+              "add": 1204
+            }
+          ],
+          "calls": 3,
+          "difference_files": [
+            "drop-exam.json",
+            "drop-lumbar.json"
+          ],
+          "either_query": "((radiculopathy[tiab] OR radicular[tiab] OR sciatica[tiab] OR \"Radiculopathy\"[mh] OR \"Sciatica\"[mh]) AND 1800:2016[dp]) AND ((\"Physical Examination\"[mh] OR physical exam*[tiab] OR straight leg[tiab] OR neurologic exam*[tiab] OR clinical exam*[tiab] OR Lasegue[tiab]) OR (lumbar[tiab] OR lumbosacral[tiab] OR low back[tiab] OR \"Low Back Pain\"[mh] OR \"Lumbar Vertebrae\"[mh]))",
+          "summary": {
+            "status": "ok",
+            "baseline": 1590,
+            "changes": [
+              {
+                "drop": "exam",
+                "add": 6348
+              },
+              {
+                "drop": "lumbar",
+                "add": 1204
+              }
+            ],
+            "relevance": "unassessed",
+            "either_total": 9142
+          }
+        }
+      },
+      "calls": 3
+    },
+    "CD008081": {
+      "visible": {
+        "status": "ok",
+        "baseline": 1457,
+        "changes": [
+          {
+            "drop": "diabetes",
+            "add": 1859
+          },
+          {
+            "drop": "edema",
+            "add": 1231
+          }
+        ],
+        "relevance": "unassessed",
+        "either_total": 4547
+      },
+      "evidence": {
+        "drop-diabetes.json": {
+          "relaxed_query": "((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND (\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab])",
+          "difference": {
+            "query": "(((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND (\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab])) NOT (\"Diabetic Retinopathy\"[mh] OR diabet*[tiab])",
+            "observed_at": "2026-11-20T10:54:59.791686+00:00",
+            "count": 1859,
+            "pmids": [
+              "26742785",
+              "27256304",
+              "23264326"
+            ],
+            "translation": "((\"tomography, optical coherence\"[MeSH Terms] OR \"optical coherence tomograph*\"[Title/Abstract] OR \"OCT\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Macular Edema\"[MeSH Terms] OR \"Macular Edema\"[Title/Abstract] OR \"macular oedema\"[Title/Abstract] OR \"macular thickening\"[Title/Abstract])) NOT (\"Diabetic Retinopathy\"[MeSH Terms] OR \"diabet*\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "drop-edema.json": {
+          "relaxed_query": "((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND (\"Diabetic Retinopathy\"[mh] OR diabet*[tiab])",
+          "difference": {
+            "query": "(((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND (\"Diabetic Retinopathy\"[mh] OR diabet*[tiab])) NOT (\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab])",
+            "observed_at": "2026-11-20T10:55:01.054518+00:00",
+            "count": 1231,
+            "pmids": [
+              "21684813",
+              "18952928",
+              "24339212"
+            ],
+            "translation": "((\"tomography, optical coherence\"[MeSH Terms] OR \"optical coherence tomograph*\"[Title/Abstract] OR \"OCT\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Diabetic Retinopathy\"[MeSH Terms] OR \"diabet*\"[Title/Abstract])) NOT (\"Macular Edema\"[MeSH Terms] OR \"Macular Edema\"[Title/Abstract] OR \"macular oedema\"[Title/Abstract] OR \"macular thickening\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "plan.json": {
+          "source": "pubmed",
+          "fixed": "((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp])",
+          "blocks": {
+            "diabetes": "(\"Diabetic Retinopathy\"[mh] OR diabet*[tiab])",
+            "edema": "(\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab])"
+          },
+          "seed_pmids": [],
+          "baseline": {
+            "query": "((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND (\"Diabetic Retinopathy\"[mh] OR diabet*[tiab]) AND (\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab])",
+            "observed_at": "2026-11-20T10:54:58.946163+00:00",
+            "count": 1457,
+            "pmids": [
+              "27496796",
+              "19729104",
+              "22330964"
+            ],
+            "translation": "(\"tomography, optical coherence\"[MeSH Terms] OR \"optical coherence tomograph*\"[Title/Abstract] OR \"OCT\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Diabetic Retinopathy\"[MeSH Terms] OR \"diabet*\"[Title/Abstract]) AND (\"Macular Edema\"[MeSH Terms] OR \"Macular Edema\"[Title/Abstract] OR \"macular oedema\"[Title/Abstract] OR \"macular thickening\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          },
+          "changes": [
+            {
+              "drop": "diabetes",
+              "add": 1859
+            },
+            {
+              "drop": "edema",
+              "add": 1231
+            }
+          ],
+          "calls": 3,
+          "difference_files": [
+            "drop-diabetes.json",
+            "drop-edema.json"
+          ],
+          "either_query": "((\"Tomography, Optical Coherence\"[mh] OR optical coherence tomograph*[tiab] OR OCT[tiab]) AND 1800:2016[dp]) AND ((\"Diabetic Retinopathy\"[mh] OR diabet*[tiab]) OR (\"Macular Edema\"[mh] OR macular edema[tiab] OR macular oedema[tiab] OR macular thickening[tiab]))",
+          "summary": {
+            "status": "ok",
+            "baseline": 1457,
+            "changes": [
+              {
+                "drop": "diabetes",
+                "add": 1859
+              },
+              {
+                "drop": "edema",
+                "add": 1231
+              }
+            ],
+            "relevance": "unassessed",
+            "either_total": 4547
+          }
+        }
+      },
+      "calls": 3
+    },
+    "CD008760": {
+      "visible": {
+        "status": "ok",
+        "baseline": 72,
+        "changes": [
+          {
+            "drop": "liver",
+            "add": 54
+          },
+          {
+            "drop": "varices",
+            "add": 40
+          }
+        ],
+        "relevance": "unassessed",
+        "either_total": 166
+      },
+      "evidence": {
+        "drop-liver.json": {
+          "relaxed_query": "((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND (\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab])",
+          "difference": {
+            "query": "(((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND (\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab])) NOT (\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab])",
+            "observed_at": "2026-11-20T10:55:03.914971+00:00",
+            "count": 54,
+            "pmids": [
+              "21372764",
+              "18790438",
+              "23885793"
+            ],
+            "translation": "((\"Capsule Endoscopy\"[MeSH Terms] OR \"capsule endoscop*\"[Title/Abstract] OR \"pillcam\"[Title/Abstract] OR \"video capsule\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Esophageal and Gastric Varices\"[MeSH Terms] OR \"varices\"[Title/Abstract] OR \"variceal\"[Title/Abstract])) NOT (\"Liver Cirrhosis\"[MeSH Terms] OR \"cirrho*\"[Title/Abstract] OR \"liver disease*\"[Title/Abstract] OR \"portal hypertens*\"[Title/Abstract] OR \"portal vein\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "drop-varices.json": {
+          "relaxed_query": "((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND (\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab])",
+          "difference": {
+            "query": "(((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND (\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab])) NOT (\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab])",
+            "observed_at": "2026-11-20T10:55:05.083095+00:00",
+            "count": 40,
+            "pmids": [
+              "24652110",
+              "26808473",
+              "18291733"
+            ],
+            "translation": "((\"Capsule Endoscopy\"[MeSH Terms] OR \"capsule endoscop*\"[Title/Abstract] OR \"pillcam\"[Title/Abstract] OR \"video capsule\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Liver Cirrhosis\"[MeSH Terms] OR \"cirrho*\"[Title/Abstract] OR \"liver disease*\"[Title/Abstract] OR \"portal hypertens*\"[Title/Abstract] OR \"portal vein\"[Title/Abstract])) NOT (\"Esophageal and Gastric Varices\"[MeSH Terms] OR \"varices\"[Title/Abstract] OR \"variceal\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          }
+        },
+        "plan.json": {
+          "source": "pubmed",
+          "fixed": "((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp])",
+          "blocks": {
+            "liver": "(\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab])",
+            "varices": "(\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab])"
+          },
+          "seed_pmids": [],
+          "baseline": {
+            "query": "((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND (\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab]) AND (\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab])",
+            "observed_at": "2026-11-20T10:55:02.671938+00:00",
+            "count": 72,
+            "pmids": [
+              "19396956",
+              "25729469",
+              "18785275"
+            ],
+            "translation": "(\"Capsule Endoscopy\"[MeSH Terms] OR \"capsule endoscop*\"[Title/Abstract] OR \"pillcam\"[Title/Abstract] OR \"video capsule\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Liver Cirrhosis\"[MeSH Terms] OR \"cirrho*\"[Title/Abstract] OR \"liver disease*\"[Title/Abstract] OR \"portal hypertens*\"[Title/Abstract] OR \"portal vein\"[Title/Abstract]) AND (\"Esophageal and Gastric Varices\"[MeSH Terms] OR \"varices\"[Title/Abstract] OR \"variceal\"[Title/Abstract])",
+            "warnings": [],
+            "status": "ok"
+          },
+          "changes": [
+            {
+              "drop": "liver",
+              "add": 54
+            },
+            {
+              "drop": "varices",
+              "add": 40
+            }
+          ],
+          "calls": 3,
+          "difference_files": [
+            "drop-liver.json",
+            "drop-varices.json"
+          ],
+          "either_query": "((\"Capsule Endoscopy\"[mh] OR capsule endoscop*[tiab] OR pillcam[tiab] OR video capsule[tiab]) AND 1800:2016[dp]) AND ((\"Liver Cirrhosis\"[mh] OR cirrho*[tiab] OR liver disease*[tiab] OR portal hypertens*[tiab] OR portal vein[tiab]) OR (\"Esophageal and Gastric Varices\"[mh] OR varices[tiab] OR variceal[tiab]))",
+          "summary": {
+            "status": "ok",
+            "baseline": 72,
+            "changes": [
+              {
+                "drop": "liver",
+                "add": 54
+              },
+              {
+                "drop": "varices",
+                "add": 40
+              }
+            ],
+            "relevance": "unassessed",
+            "either_total": 166
+          }
+        }
+      },
+      "calls": 3
+    },
+    "CD008782": {
+      "visible": {
+        "status": "partial",
+        "baseline": null,
+        "changes": [],
+        "relevance": "unassessed",
+        "incomplete": [
+          "baseline",
+          "fluid",
+          "mci"
+        ]
+      },
+      "evidence": {
+        "drop-fluid.json": {
+          "relaxed_query": "((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND (\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab])",
+          "difference": {
+            "query": "(((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND (\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab])) NOT (\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab])",
+            "observed_at": "2026-11-20T10:55:07.599886+00:00",
+            "count": 524,
+            "pmids": [
+              "39475512",
+              "23254930",
+              "25555677"
+            ],
+            "translation": "((\"Amyloid beta-Peptides\"[MeSH Terms] OR \"amyloid beta\"[Title/Abstract] OR \"beta amyloid\"[Title/Abstract] OR \"abeta\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"mild cognitive impairment\"[Title/Abstract] OR \"MCI\"[Title/Abstract])) NOT (\"Cerebrospinal Fluid\"[MeSH Terms] OR \"cerebrospinal\"[Title/Abstract] OR \"CSF\"[Title/Abstract] OR \"plasma\"[Title/Abstract] OR \"blood\"[Title/Abstract])",
+            "warnings": [
+              "\"Mild Cognitive Impairment\"[mh]"
+            ],
+            "status": "warning"
+          }
+        },
+        "drop-mci.json": {
+          "relaxed_query": "((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND (\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab])",
+          "difference": {
+            "query": "(((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND (\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab])) NOT (\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab])",
+            "observed_at": "2026-11-20T10:55:08.853952+00:00",
+            "count": 5964,
+            "pmids": [
+              "24136970",
+              "22896675",
+              "22784036"
+            ],
+            "translation": "((\"Amyloid beta-Peptides\"[MeSH Terms] OR \"amyloid beta\"[Title/Abstract] OR \"beta amyloid\"[Title/Abstract] OR \"abeta\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Cerebrospinal Fluid\"[MeSH Terms] OR \"cerebrospinal\"[Title/Abstract] OR \"CSF\"[Title/Abstract] OR \"plasma\"[Title/Abstract] OR \"blood\"[Title/Abstract])) NOT (\"mild cognitive impairment\"[Title/Abstract] OR \"MCI\"[Title/Abstract])",
+            "warnings": [
+              "\"Mild Cognitive Impairment\"[mh]"
+            ],
+            "status": "warning"
+          }
+        },
+        "plan.json": {
+          "source": "pubmed",
+          "fixed": "((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp])",
+          "blocks": {
+            "fluid": "(\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab])",
+            "mci": "(\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab])"
+          },
+          "seed_pmids": [],
+          "baseline": {
+            "query": "((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND (\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab]) AND (\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab])",
+            "observed_at": "2026-11-20T10:55:06.387265+00:00",
+            "count": 775,
+            "pmids": [
+              "23225010",
+              "25988462",
+              "25468143"
+            ],
+            "translation": "(\"Amyloid beta-Peptides\"[MeSH Terms] OR \"amyloid beta\"[Title/Abstract] OR \"beta amyloid\"[Title/Abstract] OR \"abeta\"[Title/Abstract]) AND 1800/01/01:2016/12/31[Date - Publication] AND (\"Cerebrospinal Fluid\"[MeSH Terms] OR \"cerebrospinal\"[Title/Abstract] OR \"CSF\"[Title/Abstract] OR \"plasma\"[Title/Abstract] OR \"blood\"[Title/Abstract]) AND (\"mild cognitive impairment\"[Title/Abstract] OR \"MCI\"[Title/Abstract])",
+            "warnings": [
+              "\"Mild Cognitive Impairment\"[mh]"
+            ],
+            "status": "warning"
+          },
+          "changes": [],
+          "calls": 3,
+          "difference_files": [
+            "drop-fluid.json",
+            "drop-mci.json"
+          ],
+          "either_query": "((\"Amyloid beta-Peptides\"[mh] OR amyloid beta[tiab] OR beta amyloid[tiab] OR abeta[tiab]) AND 1800:2016[dp]) AND ((\"Cerebrospinal Fluid\"[mh] OR cerebrospinal[tiab] OR CSF[tiab] OR plasma[tiab] OR blood[tiab]) OR (\"Mild Cognitive Impairment\"[mh] OR mild cognitive impairment[tiab] OR MCI[tiab]))",
+          "summary": {
+            "status": "partial",
+            "baseline": null,
+            "changes": [],
+            "relevance": "unassessed",
+            "incomplete": [
+              "baseline",
+              "fluid",
+              "mci"
+            ]
+          }
+        }
+      },
+      "calls": 3
+    }
+  }
+}

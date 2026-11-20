@@ -43,11 +43,13 @@ _RESPONSE_BUDGET_MESSAGE = (
 )
 
 _WRITE_TOOLS = {
+    "analyze_search_query",
     "build_research_chronicle",
     "configure_institutional_access",
     "delete_pipeline",
     "get_fulltext",
     "prepare_export",
+    "research_workspace",
     "save_literature_notes",
     "save_pipeline",
     "schedule_pipeline",
@@ -63,6 +65,7 @@ _DESTRUCTIVE_TOOLS = {
     "unschedule_pipeline",
 }
 _NON_IDEMPOTENT_TOOLS = {
+    "analyze_search_query",
     "build_research_chronicle",
     "get_fulltext",
     "prepare_export",
@@ -72,7 +75,6 @@ _NON_IDEMPOTENT_TOOLS = {
     "unified_search",
 }
 _LOCAL_ONLY_TOOLS = {
-    "analyze_search_query",
     "configure_institutional_access",
     "convert_icd_mesh",
     "delete_pipeline",
@@ -83,6 +85,7 @@ _LOCAL_ONLY_TOOLS = {
     "validate_pico_plan",
     "read_research_chronicle",
     "read_session",
+    "research_workspace",
     "save_pipeline",
     "unschedule_pipeline",
 }

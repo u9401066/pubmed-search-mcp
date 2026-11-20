@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 41 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 42 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 
@@ -13,7 +13,7 @@
 
 ## 輸入格式與防呆
 
-全部 41 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+全部 42 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
 可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
 `tools/list.inputSchema` 也會列出可接受的替代表示法。
 
@@ -103,7 +103,7 @@ Agent 應一起修正已列出的欄位，
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `research_workspace`、`read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -118,6 +118,7 @@ Agent 應一起修正已列出的欄位，
 | 全文 synthesis | `get_fulltext` -> `get_text_mined_terms` -> 結構化摘要 |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` 或 Zotero Keeper import tools |
 | 本機知識庫筆記 | `save_literature_notes(pmids="last")` |
+| 接續一項文獻調查 | 用 `research_workspace` 的 `read` 讀回決策、可用的來源查詢與待辦。[接手案例](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md#接續研究工作區) |
 | 可重複搜尋流程 | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
 Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 official RIS/MEDLINE/CSL JSON、local RIS/BibTeX/CSV/MEDLINE/JSON 匯出與本機 wiki notes；Zotero 匯入、duplicate 處理、library-specific policy 交給 Zotero Keeper 或其他 client。
@@ -128,9 +129,28 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ### 搜尋入口與查詢智能
 
-![搜尋與查詢智能流程](../images/search-query-workflow.svg)
+![人工耳蝸 PubMed 案例：逐一放寬 MeSH 條件後新增的篇數](../images/search-query-workflow.svg)
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
+
+#### 比較 PubMed 概念組合
+
+PubMed 標記有問題的詞時，`warning_examples` 最多顯示兩段警告，可先核對保存的翻譯再修正式子。系統性搜尋 skill 隨附離線腳本，可列出差集樣本 PMID、選定的搜尋式和理由。[四題盲測與用法](../reports/mesh-preflight-2017/README.md)
+
+把固定範疇放入 `query`，在 `comparison.blocks` 命名 2–5 個可調概念。基準式要求每個概念都命中。每個差集保留其他全部條件，排除該概念。同義詞可用括號與 OR 寫在同一區塊內。調換區塊輸入順序會產生相同的預查。
+
+```python
+analyze_search_query(query='"Cochlear Implants"[mh] AND 1980:1990[dp]',
+    comparison={"blocks": {"B": '"Speech Perception"[mh]', "C": '"Speech Intelligibility"[mh]'}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"<回傳的 URI>"},
+    "artifact_file":"drop-B.json"})
+```
+
+2026-11-20 實測基準命中 12 筆，放寬 C 多 190 筆，放寬 B 多 10 筆，任一概念命中合計 212 筆。程式用三次 ESearch 測量基準與兩個互斥差集。筆數反映查詢當時的索引狀態，研究適格性仍需判讀。
+
+摘要最多列兩個有命中的改動。可提供最多 16 篇 `seed_pmids`，優先提醒找回指定文獻的改動，再依新增筆數排序。基準與差集最多六次查詢，有指定文獻時最多再做五次比對，共用 15 秒的供應端預算。遇到逾時或轉譯警告會標出未完成項目。兩個區塊的三個計數均可用時才推算 `either_total`。
+
+讀 `plan.json` 可見全部變體和原式。讀 `drop-<區塊>.json` 可見放寬後的檢索式、差集檢索式、查詢時間、PubMed 轉譯和最多三篇 PMID，再用 `fetch_article_details` 檢視。選定的式子可用 `save_pipeline` 保存，決定理由與 artifact URI 可記入 `research_workspace`。無持久儲存時直接回傳摘要所列差集的 PMID 樣本。單獨傳入 `query` 仍執行本機分析。
 
 通用文獻搜尋只有一個 tool。使用 `options` 選 retrieval policy，不要尋找
 provider-specific search tool：
@@ -250,7 +270,7 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 ### 評估、時間軸與比較
 
-![Research Chronicle 架構與脈絡流程](../images/research-chronicle-lineage-flow.svg)
+![人工耳蝸史料的出版年與後來辨認出關聯的修訂時間](../images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](../images/timeline-evaluation-workflow.svg)
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。

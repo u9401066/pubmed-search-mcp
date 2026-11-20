@@ -157,11 +157,15 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
     assert len(cache_keys) == 1
-    assert re.fullmatch(r"\d{8}-v" + re.escape(__version__.replace(".", "")), next(iter(cache_keys)))
+    assert re.fullmatch(
+        r"\d{8}-v" + re.escape(__version__.replace(".", "")) + r"(?:-[a-z0-9]+)?", next(iter(cache_keys))
+    )
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
-    assert "41</strong>" in index_html
-    assert "runtime contracts" in index_html
+    assert "42</strong>" in index_html
+    assert "16</strong>" in index_html and "registry categories" in index_html
+    assert "12</strong>" in index_html and "plugin skills" in index_html
+    assert 'href="#/documentation-map#capability-inventory"' in index_html
     assert "function wrapLocalImages()" in site_js
     assert "sidebarBackdrop.addEventListener" in site_js
     assert "grid-template-columns: minmax(0, 1fr) auto" in site_css
@@ -215,7 +219,7 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "整合與維運",
         "Multi-source broker stages",
         "authenticated multi-user contracts",
-        "41 MCP tools across 16 registry categories",
+        "42 MCP tools across 16 registry categories",
         "Semantic Scholar Data Plane",
         "OpenAlex Search And Data Plane",
         "ClinicalKey AI Boundary",
@@ -235,10 +239,10 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
     ]:
         assert term in integrations
 
-    assert "same canonical 41-tool strict registry" in embedded_pages["overview"]
-    assert "same 41 strict" in embedded_pages["user-guide"]
+    assert "same canonical 42-tool strict registry" in embedded_pages["overview"]
+    assert "same 42 strict" in embedded_pages["user-guide"]
     assert "canonical `read_session(request={...})`" in embedded_pages["user-guide"]
-    assert "canonical 41-tool Copilot Studio smoke" in embedded_pages["troubleshooting"]
+    assert "canonical 42-tool Copilot Studio smoke" in embedded_pages["troubleshooting"]
     assert "唯一 generic literature search 為 `unified_search`" in embedded_pages["deployment"]
 
     source_contracts = embedded_pages["source-contracts"]
@@ -450,6 +454,9 @@ def test_packaged_references_match_generated_sources_and_images_exist() -> None:
             if image_target.startswith(("http://", "https://")):
                 continue
             asset = (target_path.parent / image_target).resolve()
+            assert asset.is_relative_to(target_path.parent)
+            packaged = REPO_ROOT / "plugins/pubmed-search" / asset.relative_to(REPO_ROOT / ".claude")
+            assert packaged.read_text(encoding="utf-8") == (DOCS_ROOT / image_target).read_text(encoding="utf-8")
             if not asset.exists():
                 missing_assets.append(f"{target_path}: {image_target}")
 
@@ -526,7 +533,7 @@ def test_all_tool_explorer_examples_use_runtime_parameter_names() -> None:
         for tool_name, single_quoted, double_quoted in TOOL_EXAMPLE_ENTRY_PATTERN.findall(site_js)
     }
 
-    assert len(documented_examples) == stats["total_tools"] == 41
+    assert len(documented_examples) == stats["total_tools"] == 42
     assert set(documented_examples) == set(runtime_schemas)
     for documented_name, example in documented_examples.items():
         called_name, documented_parameters = _example_call(example)

@@ -6,6 +6,7 @@ for maintained contracts.
 
 | Record | Status |
 | --- | --- |
+| [Roadmap through v0.9.0](research/roadmap-through-v090.md) | Original release-era milestones and exploratory proposals. Current evaluation questions live in the [root roadmap](../../ROADMAP.md). |
 | [Phase 2.1 tool refactoring](phases/PHASE_2.1_TOOL_REFACTOR.md) | Historical 34-tool refactor; retired names are not the current MCP surface |
 | [Phase 3 PubTator / E-utilities](phases/PHASE_3_PUBTATOR_EUTILS.md) | Earlier deep-search proposal; unconditional expansion claims are superseded |
 | [Phase 4 image search](phases/PHASE_4_IMAGE_SEARCH.md) | Historical implementation and proposed extensions |

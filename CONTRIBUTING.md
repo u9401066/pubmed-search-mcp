@@ -1,6 +1,8 @@
 # Contributing to PubMed Search MCP
 
-Thank you for your interest in contributing to PubMed Search MCP! This document provides guidelines and instructions for contributing.
+You can contribute a reproducible search case, a correction to a historical reading, a source adapter, an agent skill, or a translation. For a first contribution, start with an issue or a small pull request. [Good first issues](https://github.com/u9401066/pubmed-search-mcp/labels/good%20first%20issue) · [All issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+
+歡迎用繁體中文或英文提案。漏檢回報可附查詢式與已知 PMID，Chronicle 修正可附兩篇原文、出版年與支持另一種解讀的段落。維護者會協助分類。
 
 ## 📋 Table of Contents
 
@@ -13,7 +15,6 @@ Thank you for your interest in contributing to PubMed Search MCP! This document 
     - [Installation](#installation)
     - [Pre-commit Hooks (Recommended)](#pre-commit-hooks-recommended)
       - [What the hooks check](#what-the-hooks-check)
-      - [Skipping hooks (when needed)](#skipping-hooks-when-needed)
       - [Auto-evolution (keeping hooks updated)](#auto-evolution-keeping-hooks-updated)
     - [Environment Variables (Optional)](#environment-variables-optional)
   - [Project Architecture](#project-architecture)
@@ -66,11 +67,9 @@ By participating in this project, you agree to maintain a respectful and inclusi
 This project uses [UV](https://github.com/astral-sh/uv) for dependency management.
 **All commands (including tests, lint, type check) must go through `uv run`** to ensure the correct virtual environment and dependency versions.
 
-> 💡 **UV is extremely efficient**: Built in Rust, 10-100x faster than pip. Even `uv run pytest` confirms env consistency in milliseconds before executing — virtually zero overhead.
-
 ```bash
 # Install all dependencies (including dev tools)
-uv sync
+uv sync --frozen
 
 # Run commands through uv (ALWAYS use uv run prefix)
 uv run pytest              # Run tests (--timeout=60 from project addopts)
@@ -225,13 +224,6 @@ every source file to one of ten phases. Its per-phase completion gates are
 separate from ordinary test success and do not bypass the final whole-source gate.
 
 `unicode-mojibake` is a commit-stage hook that scans newly staged diff lines for corrupted emoji/UTF-8 artifacts. Valid emoji are allowed; restore garbled text as UTF-8 before committing.
-
-#### Skipping hooks (when needed)
-
-```bash
-SKIP=local-validation git push              # emergency bypass; does NOT certify validation
-git commit --no-verify -m "emergency fix"    # skip all hooks (use sparingly!)
-```
 
 #### Auto-evolution (keeping hooks updated)
 
@@ -436,22 +428,11 @@ new unit test.
   boundaries in the child server rather than bypassing the protocol or tool
   adapter
 
-```python
-import pytest
-from unittest.mock import patch
-
-def test_search_returns_articles(mock_entrez_response):
-    """Test that search returns properly formatted articles."""
-    with patch("pubmed_search.entrez.search.esearch") as mock:
-        mock.return_value = mock_entrez_response
-        results = search_articles("cancer treatment")
-        assert len(results) > 0
-        assert all(hasattr(r, "pmid") for r in results)
-```
+For a worked example, the search comparison tests supply controlled PubMed counts and assert which concept relaxation appears in the response. [Comparison tests](tests/test_query_comparison.py)
 
 ### Test Coverage
 
-We aim for **>85% code coverage**. Run coverage report:
+Use the coverage report to locate untested behavior:
 
 ```bash
 uv run pytest --cov=src/pubmed_search --cov-report=term-missing
@@ -463,43 +444,23 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 
 ## Pull Request Process
 
-1. **Sync with upstream**:
+1. Fetch upstream and create your branch from the intended PR base. Use `master` for the maintained release line. Use `feature/research-workspace` for the team preview, including workspace and concept-comparison changes.
 
-  ```bash
-  git fetch upstream
-  git rebase upstream/main
-  ```
+   ```bash
+   git fetch upstream
+   git switch -c feature/your-feature upstream/master
+   ```
 
-1. **Create a feature branch**:
+2. Make the change, run the smallest relevant test, then run the complete pre-push check.
 
-  ```bash
-  git checkout -b feature/your-feature
-  ```
+   ```bash
+   uv run --frozen python scripts/check_repo.py full
+   git push -u origin feature/your-feature
+   ```
 
-1. **Make your changes** following the code style guidelines
+3. Open a pull request against the base you used in step 1. Describe the change, how to reproduce or verify it, and any effect on clients, documents or provider behavior.
 
-1. **Run checks locally** (or rely on pre-commit hooks):
-
-  ```bash
-  uv run pre-commit run --all-files   # run all hooks
-  # Or manually:
-  uv run ruff check src/
-  uv run ruff format src/
-  uv run mypy src/
-  uv run pytest
-  ```
-
-1. **Push and create PR**:
-
-  ```bash
-  git push origin feature/your-feature
-  ```
-
-1. **Fill out the PR template** with:
-   - Description of changes
-   - Related issues (if any)
-   - Testing performed
-   - Screenshots (for UI changes)
+Contributions intentionally submitted for inclusion follow section 5 of Apache License 2.0 unless explicitly stated otherwise or covered by a separate agreement. For third-party material, identify its source and license. A public PMID or DOI is usually enough to reproduce a research case. [Project license](LICENSE) · [Project history](docs/publication/README.md#project-history)
 
 ### PR Review Checklist
 
@@ -511,6 +472,16 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 - [ ] Commit messages follow convention
 
 ## Reporting Issues
+
+Use the [issue tracker](https://github.com/u9401066/pubmed-search-mcp/issues) for questions, bugs and proposals. Include the release or commit and a small example using public identifiers. A maintainer can apply the labels.
+
+| Area | What helps a reviewer reproduce it |
+| --- | --- |
+| `area:search` or `area:research-evaluation` | Query or pipeline, source, search date, and a known eligible or unexpected PMID. For a benchmark, explain how the reference set was selected. |
+| `area:chronicle` | Topic, dated documents, proposed historical connection and passages supporting your reading. |
+| `area:fulltext` | PMID or DOI, expected access route and what was actually readable. Omit credentials and licensed full text. |
+| `area:agent-plugin` or `area:deployment` | Host, version, transport, and the minimal steps needed to reproduce an installation, handoff or service issue. |
+| `area:docs-i18n` | Page, language, misleading instruction and proposed correction. |
 
 ### Bug Reports
 
@@ -532,8 +503,7 @@ Include:
 
 ## Questions?
 
-- Open a [Discussion](https://github.com/u9401066/pubmed-search-mcp/discussions)
-- Check existing [Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+- Ask in [Issues](https://github.com/u9401066/pubmed-search-mcp/issues) with the workflow or document you are trying to use.
 
 ---
 

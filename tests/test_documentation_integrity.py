@@ -159,16 +159,31 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
     )
     stale_tool_counts: list[str] = []
     for path in current_surfaces:
-        for match in tool_count_pattern.finditer(path.read_text(encoding="utf-8")):
+        current_text = path.read_text(encoding="utf-8")
+        if path in (REPO_ROOT / "README.md", REPO_ROOT / "README.zh-TW.md"):
+            # A dated release note describes the registry shipped in that version.
+            current_text = re.sub(
+                r"^## [^\n]+ — v\d+\.\d+\.\d+[ \t]*\n.*?(?=^#{1,2} |\Z)",
+                "",
+                current_text,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+        for match in tool_count_pattern.finditer(current_text):
             rendered_count = next(int(value) for value in match.groupdict().values() if value is not None)
             if rendered_count != canonical_tool_count:
                 stale_tool_counts.append(f"{path.relative_to(REPO_ROOT)}: {match.group(0)}")
     assert stale_tool_counts == []
 
     skill_count = len(tuple((REPO_ROOT / ".claude/skills").glob("*/SKILL.md")))
-    assert skill_count == 26
-    assert f"**{skill_count} Claude Skills**" in (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert f"**{skill_count} 個 Claude Skills**" in (REPO_ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
+    assert skill_count == 27
+    shipped_skills = len(tuple((REPO_ROOT / "plugins/pubmed-search/skills").glob("*/SKILL.md")))
+    for path, usage, development in (
+        ("README.md", "Usage Skills", "Development Skills"),
+        ("README.zh-TW.md", "使用 Skills", "開發 Skills"),
+    ):
+        readme = (REPO_ROOT / path).read_text(encoding="utf-8")
+        assert f"{usage} ({shipped_skills})" in readme
+        assert f"{development} ({skill_count - shipped_skills})" in readme
 
     ci_workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "run_live_integrations" in ci_workflow
@@ -347,13 +362,13 @@ def test_public_copilot_docs_require_service_auth_and_one_canonical_registry() -
     assert "same strict registry" in integrations
     assert "temporary ngrok URL" not in integrations
     assert "禁止放到 ngrok" in copilot
-    assert "同一套 41-tool strict registry" in copilot
+    assert "同一套 42-tool strict registry" in copilot
     assert "`validate_pico_plan`" in copilot
     assert "`read_session(request={...})`" in copilot
     assert "12 個 Copilot-friendly 工具" not in copilot
     assert "執行一次 `unified_search` 或 `search_pubmed`" not in copilot
     assert "LocalLauncher --> Tunnel" not in copilot
-    assert "41 個 strict tools" in deployment
+    assert "42 個 strict tools" in deployment
     assert "discriminated request schema" in deployment
     assert "--mode service" in architecture
     assert "loopback-only and is not a\n        valid deployment target" in openapi

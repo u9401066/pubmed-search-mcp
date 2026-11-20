@@ -2,13 +2,13 @@
 
 這是公開 MCP 工具介面的 canonical 繁體中文稽核。唯一真相來源是
 `tool_registry.py` 的 runtime registry；配套測試會直接讀取該 registry，文件一旦
-漂移就會失敗。本修訂版公開 **16 類、41 個工具**，已刪除的 alias 不再屬於契約。
+漂移就會失敗。本修訂版公開 **16 類、42 個工具**，已刪除的 alias 不再屬於契約。
 
 | 稽核項目 | Canonical 值 |
 | --- | --- |
-| 公開工具 | 41 |
+| 公開工具 | 42 |
 | Registry 類別 | 16 |
-| MCP 契約 metadata | `contractVersion: 3` |
+| MCP 契約 metadata | `contractVersion: 4` |
 | 文字回應上限 | 所有文字區塊合計 500,000 個 Unicode 字元 |
 | Mermaid runtime 文法 | 有界的 `flowchart LR` 或 `flowchart TD` |
 | Chronicle 視覺模型 | 橫式時間主軸加上樹狀主題分支 |
@@ -24,7 +24,7 @@ infrastructure。
 ```mermaid
 flowchart LR
     client["MCP clients"]
-    server["Contract version three server"]
+    server["Contract version four server"]
     presentation["Presentation tool adapters"]
     application["Application use cases and ports"]
     domain["Domain models and policies"]
@@ -88,7 +88,7 @@ provider；「local-only」表示工具契約不需要這類存取。
 
 - 使用 `extra="forbid"` 與 strict Pydantic type；拼錯欄位或把字串隱式轉成數字
   都會遭拒。
-- `_meta.pubmed-search.contractVersion` 為 `3`，另含 registry category 與
+- `_meta.pubmed-search.contractVersion` 為 `4`，另含 registry category 與
   `sideEffect`；同時發布 MCP read-only、destructive、idempotent 與 open-world
   hints。
 - 無效參數回傳已清理的原生 MCP error，不會重複輸入值；舊式錯誤字串則會在
@@ -99,7 +99,7 @@ provider；「local-only」表示工具契約不需要這類存取。
 - 目前工具回傳 Markdown、JSON/TOON encoded text 或 multimodal content，因此
   不發布會誤導 client 的 structured output schema。
 
-最終 runtime-derived schema audit 確認 41 個 tool 各有唯一 owner，registry 沒有
+最終 runtime-derived schema audit 確認 42 個 tool 各有唯一 owner，registry 沒有
 missing/extra。74 個 object schema 全部遞迴封閉；215 個 string、array、integer、
 number node 全有明確上界；10 個 tagged union 全都有精確 discriminator mapping、
 required tag 與 constant variant value。每個 required parameter 都存在、每個
@@ -187,7 +187,7 @@ cancel，拒絕 cancellation 的工作則隔離在每個 server 最多 32 個項
 不再重造 detached-task lifecycle。
 
 Registry 不包含會隨環境變數出現的隱藏工具。舊 profiling monkeypatch 與
-`get_performance_metrics` 已刪除，舊 profiling env 無法改變 41-tool 契約。
+`get_performance_metrics` 已刪除，舊 profiling env 無法改變 42-tool 契約。
 未使用的 standalone FastAPI presentation tree 與 stdio background-HTTP launcher 也已移除；
 支援的 HTTP transport 來自 canonical MCP server，只額外 mount 明確、tenant-guarded
 的 cache/session companion routes。
@@ -256,7 +256,7 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | --- | --- | --- | --- |
 | `validate_pico_plan` | 驗證 agent 產生的 PICO plan 並建立可執行搜尋 handoff。 | PICO plan model 與 validator；輸出交給 `unified_search`，不是第二套搜尋引擎。 | none；strict tagged plan；read-only、idempotent、local-only。 |
 | `generate_search_queries` | 產生 PubMed query variant、MeSH expansion 與拼字感知建議。 | Strategy generator、NCBI translation、MeSH 與 spelling service；補充 `validate_pico_plan`。 | none；strict bounded topic；read-only、idempotent、open-world。 |
-| `analyze_search_query` | 檢查 Boolean 結構、field、範圍與可能的 query 問題。 | Application `QueryAnalyzer`；unified planning 會重用，但本工具不執行 provider search。 | none；strict bounded query；read-only、idempotent、local-only。 |
+| `analyze_search_query` | 本機分析查詢意圖，或實測各可調條件排除的篇目。 | `QueryAnalyzer` 支援查詢規劃。指定組合比較時使用 PubMed ESearch 與租戶 session artifact。 | write，有界條件，預查寫入 artifact，non-idempotent、open-world。 |
 
 ### 3. `discovery` — 論文與引用探索
 
@@ -312,11 +312,12 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | `prepare_export` | 把選定或 session article 格式化為支援的 citation export profile。 | Application export service、citation formatter、session selection 與 artifact store。 | write；strict format 與 selection；non-idempotent、open-world；可能保存 export artifact。 |
 | `save_literature_notes` | 保存整理過的本機 wiki 或 MedPaper-style 文獻筆記與 metadata。 | Application note-export profile、template、CSL JSON 與 workspace filesystem boundary。 | destructive；strict path 與 profile；non-idempotent、open-world；建立或取代 user-visible note file。 |
 
-### 10. `session` — 單一判別式讀取 facade
+### 10. `session` — 搜尋歷程與持久研究工作區
 
 | Tool | 角色 | 主要依賴與關係 | Side effect 與契約 |
 | --- | --- | --- | --- |
 | `read_session` | 以單一 action 讀取 PMID、article、summary、log、artifact、search run 或 replay argument。 | Tenant-scoped session manager、article cache、artifact store 與 search-run journal；replay 將 argument 交回 `unified_search`。 | none；判別式 `request` 與巢狀 artifact locator；read-only、idempotent、local-only；local path 依 policy 隱藏。 |
+| `research_workspace` | 記錄彼此關聯的觀察，接手同一研究題目與未完成待辦。 | 租戶專屬的 SQLite 工作區，讀取時提供現有工具的來源查找參數。 | write；固定工作區與記錄識別碼，衝突重試會回報錯誤；idempotent、local-only。 |
 
 ### 11. `institutional` — OpenURL 與機構存取
 

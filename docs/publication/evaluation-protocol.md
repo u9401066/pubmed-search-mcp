@@ -5,6 +5,8 @@ Existing pilot results are linked in the [evidence map](evidence.md). A previous
 5,000-query setup is not permission to start a costly run; this revision performs
 local preparation and verification only.
 
+The [four-review MeSH pilot](../reports/mesh-preflight-2017/README.md) tests a narrower paired decision and has its own frozen protocol.
+
 ## Question and arms
 
 What does the integration package add when the host can already use native search

@@ -1,0 +1,21 @@
+{
+  "parent_sha256": "f512b804211bfac229cde198d96245e4a9af68b3276b4a26eaf526054f790851",
+  "cases": {
+    "CD007431": {
+      "choice": "keep",
+      "reason": "The baseline already fills 500 places. Removing lumbar admits cervical disease, and removing exam adds 6348 records across treatments and other tests. Retain both clinical constraints."
+    },
+    "CD008081": {
+      "choice": "edema",
+      "reason": "Keep diabetes and OCT, which still identify the relevant clinic and test. Measurements of retinal thickness may omit the explicit edema label. Accept a larger pool and the risk of displacement at rank 500."
+    },
+    "CD008760": {
+      "choice": "liver",
+      "reason": "Capsule and varices retain the index test and the target finding. The 54 additional candidates fit below 500 and may describe a screening population without labeling the underlying liver disease."
+    },
+    "CD008782": {
+      "choice": "keep",
+      "reason": "The preview is partial for the baseline and both omissions. Apply the prespecified fallback."
+    }
+  }
+}

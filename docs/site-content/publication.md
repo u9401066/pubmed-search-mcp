@@ -14,6 +14,24 @@ search integration service whose host agent retains planning and scientific
 interpretation. It does not claim to be an autonomous researcher, introduce
 BM25/RRF/MMR, or demonstrate a general agent-quality improvement.
 
+## Project history
+
+The following dates distinguish work in the predecessor project, the creation of this GitHub repository and distribution of the software. All times are UTC.
+
+| Date and time | What the record establishes | Primary record |
+| --- | --- | --- |
+| 2025-11-25 12:10:10 | The predecessor, `med-paper-assistant`, recorded its PubMed search implementation and MCP integration. | [Predecessor commit](https://github.com/u9401066/med-paper-assistant/commit/3caef4b10cfb9c27c705d9ac512854d4528bfd81) |
+| 2025-12-02 13:44:15 | GitHub created the standalone repository (21:44:15 in Taiwan). | [GitHub repository metadata, field `created_at`](https://api.github.com/repos/u9401066/pubmed-search-mcp) |
+| 2025-12-02 20:49:06 | The root Git commit records extraction of the library. At 21:14:56 the predecessor added this repository as a submodule. | [Root commit](https://github.com/u9401066/pubmed-search-mcp/commit/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e) · [Submodule change in the predecessor](https://github.com/u9401066/med-paper-assistant/commit/68701dfce294a7ee241ddc6924a7a382313b6140) |
+| 2025-12-08 00:26:46 | PyPI records the upload of the 0.1.0 wheel, followed by the source archive two seconds later. | [PyPI 0.1.0 files](https://pypi.org/project/pubmed-search-mcp/0.1.0/#files) · [File timestamps](https://pypi.org/pypi/pubmed-search-mcp/0.1.0/json) |
+| 2025-12-14 03:25:29 | The v0.1.13 commit declared a switch from MIT to Apache 2.0. Consult the license shipped with the version you use. Release v0.10.0 restores the standard Apache text, including section 8. | [Root MIT license](https://github.com/u9401066/pubmed-search-mcp/blob/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e/LICENSE) · [v0.1.13 change](https://github.com/u9401066/pubmed-search-mcp/commit/eda59af5c1ce9d227ebf402ba5fd47ac5934b283) · [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) |
+
+To reproduce the creation lookup, run `gh api repos/u9401066/pubmed-search-mcp --jq .created_at`. In a full Git clone, `git log --max-parents=0 --format="%H %cI %s" origin/master` shows the root commit. A registry upload independently dates a distributed artifact. For a historical claim about a particular feature, cite its implementing commit.
+
+Four Entrez modules have identical Git blob IDs in the predecessor immediately before extraction and at the root of this repository. They are `base.py`, `batch.py`, `search.py` and `utils.py`. For example, `search.py` has blob ID `85979059d0d4a87ac0f70a20fcf7f81783998119` in both trees. The matching file contents corroborate the extraction recorded in the commits. [Predecessor tree](https://github.com/u9401066/med-paper-assistant/tree/3632a130734b42da20c1297b30ad807fc8e9542a/src/med_paper_assistant/infrastructure/external/entrez) · [Standalone tree](https://github.com/u9401066/pubmed-search-mcp/tree/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e/src/pubmed_search/entrez)
+
+The earliest entry in the GitHub Releases list when checked on November 20, 2026 was v0.5.8, published May 11, 2026. The PyPI archive above documents the earlier distribution. GitHub recognizes the corrected preview license as `Apache-2.0`. [GitHub release v0.5.8](https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.8) · [License detection at the correction commit](https://api.github.com/repos/u9401066/pubmed-search-mcp/license?ref=bfb87346c968e6581eb62e75583d7bece183c111)
+
 ## One source for each responsibility
 
 | Source | Purpose |

@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import pytest
 from mcp.client import Client
 
+from pubmed_search.application.research_workspace import ResearchWorkspaceService
 from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.research_workspace import SQLiteResearchWorkspaceStore
 from pubmed_search.infrastructure.sources import unified_broker
 from pubmed_search.presentation.mcp_server import create_server
 from pubmed_search.presentation.mcp_server.server import build_asgi_app
@@ -129,11 +131,20 @@ async def test_every_tool_exposes_a_usable_contract():
     assert by_name["unified_search"].annotations.read_only_hint is False
     assert by_name["unified_search"].annotations.open_world_hint is True
     assert by_name["get_fulltext"].annotations.read_only_hint is False
-    assert by_name["analyze_search_query"].annotations.open_world_hint is False
+    preview = by_name["analyze_search_query"].annotations
+    assert preview.open_world_hint is True
+    assert preview.read_only_hint is False
+    assert preview.idempotent_hint is False
+    assert preview.destructive_hint is False
     assert by_name["validate_pico_plan"].annotations.open_world_hint is False
     assert by_name["list_resolver_presets"].annotations.open_world_hint is False
     assert by_name["schedule_pipeline"].annotations.open_world_hint is True
     assert by_name["read_session"].annotations.open_world_hint is False
+    workspace = by_name["research_workspace"].annotations
+    assert workspace.open_world_hint is False
+    assert workspace.read_only_hint is False
+    assert workspace.idempotent_hint is True
+    assert workspace.destructive_hint is False
     assert by_name["delete_pipeline"].annotations.destructive_hint is True
     assert by_name["delete_pipeline"].annotations.read_only_hint is False
     assert by_name["build_research_chronicle"].annotations.idempotent_hint is False
@@ -148,6 +159,97 @@ async def test_unknown_tool_arguments_fail_closed():
         result = await client.call_tool("analyze_search_query", {"query": "abc", "TYPO": "ignored-before"})
 
     assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_workspace_records_are_owned_by_the_authenticated_principal(tmp_path):
+    server = create_server(data_dir=str(tmp_path))
+    owner = TenantIdentity.for_principal("researcher-a", source="auth")
+    other = TenantIdentity.for_principal("researcher-b", source="auth")
+    ephemeral = TenantIdentity.for_principal("client-session-id", source="transport")
+    create = {"request": {"action": "create", "workspace_id": "review", "question": "Owner's study question"}}
+    read = {"request": {"action": "read", "workspace_id": "review"}}
+
+    with bind_tenant(owner):
+        assert not (await server.call_tool("research_workspace", create)).is_error
+    with bind_tenant(other):
+        missing = await server.call_tool("research_workspace", read)
+        assert missing.is_error
+        assert "Owner's study question" not in str(missing.content)
+        isolated = {**create["request"], "question": "Second user's question"}
+        assert not (await server.call_tool("research_workspace", {"request": isolated})).is_error
+    with bind_tenant(owner):
+        existing = await server.call_tool("research_workspace", read)
+        assert json.loads(existing.content[0].text)["question"] == "Owner's study question"
+    with bind_tenant(ephemeral):
+        for request in (read, create, {"request": {"action": "list"}}):
+            denied = await server.call_tool("research_workspace", request)
+            assert denied.is_error
+            assert "authenticated" in denied.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_large_workspace_handoffs_keep_complete_json_records_and_resumption_cursors(tmp_path):
+    workspace_id = "large-handoff"
+    service = ResearchWorkspaceService(SQLiteResearchWorkspaceStore(tmp_path))
+    service.create(workspace_id, "Which documents still need a closer reading?")
+    refs = [f"doi:10.1234/{index}/{'x' * 440}" for index in range(32)]
+    for i in range(16):
+        service.record(
+            workspace_id, f"paper-{i}", "expand", "Inspect related papers", source_refs=refs, next_action="Read"
+        )
+    assert len(json.dumps(service.read(workspace_id))) > MAX_MCP_TEXT_RESPONSE_CHARS
+
+    async with Client(create_server(data_dir=str(tmp_path))) as client:
+
+        async def read_page(**page):
+            result = await client.call_tool(
+                "research_workspace", {"request": {"action": "read", "workspace_id": workspace_id, **page}}
+            )
+            assert not result.is_error
+            text = result.content[0].text
+            assert len(text) <= MAX_MCP_TEXT_RESPONSE_CHARS
+            return json.loads(text)
+
+        latest = await read_page(limit=100)
+        assert latest["page_limited_by_transport"]
+        assert latest["records"][-1]["sequence"] == 16
+        assert latest["next_after"] is None
+        after = open_offset = 0
+        history = []
+        actions = []
+        while after is not None or open_offset is not None:
+            page = await read_page(
+                after=16 if after is None else after, open_offset=16 if open_offset is None else open_offset
+            )
+            history.extend(r["sequence"] for r in page["records"])
+            actions.extend(r["sequence"] for r in page["open_actions"])
+            for record in page["records"]:
+                assert record["source_refs"] == refs
+                assert len(record["source_handoffs"]) == len(refs)
+            after, open_offset = page["next_after"], page["next_open_offset"]
+        assert history == actions == list(range(1, 17))
+
+
+@pytest.mark.asyncio
+async def test_workspace_listing_pages_oversized_json_without_losing_workspace_ids(tmp_path):
+    service = ResearchWorkspaceService(SQLiteResearchWorkspaceStore(tmp_path))
+    names = [f"project-{i:02}" for i in range(50)]
+    for name in names:
+        service.create(name, "Transcription " + "\x1b" * 1900)
+    assert len(json.dumps(service.list_workspaces(limit=100))) > MAX_MCP_TEXT_RESPONSE_CHARS
+    async with Client(create_server(data_dir=str(tmp_path))) as client:
+        returned = []
+        offset = 0
+        while offset is not None:
+            result = await client.call_tool(
+                "research_workspace", {"request": {"action": "list", "limit": 100, "offset": offset}}
+            )
+            assert not result.is_error
+            page = json.loads(result.content[0].text)
+            returned.extend(w["workspace_id"] for w in page["workspaces"])
+            offset = page["next_offset"]
+        assert returned == names
 
 
 @pytest.mark.asyncio

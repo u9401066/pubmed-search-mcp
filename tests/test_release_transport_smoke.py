@@ -121,16 +121,45 @@ async def test_installed_stdio_persists_across_restart_and_isolates_data_roots(
         cwd=tmp_path,
         env=smoke_env(tmp_path),
     )
+    read_workspace = {"request": {"action": "read", "workspace_id": "release-smoke"}}
     async with Client(stdio_client(parameters), read_timeout_seconds=20) as client:
         await assert_protocol_contract(client)
+        created = await client.call_tool(
+            "research_workspace",
+            {"request": {"action": "create", "workspace_id": "release-smoke", "question": "Which trials exist?"}},
+        )
+        assert created.is_error is False, result_text(created)
+        saved = await client.call_tool(
+            "research_workspace",
+            {
+                "request": {
+                    "action": "record",
+                    "workspace_id": "release-smoke",
+                    "record_id": "strategy",
+                    "activity": "expand",
+                    "source_refs": ["pipeline:release-smoke"],
+                    "note": "Saved a reproducible search strategy.",
+                    "next_action": "Run the saved strategy",
+                }
+            },
+        )
+        assert saved.is_error is False, result_text(saved)
     async with Client(stdio_client(parameters), read_timeout_seconds=20) as restarted:
         result = await restarted.call_tool("load_pipeline", {"source": "saved:release-smoke"})
         assert result.is_error is False
         assert "query: offline pipeline" in result_text(result), "Saved pipeline lost after a real process restart"
+        workspace = await restarted.call_tool("research_workspace", read_workspace)
+        assert workspace.is_error is False, result_text(workspace)
+        review = json.loads(result_text(workspace))
+        assert review["record_count"] == review["open_action_count"] == 1
+        assert review["records"][0]["source_refs"] == ["pipeline:release-smoke"]
         other = parameters.model_copy(update={"env": smoke_env(tmp_path / "other-operator")})
         async with Client(stdio_client(other), read_timeout_seconds=20) as isolated:
             listing = await isolated.call_tool("list_pipelines", {"scope": "global"})
             assert "release-smoke" not in result_text(listing), "Data leaked between operator roots"
+            missing = await isolated.call_tool("research_workspace", read_workspace)
+            assert missing.is_error is True
+            assert "reproducible search strategy" not in result_text(missing)
         deleted = await restarted.call_tool("delete_pipeline", {"name": "release-smoke"})
         assert "deleted" in result_text(deleted)
     async with Client(stdio_client(parameters), read_timeout_seconds=20) as restarted:
