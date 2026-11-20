@@ -308,25 +308,26 @@ Use precise terms:
 
 Use `build_research_chronicle` whenever the user asks how a field evolved. It replaces the older one-shot timeline tools: each immutable revision is appended atomically with a monotonic number, so re-running it later lets you diff revisions and answer "what changed since last time".
 
-Rebuilds with default `output="summary"` include changes since revision N-1:
-entries added/not observed/updated, evidence and branch counts, scope and audit
-status changes, and up to five added titles (or an explicit no-change message).
-Machine outputs are unchanged. An unreadable predecessor yields `Change summary
-unavailable`; corrupt latest revisions still fail loudly in the store. Absence
-in a revision does not establish research retirement.
+A rebuild's default summary compares the preceding revision and lists up to five added titles. If that predecessor cannot be read, it reports `Change summary unavailable`. To inspect every newly observed branch, read `action="diff"` and check `branches.added_details[].evidence_observation`. Its two lists give the IDs and publication years of previously observed and newly observed papers. `basis` can also be `mixed` or `undetermined`.
+
+| Question | What to inspect in a stored revision |
+| --- | --- |
+| Was there a fork? | In `chronicle_map`, the layout anchor is the earliest dated entry in a branch or its descendants. Review `divergence_review.candidates` for a shared paper, two later papers and any earlier evidence of separate lines. Read contemporary comparative or consensus sources listed in `sources_for_review`. |
+| Which lines were most visible? | For each branch, `direct_activity` gives its directly assigned entries and the total across the revision in each observed year. Adoption by a community requires separate evidence. |
+| Can I check a passage? | Load `output="evidence"`. Pass a row's populated `fulltext_lookup_source` to `get_fulltext`. `fulltext_coverage` counts stored links. If access fails, record the gap or match the exact PMID/DOI in an authorized local library. |
 
 Chronology is the primary axis and research branches are a secondary projection of the same stored entries. Branches describe patterns observed in the selected query/PMID/source/year scope, not causal descent. `earliest_observed_in_scope` identifies the earliest dated retrieved candidate only; it does not establish the field's true first report. Date-precision intervals must be disjoint before the graph can assert `precedes` or `supersedes`.
 
 Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, graph integrity, chronology gaps, and per-source retrieval counts.
 
-Topic mode applies `min_year` / `max_year` in the PubMed request before the relevance-capped fetch. Final event selection pins the first and last observed papers, prioritizes explicit landmark importance/citations, then fills the remaining capacity across the largest temporal gaps. Audit source coverage distinguishes PubMed `returned` from `available` and warns for capped samples, downstream selection, or unknown availability. An upstream PubMed error or zero article evidence returns an error and publishes no Chronicle revision.
+Topic mode applies `min_year` / `max_year` in the PubMed request before the relevance-capped fetch. Final event selection pins the first and last observed papers, prioritizes explicit landmark importance/citations, then fills the remaining capacity across the largest temporal gaps. Audit source coverage distinguishes PubMed `returned` from `available` and warns for capped samples, downstream selection, or unknown availability. An upstream failure or empty retrieval returns an error. Read a previously saved revision to continue while PubMed is unavailable and record which revision supplied the evidence.
 
 PMID input accepts only ASCII digits with an optional `PMID:` prefix and explicit separators; DOI or arbitrary mixed identifier text is rejected. Entry IDs use PMID, then DOI, as stable evidence identity so date and milestone reclassification becomes an update rather than false remove/add churn. Chronicle derivation, topic lookup, comparison, and continuity share a Unicode-normalized, case-folded, whitespace-collapsed topic key while preserving the stored display topic.
 
-A paper matching several selected semantic signals has one primary branch and explicit secondary cross-links in lineage diagnostics. If at least 20% of all or assigned entries overlap, the audit warns that branches are not cleanly separated. `confidence` remains milestone-detection confidence; landmark ordering uses explicit landmark importance and falls back to citation count, never detection confidence.
+A paper matching several selected semantic signals has one primary branch and explicit secondary cross-links in lineage diagnostics. If at least 20% of all or assigned entries overlap, the audit warns that branches are not cleanly separated. `confidence` remains milestone-detection confidence; inspect `landmark_entries[].score_components` and `observed_max_citations` for the recorded basis of a ranking. `branch_representatives` also covers lines missing from the global shortlist.
 
 - `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` atomically creates revision N+1. When session artifact persistence is enabled, it also writes a `research-chronicle-artifact/v1` bundle; a write failure is visible in Markdown or as `artifact.status="failed"` in structured output, while the revision remains saved.
-- `build_research_chronicle(chronicle_id=...)` re-runs the continued revision's own topic/PMID set and filters to produce revision N+1 reflecting research movement cleanly.
+- `build_research_chronicle(chronicle_id=...)` re-runs the continued revision's own topic/PMID set and filters to produce revision N+1. Compare coverage, publication dates and classification changes when interpreting the diff.
 - `read_research_chronicle(request={"action":"list"})` lists stored chronicles.
 - `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})` reads one revision or the combined map.
 - `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})` reports added, updated, and not-observed entries plus evidence and branch churn. Absence is never conclusive retirement.

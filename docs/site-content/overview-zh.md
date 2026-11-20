@@ -40,6 +40,10 @@
 
 ---
 
+## 如何追查一個研究主題的歷史 — v0.9.0
+
+Chronicle 現在會列出可能分流的兩條路線各有哪些文獻，以及更早就已獨立發展的線索。讀者可查看關鍵文章的評分依據，找到小支線的代表文獻，也可區分舊文獻新辨認出的關聯與本次新觀察的篇目。人工耳蝸案例示範了索引未能辨認分歧時，如何循當年的比較研究與共識聲明查證。[進階研究工作流](#/advanced-workflows-zh)
+
 ## 研究自動化與可攜式安裝 — v0.8.0
 
 排程 pipeline 提供有上限的差異報告與本機通知摘要。Chronicle 重建摘要比較前一版；
@@ -106,7 +110,7 @@ fingerprints。引用驗證確認書目一致性，論文是否支持某項論�
 版本發布後，可在支援[官方 MCP Registry](https://registry.modelcontextprotocol.io/)
 或 [GitHub MCP Registry](https://github.com/mcp) 的客戶端查找
 `io.github.u9401066/pubmed-search-mcp`。Registry metadata 以 stdio 啟動
-`uvx pubmed-search-mcp@0.8.0`；請在客戶端設定 `NCBI_EMAIL`，並視需要設定 `NCBI_API_KEY`。
+`uvx pubmed-search-mcp@0.9.0`；請在客戶端設定 `NCBI_EMAIL`，並視需要設定 `NCBI_API_KEY`。
 
 支援 Agent Plugins 1.0.0 的客戶端可透過自身的 plugin 安裝功能載入本倉庫
 [`plugins/pubmed-search/`](https://github.com/u9401066/pubmed-search-mcp/tree/master/plugins/pubmed-search) 目錄，其中包含固定版本的 MCP
@@ -695,19 +699,25 @@ coverage envelope。
 | `read_research_chronicle` | 讀取、列表、版本 diff、有證據支撐的敘述、里程碑分佈分析，或比較最多五個主題 |
 
 ```python
-# 1. 依主題建立（自動檢索 PubMed、計算 Landmark 分數並聚類分支）
-build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+# 兩篇比較研究與一份 NIH 共識聲明的期刊版
+build_research_chronicle(topic="Cochlear implants",
+                         pmids=["3878092", "3753836", "2642379"], output="chronicle_map")
 
-# 2. 延續既有編年史（自動繼承前版的 topic 與檢索範圍，建立 Revision N+1）
-build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
-
-# 3. 讀取版本差異、里程碑分析或多主題比較（讀取儲存資料，不重跑檢索）
-read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-intraoperative-08c229f3","from_revision":1})
-read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-intraoperative-08c229f3"})
-read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
+# 將建版回應的 chronicle_id 帶入下列讀取工具
+read_research_chronicle(request={"action":"milestones","chronicle_id":chronicle_id})
+read_research_chronicle(request={"action":"load","chronicle_id":chronicle_id,"output":"evidence"})
 ```
 
-`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。完整指南見 [進階研究工作流 (docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](#/advanced-workflows-zh) 與規格 [docs/design/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
+圖上的分支接在該線或其子線最早能定年的紀錄。`chronicle_map` 中的
+`divergence_review` 列出可用於追查歷史分歧的文獻。即使索引只支持研究階段分類，
+`sources_for_review` 仍會列出可供核讀的比較研究與共識文件。
+`direct_activity.by_year` 同時給出該線當年直接收錄的事件數和全版同年事件數。
+若要主張某種做法廣為採用，還需要該時期、該群體的採用資料。
+
+使用 `milestones` 查看關鍵文章的評分依據及各個有證據分支的閱讀代表。
+重建後的版本差異列出各新增分支中已在前版和本次新觀察文獻的識別碼與出版年。
+[進階研究工作流](#/advanced-workflows-zh) ·
+[Chronicle 規格](#/research-chronicle-rebuild-spec)。
 
 Chronicle Mermaid 由結構化 node/edge 生成，會自動跳脫 label、修正循環與孤兒 parent、避免 ID 碰撞並限制圖形大小；rich 圖失敗時依序降級為 safe 與 minimal syntax，不會讓整份 chronicle 建立失敗。`mermaid_validation.json` 記錄每個 correction、fallback 與被摘要的視覺項目，`chronicle.mmd` 則維持純 Mermaid source。
 
@@ -1500,9 +1510,9 @@ GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/bl
 @software{pubmed_search_mcp,
   title = {PubMed Search MCP},
   author = {Gau, Tz-Ping},
-  version = {0.8.0},
+  version = {0.9.0},
   year = {2026},
-  url = {https://github.com/u9401066/pubmed-search-mcp}
+  url = {https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.9.0}
 }
 ```
 

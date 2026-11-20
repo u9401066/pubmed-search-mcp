@@ -6,7 +6,7 @@
 
 > Status: implemented canonical architecture
 > Contract generation: v3 (strict, breaking)
-> Last reviewed: 2026-09-01
+> Last reviewed: 2026-11-20
 
 Research Chronicle is an evidence-backed, revisioned view of how a research
 topic developed. Its defining visualization is not a flat publication list and
@@ -109,6 +109,88 @@ read_research_chronicle(request={
 The six actions are `load`, `list`, `diff`, `narrate`, `milestones`, and
 `compare`. Compare selection is itself discriminated as `topics` or
 `chronicle_ids`; comma-separated pseudo-arrays are rejected.
+
+### Recording a newly recognized historical connection
+
+The record includes changes in classification of papers already present.
+Publication year describes the paper. The revision pair identifies when the
+change was observed in this comparison. Summaries and any downstream alert
+budget are views over the record. An agent can read every observed entry in a
+revision with `load` and `output="timeline"`, or inspect previous revisions
+when retrieval coverage has changed.
+
+For each newly observed branch, `diff` returns
+`branches.added_details[].evidence_observation`. Its `previously_observed` and
+`newly_observed` lists carry evidence IDs and nullable publication years.
+An evidence ID receives a year when all its dated occurrences in `to_revision`
+agree. If every occurrence lacks a year or the recorded years disagree, its
+`publication_year` is `null`. The comparison uses direct branch members and looks for their evidence anywhere
+in the earlier revision. The `basis` is `previously_observed_only`,
+`newly_observed_only`, `mixed`, or `undetermined` for insufficient membership
+information. Review scope changes, coverage and the actual metadata differences
+before attributing a cause. A paper absent in the earlier revision may itself
+be decades old or have appeared in another revision.
+
+### Finding retrievable text and working through source outages
+
+Use `load` with `output="evidence"` to resolve an entry to the specific articles
+that back it. Each row includes `fulltext_lookup_source`, a validated source
+object for `get_fulltext(source=..., output_format="json")` when an identifier
+is available. In `fulltext_coverage`, `total_evidence_ids` counts distinct
+evidence IDs in **this revision**. Of those, `with_stored_artifact_uri` counts
+IDs with a nonblank full-text artifact URI on at least one occurrence.
+Reading this projection uses the snapshot alone. A link still requires a read and a passage check.
+An empty link field leaves open the possibility of an accessible copy elsewhere.
+
+Run supplemental discovery in the intended corpus. Europe PMC supports section
+queries for indexed text. An agent with Zotero Keeper can independently search
+a permitted library and its indexed attachments, reconcile exact identifiers,
+and read a specific attachment. Keep paper date, discovery source, identifier,
+and verified passage or access gap with the result. Explicit Chronicle builds
+currently take PMIDs and fetch their PubMed records. Preserve local-only
+references without PMIDs alongside the Chronicle for later reconciliation.
+For a failed refresh, `read_research_chronicle` can read a stored revision
+without making a provider request. Record its revision number when citing it.
+
+### Investigating a historical fork
+
+In `chronicle_map`, `branch_point_semantics` identifies the layout anchor as
+the earliest dated entry in a branch or its descendants. A separate
+`divergence_review` describes an indexing pattern in one revision. For each
+pair of selected topics, a candidate has a dated `shared_paper` tagged with
+both topics and two distinct `later_papers`, each matching only one selected
+topic. Publication-date intervals must establish the order. The projection
+keeps one deterministic example per pair. `earlier_single_signal_papers`
+can expose an alternative reading in which the separate lines already
+existed. Each witness carries its entry ID, evidence ID and recorded date.
+The agent must read contemporary material to establish what was compared,
+whether there was disagreement, and which researchers subsequently adopted an idea.
+If a stored map exceeds the lineage builder's six-topic limit, the review
+reports `topic_branch_limit_exceeded` and the observed and supported counts.
+The branch rows remain available for inspection.
+
+Even if a revision has insufficient signal provenance, `sources_for_review`
+lists entries indexed as comparative studies or consensus documents. Each
+lists the matched publication types and supporting evidence IDs. A consensus
+document can establish what was debated on a given date once its wording is
+checked. A meeting and the publication of its proceedings can have different dates.
+
+The map reports `direct_activity` per branch. Each observed year gives
+`branch_entries` and `all_revision_entries`. The denominator includes entries
+with unresolved ownership. Descendants and secondary topic matches make no
+additional contribution to the numerator. Undated entries are counted separately.
+These counts describe visibility in a bounded set. Historical adoption requires
+dated evidence about a specified community, practice or institution.
+
+In `milestones`, the global landmark shortlist includes recorded
+`score_components` where available. `observed_max_citations` preserves
+uncertainty when the available snapshot cannot establish a count.
+Citation coverage, maximum and median count each evidence ID once, using
+its highest observed count in this revision. A zero requires an observation
+attributable to that paper. The maximum and median are null if all counts are missing.
+`branch_representatives` gives a reading entry point for each branch with
+reliable direct members, including branches absent from the global shortlist.
+Inspect the selection basis before treating an entry as historically consequential.
 
 ## Data flow
 
