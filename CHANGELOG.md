@@ -10,8 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-20
+
 ### Added
 
+- Bounded PubMed concept-block comparisons with saved evidence, compact provider warnings and an offline review table in the systematic-search skill.
+- A [blinded, four-review evaluation](docs/reports/mesh-preflight-2017/README.md) with frozen inputs, decisions and offline scoring.
 - A research workspace skill and MCP tool for recording questions, branching
   investigations, evidence locators, and unresolved actions across sessions.
   Each tenant has a local journal. Stable record IDs allow clients to retry a
@@ -3101,7 +3105,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.7...v0.8.0
 [0.7.7]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.6...v0.7.7
