@@ -65,7 +65,7 @@ PMID 格式、JSON 容器字串與整批驗證，依該指南的「輸入格式�
 |------|------|
 | `validate_pico_plan` | Validate agent-provided P/I/C/O and return a runnable PICO pipeline. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
-| `analyze_search_query` | Analyze a search query without executing the search. |
+| `analyze_search_query` | Analyze a query locally, or preview explicit PubMed Boolean combinations. |
 
 ## 文章探索
 *相關文章、引用網路*

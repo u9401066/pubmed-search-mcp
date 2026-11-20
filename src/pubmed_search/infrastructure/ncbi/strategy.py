@@ -269,14 +269,7 @@ class SearchStrategyGenerator:
             "tree_numbers": parsed["tree_numbers"],
         }
 
-    async def analyze_query(self, query: str) -> dict[str, Any]:
-        """
-        Analyze how PubMed interprets a query using ESearch translation.
-
-        Returns:
-            Dict with translated_query, query_translation breakdown
-        """
-
+    async def _query_record(self, query: str, retmax: int, *, preview: bool = False) -> Any:
         async def _do_esearch():
             handle = await asyncio.to_thread(
                 run_entrez_callable,
@@ -284,7 +277,7 @@ class SearchStrategyGenerator:
                 Entrez.esearch,
                 db="pubmed",
                 term=query,
-                retmax=0,  # Don't need results, just translation
+                retmax=retmax,
                 usehistory="n",
                 email=self._email,
                 api_key=self._api_key,
@@ -293,19 +286,60 @@ class SearchStrategyGenerator:
             return await _read_entrez_handle(handle)
 
         try:
-            result = await self._execute_entrez(_do_esearch, service_name="ncbi-strategy:analyze-query")
+            if preview:
+                return await execute_entrez_operation(
+                    _do_esearch,
+                    api_key=self._api_key,
+                    service_name="ncbi-strategy:analyze-query",
+                    timeout=5.0,
+                    total_timeout=6.0,
+                    max_attempts=1,
+                )
+            return await self._execute_entrez(_do_esearch, service_name="ncbi-strategy:analyze-query")
         except Exception as exc:
             raise_ncbi_infrastructure_error("strategy_query_analysis", exc)
 
+    async def probe_query(self, query: str, limit: int) -> dict[str, Any]:
+        """Fetch a count, PubMed's interpretation and bounded sample in a single ESearch."""
+        result = await self._query_record(query, limit, preview=True)
+        try:
+            return self._parse_probe(result, limit)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy probe response", exc)
+
+    @staticmethod
+    def _parse_probe(result: Any, limit: int) -> dict[str, Any]:
+        count = int(str(result["Count"]))
+        raw_ids = result["IdList"]
+        if not isinstance(raw_ids, list) or len(raw_ids) != min(count, limit):
+            raise ValueError("Invalid PubMed sample length")
+        ids = [str(pmid) for pmid in raw_ids]
+        if any(not pmid.isascii() or not pmid.isdecimal() for pmid in ids) or len(set(ids)) != len(ids):
+            raise ValueError("Invalid PubMed identifiers")
+        messages = [
+            str(value)
+            for group in ("ErrorList", "WarningList")
+            for values in result.get(group, {}).values()
+            for value in values
+            if not (count == 0 and str(value).strip().lower().rstrip(".") == "no items found")
+        ]
+        translation = result["QueryTranslation"]
+        if not isinstance(translation, str) or not translation.strip() or result.get("ERROR"):
+            raise ValueError("Invalid PubMed query translation")
+        return {"count": count, "pmids": ids, "translation": translation, "warnings": messages}
+
+    async def analyze_query(self, query: str) -> dict[str, Any]:
+        """Analyze PubMed's ESearch translation without retrieving articles."""
+        result = await self._query_record(query, 0)
         try:
             return {
                 "original": query,
-                "count": int(result.get("Count", 0)),
+                "count": int(result["Count"]),
                 "translated_query": result.get("QueryTranslation", query),
                 "translation_set": result.get("TranslationSet", []),
                 "translation_stack": result.get("TranslationStack", []),
             }
-        except (AttributeError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise_ncbi_infrastructure_error("strategy query-analysis response", exc)
 
     async def generate_strategies(

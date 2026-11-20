@@ -49,9 +49,12 @@ VALID_FIELD_TAGS = frozenset(
         "all",
         # MeSH
         "mesh terms",
+        "mh",
+        "mh:noexp",
         "mesh",
         "mesh major topic",
         "majr",
+        "majr:noexp",
         "mesh subheading",
         "sh",
         "mesh:noexp",

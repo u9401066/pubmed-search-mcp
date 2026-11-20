@@ -159,7 +159,7 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
                     "example_mesh_query": '"{preferred_term}"[MeSH Terms]',
                     "example_synonym_query": "({synonym})[Title/Abstract]",
-                    "note": "Check pubmed_translation to see how PubMed actually interprets each query",
+                    "note": 'Check pubmed_translation. To preview combined blocks use analyze_search_query(query=fixed_scope, comparison={"blocks": named_clauses}).',
                 }
 
                 return json.dumps(result, indent=2, ensure_ascii=False)

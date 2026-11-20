@@ -256,7 +256,7 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | --- | --- | --- | --- |
 | `validate_pico_plan` | 驗證 agent 產生的 PICO plan 並建立可執行搜尋 handoff。 | PICO plan model 與 validator；輸出交給 `unified_search`，不是第二套搜尋引擎。 | none；strict tagged plan；read-only、idempotent、local-only。 |
 | `generate_search_queries` | 產生 PubMed query variant、MeSH expansion 與拼字感知建議。 | Strategy generator、NCBI translation、MeSH 與 spelling service；補充 `validate_pico_plan`。 | none；strict bounded topic；read-only、idempotent、open-world。 |
-| `analyze_search_query` | 檢查 Boolean 結構、field、範圍與可能的 query 問題。 | Application `QueryAnalyzer`；unified planning 會重用，但本工具不執行 provider search。 | none；strict bounded query；read-only、idempotent、local-only。 |
+| `analyze_search_query` | 本機分析查詢意圖，或實測各可調條件排除的篇目。 | `QueryAnalyzer` 支援查詢規劃。指定組合比較時使用 PubMed ESearch 與租戶 session artifact。 | write，有界條件，預查寫入 artifact，non-idempotent、open-world。 |
 
 ### 3. `discovery` — 論文與引用探索
 

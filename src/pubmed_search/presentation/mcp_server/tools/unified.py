@@ -28,6 +28,7 @@ formatting, pipeline handoff, journal, and artifact concerns.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -37,6 +38,8 @@ from pydantic import Field
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
+from pubmed_search.application.search.query_comparison import QueryComparison, compare_queries
+from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.unified.helpers import DispatchStrategy
 from pubmed_search.application.unified.request import (
     MAX_UNIFIED_FILTERS_CHARS,
@@ -48,9 +51,12 @@ from pubmed_search.application.unified.request import (
 )
 from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
 from pubmed_search.infrastructure.sources.registry import get_source_registry
+from pubmed_search.shared.tenancy import current_tenant
 
+from .artifact_memory import artifact_persistence_enabled, persist_tool_artifact
 from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter
+from .tool_session import get_strategy_generator
 from .unified_runner import (
     run_unified_search,
 )
@@ -364,12 +370,15 @@ def register_unified_search_tools(
     @mcp.tool()
     async def analyze_search_query(
         query: Annotated[str, Field(min_length=1, max_length=MAX_UNIFIED_QUERY_CHARS)],
+        comparison: QueryComparison | None = None,
     ) -> str:
         """
-        Analyze a search query without executing the search.
+        Analyze a query locally, or preview explicit PubMed Boolean combinations.
 
-        Useful for understanding how unified_search will process your query
-        before actually running it.
+        With comparison, query is the fixed PubMed scope. Supply 2–5 named
+        blocks ANDed in the baseline, and optional seed_pmids. Get up to two
+        single-block changes with added counts, prioritizing recovered seeds.
+        Read the artifact's drop-ID.json for a difference query and sample PMIDs.
 
         Args:
             query: The search query to analyze
@@ -382,6 +391,30 @@ def register_unified_search_tools(
             - Recommended sources
             - Recommended strategies
         """
+        if comparison is not None:
+            generator = get_strategy_generator()
+            if generator is None:
+                return ResponseFormatter.error(
+                    "PubMed strategy provider unavailable", tool_name="analyze_search_query", output_format="json"
+                )
+            try:
+                summary, files = await compare_queries(query, comparison, generator.probe_query)
+            except ValueError as exc:
+                return ResponseFormatter.error(exc, tool_name="analyze_search_query", output_format="json")
+            can_save = current_tenant().owns_durable_storage and artifact_persistence_enabled()
+            artifact = None
+            if can_save:
+                artifact = await persist_tool_artifact(
+                    tool="analyze_search_query", kind="query_comparison", files=files, primary_file="plan.json"
+                )
+            if artifact:
+                summary["artifact_uri"] = artifact["artifact_uri"]
+            else:
+                summary["storage"] = "failed" if can_save else "inline"
+                for change in summary["changes"]:
+                    change["sample_pmids"] = files[f"drop-{change['drop']}.json"]["difference"]["pmids"]
+            return json.dumps(summary, separators=(",", ":"), ensure_ascii=False)
+
         # Normalize input
         query = InputNormalizer.normalize_query(query)
         if not query:
@@ -446,6 +479,11 @@ def register_unified_search_tools(
                 ]
             )
 
+            mesh_tags = {"mh", "mh:noexp", "mesh", "mesh terms", "mesh:noexp", "majr", "majr:noexp", "mesh major topic"}
+            if " AND " in query.upper() and mesh_tags.intersection(tag.lower() for tag in pubmed_field_tags(query)):
+                output.append(
+                    "Preview scope: pass the fixed clause as query and 2–5 adjustable clauses as comparison.blocks."
+                )
             return "\n".join(output)
 
         except Exception as exc:

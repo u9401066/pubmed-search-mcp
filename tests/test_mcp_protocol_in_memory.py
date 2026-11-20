@@ -131,7 +131,11 @@ async def test_every_tool_exposes_a_usable_contract():
     assert by_name["unified_search"].annotations.read_only_hint is False
     assert by_name["unified_search"].annotations.open_world_hint is True
     assert by_name["get_fulltext"].annotations.read_only_hint is False
-    assert by_name["analyze_search_query"].annotations.open_world_hint is False
+    preview = by_name["analyze_search_query"].annotations
+    assert preview.open_world_hint is True
+    assert preview.read_only_hint is False
+    assert preview.idempotent_hint is False
+    assert preview.destructive_hint is False
     assert by_name["validate_pico_plan"].annotations.open_world_hint is False
     assert by_name["list_resolver_presets"].annotations.open_world_hint is False
     assert by_name["schedule_pipeline"].annotations.open_world_hint is True
