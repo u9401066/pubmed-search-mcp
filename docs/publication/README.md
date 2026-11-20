@@ -1,7 +1,6 @@
 # Publication and citation workspace / 論文與引用
 
-**Status: working manuscript, not submitted.** The software is v0.7.4; the
-manuscript does not yet have an arXiv identifier, publication DOI, or acceptance.
+**Status: working manuscript, not submitted.** The manuscript describes the v0.7.4 software surface. It has no arXiv identifier, publication DOI, or acceptance. Cite the version used for a software result using [CITATION.cff](../../CITATION.cff).
 Author and affiliation, confirmed September 21, 2026: **Tz-Ping Gau,
 Kaohsiung Medical University Hospital**.
 

@@ -5,6 +5,9 @@ test suite is not a measured improvement on a public retrieval benchmark.
 
 | Evidence | Start here |
 | --- | --- |
+| v0.8.0 renovation review, round 1 | [Chronicle branch experiment, reusable search strategies, service sizing and publication decisions (繁中)](renovation_review_2026-11-20.md) |
+| Chronicle renovation, round 2 | [Recording newly recognized historical connections and finding evidence beyond abstracts (繁中)](chronicle_evidence_review_2026-11-20.md) |
+| Chronicle renovation, round 3 | [Historical method, research forks and a three-paper cochlear implant case (繁中)](chronicle_historical_method_2026-11-20.md) |
 | Test and CI renovation | [v0.7.7 phased review](release_v077_2026-10-01.md), [64 removals](test_renovation_removals_v077.json), [baseline and detector evidence](test_renovation_v077_2026-10-01.json) |
 | Bounded background fulltext | [assessment and implementation](../design/FULLTEXT_PREFETCH.md), [offline wait/call comparison](fulltext_prefetch_2026-10-01.json) |
 | Repository classification and manuscript overhaul | [2026-09-21 report](repository_publication_overhaul_2026-09-21.md), [publication workspace](../publication/README.md) |

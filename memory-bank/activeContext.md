@@ -1,6 +1,16 @@
 # Active Context
 
-## Current Task - v0.8.0 automation and release documentation (2026-10-20)
+## Current release work — v0.9.0 Chronicle historical evidence (2026-11-20)
+
+Chronicle maps expose dated candidates for investigating research forks,
+earlier alternatives and documentary sources to read. Milestones include a
+reading representative for each branch with resolved evidence. Revision
+comparisons preserve records for newly recognized links between older papers.
+The three-paper cochlear implant case records which historical claims the
+available sources support. See the [review and reproduction](../docs/reports/chronicle_historical_method_2026-11-20.md)
+and the [release changelog](../CHANGELOG.md).
+
+## v0.8.0 automation and release documentation (2026-10-20)
 
 - Release date: 2026-10-20; branch `feat/automation-0.8`. Version is already 0.8.0;
   preserve existing version metadata changes. No commit or publication requested.

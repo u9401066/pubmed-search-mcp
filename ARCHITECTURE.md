@@ -303,7 +303,11 @@ Timeline 子系統目前拆分為：
 Chronicle 子系統在 timeline evidence provider 之上建立不可變 revision，並由同一份
 `ChronicleSnapshot` 投影出 timeline、tree、narrative、graph 與 `chronicle_map`。其中
 `chronicle_map` 以橫向年份主軸保留論文先後，再依重複出現的 MeSH／關鍵詞訊號切出
-主題分支；branch point 只代表「本次範圍內最早觀察到」，不宣稱因果或全領域首創。
+主題分支。圖的 `branch_point` 取該線或子線最早能定年的項目。應用層另行投影
+`divergence_review`，列出同時涵蓋兩線的篇目、後來各線單獨的篇目及更早的反例，
+並保留能幫助審讀的比較研究或共識文件。`direct_activity` 逐年記錄分支直接成員及
+同年整版收錄數。里程碑分析提供評分依據與各線代表文獻。這些投影可以直接讀取
+既有 revision。跨版本的證據比對在 `differ` 進行，保留舊文獻後來才被辨認的關聯。
 
 Mermaid 輸出會先做 deterministic label／結構正規化，再依 `rich → safe → minimal`
 降級；完整座標與省略診斷仍保留在 `chronicle_map.json` 與

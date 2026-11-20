@@ -1,6 +1,6 @@
 ---
 name: pubmed-paper-exploration
-description: "Deep exploration from a key paper using related, citing, reference, and citation tree tools. Triggers: 這篇論文的相關研究, 誰引用這篇, 類似文章, related articles, citation tree, paper exploration"
+description: "Explore papers through citations and optional cross-search of public sources and a local Zotero library. Triggers: 這篇論文的相關研究, 誰引用這篇, 館藏全文, 混合檢索, related articles, citation tree, paper exploration"
 ---
 
 # 論文深度探索
@@ -30,6 +30,18 @@ unified_search(
 ```
 
 拿到 PMID 後，再進入下面 workflow。
+
+---
+
+## 公開索引與 Zotero 館藏交叉查找
+
+在使用者已指定可查館藏、且 host 連到該使用者的 Zotero Keeper 時，可從兩邊獨立找候選。公開索引可找館外文獻；本機附件可能命中只出現在內文的詞。多人部署時在使用者端執行館藏工具。館藏文字、筆記、附件路徑及本機識別碼留在該使用者的工作範圍，對外查詢使用可公開的主題詞或文獻識別碼。
+
+1. **公開資料庫**：用 `unified_search(query="gait rehabilitation", limit=20, output_format="json")`。記下查詢日期、實際來源、筆數、上限、失敗及截斷狀態；保留 run ID 或 artifact URI 供回查。已有結果可從 `read_session` 讀回。提供者暫停服務時，沿用已取得的文獻並註記覆蓋缺口。
+2. **本機索引**：在允許查詢整個已連線書庫的情境，可用 Keeper 的 `advanced_search(q="wearable sensor", qmode="everything", start=0, limit=20)` 搜尋書目與已索引內文。用回傳的 `next_start` 翻頁，或記下預算耗盡時停在哪頁。若只允許特定收藏，改以 `get_collection_items(collection_key=collection_key, limit=limit)` 取得該收藏的候選，再於這些項目內核對；記下讀取上限。Keeper 未連線或索引不完整時，將館藏覆蓋標為未知。[Zotero 查詢範圍](https://www.zotero.org/support/dev/web_api/v3/basics)
+3. **核對同一篇報告**：附件或筆記命中時，從 `data.parentItem` 追到所屬書目；以 `get_item(key=item_key)` 核對。若兩邊有相同 PMID 或正規化 DOI（去除 doi.org 前綴、統一大小寫），且其他已知識別碼相容，合併顯示並保留雙方來源。只靠標題、作者與年份相似，或 PMID、DOI 有衝突時，保留兩筆及「待核對」原因。只有一側找到的文獻也保留，分別標明公開索引或本機館藏。已知 PMID 的批次館藏提示可用 `check_articles_owned(pmids=pmids)`；逐篇確認仍依實際館藏項目。
+4. **核對內文**：選定項目後，用 `get_item_attachments(item_key=item_key)` 辨認論文原稿、補充材料等附件，再用 `get_item_fulltext(item_key=attachment_key)` 讀取該附件的索引文字。比對回傳的 `content`，記錄 `source`、可用的章節／表格位置及 `indexed_pages`、`total_pages`。有附件但文字空白、只索引一部分、命中筆記、只有摘要或只有連結，各自標明。若館藏不可讀，可用已核對的 PMID／PMCID／DOI 呼叫 `get_fulltext` 嘗試其他可用來源。找不到關鍵段落時，將該項陳述列為未核實。
+5. **交給下一位 agent**：每筆保留發表日期、這次觀察日期、原始來源、PMID／DOI、命中位置及可讀範圍。私人工作紀錄可附 Zotero 書庫範圍、item／attachment key 和回傳的 server ID。經費來源等欄位另附可回查的資料庫欄位或致謝段落。共享輸出依使用權提供書目與出處。交給 `build_research_chronicle` 的明列篇目使用已核實 PMID；僅有 DOI 或館藏 key 的候選保留在附表，記下尚未進入該版 Chronicle。
 
 ---
 

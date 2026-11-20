@@ -763,7 +763,7 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](../../plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.8.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.9.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin

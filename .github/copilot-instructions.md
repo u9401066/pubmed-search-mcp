@@ -411,10 +411,14 @@ PubMed Search MCP is a **professional literature research assistant** that provi
 unified_search(query="<topic>", limit=10)
 ```
 
-When an agent needs a persistent topic lineage, use Research Chronicle:
+For a persistent topic history, inspect the dated papers supporting each possible fork. Use the Chronicle ID returned by the build to read the saved evidence.
+
 ```python
-build_research_chronicle(topic="<topic>", output="mermaid")
+build_research_chronicle(topic="<topic>", output="chronicle_map")
+read_research_chronicle(request={"action":"milestones", "chronicle_id":chronicle_id})
 ```
+
+Check the earlier papers and the contemporary comparison or consensus sources before describing a historical split. Use `output="mermaid"` for the diagram.
 
 ### Systematic Search
 **Trigger**: "comprehensive search", "systematic review", "find all papers"
