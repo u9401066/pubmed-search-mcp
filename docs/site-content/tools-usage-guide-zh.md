@@ -137,6 +137,23 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
+#### 比較 PubMed 概念組合
+
+把固定範疇放入 `query`，在 `comparison.blocks` 命名 2–5 個可調概念。基準式要求每個概念都命中。每個差集保留其他全部條件，排除該概念。同義詞可用括號與 OR 寫在同一區塊內。調換區塊輸入順序會產生相同的預查。
+
+```python
+analyze_search_query(query='"Cochlear Implants"[mh] AND 1980:1990[dp]',
+    comparison={"blocks": {"B": '"Speech Perception"[mh]', "C": '"Speech Intelligibility"[mh]'}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"<回傳的 URI>"},
+    "artifact_file":"drop-B.json"})
+```
+
+2026-11-20 實測基準命中 12 筆，放寬 C 多 190 筆，放寬 B 多 10 筆，任一概念命中合計 212 筆。程式用三次 ESearch 測量基準與兩個互斥差集。筆數反映查詢當時的索引狀態，研究適格性仍需判讀。
+
+摘要最多列兩個有命中的改動。可提供最多 16 篇 `seed_pmids`，優先提醒找回指定文獻的改動，再依新增筆數排序。基準與差集最多六次查詢，有指定文獻時最多再做五次比對，共用 15 秒的供應端預算。遇到逾時或轉譯警告會標出未完成項目。兩個區塊的三個計數均可用時才推算 `either_total`。
+
+讀 `plan.json` 可見全部變體和原式。讀 `drop-<區塊>.json` 可見放寬後的檢索式、差集檢索式、查詢時間、PubMed 轉譯和最多三篇 PMID，再用 `fetch_article_details` 檢視。選定的式子可用 `save_pipeline` 保存，決定理由與 artifact URI 可記入 `research_workspace`。無持久儲存時直接回傳摘要所列差集的 PMID 樣本。單獨傳入 `query` 仍執行本機分析。
+
 通用文獻搜尋只有一個 tool。使用 `options` 選 retrieval policy，不要尋找
 provider-specific search tool：
 

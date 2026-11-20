@@ -40,6 +40,10 @@ PubMed Search 將負責檢索與保存研究紀錄的 MCP server，和引導宿�
 
 ---
 
+## 在研究工作區功能分支預查 MeSH 組合
+
+使用 `analyze_search_query(query=固定範疇, comparison={"blocks": 可調條件})` 查看每個條件排除了哪些 PubMed 文獻。Agent 最多收到兩項提醒，可先查閱差集中的 PMID 再選擇策略。指南以人工耳蝸示範如何用三次請求比較四個組合。[概念組合指南](#/tools-usage-guide-zh#%E6%AF%94%E8%BC%83-pubmed-%E6%A6%82%E5%BF%B5%E7%B5%84%E5%90%88)
+
 ## 如何追查一個研究主題的歷史 — v0.9.0
 
 Chronicle 現在會列出可能分流的兩條路線各有哪些文獻，以及更早就已獨立發展的線索。讀者可查看關鍵文章的評分依據，找到小支線的代表文獻，也可區分舊文獻新辨認出的關聯與本次新觀察的篇目。人工耳蝸案例示範了索引未能辨認分歧時，如何循當年的比較研究與共識聲明查證。[進階研究工作流](#/advanced-workflows-zh)
@@ -574,7 +578,7 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 │                                                                  │
 │   generate_search_queries() → MeSH 擴展 + 同義詞發現              │
 │   validate_pico_plan()              → Agent-provided PICO handoff        │
-│   analyze_search_query()    → 查詢分析（不執行搜尋）                │
+│   analyze_search_query()    → 本機分析或 PubMed 概念組合預查       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```

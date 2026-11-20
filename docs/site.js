@@ -394,10 +394,10 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "查詢智能", en: "Query Intel" },
     icon: "🧠",
     summary: {
-      zh: "在執行檢索前預先分析 PubMed 對布林查詢字串的實際解析與翻譯邏輯。",
-      en: "Analyze how PubMed actually interprets and translates a Boolean query string before execution.",
+      zh: "分析查詢意圖，或指定固定範疇與可調概念，比較放寬各條件後新增的 PubMed 文獻。",
+      en: "Analyze intent locally or compare the PubMed records added by relaxing one concept at a time.",
     },
-    example: 'analyze_search_query(query=\'"Remimazolam"[MeSH] AND "Sedation"[MeSH]\')',
+    example: 'analyze_search_query(query="Cochlear Implants[mh]", comparison={"blocks":{"B":"Speech Perception[mh]","C":"Speech Intelligibility[mh]"}})',
     docLink: "tools-usage-guide",
   },
   {

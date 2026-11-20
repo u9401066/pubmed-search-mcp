@@ -33,6 +33,10 @@ PubMed Search combines an MCP server for retrieval and persistent research recor
 
 ---
 
+## Preview a MeSH search on the research workspace branch
+
+Use `analyze_search_query(query=fixed_scope, comparison={"blocks": named_clauses})` to see which PubMed records each condition excludes. The agent gets at most two alerts and can open the sampled PMIDs before choosing a strategy. The branch guide includes a three-request cochlear implant example. [Concept comparison guide](docs/guides/TOOLS_USAGE_GUIDE.md#compare-pubmed-concept-blocks)
+
 ## Reading the history of a research topic — v0.9.0
 
 Chronicle now links possible research forks to dated papers on each line, including earlier papers that challenge the proposed starting point. See why a landmark was selected, find a representative from a smaller branch, and distinguish a newly recognized connection between old papers from newly retrieved evidence. The cochlear implant example shows how to investigate a documented debate when the indexing alone yields no fork candidate. [Advanced research workflows](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md)
@@ -596,7 +600,7 @@ Start with the [Tools Usage Guide](docs/guides/TOOLS_USAGE_GUIDE.md): it compres
 │                                                                  │
 │   generate_search_queries() → MeSH expansion + synonym discovery │
 │   validate_pico_plan()              → Agent-provided PICO handoff        │
-│   analyze_search_query()    → Query analysis without execution   │
+│   analyze_search_query()    → Local analysis or PubMed set counts │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```

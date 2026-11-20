@@ -37,6 +37,8 @@ generate_search_queries
 
 ## Step 1: 取得搜尋素材
 
+若 agent 已指定 PubMed MeSH 組合，把固定條件放在 `analyze_search_query(query=...)`，另傳 `comparison={"blocks":{"B":"Speech Perception[mh]","C":"Speech Intelligibility[mh]"}}`。每個 block 都屬於原本的 AND 式。優先檢查找回指定 `seed_pmids` 的差集，再看新增筆數。摘要最多列兩項。需要證據時，對回傳的 `artifact_uri` 呼叫 `read_session` 的 artifact 動作，讀取 `drop-B.json` 中的樣本 PMID，或從 `plan.json` 取回基準式。將選定的式子保存於 pipeline。若連接舊版 server，先檢查工具 schema 是否提供 `comparison`。
+
 ```python
 generate_search_queries(
     topic="remimazolam ICU sedation",

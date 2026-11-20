@@ -290,7 +290,7 @@ above.
 | --- | --- | --- | --- |
 | `validate_pico_plan` | Validate an agent-authored PICO plan and produce an executable search handoff. | PICO plan models and validator; output is intended for `unified_search`, not a second search engine. | none; strict tagged plan; read-only, idempotent, local-only. |
 | `generate_search_queries` | Generate PubMed-ready query variants, MeSH expansions, and spell-aware suggestions. | Strategy generator plus NCBI translation, MeSH, and spelling services; complements `validate_pico_plan`. | none; strict bounded topic; read-only, idempotent, open-world. |
-| `analyze_search_query` | Inspect Boolean structure, fields, breadth, and likely query problems. | Application `QueryAnalyzer`; reused by unified planning without executing a provider search. | none; strict bounded query; read-only, idempotent, local-only. |
+| `analyze_search_query` | Inspect intent locally or measure which records each adjustable block excludes. | `QueryAnalyzer` supports planning. Explicit comparisons use PubMed ESearch and tenant session artifacts. | write, bounded clauses, writes artifact on comparison, non-idempotent, open-world. |
 
 ### 3. `discovery` — article and citation exploration
 

@@ -24,6 +24,8 @@ For a new investigation, choose a stable ID and call `research_workspace(request
 
 Return to any activity as the evidence changes. A missing comparator can lead from Examine back to Expand.
 
+During Expand, use `analyze_search_query` with the fixed PubMed scope in `query` and adjustable concepts in `comparison.blocks` when the connected server offers this parameter. Read a reported difference's sample PMIDs from `drop-<block>.json` through `read_session`. Keep the returned artifact URI in `source_refs` alongside the selected pipeline and record why you kept or relaxed the condition.
+
 ## Save a recoverable decision
 
 ```json

@@ -150,6 +150,23 @@ Each feature family has a workflow diagram so users and developers can see where
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
+#### Compare PubMed concept blocks
+
+Pass the fixed scope in `query`. Supply two to five named, adjustable PubMed clauses in `comparison.blocks`. The baseline requires all blocks. Each difference requires every other block and excludes the named block. Keep synonyms that represent one concept inside a parenthesized OR clause. Exchanging the order of the input blocks produces the same probes.
+
+```python
+analyze_search_query(query='"Cochlear Implants"[mh] AND 1980:1990[dp]',
+    comparison={"blocks": {"B": '"Speech Perception"[mh]', "C": '"Speech Intelligibility"[mh]'}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"<returned URI>"},
+    "artifact_file":"drop-B.json"})
+```
+
+On 2026-11-20 this example returned 12 baseline records. Dropping C added 190 and dropping B added 10. Requiring either yielded 212. Three PubMed ESearch requests measured the baseline and both disjoint differences. Counts describe indexing at retrieval time. A count or a sample PMID alone cannot establish eligibility.
+
+The preview returns up to two nonempty differences. Optional `seed_pmids` (up to 16) prioritize differences containing a named reference, followed by added count. A run makes at most six baseline/difference requests and up to five further seed checks within a shared 15-second provider deadline. A partial response identifies unavailable or warned probes. The two-block `either_total` is derived only when all three counts are usable.
+
+Read `plan.json` for all changes and the original query, or `drop-<block>.json` for the relaxed query, difference query, observation time, provider translation and up to three sampled PMIDs. Use `fetch_article_details` to inspect those papers. Save the selected query with `save_pipeline` and link the artifact URI from a `research_workspace` record to preserve the rationale. Without durable storage, the compact response includes sample PMIDs inline. Plain `analyze_search_query(query=...)` continues to run locally.
+
 There is exactly one generic literature-search tool. Choose its retrieval
 policy with `options` instead of looking for provider-specific search tools:
 
