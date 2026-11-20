@@ -6,6 +6,8 @@
 
 An agent plugin for biomedical literature research. The host agent chooses a search strategy, follows citations and records what it read. The MCP server queries providers and keeps identifiers, search runs and evidence artifacts. A colleague using the same research workspace can pick up the outstanding reading.
 
+The PubMed search code can be traced to November 25, 2025 in `med-paper-assistant`. GitHub records December 2, 2025 as the creation date of this repository. The first PyPI distribution followed on December 8. [Project history and primary records](docs/publication/README.md#project-history)
+
 ![How an agent explores, expands, examines and explains a literature question](docs/images/research-workflow.svg)
 
 ## Quick install
@@ -57,5 +59,9 @@ Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call 
 **Usage Skills (12)** are shipped with the branch plugin. **Development Skills (15)** stay in the repository for contributors. [Plugin skills](plugins/pubmed-search/skills/) · [Architecture](ARCHITECTURE.md) · [Testing](docs/development/TESTING.md) · [Contributing](CONTRIBUTING.md)
 
 ## Citation and license
+
+We welcome patches, reproducible search cases, historically sourced Chronicle corrections and documentation updates. Include the version or commit you used and the observation you want someone else to reproduce. [Contribution guide](CONTRIBUTING.md) · [Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+
+The software is distributed under Apache License 2.0. When redistributing it, include the license, retain applicable notices and mark files you change. Articles, figures and datasets retrieved through the tools remain subject to their source terms. [License text](LICENSE)
 
 Cite the software version used, and the commit for a branch experiment. Cite original papers for research claims. The manuscript is a working draft. [Software citation](CITATION.cff) · [Manuscript and evaluation](docs/publication/README.md) · [Apache License 2.0](LICENSE)

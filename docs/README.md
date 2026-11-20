@@ -64,7 +64,7 @@ describe their own snapshots; they do not override the running tool registry.
 
 Open the [per-file Markdown catalog](reports/markdown-catalog.csv) to find an edit source, generated copy, historical record or client-specific instruction. Refresh it after adding or moving tracked documents with `uv run python scripts/check_repository_layout.py --document-catalog docs/reports/markdown-catalog.csv`. The catalog records ownership and provenance. Historical measurements keep their original dates. Current guides supersede old instructions where paths overlap.
 
-Of the 254 tracked Markdown files, 32 are website pages generated from canonical documents. The catalog also distinguishes skill copies, historic plans and compatibility pointers.
+The catalog includes the 32 website pages generated from canonical documents, plus skill copies, historical plans, GitHub contribution templates and compatibility pointers.
 
 The 23 canonical SVGs in [images](images/) include 22 diagrams and one favicon. The research overview, PubMed query comparison and Chronicle figures use the current branch workflow or a dated worked example. The export, institutional access, session and capability diagrams have corrected labels. The remaining specialist figures cover deployment, data sources, DAGs, retrieval and verification. [Workspace overview](images/research-workflow.svg) · [MeSH set differences](images/search-query-workflow.svg) · [Chronicle publication and recognition dates](images/research-chronicle-lineage-flow.svg)
 

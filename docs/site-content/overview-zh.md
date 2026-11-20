@@ -8,6 +8,8 @@
 
 供 agent 探索與管理生醫文獻的研究外掛。Agent 決定搜尋範疇、追查引文並解讀證據。MCP server 查詢各資料來源，保存篇目、檢索紀錄和讀過的材料。同事可在相同研究工作區接手尚待查證的問題。
 
+PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`。GitHub 記錄本獨立倉庫於 2025 年 12 月 2 日建立，12 月 8 日首次上傳 PyPI。[專案沿革與原始紀錄](#/publication#project-history)
+
 ![Agent 如何探索主題、擴展查詢、檢視證據並交接研究](images/research-workflow.svg)
 
 ## 快速安裝
@@ -59,5 +61,9 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 **使用 Skills (12)** 隨分支 plugin 提供。**開發 Skills (15)** 留在倉庫供貢獻者使用。[Plugin skills](https://github.com/u9401066/pubmed-search-mcp/tree/feature/research-workspace/plugins/pubmed-search/skills) · [架構](#/architecture) · [測試政策](#/testing) · [貢獻指南](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md)
 
 ## 引用與授權
+
+歡迎貢獻程式、可重跑的檢索案例、附史料的 Chronicle 修正或文件翻譯。回報時請附版本或 commit，寫出下一位讀者能重現的觀察。[協作指南](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CONTRIBUTING.md) · [GitHub Issues](https://github.com/u9401066/pubmed-search-mcp/issues)
+
+軟體採 Apache License 2.0。再散布時請附上授權文本，保留適用的聲明，並標示修改過的檔案。透過工具取得的論文、圖片與資料集各自適用來源的授權條款。[授權全文](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)
 
 請引用實際使用的軟體版本。分支實驗加註 commit，研究主張回引原始文獻。方法論文目前為工作稿。[軟體引用](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff) · [研究稿與評估](#/publication) · [Apache License 2.0](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/LICENSE)

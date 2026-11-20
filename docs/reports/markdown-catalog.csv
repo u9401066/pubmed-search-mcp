@@ -97,6 +97,7 @@ path,owner,status,source
 .github/code.chatmode.md,github-client-and-ci-assets,shipped-client-assets,.github/code.chatmode.md
 .github/copilot-instructions.md,github-client-and-ci-assets,shipped-client-assets,.github/copilot-instructions.md
 .github/debug.chatmode.md,github-client-and-ci-assets,shipped-client-assets,.github/debug.chatmode.md
+.github/pull_request_template.md,github-client-and-ci-assets,shipped-client-assets,.github/pull_request_template.md
 .github/zotero-research-workflow.md,github-client-and-ci-assets,shipped-client-assets,.github/zotero-research-workflow.md
 AGENTS.md,root-entrypoints-and-configuration,current,AGENTS.md
 ARCHITECTURE.md,root-entrypoints-and-configuration,current,ARCHITECTURE.md
