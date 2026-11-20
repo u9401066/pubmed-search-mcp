@@ -28,7 +28,9 @@ The following dates distinguish work in the predecessor project, the creation of
 
 To reproduce the creation lookup, run `gh api repos/u9401066/pubmed-search-mcp --jq .created_at`. In a full Git clone, `git log --max-parents=0 --format="%H %cI %s" origin/master` shows the root commit. A registry upload independently dates a distributed artifact. For a historical claim about a particular feature, cite its implementing commit.
 
-The earliest entry in the GitHub Releases list when checked on November 20, 2026 was v0.5.8, published May 11, 2026. The PyPI archive above documents the earlier distribution. [GitHub release v0.5.8](https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.8)
+Four Entrez modules have identical Git blob IDs in the predecessor immediately before extraction and at the root of this repository. They are `base.py`, `batch.py`, `search.py` and `utils.py`. For example, `search.py` has blob ID `85979059d0d4a87ac0f70a20fcf7f81783998119` in both trees. The matching file contents corroborate the extraction recorded in the commits. [Predecessor tree](https://github.com/u9401066/med-paper-assistant/tree/3632a130734b42da20c1297b30ad807fc8e9542a/src/med_paper_assistant/infrastructure/external/entrez) · [Standalone tree](https://github.com/u9401066/pubmed-search-mcp/tree/735113cc3d6c8fe08cbb8a821983fa2dbb87ff5e/src/pubmed_search/entrez)
+
+The earliest entry in the GitHub Releases list when checked on November 20, 2026 was v0.5.8, published May 11, 2026. The PyPI archive above documents the earlier distribution. GitHub recognizes the corrected preview license as `Apache-2.0`. [GitHub release v0.5.8](https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.8) · [License detection at the correction commit](https://api.github.com/repos/u9401066/pubmed-search-mcp/license?ref=bfb87346c968e6581eb62e75583d7bece183c111)
 
 ## One source for each responsibility
 
