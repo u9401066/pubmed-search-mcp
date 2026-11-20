@@ -27,6 +27,10 @@ Update:
 - `CHANGELOG.md`
 - Any downstream docs or skill references that mention the version.
 
+Run `uv run --frozen python scripts/build_agent_plugin.py` to regenerate the
+Agent Plugin and `server.json` from the package version and canonical skills.
+Update the three local asset cache keys in `docs/index.html`.
+
 ## Step 4: Run full verification
 
 Execute the steps in `.clinerules/workflows/pubmed-full-check.md`.
@@ -73,8 +77,9 @@ workflow. Do not tag a commit that has not passed the branch/PR checks.
 <command>gh pr checks --watch --fail-fast</command>
 </execute_command>
 
-Merge only after the checks pass and verify `origin/master` points at the merge
-commit.
+Merge after the PR checks pass. Verify that the push CI run for the exact
+`origin/master` commit succeeded before tagging it. Tag verification checks
+this run by SHA and event type.
 
 ## Step 7: Tag and publish
 
@@ -88,9 +93,10 @@ Create the annotated tag on the verified master commit, then push it:
 <command>git push origin vX.Y.Z</command>
 </execute_command>
 
-The tag-triggered publish workflow must finish all three jobs: distribution
-verification, PyPI publication, and GitHub Release creation. Verify both PyPI
-and the GitHub Release before announcing completion.
+The tag-triggered workflow verifies distributions and the container, publishes
+to PyPI, then publishes the GitHub Release and the official MCP Registry entry.
+Verify the release assets and their hashes on GitHub and PyPI, the version and
+package identity on the MCP Registry, and the live Pages and Wiki documentation.
 
 After publishing, update the parent Zotero Keeper submodule pointer and
 extension pin if needed.
