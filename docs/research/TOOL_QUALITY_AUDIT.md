@@ -3,14 +3,14 @@
 This is the canonical English audit of the public MCP tool surface. The runtime
 registry in `tool_registry.py` is the source of truth; the companion test reads
 that registry and fails if this inventory drifts. At this revision the server
-publishes **41 tools in 16 categories**. Removed aliases are intentionally not
+publishes **42 tools in 16 categories**. Removed aliases are intentionally not
 part of the contract.
 
 | Audit fact | Canonical value |
 | --- | --- |
-| Public tools | 41 |
+| Public tools | 42 |
 | Registry categories | 16 |
-| MCP contract metadata | `contractVersion: 3` |
+| MCP contract metadata | `contractVersion: 4` |
 | Maximum textual response | 500,000 Unicode characters across all text blocks |
 | Mermaid runtime grammar | Bounded `flowchart LR` or `flowchart TD` |
 | Chronicle visual model | Horizontal chronological spine with tree branches |
@@ -27,7 +27,7 @@ scheduler, and filesystem implementations stay in infrastructure.
 ```mermaid
 flowchart LR
     client["MCP clients"]
-    server["Contract version three server"]
+    server["Contract version four server"]
     presentation["Presentation tool adapters"]
     application["Application use cases and ports"]
     domain["Domain models and policies"]
@@ -97,7 +97,7 @@ fail-closed baseline:
 
 - `extra="forbid"` and strict Pydantic types; misspelled fields and implicit
   string-to-number conversion are rejected.
-- `_meta.pubmed-search.contractVersion` is `3`, with registry category and
+- `_meta.pubmed-search.contractVersion` is `4`, with registry category and
   `sideEffect` metadata. MCP read-only, destructive, idempotent, and open-world
   hints are published for clients.
 - Invalid arguments return a sanitized native MCP error without echoing input
@@ -109,7 +109,7 @@ fail-closed baseline:
 - The server does not advertise a misleading structured output schema while
   tools return Markdown, JSON/TOON encoded text, or multimodal content.
 
-The final runtime-derived schema audit found 41 unique tool owners with no
+The final runtime-derived schema audit found 42 unique tool owners with no
 registry missing/extra entries. All 74 object schemas are recursively closed;
 all 215 string, array, integer, and number nodes have explicit bounds; all 10
 tagged unions have an exact discriminator mapping, required tag, and constant
@@ -211,7 +211,7 @@ capacity, rather than maintaining another detached-task lifecycle.
 
 The registry has no environment-dependent hidden tools. The former profiling
 monkeypatch and `get_performance_metrics` tool were removed, so an old profiling
-environment variable cannot change the 41-tool contract. The unused standalone
+environment variable cannot change the 42-tool contract. The unused standalone
 FastAPI presentation tree and stdio background-HTTP launcher were also deleted;
 supported HTTP transport is built from the canonical MCP server, with explicit
 tenant-guarded companion cache/session routes.
@@ -342,11 +342,12 @@ above.
 | `prepare_export` | Format selected or session articles for supported citation export profiles. | Application export service, citation formatters, session selection and artifact store. | write; strict format and selection; non-idempotent, open-world; may persist an export artifact. |
 | `save_literature_notes` | Save curated local wiki or MedPaper-style literature notes and metadata. | Application note-export profiles, templates, CSL JSON and workspace filesystem boundary. | destructive; strict paths and profile; non-idempotent, open-world; creates or replaces user-visible note files. |
 
-### 10. `session` — one discriminated read facade
+### 10. `session` — session history and durable research workspaces
 
 | Tool | Role | Main dependencies and relationships | Side effects and contract |
 | --- | --- | --- | --- |
 | `read_session` | Read PMIDs, articles, summary, log, artifacts, search runs, or replay arguments through one action. | Tenant-scoped session manager, article cache, artifact store and search-run journal; replay hands arguments back to `unified_search`. | none; discriminated `request` and nested artifact locator; read-only, idempotent, local-only; local paths remain redacted by policy. |
+| `research_workspace` | Record linked observations and resume a question with its outstanding actions. | Tenant-scoped SQLite workspace journal and read-only source handoffs into existing research tools. | write; stable workspace and record IDs, conflicting replays rejected; idempotent, local-only. |
 
 ### 11. `institutional` — OpenURL and institutional access
 

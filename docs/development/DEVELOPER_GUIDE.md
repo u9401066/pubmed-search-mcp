@@ -210,7 +210,7 @@ uv run python scripts/check_async_tests.py
 ### Complete MCP protocol acceptance
 
 The all-tool acceptance suite starts the real server and uses the official MCP
-client to perform `tools/list` and `tools/call`. It checks the exact 41-tool
+client to perform `tools/list` and `tools/call`. It checks the exact 42-tool
 registry and exercises every public tool, including stateful session,
 Chronicle, artifact, note-export, pipeline, and scheduler workflows.
 
@@ -220,7 +220,7 @@ flowchart LR
     T --> S["Source-tree stdio child process"]
     T --> H["Streamable HTTP /mcp"]
     T --> W["Freshly installed wheel over stdio"]
-    S --> R["Canonical 41-tool registry"]
+    S --> R["Canonical 42-tool registry"]
     H --> R
     W --> R
     R --> A["Real application services and durable stores"]
@@ -243,8 +243,8 @@ uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
 External-provider boundaries are replaced inside the child server. MCP
 registration and schema validation, tool adapters, application services,
 session/artifact/Chronicle/pipeline persistence, note files, and scheduling are
-real. Each transport performs 60 successful semantic `tools/call` requests plus
-41 pre-execution rejections, verifying one repaired retry for every tool. Every
+real. Each transport performs 62 successful semantic `tools/call` requests plus
+42 pre-execution rejections, verifying one repaired retry for every tool. Every
 accepted request is checked against its published JSON Schema. Chronicle and
 citation Mermaid returned through MCP are hash/size checked; CI also renders
 those exact sources with pinned Mermaid 11.16.1. A socket/DNS

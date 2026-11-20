@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 41-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 42-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 41-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 41 tools use a shared input contract (metadata `contractVersion: 4`).
+All 42 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -116,7 +116,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `read_session` plus the seven pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
+| Persistence and sessions | `research_workspace`, `read_session` and the seven pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -131,6 +131,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full-text synthesis | `get_fulltext` -> `get_text_mined_terms` -> structured summary |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` or Zotero Keeper import tools |
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
+| Resume a literature investigation | `research_workspace` with `read` loads prior decisions, source handoffs and outstanding actions. [Worked example](ADVANCED_RESEARCH_WORKFLOWS.md#resume-a-research-workspace) |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.

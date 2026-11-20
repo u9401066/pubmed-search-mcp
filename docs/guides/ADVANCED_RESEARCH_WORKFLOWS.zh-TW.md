@@ -1,15 +1,78 @@
 # 進階研究工作流
 
-這頁把 docs site 導覽裡的核心進階工作流集中成同一個入口：**Research Chronicle（研究編年史與脈絡樹）**、**Open-i 圖片搜尋**、**上傳圖片 handoff**，以及**持久化 query memory**。
+研究工作區讓一個問題可以跨次接手。想追溯研究歷史可建立編年史，想讀回過去查到的內容可取用 session artifact，需要圖像證據時則可使用圖片工具。
 
 ## 快速對照
 
 | 需求 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
+| 把問題、查過的依據與待讀文獻交給另一個 agent | 用 `research_workspace` 的 `create` 或 `list` | 用 `record` 留下決定，用 `read` 接手 |
 | 追溯主題各條路線的發表時序與分流依據 | `build_research_chronicle` | `read_research_chronicle` |
 | 用文字找生物醫學圖片（放射線、病理切片） | `search_biomedical_images` | `get_article_figures`, `unified_search` |
 | 上傳圖片，依圖片視覺語意找相關文獻 | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
 | 重新讀取大型搜尋/全文輸出，不重跑外部來源 | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
+
+---
+
+## 接續研究工作區
+
+以「早期人工耳蝸研究中的單通道和多通道指的是什麼？」為例。一篇研究比較裝置，另一篇比較訊號處理策略。接手者需要知道兩篇各自在比較什麼，才能判斷是否屬於同一條研究路線。[史學案例與原始文獻](../reports/chronicle_historical_method_2026-11-20.md)
+
+```python
+research_workspace(request={"action":"create","workspace_id":"implant-history",
+    "question":"早期人工耳蝸研究中的單通道和多通道指的是什麼？"})
+```
+
+| 活動 | 這個案例可以怎麼做 |
+| --- | --- |
+| 探索 Explore | 用 `unified_search` 搜尋，保留查詢字串或已存 pipeline 名稱與篩選條件，找到比較裝置的研究 PMID 3878092，記下篇目來自哪個來源。 |
+| 擴展 Expand | 查相關文獻或讀取已存編年史版本，追出比較訊號處理策略的 PMID 3753836。用 `parent_ids` 記錄從哪筆決定延伸出這條線索。 |
+| 查證 Examine | 讀兩篇摘要。若裝置研究的方法段仍取不到，記下缺少的細節並保留待辦。可試 `get_fulltext`，或用已獲授權的 Zotero Keeper 依 PMID／DOI 比對館藏。讀到原文後，才以 `fulltext` 記錄實際章節、頁碼或表號。 |
+| 解釋 Explain | 連回用以區分裝置與策略的紀錄，引用兩篇原始研究，說明已讀材料能支持的判斷，把未解的方法問題帶入交接摘要。 |
+
+例如讀過第一篇摘要後，可用固定 ID 寫下一筆決定。若在收到回覆前斷線，可用原 ID 與相同內容重送。
+
+```python
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"device-comparison","activity":"explore",
+    "note":"PubMed 摘要描述裝置間的比較，仍需查核納入裝置的條件。",
+    "source_refs":["pmid:3878092"],"evidence_scope":"abstract",
+    "next_action":"找出說明如何選取裝置的方法段。"})
+```
+
+若工作在此中斷，同一資料儲存位置與租戶下的下一位 agent 可讀回進度。即使文獻來源暫時無法連線，已存紀錄仍可讀取。
+
+```python
+research_workspace(request={"action":"read","workspace_id":"implant-history"})
+```
+
+若要重新開啟 `pmid:3878092`，可檢查回傳的 `source_handoffs`，將其中的 `arguments` 交給所列工具。讀取工作區本身只會取得已存紀錄。
+
+假設同事在等第一篇全文時，先查了第二篇摘要。以下三筆紀錄可重建他從取得線索到做出有限判讀的過程。
+
+```python
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"strategy-lead","activity":"expand","parent_ids":["device-comparison"],
+    "source_refs":["pmid:3753836"],"evidence_scope":"metadata",
+    "note":"追查 1986 年研究實際比較的對象。",
+    "next_action":"閱讀摘要，確認比較的對象。"})
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"strategy-abstract","activity":"examine","parent_ids":["strategy-lead"],
+    "source_refs":["pmid:3753836"],"evidence_scope":"abstract","resolves":["strategy-lead"],
+    "note":"摘要描述在使用同款裝置的兩位受試者身上比較訊號處理策略。"})
+research_workspace(request={"action":"record","workspace_id":"implant-history",
+    "record_id":"two-comparisons","activity":"explain","parent_ids":["device-comparison","strategy-abstract"],
+    "source_refs":["pmid:3878092","pmid:3753836"],"evidence_scope":"abstract",
+    "note":"兩篇摘要所稱的通道對應到不同的比較對象。第一篇如何挑選裝置仍待查。"})
+```
+
+從 `open_actions` 找回待讀段落。若還有待辦，以 `open_offset=next_open_offset` 翻頁。要從頭看歷程，以 `after=0` 起讀，再依 `next_after` 翻頁。agent 可以回到 Expand 嘗試其他檢索詞或來源。若已獲授權的 Zotero 館藏讓人讀到方法段，新增 Examine 紀錄，保留篇目 ID、實際館藏鍵與段落位置，並用 `resolves=["device-comparison"]` 完成先前待辦。若只查到書目，就保留待辦。每筆紀錄都維持未驗證。交接時給出工作區 ID、判讀所據文獻與尚待查證的問題。
+
+若要交給人閱讀，可將讀取結果存成 UTF-8 JSON，從專案根目錄執行外掛附帶的程式。它會將來源 ID、原文位置、未完成事項與分頁資訊寫到標準輸出。也可直接讀取 MCP 回傳的文字內容封裝。
+
+```sh
+uv run --frozen python .claude/skills/pubmed-research-workspace/scripts/render_handoff.py workspace.json
+```
 
 ---
 
@@ -156,8 +219,9 @@ Artifact 是 query memory，不是第二次搜尋。讀取 artifact 不會重跑
 
 ## 驗證狀態
 
-目前 primary 41-tool MCP server 直接暴露這些功能：
+這些流程會用到下列 MCP 工具。
 
+- 研究工作區與交接：`research_workspace`
 - Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
 - 上傳圖片 handoff: `prepare_figure_search`

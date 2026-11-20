@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A research workspace skill and MCP tool for recording questions, branching
+  investigations, evidence locators, and unresolved actions across sessions.
+  Each tenant has a local journal. Stable record IDs allow clients to retry a
+  write and detect conflicting submissions.
+- Source-checkout plugin builds with `scripts/build_agent_plugin.py --dev-output`
+  for trying branch features in a compatible agent client.
+
 ## [0.9.0] - 2026-11-20
 
 ### Added

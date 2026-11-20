@@ -1,11 +1,11 @@
-# MCP Tool Surface Design — v0.7
+# MCP Tool Surface Design
 
 ## 文件定位
 
-本文件記錄 v0.7 **現行且唯一**的公開 MCP tool surface。Runtime registry
+本文件記錄目前原始碼分支的公開 MCP tool surface。Runtime registry
 `src/pubmed_search/presentation/mcp_server/tool_registry.py` 是工具名稱、分類與數量的
 唯一真相來源；README、網站、agent instructions 與測試都必須由這份 registry
-校驗。公開契約目前是 **16 類、41 個工具**，`contractVersion` 為 `3`。
+校驗。公開契約目前是 **16 類、42 個工具**，`contractVersion` 為 `4`。
 
 這次收斂採直接 breaking change：公開 registry、schema、文件與範例只描述 canonical
 契約。已移除的名稱、參數袋與 forwarding module 不構成相容層，也不能由 server
@@ -18,9 +18,9 @@
 2. MCP tool 只處理 strict transport schema、application service 呼叫與結果呈現；搜尋
    規劃、pipeline 驗證、Chronicle 投影、Mermaid 修復與 persistence policy 留在
    application layer。
-3. 只有「同一 aggregate 的唯讀投影」適合 discriminated request facade。因此
-   `read_session` 與 `read_research_chronicle` 使用 action-tagged union；各 variant
-   只接受自己的欄位。
+3. `read_session` 與 `read_research_chronicle` 以 action-tagged union 區分同一 aggregate 的唯讀投影。
+   `research_workspace` 採用同樣的 strict schema 區分 `create`、`record`、`read`、`list`。
+   每筆寫入由呼叫端指定穩定識別碼，每個動作只接受自己的欄位。
 4. 會建立、取代、刪除或排程 state 的 pipeline operation 使用七個 schema-exact
    單一用途工具。它們的 side effect、idempotency 與授權需求不同，不使用模糊的
    action bag。
@@ -29,9 +29,9 @@
 6. 所有 provider boundary 回傳 canonical typed result；presentation layer 不接受 tuple、
    list、`None` 或舊 payload shape 的猜測式 coercion。
 
-## 41 個 canonical tools
+## 42 個 canonical tools
 
-下表完整列出 registry 的 16 個 category。數量總和為 41；加入、刪除或改名時必須
+下表完整列出 registry 的 16 個 category。數量總和為 42；加入、刪除或改名時必須
 同步修改 registry-driven 測試及生成文件。
 
 | # | Category | 數量 | Canonical tools |
@@ -45,14 +45,14 @@
 | 7 | `ncbi_extended` | 7 | `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, `search_clinvar` |
 | 8 | `citation_network` | 1 | `build_citation_tree` |
 | 9 | `export` | 2 | `prepare_export`, `save_literature_notes` |
-| 10 | `session` | 1 | `read_session` |
+| 10 | `session` | 2 | `read_session`, `research_workspace` |
 | 11 | `institutional` | 5 | `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access`, `diagnose_institutional_access` |
 | 12 | `vision` | 1 | `prepare_figure_search` |
 | 13 | `icd` | 1 | `convert_icd_mesh` |
 | 14 | `chronicle` | 2 | `build_research_chronicle`, `read_research_chronicle` |
 | 15 | `image_search` | 1 | `search_biomedical_images` |
 | 16 | `pipeline` | 7 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline` |
-|  | **合計** | **41** |  |
+|  | **合計** | **42** |  |
 
 ## 能力關係
 
@@ -222,12 +222,11 @@ Tool surface 的修改只有在以下項目全部同步後才算完成：
 
 1. Runtime registry 的 category、tool name、annotation 與 strict schema 一致。
 2. README、網站、agent instructions、skill references 與生成索引不含退役契約。
-3. Registry-driven 測試斷言 16 categories、41 tools，並逐一驗證 metadata。
+3. Registry-driven 測試斷言 16 categories、42 tools，並逐一驗證 metadata。
 4. Session 與 Chronicle 的 discriminated variants 有正反例 schema tests。
 5. Pipeline 七工具具有 persistence、schedule、unschedule 與 multi-server isolation tests。
 6. `unified_search` normal/pipeline boundary、typed source result 與 output budget 有契約測試。
 7. 所有文件與 runtime fixtures 的 Mermaid 以 pinned Mermaid parser 實際渲染；不能只用
    regular expression 判斷 code fence 存在。
 
-這些 guardrail 讓「41」不是手動維護的行銷數字，而是 runtime、文件與 release
-artifact 共同驗證的 public contract。
+這些檢查讓 runtime、文件與 release artifact 都驗證同一份公開契約。

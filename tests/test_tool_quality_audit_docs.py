@@ -35,7 +35,7 @@ def test_runtime_registry_still_has_the_audited_shape() -> None:
     expected_tools = _runtime_tools()
 
     assert len(TOOL_CATEGORIES) == 16
-    assert len(expected_tools) == 41
+    assert len(expected_tools) == 42
     assert len(set(expected_tools)) == len(expected_tools)
 
 
@@ -105,7 +105,7 @@ def test_bilingual_audits_cover_required_contract_topics() -> None:
     for heading in chinese_sections:
         assert heading in chinese
     for content in (english, chinese):
-        assert "contractVersion: 3" in content
+        assert f"contractVersion: {tool_meta('read_session')['pubmed-search']['contractVersion']}" in content
         assert "500,000" in content
         assert "horizontal chronological spine" in content or "橫式時間主軸" in content
         assert "manage_pipeline" in content

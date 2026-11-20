@@ -19,6 +19,7 @@ paths:
 
 ## Research Workflow Rules
 
+- For a study that will span searches or agents, follow the [research workspace skill](../.claude/skills/pubmed-research-workspace/SKILL.md). Resume with `research_workspace(request={"action":"read","workspace_id":"..."})`. Record the evidence scope and outstanding question, then follow the relevant source handoff before drawing a conclusion.
 - Use `generate_search_queries` and `analyze_search_query` before complex/systematic searches.
 - For iterative normal searches, `options="exclude_seen"` filters earlier completed/partial session results by PMID/normalized DOI before `limit`; disclose counts or history warnings. It is rejected with `pipeline=`.
 - For multi-seed exploration use pipeline template `snowball` (`query`, optional `seed_limit` 1–10/default 5, `limit` default 20): search → citing + references → union merge. Scheduled `diff_mode` reports bounded changes since the previous successful run; `notify` retains local run/count summaries, not external push delivery.
