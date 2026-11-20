@@ -25,7 +25,7 @@ from pubmed_search.domain.entities.research_tree import ResearchBranch, Research
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.timeline import ResearchTimeline, TimelineEvent
 
-_MAX_TOPIC_BRANCHES = 6
+MAX_TOPIC_BRANCHES = 6
 _MIN_TOPIC_COVERAGE = 0.6
 _MIN_SIGNAL_PAPERS = 2
 _MAX_TERMS_PER_EVENT = 64
@@ -285,7 +285,7 @@ def _select_distinct_signals(candidates: list[_TopicSignal]) -> list[_TopicSigna
         if any(_jaccard(candidate.event_indexes, prior.event_indexes) >= 0.9 for prior in selected):
             continue
         selected.append(candidate)
-        if len(selected) >= _MAX_TOPIC_BRANCHES:
+        if len(selected) >= MAX_TOPIC_BRANCHES:
             break
     return selected
 
@@ -633,4 +633,4 @@ def _jaccard(left: frozenset[int], right: frozenset[int]) -> float:
     return len(left & right) / len(union) if union else 0.0
 
 
-__all__ = ["build_chronicle_lineage"]
+__all__ = ["MAX_TOPIC_BRANCHES", "build_chronicle_lineage"]

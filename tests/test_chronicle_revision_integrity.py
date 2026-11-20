@@ -426,6 +426,59 @@ def test_missing_entry_is_never_declared_conclusively_absent() -> None:
     assert len(delta["entries"]["not_observed_in_revision"]) == 1
 
 
+def test_added_branch_with_incomplete_membership_preserves_traceable_evidence() -> None:
+    before = _snapshot("topic-alpha-incomplete", 1)
+    entry = ChronicleEntry(
+        entry_id="known",
+        title="Correction",
+        entry_type=ChronicleEntryType.BACKGROUND,
+        time_start="",
+        summary_claim="",
+        branch_id="line",
+        evidence=EvidenceBundle(updating_articles=[EvidenceArticle(title="Correction", doi="10.1000/example")]),
+    )
+    after = _snapshot(
+        before.chronicle_id,
+        2,
+        entries=[entry],
+        branches=[ChronicleBranch("line", "Research line", entry_ids=["known", "missing"])],
+    )
+    detail = diff_chronicles(before, after)["branches"]["added_details"][0]
+    assert detail["entry_ids"] == ["known", "missing"]
+    assert detail["evidence_observation"] == {
+        "basis": "undetermined",
+        "newly_observed": [{"evidence_id": "doi:10.1000/example", "publication_year": None}],
+        "previously_observed": [],
+    }
+
+
+def test_added_branch_dates_use_all_occurrences_of_an_evidence_id_in_the_target_revision() -> None:
+    before = _snapshot("topic-alpha-years", 1)
+    entries = [
+        ChronicleEntry(
+            entry_id=branch,
+            title=branch,
+            entry_type=ChronicleEntryType.BACKGROUND,
+            time_start="",
+            summary_claim="",
+            branch_id=branch,
+            evidence=EvidenceBundle(
+                supporting_articles=[EvidenceArticle(title="Known year", pmid="1", year=known_year)],
+                updating_articles=[EvidenceArticle(title="Conflicting years", pmid="2", year=conflicting_year)],
+            ),
+        )
+        for branch, known_year, conflicting_year in [("alpha", 2020, 2018), ("beta", None, 2019)]
+    ]
+    branches = [ChronicleBranch(branch, branch, entry_ids=[branch]) for branch in ("alpha", "beta")]
+    for ordered_entries in (entries, list(reversed(entries))):
+        after = _snapshot(before.chronicle_id, 2, entries=ordered_entries, branches=branches)
+        for detail in diff_chronicles(before, after)["branches"]["added_details"]:
+            assert detail["evidence_observation"]["newly_observed"] == [
+                {"evidence_id": "pmid:1", "publication_year": 2020},
+                {"evidence_id": "pmid:2", "publication_year": None},
+            ]
+
+
 def test_diff_reports_scope_entry_evidence_role_and_branch_changes() -> None:
     chronicle_id = "topic-alpha-00000005"
     before_article = EvidenceArticle(title="Original paper", pmid="123", journal="Old Journal", year=2020)

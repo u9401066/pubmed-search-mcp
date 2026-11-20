@@ -10,12 +10,15 @@ from pubmed_search.application.chronicle import (
     assemble_chronicle,
     audit_chronicle,
     build_chronicle_lineage,
+    diff_chronicles,
 )
+from pubmed_search.application.chronicle.lineage import MAX_TOPIC_BRANCHES
+from pubmed_search.application.chronicle.projectors import project_chronicle_map
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.timeline import build_research_tree
 from pubmed_search.application.timeline.milestone_detector import MilestoneDetector
 from pubmed_search.application.timeline.timeline_builder import TimelineBuilder
-from pubmed_search.domain.entities.chronicle import ChronicleEntryStatus
+from pubmed_search.domain.entities.chronicle import ChronicleBranch, ChronicleEntryStatus
 from pubmed_search.domain.entities.timeline import (
     LandmarkScore,
     MilestoneType,
@@ -200,6 +203,47 @@ def test_singleton_signals_cannot_be_reported_as_semantic_lineage() -> None:
     assert diagnostics["signal_extraction"]["minimum_papers_per_signal"] == 2
 
 
+@pytest.mark.parametrize(
+    ("retagged", "new_records", "basis"),
+    [
+        (["5", "6"], [], "previously_observed_only"),
+        ([], ["7", "8"], "newly_observed_only"),
+        (["5"], ["8"], "mixed"),
+    ],
+)
+def test_diff_dates_publications_separately_from_new_branch_observations(
+    retagged: list[str], new_records: list[str], basis: str
+) -> None:
+    topic = "Rehabilitation"
+    labels = ["Balance training"] * 2 + ["Gait analysis"] * 2
+    baseline = [_event(str(i), 2015 + i, keywords=[label]) for i, label in enumerate(labels, start=1)]
+    baseline.extend([_event("5", 2020), _event("6", 2021)])
+    before = ResearchTimeline(topic, baseline)
+    events = [
+        _event(event.pmid, event.year, keywords=["Home monitoring"]) if event.pmid in retagged else event
+        for event in baseline
+    ]
+    # Older publications can enter the later snapshot even when the query is unchanged.
+    events.extend(_event(pmid, 2010, keywords=["Home monitoring"]) for pmid in new_records)
+    after = ResearchTimeline(topic, events)
+    delta = diff_chronicles(
+        assemble_chronicle(topic=topic, timeline=before, tree=build_chronicle_lineage(before), revision=1),
+        assemble_chronicle(topic=topic, timeline=after, tree=build_chronicle_lineage(after), revision=3),
+    )
+
+    branch = next(item for item in delta["branches"]["added_details"] if item["name"] == "Home monitoring")
+    assert delta["scope_changed"] is False
+    assert branch["evidence_observation"] == {
+        "basis": basis,
+        "previously_observed": [
+            {"evidence_id": f"pmid:{event.pmid}", "publication_year": event.year}
+            for event in baseline
+            if event.pmid in retagged
+        ],
+        "newly_observed": [{"evidence_id": f"pmid:{pmid}", "publication_year": 2010} for pmid in new_records],
+    }
+
+
 def test_overlap_cannot_leave_a_high_confidence_single_paper_branch() -> None:
     events = [_event(str(index), 2000 + index, mesh_terms=["Alpha Pathway", "Beta Pathway"]) for index in range(7)]
     events.extend(
@@ -273,6 +317,111 @@ def test_multi_signal_membership_is_preserved_and_significant_overlap_warns() ->
     assert finding.details["overlap_ratio"] == 0.2
     assert "primary assignments with explicit cross-links" in finding.message
     assert "not cleanly separated or causal lineages" in finding.message
+
+
+def _divergence_snapshot(shared_year: int = 2001):
+    alpha = "Alpha Pathway"
+    beta = "Beta Pathway"
+    timeline = ResearchTimeline(
+        "therapy",
+        [
+            _event("1", shared_year, mesh_terms=[alpha, beta]),
+            _event("2", 2002, mesh_terms=[alpha]),
+            _event("3", 2002, mesh_terms=[alpha]),
+            _event("4", 2003, mesh_terms=[beta]),
+            _event("5", 2004, mesh_terms=[beta]),
+        ],
+    )
+    return assemble_chronicle(topic="therapy", timeline=timeline, tree=build_chronicle_lineage(timeline))
+
+
+def test_divergence_review_traces_both_lines_and_is_stable_across_entry_order() -> None:
+    snapshot = _divergence_snapshot()
+    chart = project_chronicle_map(snapshot)
+    assert chart["branch_point_semantics"] == "earliest_dated_entry_in_branch_or_descendants"
+    review = chart["divergence_review"]
+    assert review["status"] == "evaluated"
+    assert review["eligible_dated_papers"] == 5
+    (candidate,) = review["candidates"]
+    assert candidate["shared_paper"]["evidence_id"] == "pmid:1"
+    assert candidate["shared_paper"]["time_start"] == "2001"
+    assert {paper["evidence_id"] for paper in candidate["later_papers"]} == {"pmid:2", "pmid:4"}
+    assert candidate["branch_ids"] == [paper["branch_id"] for paper in candidate["later_papers"]]
+    for witness in [candidate["shared_paper"], *candidate["later_papers"]]:
+        entry = next(entry for entry in snapshot.entries if entry.entry_id == witness["entry_id"])
+        assert entry.evidence.supporting_articles[0].evidence_id == witness["evidence_id"]
+    snapshot.entries.reverse()
+    snapshot.branches.reverse()
+    assert project_chronicle_map(snapshot)["divergence_review"] == review
+
+
+def test_divergence_review_skips_topic_sets_larger_than_the_builder_can_emit() -> None:
+    snapshot = _divergence_snapshot()
+    for i in range(len(snapshot.branches), MAX_TOPIC_BRANCHES + 1):
+        snapshot.branches.append(ChronicleBranch(f"extra-{i}", f"Topic {i}", tags=["lineage_basis:topic_signal"]))
+    chart = project_chronicle_map(snapshot)
+    review = chart["divergence_review"]
+    assert len(chart["branches"]) == MAX_TOPIC_BRANCHES + 1
+    assert review["status"] == "topic_branch_limit_exceeded"
+    assert review["observed_topic_branches"] == MAX_TOPIC_BRANCHES + 1
+    assert review["maximum_topic_branches"] == MAX_TOPIC_BRANCHES
+    assert not review["candidates"]
+
+
+@pytest.mark.parametrize("shared_year", [0, 2002, 2010])
+def test_divergence_review_requires_strict_chronological_followup_on_both_lines(shared_year: int) -> None:
+    review = project_chronicle_map(_divergence_snapshot(shared_year))["divergence_review"]
+    assert review["status"] == "evaluated"
+    assert review["candidates"] == []
+
+
+def test_divergence_review_requires_traceable_signals_and_distinct_identified_papers() -> None:
+    from dataclasses import replace
+
+    snapshot = _divergence_snapshot()
+    # Two apparent records on one line have the same DOI as the shared paper.
+    for entry in snapshot.entries[:3]:
+        article = entry.evidence.supporting_articles[0]
+        entry.evidence.supporting_articles[0] = replace(article, doi="10.1234/shared")
+    assert project_chronicle_map(snapshot)["divergence_review"]["candidates"] == []
+    snapshot = _divergence_snapshot()
+    for entry in snapshot.entries:
+        entry.provenance.pop("lineage_matched_signals")
+    legacy = project_chronicle_map(snapshot)["divergence_review"]
+    assert legacy["status"] == "insufficient_signal_provenance"
+    assert legacy["candidates"] == []
+    timeline = ResearchTimeline("therapy", [_event("1", 2001), _event("2", 2002)])
+    fallback = assemble_chronicle(topic="therapy", timeline=timeline, tree=build_chronicle_lineage(timeline))
+    assert project_chronicle_map(fallback)["divergence_review"]["status"] == "insufficient_signal_provenance"
+
+
+def test_parallel_topic_groups_without_a_shared_paper_do_not_create_a_candidate() -> None:
+    timeline = ResearchTimeline(
+        "therapy",
+        [_event(str(i), 2000 + i, mesh_terms=["Alpha Pathway" if i % 2 else "Beta Pathway"]) for i in range(1, 7)],
+    )
+    snapshot = assemble_chronicle(topic="therapy", timeline=timeline, tree=build_chronicle_lineage(timeline))
+    review = project_chronicle_map(snapshot)["divergence_review"]
+    assert review["status"] == "evaluated"
+    assert review["entries_with_signal_membership"] == 6 and review["candidates"] == []
+
+
+def test_shared_publication_retains_evidence_that_both_topics_were_already_visible() -> None:
+    alpha, beta = "Alpha Pathway", "Beta Pathway"
+    timeline = ResearchTimeline(
+        "therapy",
+        [
+            _event("1", 2000, mesh_terms=[alpha]),
+            _event("2", 2000, mesh_terms=[beta]),
+            _event("3", 2001, mesh_terms=[alpha, beta]),
+            _event("4", 2002, mesh_terms=[alpha]),
+            _event("5", 2003, mesh_terms=[beta]),
+        ],
+    )
+    snapshot = assemble_chronicle(topic="therapy", timeline=timeline, tree=build_chronicle_lineage(timeline))
+    (candidate,) = project_chronicle_map(snapshot)["divergence_review"]["candidates"]
+    assert candidate["shared_paper"]["evidence_id"] == "pmid:3"
+    assert {row["evidence_id"] for row in candidate["earlier_single_signal_papers"]} == {"pmid:1", "pmid:2"}
 
 
 def test_low_topic_overlap_remains_auditable_without_overstating_lineage() -> None:

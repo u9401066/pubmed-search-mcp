@@ -277,6 +277,14 @@ DEFAULT_PUBTYPE_POLICIES: tuple[PublicationTypeMilestonePolicy, ...] = (
         confidence=0.9,
         reason="PubMed publication type 標示為 Consensus Development Conference",
     ),
+    PublicationTypeMilestonePolicy(
+        name="consensus_statement_pubtype",
+        publication_type="Consensus Statement",
+        milestone_type=MilestoneType.CONSENSUS,
+        label="Consensus Statement",
+        confidence=0.9,
+        reason="PubMed publication type 標示為 Consensus Statement",
+    ),
 )
 
 

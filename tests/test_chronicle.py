@@ -1263,6 +1263,45 @@ class TestChronicleTools:
         assert '"from_revision":2' in third
         assert '"from_revision":1' not in third
 
+    async def test_rebuild_summary_records_a_new_branch_supported_only_by_old_papers(self, rebuild_tools):
+        tools, events, _provider = rebuild_tools
+        events[:] = [make_event(str(index), 2000 + index, MilestoneType.OTHER, "Study") for index in range(1, 7)]
+        for event, keyword in zip(events, ["Balance training"] * 2 + ["Gait analysis"] * 2 + [""] * 2, strict=True):
+            event.metadata["keywords"] = [keyword] if keyword else []
+        first = json.loads(await tools["build_research_chronicle"](topic="Rehabilitation", output="json"))
+        for event in events[-2:]:
+            event.metadata["keywords"] = ["Home monitoring"]
+        rebuilt = await tools["build_research_chronicle"](chronicle_id=first["chronicle_id"])
+        assert "Home monitoring: 2 evidence records already in revision 1, 0 newly observed" in rebuilt
+        delta = json.loads(await _read_chronicle(tools, "diff", chronicle_id=first["chronicle_id"], from_revision=1))
+        observed = delta["branches"]["added_details"][0]["evidence_observation"]
+        assert [(row["evidence_id"], row["publication_year"]) for row in observed["previously_observed"]] == [
+            ("pmid:5", 2005),
+            ("pmid:6", 2006),
+        ]
+
+    @pytest.mark.parametrize("retrieval_failed", [True, False])
+    async def test_unsuccessful_refresh_points_to_readable_history(self, rebuild_tools, retrieval_failed):
+        from pubmed_search.application.timeline.timeline_builder import TimelineRetrievalError
+
+        tools, events, provider = rebuild_tools
+        original = json.loads(await tools["build_research_chronicle"](topic="Rehabilitation", output="json"))
+        events.clear()
+        if retrieval_failed:
+            provider.side_effect = TimelineRetrievalError("provider detail must stay private")
+        failure = json.loads(
+            await tools["build_research_chronicle"](chronicle_id=original["chronicle_id"], output="json")
+        )
+        assert failure["success"] is False
+        assert failure["category"] == ("api" if retrieval_failed else "data")
+        assert ("retrieval failed" if retrieval_failed else "no article evidence") in failure["error"]
+        assert "saved no revision" in failure["error"]
+        assert "provider detail" not in str(failure)
+        assert original["chronicle_id"] in failure["example"]
+        stored = json.loads(await _read_chronicle(tools, "load", chronicle_id=original["chronicle_id"], output="json"))
+        assert stored["revision"] == 1 and stored["entries"] == original["entries"]
+        assert provider.await_count == 2
+
     @pytest.mark.parametrize("output", ["json", "timeline", "graph", "narrative", "mermaid"])
     async def test_rebuild_outputs_preserve_existing_rendering(self, rebuild_tools, tmp_path, output):
         tools, _events, _provider = rebuild_tools

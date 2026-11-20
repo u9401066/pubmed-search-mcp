@@ -827,7 +827,7 @@ class TimelineBuilder:
             journal=article.get("journal") or article.get("source"),
             first_author=first_author,
             doi=article.get("doi"),
-            citation_count=article.get("citation_count", 0),
+            citation_count=metadata["observed_citation_count"] or 0,
             confidence_score=0.0,
             metadata=metadata,
         )
