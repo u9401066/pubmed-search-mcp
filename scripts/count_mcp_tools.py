@@ -517,7 +517,7 @@ def update_skill_tools_reference(stats: dict, mcp: MCPServer[Any]) -> bool:
 
     old_content = skill_path.read_text(encoding="utf-8")
     if new_content != old_content:
-        skill_path.write_text(new_content, encoding="utf-8")
+        skill_path.write_text(new_content, encoding="utf-8", newline="\n")
         print(f"✅ Updated {skill_path.name}: {stats['total_tools']} tools")
         return True
 

@@ -48,6 +48,10 @@ _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
         "pubmed_search.presentation.mcp_server.tools.reference_verification",
         "register_reference_verification_tools",
     ),
+    "register_research_workspace_tools": (
+        "pubmed_search.presentation.mcp_server.tools.research_workspace",
+        "register_research_workspace_tools",
+    ),
     "register_strategy_tools": ("pubmed_search.presentation.mcp_server.tools.strategy", "register_strategy_tools"),
     "register_unified_search_tools": (
         "pubmed_search.presentation.mcp_server.tools.unified",
@@ -91,6 +95,7 @@ def register_all_tools(
     _load_registrar("register_strategy_tools")(mcp, searcher)
     _load_registrar("register_discovery_tools")(mcp, searcher)
     _load_registrar("register_reference_verification_tools")(mcp, searcher)
+    _load_registrar("register_research_workspace_tools")(mcp)
     _load_registrar("register_export_tools")(mcp, searcher)
     _load_registrar("register_europe_pmc_tools")(mcp)
     _load_registrar("register_figure_tools")(mcp)
@@ -119,6 +124,7 @@ __all__ = [
     "register_pico_tools",
     "register_pipeline_tools",
     "register_reference_verification_tools",
+    "register_research_workspace_tools",
     "register_strategy_tools",
     "register_unified_search_tools",
     "register_vision_tools",

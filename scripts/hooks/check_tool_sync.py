@@ -38,7 +38,7 @@ DOCS_KEYWORDS = [
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
     """Run a command and return the result."""
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+    return subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", **kwargs)
 
 
 def _is_doc_file(path: str) -> bool:

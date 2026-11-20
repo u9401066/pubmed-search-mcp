@@ -48,6 +48,7 @@ _WRITE_TOOLS = {
     "delete_pipeline",
     "get_fulltext",
     "prepare_export",
+    "research_workspace",
     "save_literature_notes",
     "save_pipeline",
     "schedule_pipeline",
@@ -83,6 +84,7 @@ _LOCAL_ONLY_TOOLS = {
     "validate_pico_plan",
     "read_research_chronicle",
     "read_session",
+    "research_workspace",
     "save_pipeline",
     "unschedule_pipeline",
 }

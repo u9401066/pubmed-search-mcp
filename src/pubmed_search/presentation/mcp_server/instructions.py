@@ -336,6 +336,16 @@ search_clinvar("BRCA1", limit=10)
 - `read_session(request={"action":"summary"})`: 查看 session 狀態和可用資料
 - `read_session(request={"action":"log"})`: 查看 activity log 與搜尋歷史摘要
 
+### Research workspaces
+- For a multi-session investigation, call `research_workspace(request={"action":"create","workspace_id":"review","question":"What evidence addresses the question?"})`.
+- Record source identifiers, what you inspected, and the next action using
+  `research_workspace` with action `record` and a stable record ID. Use the
+  activities explore, expand, examine and explain in any order. Link records
+  through parent IDs and resolve an earlier action by its record ID.
+- To resume, use `research_workspace(request={"action":"read","workspace_id":"review"})`.
+  Workspace entries reflect contributor observations. Verify claims against
+  the cited passage before treating an entry as support.
+
 ### Research Artifact Envelope
 - `unified_search` returns a compact answer plus `artifact_summary` / `artifact`
   when durable artifacts were written. The response summary should be detailed
@@ -402,6 +412,7 @@ search_clinvar("BRCA1", limit=10)
 
 ### Session 管理
 - read_session: Read session data through one schema-exact discriminated request.
+- research_workspace: Create, record, list or resume a research workspace across sessions.
 
 ### 機構訂閱
 - configure_institutional_access: Configure your institution's link resolver for full-text access.
