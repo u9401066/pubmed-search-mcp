@@ -18,6 +18,7 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "Documentation-Map.md",
         "Testing.md",
         "Publication.md",
+        "MeSH-Preflight.md",
         "Home.md",
         "_Sidebar.md",
         "User-Guide.md",
@@ -83,6 +84,6 @@ def test_build_github_wiki_rewrites_image_links_to_raw_assets() -> None:
     )
 
     assert rendered == (
-        "![Workflow](https://raw.githubusercontent.com/u9401066/pubmed-search-mcp/feature/research-workspace/"
+        "![Workflow](https://raw.githubusercontent.com/u9401066/pubmed-search-mcp/master/"
         "docs/images/research-workflow.svg)"
     )

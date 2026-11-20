@@ -12,14 +12,16 @@ PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`�
 
 | 使用情境 | 安裝方式 |
 | --- | --- |
-| 正式版 v0.9.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.9.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版 registry 有 41 項。 |
-| 團隊試用分支 `feature/research-workspace` | 從本分支執行下方指令。分支提供 **42 個 MCP 工具**，新增持久研究工作區，也讓既有查詢分析工具能實測 PubMed 布林組合的差異。 |
+| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **42 個 MCP 工具**，包含持久研究工作區。 |
+| 開發工作區 | 在 checkout 執行下方指令，以安裝可測試本機變更的 plugin。 |
 
 ```sh
 uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
 ```
 
 在 agent 的 plugin 安裝介面選擇產生的目錄，並保留原始 checkout。這個 launcher 會執行分支程式碼。倉庫內 `plugins/pubmed-search/` 的固定版本 launcher 會執行正式版。[各 client 安裝與設定](docs/guides/INTEGRATIONS.md)
+
+四個回顧主題的盲測記錄了 agent 看過 MeSH 預查後的選擇、找回的已知納入篇目與新增待篩筆數。[方法與逐題結果](docs/reports/mesh-preflight-2017/README.md)
 
 ## 從研究問題開始
 
@@ -54,7 +56,7 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 ## Skills 與開發
 
-**使用 Skills (12)** 隨分支 plugin 提供。**開發 Skills (15)** 留在倉庫供貢獻者使用。[Plugin skills](plugins/pubmed-search/skills/) · [架構](ARCHITECTURE.md) · [測試政策](docs/development/TESTING.md) · [貢獻指南](CONTRIBUTING.md)
+**使用 Skills (12)** 隨正式版 plugin 提供。**開發 Skills (15)** 留在倉庫供貢獻者使用。[Plugin skills](plugins/pubmed-search/skills/) · [架構](ARCHITECTURE.md) · [測試政策](docs/development/TESTING.md) · [貢獻指南](CONTRIBUTING.md)
 
 ## 引用與授權
 

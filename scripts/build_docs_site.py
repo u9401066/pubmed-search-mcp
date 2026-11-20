@@ -35,6 +35,7 @@ REPO_TREE_BASE = f"https://github.com/u9401066/pubmed-search-mcp/tree/{SOURCE_RE
 PAGES = [
     ("testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
     ("publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
+    ("mesh-preflight", "Blinded MeSH search decisions", DOCS_ROOT / "reports/mesh-preflight-2017/README.md"),
     ("documentation-map", "Documentation Map", DOCS_ROOT / "README.md"),
     ("overview", "Overview", REPO_ROOT / "README.md"),
     ("overview-zh", "Overview (zh-TW)", REPO_ROOT / "README.zh-TW.md"),

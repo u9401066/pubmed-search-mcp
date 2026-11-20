@@ -7,7 +7,7 @@ description: Manage a literature investigation across sessions or hand it to ano
 
 Use `research_workspace` to keep a question, the decisions taken on it, and outstanding work on the connected server. The host agent selects and calls the research tools. A single literature lookup can go straight to `unified_search`.
 
-Check that the connected server advertises `research_workspace` before promising a durable handoff. When trying the feature branch, use the plugin built with `scripts/build_agent_plugin.py --dev-output` from that checkout. A host connected to an older server can still use its search tools and report the handoff in the conversation.
+Check that the connected server advertises `research_workspace` before promising a durable handoff. When testing local changes, use the plugin built with `scripts/build_agent_plugin.py --dev-output` from that checkout. A host connected to an older server can still use its search tools and report the handoff in the conversation.
 
 ## Pick up the question
 

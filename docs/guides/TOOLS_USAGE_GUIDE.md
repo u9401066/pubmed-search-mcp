@@ -148,6 +148,8 @@ Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queri
 
 #### Compare PubMed concept blocks
 
+If PubMed flags a term, `warning_examples` shows up to two short excerpts. Inspect the stored translation before editing the clause. For offline peer review, the systematic-search skill can render the saved plan, differences, sample PMIDs and chosen query. [Four-review evaluation and usage](../reports/mesh-preflight-2017/README.md)
+
 Pass the fixed scope in `query`. Supply two to five named, adjustable PubMed clauses in `comparison.blocks`. The baseline requires all blocks. Each difference requires every other block and excludes the named block. Keep synonyms that represent one concept inside a parenthesized OR clause. Exchanging the order of the input blocks produces the same probes.
 
 ```python

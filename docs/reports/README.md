@@ -5,7 +5,8 @@ test suite is not a measured improvement on a public retrieval benchmark.
 
 | Evidence | Start here |
 | --- | --- |
-| Team preview capability and documentation inventory | [Registry families and limits](../README.md#capability-inventory), [Markdown ownership and sources](markdown-catalog.csv) |
+| Blinded MeSH decisions, four completed reviews | [Frozen protocol, observed rankings, screening cost and offline replay](mesh-preflight-2017/README.md) |
+| v0.10.0 capability and documentation inventory | [Registry families and limits](../README.md#capability-inventory), [Markdown ownership and sources](markdown-catalog.csv) |
 | v0.8.0 renovation review, round 1 | [Chronicle branch experiment, reusable search strategies, service sizing and publication decisions (繁中)](renovation_review_2026-11-20.md) |
 | Chronicle renovation, round 2 | [Recording newly recognized historical connections and finding evidence beyond abstracts (繁中)](chronicle_evidence_review_2026-11-20.md) |
 | Chronicle renovation, round 3 | [Historical method, research forks and a three-paper cochlear implant case (繁中)](chronicle_historical_method_2026-11-20.md) |

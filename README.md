@@ -14,14 +14,16 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.9.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.9.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release registry contains 41 entries. |
-| Team preview on `feature/research-workspace` | Build the plugin from this checkout with the command below. This branch exposes **42 MCP Tools** and adds a persistent research workspace and a Boolean comparison mode for PubMed. |
+| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **42 MCP Tools**, including a persistent research workspace. |
+| Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
 uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-research-plugin
 ```
 
 Select the generated directory in your agent's plugin installer. Keep the checkout available. The generated launcher uses this source tree. The version-pinned launcher in `plugins/pubmed-search/` uses the published package. [Client configurations and plugin installation](docs/guides/INTEGRATIONS.md)
+
+Four blinded review cases tested whether MeSH previews improve search decisions. [Methods, screening costs and results](docs/reports/mesh-preflight-2017/README.md)
 
 ## Start with a research question
 
@@ -56,7 +58,7 @@ Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call 
 
 ## Skills and development
 
-**Usage Skills (12)** are shipped with the branch plugin. **Development Skills (15)** stay in the repository for contributors. [Plugin skills](plugins/pubmed-search/skills/) · [Architecture](ARCHITECTURE.md) · [Testing](docs/development/TESTING.md) · [Contributing](CONTRIBUTING.md)
+**Usage Skills (12)** are shipped with the release plugin. **Development Skills (15)** stay in the repository for contributors. [Plugin skills](plugins/pubmed-search/skills/) · [Architecture](ARCHITECTURE.md) · [Testing](docs/development/TESTING.md) · [Contributing](CONTRIBUTING.md)
 
 ## Citation and license
 

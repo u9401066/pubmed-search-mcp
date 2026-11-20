@@ -386,7 +386,7 @@ def test_docs_site_links_preserve_fragments_and_route_repo_files() -> None:
             REPO_ROOT / "README.md",
             route_map,
         )
-        == "[Citation](https://github.com/u9401066/pubmed-search-mcp/blob/feature/research-workspace/CITATION.cff)"
+        == "[Citation](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff)"
     )
 
 

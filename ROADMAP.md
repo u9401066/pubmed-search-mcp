@@ -1,18 +1,18 @@
 # Research roadmap / 研究路線
 
-## Available on the team branch
+## Available in v0.10.0
 
-The plugin can compare bounded PubMed concept combinations and open the evidence behind a difference. A tenant-owned research workspace links decisions, evidence and outstanding reading across sessions. Release v0.9.0 is the reference for published Chronicle behavior. [Capability inventory](docs/README.md#capability-inventory) · [Release history](CHANGELOG.md)
+The plugin can compare bounded PubMed concept combinations and open the evidence behind a difference. A tenant-owned research workspace links decisions, evidence and outstanding reading across sessions. The four-review MeSH pilot and its frozen decisions accompany v0.10.0. [Capability inventory](docs/README.md#capability-inventory) · [Release history](CHANGELOG.md)
 
 ## Agent plugin delivery plan
 
-2026-11-20 團隊試用規劃。第一組宿主選定 **VS Code Copilot 與 Codex**。前一位研究者為什麼選這條檢索式？下一位打開全新對話，多久能找到還沒讀完的那篇原文？
+2026-11-20 五輪研究目標。第一組宿主選定 **VS Code Copilot 與 Codex**。前一位研究者為什麼選這條檢索式？下一位打開全新對話，多久能找到還沒讀完的那篇原文？
 
 ### 分支上已能重用的東西
 
 | 入口 | 目前可驗證的行為 | 下一步從哪裡接 |
 | --- | --- | --- |
-| Plugin 打包 | 產生器選入 12 個研究技能與 MCP 啟動設定。發行設定啟動 v0.9.0，開發設定啟動 checkout。 | 先讀已連線 server 的工具與輸入 schema，分清正式版與分支能力。[產生器](scripts/build_agent_plugin.py) · [重啟與安裝測試](tests/test_agent_plugin_package.py) |
+| Plugin 打包 | 產生器選入 12 個研究技能與 MCP 啟動設定。發行設定啟動 v0.10.0，開發設定啟動 checkout。 | 先讀已連線 server 的工具與輸入 schema，分清正式版與分支能力。[產生器](scripts/build_agent_plugin.py) · [重啟與安裝測試](tests/test_agent_plugin_package.py) |
 | 可執行的技能腳本 | 隨包的 `render_handoff.py` 可在離線環境把一頁 workspace JSON 轉成人可讀的交接，包含頁面缺口。 | 同一份受租戶保護的資料可供 agent、命令列與閱覽頁使用。[腳本正本](.claude/skills/pubmed-research-workspace/scripts/render_handoff.py) · [交接測試](tests/test_workspace_handoff_export.py) |
 | Copilot 工作區 hooks | 此 repo 的 Bash／PowerShell wrapper 已處理 session 開始、提問、工具前後及 session 結束。部分路徑相對於 checkout，目前這些 hook 隨工作區載入。 | 先選一個事件移植到安裝包，測安裝目錄、一般專案工作目錄與兩套 hook 同時存在時的行為。[現有 hook 合約](docs/development/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md) |
 | 研究服務 | MeSH 差集、workspace 分頁、未完成行動、Chronicle 修訂與來源定位都有既有入口。 | 排序、預算、授權、資料寫入與重試語意繼續由 application service 負責。宿主轉接程式只轉換事件和呈現回覆。[組合預查](src/pubmed_search/application/search/query_comparison.py) · [Workspace](src/pubmed_search/application/research_workspace.py) · [來源接手](src/pubmed_search/application/workspace_handoff.py) |
@@ -49,6 +49,18 @@ Chronicle 也可以讓研究者直接對著史料修訂判讀。先從同一份 
 2. **事件與回覆。** 第一個事件只處理 session 開始。已選案時提示 agent 用既有的 `research_workspace(request={"action":"read","workspace_id":"implant-history","limit":1})` 檢查選定工作區（此處以人工耳蝸案例為例）；未選案時安靜返回。資料頁以一筆未完成行動、來源 ID、證據層級及分頁指標供點讀。研究者或 agent 明確選擇才執行預查、開啟來源或寫入決策。
 3. **兩端實測。** Copilot 留下 PMID 3878092 的摘要紀錄及「查原文裝置選擇條件」。關閉對話，在 Codex 以相同服務身分接手，再交換兩端重測。比較手動貼交接、顯式技能、顯式技能加 hook 三種條件；記錄宿主版本、模式、首個正確下一步所需時間、工具呼叫、重複提示與輸入量。
 4. **採用門檻。** 提議先測五組配對交接。五組均須還原正確紀錄、保留原證據層級且無跨租戶資料。每次開案最多一則提示，提示以 1 KiB UTF-8 為試驗上限，另記宿主可提供的實際 token 數。若加 hook 對接手時間沒有可觀察的改善，先交付顯式技能與腳本，留下實測數據再決定是否預設提示。
+
+### 五輪交付追蹤
+
+本次正式版優先交付第 2 輪。手動與技能交接仍需在兩個真實宿主計時。第 3 與第 4 輪共用研究工作區的證據定位，第 5 輪另驗證多租戶負載。每輪保留宿主版本、輸入、決策紀錄和失敗案例，供團隊決定是否採用。
+
+| 輪次 | 驗收狀態與下一份證據 |
+| --- | --- |
+| 1．Copilot ↔ Codex | 待真機雙向交接。比較手動、skill、skill 加啟動 hook 三組的時間、提示大小及恢復時的供應端請求數。 |
+| 2．MeSH | [四題盲測與離線審閱表](docs/reports/mesh-preflight-2017/README.md) 已交付。下一次用新回顧獨立驗證詞彙修正提示。 |
+| 3．Chronicle | 待領域讀者從完整年表與三則週報追查同一組分歧、原始年份、後補關聯及相反解讀。 |
+| 4．全文與 EBM | 待驗證只有摘要、本地全文、同名異 DOI 與館藏離線時，兩個宿主都能辨識證據層級及缺件。 |
+| 5．多人服務 | 待量測 3–5 處部署、每處 100–300 位註冊者下的實際尖峰併發、工作去重、限流與還原。 |
 
 ## Questions for the next evaluation
 

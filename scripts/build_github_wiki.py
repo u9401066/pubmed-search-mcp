@@ -38,6 +38,7 @@ PAGES: tuple[WikiPage, ...] = (
     WikiPage("Documentation-Map", "Capabilities, evidence and document sources", DOCS_ROOT / "README.md"),
     WikiPage("Testing", "Testing and Release Gates", DOCS_ROOT / "development/TESTING.md"),
     WikiPage("Publication", "Publication and Citation", DOCS_ROOT / "publication/README.md"),
+    WikiPage("MeSH-Preflight", "Blinded MeSH search decisions", DOCS_ROOT / "reports/mesh-preflight-2017/README.md"),
     WikiPage("User-Guide", "User Guide", DOCS_ROOT / "guides/USER_GUIDE.md"),
     WikiPage("User-Guide.zh-TW", "使用者指南", DOCS_ROOT / "guides/USER_GUIDE.zh-TW.md"),
     WikiPage(
