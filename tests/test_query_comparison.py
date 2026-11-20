@@ -62,6 +62,7 @@ async def test_partial_results_do_not_convert_warning_or_deadline_to_zero():
         "changes": [],
         "relevance": "unassessed",
         "incomplete": ["B"],
+        "warning_examples": ["term ignored"],
     }
     assert files["drop-B.json"]["difference"]["warnings"] == ["term ignored"]
     expired, _ = await compare_queries("alpha", spec, probe, timeout=0)

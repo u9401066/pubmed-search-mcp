@@ -53,6 +53,7 @@ async def compare_queries(
         raise ValueError("The combined PubMed comparison exceeds the query length limit")
     deadline = asyncio.get_running_loop().time() + timeout
     calls = 0
+    warning_examples: list[str] = []
 
     async def measure(query: str, limit: int) -> dict[str, Any]:
         nonlocal calls
@@ -65,6 +66,10 @@ async def compare_queries(
             result = await asyncio.wait_for(probe(query, limit), remaining)
         except (asyncio.TimeoutError, APIError):
             return {**observed, "status": "unavailable"}
+        for warning in result["warnings"]:
+            excerpt = " ".join(str(warning).split())[:120]
+            if excerpt and excerpt not in warning_examples and len(warning_examples) < 2:
+                warning_examples.append(excerpt)
         return {**observed, **result, "status": "warning" if result["warnings"] else "ok"}
 
     initial = await measure(baseline, 3)
@@ -109,6 +114,8 @@ async def compare_queries(
     }
     if failed or initial["status"] != "ok":
         summary["incomplete"] = ([] if initial["status"] == "ok" else ["baseline"]) + failed
+    if warning_examples:
+        summary["warning_examples"] = warning_examples
     if len(changes) > 2:
         summary["more"] = len(changes) - 2
     plan = {
