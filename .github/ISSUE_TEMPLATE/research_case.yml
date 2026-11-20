@@ -5,7 +5,7 @@ body:
     id: revision
     attributes:
       label: Release or commit and agent host
-      placeholder: v0.9.0 or branch commit, host and transport
+      placeholder: Release tag or commit SHA, agent host, and transport (stdio or HTTP)
     validations:
       required: true
   - type: textarea
