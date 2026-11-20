@@ -1,6 +1,10 @@
 # Active Context
 
-## Current release work — v0.9.0 Chronicle historical evidence (2026-11-20)
+## Team preview and current documentation
+
+The feature branch adds research workspace handoff and bounded PubMed concept comparisons. See the [capability inventory](../docs/README.md#capability-inventory) for test evidence and the [roadmap](../ROADMAP.md) for open evaluations. The notes below record earlier release work.
+
+## Release record — v0.9.0 Chronicle historical evidence (2026-11-20)
 
 Chronicle maps expose dated candidates for investigating research forks,
 earlier alternatives and documentary sources to read. Milestones include a

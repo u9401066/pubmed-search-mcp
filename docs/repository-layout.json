@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "documentation_source_ref": "feature/research-workspace",
   "categories": [
     {
       "name": "root-entrypoints-and-configuration",
