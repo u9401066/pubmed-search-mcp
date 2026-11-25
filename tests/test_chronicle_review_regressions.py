@@ -12,12 +12,12 @@ and unknown citation counts displayed as zero.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pubmed_search.application.chronicle import assemble_chronicle, audit_chronicle
+from pubmed_search.application.chronicle import ChronicleService, ChronicleStore, assemble_chronicle, audit_chronicle
 from pubmed_search.application.chronicle.highlights import (
     select_extractive_highlight,
     sentence_spans,
@@ -33,6 +33,10 @@ from pubmed_search.domain.services.study_design import (
     FAMILY_PROTOCOL,
     classify_study_design,
 )
+from pubmed_search.presentation.mcp_server.tools.chronicle import _format_summary, _highlight_ranking_note
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Extractive highlights: boilerplate is never the authors' conclusion ──────
 
@@ -617,3 +621,41 @@ def test_abstract_pattern_categories_are_disclosed_by_the_audit() -> None:
     ]
     assert finding.status == "warn"
     assert "abstract" in finding.message
+
+
+# ── Summary: an unknown citation count is not zero citations ────────────────
+
+
+class _CitationFake:
+    """PubMed/iCite boundary: one paper has no iCite count, one has zero."""
+
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        rows = {
+            "501": {"pmid": "501", "year": "2019", "title": "Ketamine and recovery after surgery"},
+            "502": {"pmid": "502", "year": "2021", "title": "Ketamine and delirium after surgery"},
+        }
+        return [rows[pmid] for pmid in pmids if pmid in rows]
+
+    async def get_citation_metrics(self, pmids: list[str]) -> dict[str, dict[str, Any]]:
+        return {
+            "501": {"pmid": "501", "nih_percentile": 88.0, "relative_citation_ratio": 2.4, "citation_count": None},
+            "502": {"pmid": "502", "nih_percentile": 10.0, "relative_citation_ratio": 0.1, "citation_count": 0},
+        }
+
+
+@pytest.mark.asyncio
+async def test_summary_reports_unknown_citation_counts_as_unknown(tmp_path: Path) -> None:
+    service = ChronicleService(TimelineBuilder(_CitationFake()), ChronicleStore(tmp_path / "chronicles"))
+    snapshot = await service.build(pmids=["501", "502"], topic="ketamine")
+    notes = {
+        entry.evidence.supporting_articles[0].pmid: _highlight_ranking_note(entry, coverage_status="complete")
+        for entry in snapshot.entries
+    }
+
+    assert "0 iCite citations" not in notes["501"]
+    assert "citation count unknown" in notes["501"]
+    assert "nih_percentile" in notes["501"]
+    # An observed zero is still reported as zero.
+    assert notes["502"].endswith("0 iCite citations")
+    summary = _format_summary(snapshot)
+    assert "citation count unknown" in summary

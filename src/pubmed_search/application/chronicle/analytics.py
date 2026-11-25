@@ -131,6 +131,15 @@ def _observed_max_citations(entry: ChronicleEntry, components: list[dict[str, An
     return max((count for _, count in _observed_citations(entry, components)), default=None)
 
 
+def observed_max_citations(entry: ChronicleEntry) -> int | None:
+    """Return the highest citation count actually observed for the entry.
+
+    ``None`` means no count was observed (unavailable, not zero); a zero is
+    returned only when it was observed for the entry's own source article.
+    """
+    return _observed_max_citations(entry, _recorded_score_components(entry))
+
+
 def _landmark_row(entry: ChronicleEntry) -> dict[str, Any]:
     importance = landmark_importance_score(entry)
     components = _recorded_score_components(entry)
@@ -365,4 +374,5 @@ __all__ = [
     "landmark_citation_policy",
     "landmark_importance_score",
     "landmark_rank_key",
+    "observed_max_citations",
 ]
