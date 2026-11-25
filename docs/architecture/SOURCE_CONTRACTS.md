@@ -201,6 +201,11 @@ PubTator at all.
   `search-broadening/v1` disclosure and record-level `retrieval` provenance;
   broadened records rank after exact-query records, and `options="no_relax"`
   disables both mechanisms.
+- A PubMed MeSH clause that PubMed reports as not found (`QuotedPhraseNotFound`
+  or `PhraseNotFound`) is corrected before either mechanism: the corrected query
+  replaces the PubMed exact tier and is disclosed as `mesh_correction` (first
+  `mechanisms` entry). `options="no_mesh_correction"` opts out; `no_relax` does
+  not. Fielded PubMed queries are PubMed-only, so other providers never see it.
 - `PUBMED_SEARCH_DISABLED_SOURCES` is a kill switch for explicit, automatic,
   `all`, and `options="preprints"` selection paths.
 - An empty successful response is reported as `empty`, not as an outage. A

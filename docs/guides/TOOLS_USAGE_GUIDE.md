@@ -172,6 +172,24 @@ Candidates are related concepts, not synonyms; they never enter `mesh_terms` or
 With the phrase's spelling variants as `[tiab]` words OR that heading, `AND delirium[tiab]` returned
 518 records where the original query returned 0.
 
+`unified_search` applies this automatically. When the PubMed exact-tier search reports a MeSH clause as
+not found, the exact tier is re-run with a corrected query, and deepening, broadening and relaxation
+decide on the corrected results. Three tiers are tried: `exact` (a preferred or entry term after
+folding case, hyphen spacing and plurals; `"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`),
+`co_occurrence` (the words as `[tiab]` text words OR the best related heading, never the heading alone)
+and `text_words`. The response carries `mesh_correction` (Markdown **MeSH correction** line) with
+NCBI's reason, the replacement, tier, evidence, confidence and the before/after PubMed totals, and
+`broadening.mechanisms` starts with `mesh_correction`. The superseded original attempt stays in
+`broadening.attempts`; corrected records carry retrieval strategy `original:mesh_corrected`. Opt out
+with `options="no_mesh_correction"`; `no_relax` disables broadening only. Queries whose MeSH clauses
+PubMed resolves cost no extra request.
+
+Saved pipelines are never rewritten. A pipeline PubMed step (bounded, exhaustive or `block_analysis`)
+records a `mesh_correction` suggestion with `applied: false`, shown in the run's `warnings`, the Markdown
+report and `get_pipeline_history(view="prisma_s")`. Adopt it by saving a new pipeline version.
+`block_analysis` marks terms PubMed did not find (`pubmed_not_found`, `contribution_meaningful: false`)
+instead of reporting them as zero-contribution terms.
+
 #### Compare PubMed concept blocks
 
 If PubMed flags a term, `warning_examples` shows up to two short excerpts. Inspect the stored translation before editing the clause. For offline peer review, the systematic-search skill can render the saved plan, differences, sample PMIDs and chosen query. [Four-review evaluation and usage](../reports/mesh-preflight-2017/README.md)

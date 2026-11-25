@@ -155,6 +155,20 @@ Postoperative Pain 出現比例相近（17.3%），但有 57,605 筆紀錄使用
 `("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`。
 以片語各拼寫變體的 `[tiab]` 自由詞 OR 該標目，再 `AND delirium[tiab]`，得到 518 筆；原查詢為 0 筆。
 
+`unified_search` 會自動套用。PubMed exact tier 的搜尋若回報某 MeSH 子句找不到，會以校正後查詢重跑 exact tier，
+之後的 deepening、broadening 與 relaxation 都依校正後結果判斷。依序嘗試三個 tier：`exact`（忽略大小寫、連字號間距與
+複數後等於 preferred 或 entry term；`"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`）、`co_occurrence`
+（原詞的 `[tiab]` 自由詞 OR 最佳相關標目，絕不只換成標目）與 `text_words`。回應的 `mesh_correction`（Markdown
+**MeSH correction** 行）列出 NCBI 原因、替換內容、tier、證據、信心與 PubMed 前後總數，`broadening.mechanisms`
+以 `mesh_correction` 開頭。被取代的原查詢仍保留在 `broadening.attempts`，校正後的紀錄其 retrieval strategy 為
+`original:mesh_corrected`。可用 `options="no_mesh_correction"` 關閉；`no_relax` 只關閉 broadening。PubMed 能解析
+其 MeSH 子句的查詢不會多花任何請求。
+
+保存的 pipeline 不會被改寫。pipeline 的 PubMed 步驟（bounded、exhaustive 或 `block_analysis`）只記錄
+`applied: false` 的 `mesh_correction` 建議，顯示在 run 的 `warnings`、Markdown 報告與
+`get_pipeline_history(view="prisma_s")`。要採用請保存成新的 pipeline 版本。`block_analysis` 會標示 PubMed 找不到的詞
+（`pubmed_not_found`、`contribution_meaningful: false`），不再當成零獨特貢獻的詞。
+
 #### 比較 PubMed 概念組合
 
 PubMed 標記有問題的詞時，`warning_examples` 最多顯示兩段警告，可先核對保存的翻譯再修正式子。系統性搜尋 skill 隨附離線腳本，可列出差集樣本 PMID、選定的搜尋式和理由。[四題盲測與用法](../reports/mesh-preflight-2017/README.md)

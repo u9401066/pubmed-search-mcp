@@ -355,6 +355,11 @@ def register_unified_search_tools(
             - Preprints (if options includes "preprints")
             - Broadening disclosure (`broadening`: needed/applied/summary;
               broadened records marked 🔻 / `retrieval.broadened`)
+            - MeSH correction (`mesh_correction` / Markdown **MeSH correction**):
+              when PubMed reports a MeSH clause as not found, the PubMed exact
+              tier is re-run with a corrected query; shows the NCBI reason,
+              replacement, tier (exact / co_occurrence / text_words),
+              evidence, confidence and before/after hits
             - Relaxation info (if auto_relax triggered)
             - Pipeline step summary (if pipeline mode)
         """

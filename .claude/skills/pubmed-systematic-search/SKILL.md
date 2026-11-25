@@ -101,7 +101,9 @@ analyze_search_query(query=query)
 - PubMed translation 是否符合預期
 - 有沒有拼字或概念錯置
 
-PubMed 無法解析的子句會出現在 `unified_search` 的 `source_metadata.pubmed.warnings`（例如 `PubMed did not find quoted phrase "Post-Anesthesia Care Units"[Mesh]`）。該子句不會比對到任何紀錄，若用 `AND` 連接會讓整個策略變成 0 筆。改用 `mesh_terms` 中已確認的標目，或依上面的 `co_occurrence` 候選寫成自由詞 OR 標目的區塊。
+PubMed 無法解析的子句會出現在 `unified_search` 的 `source_metadata.pubmed.warnings`（例如 `PubMed did not find quoted phrase "Post-Anesthesia Care Units"[Mesh]`）。該子句不會比對到任何紀錄，若用 `AND` 連接會讓整個策略變成 0 筆。
+
+`unified_search` 遇到這種 MeSH 子句會自動校正：以校正後查詢重跑 PubMed exact tier，並在 `mesh_correction`（Markdown 的 **MeSH correction** 行）揭露 NCBI 原因、替換內容、tier（`exact` 精確 MeSH 詞／`co_occurrence` 原詞 OR 相關標目／`text_words` 純自由詞）、證據、信心與前後命中數；`broadening.mechanisms` 第一項會是 `mesh_correction`。把這件事告訴使用者，並把 `corrected_query` 而不是原式寫進保存的策略。`co_occurrence` 加入的是相關標目而非同義詞，若不適合，改用 `mesh_terms` 已確認的標目或只保留自由詞。要保留原式請用 `options="no_mesh_correction"`（`no_relax` 只關閉 broadening，不關閉校正）。
 
 ---
 
