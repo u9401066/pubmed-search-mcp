@@ -247,6 +247,15 @@ def test_candidates_never_cross_punctuation_quotes_field_tags_or_boolean_operato
     assert "failure dapagliflozin" not in texts and "placebo COVID-19" not in texts
 
 
+def test_lowercase_or_and_not_split_a_topic_like_pubmed_but_and_does_not():
+    texts = {
+        candidate.text
+        for candidate in parse_topic("delirium or agitation not dementia; head and neck neoplasms").candidates
+    }
+    assert "delirium or agitation" not in texts and "agitation not dementia" not in texts
+    assert {"delirium", "agitation", "dementia", "head and neck neoplasms"} <= texts
+
+
 def test_long_topics_are_bounded_and_flagged():
     phrases = parse_topic(" ".join(f"word{index}" for index in range(80)))
     assert len(phrases.tokens) == 48 and phrases.truncated

@@ -150,6 +150,20 @@ def test_undecomposable_queries_fail_with_a_reason(query: str, message: str) -> 
         decompose_pubmed_query(query)
 
 
+def test_operators_follow_pubmeds_case_rules() -> None:
+    # Live ESearch 2026-11-25: "or"/"not" are operators like OR/NOT; "and" and mixed case are not.
+    with pytest.raises(QueryDecompositionError, match="left to right"):
+        # PubMed reads ((a OR b) AND c) OR d; before, "c[tiab] or d[tiab]" was one AND block.
+        decompose_pubmed_query("(a[tiab] OR b[tiab]) AND c[tiab] or d[tiab]")
+    decomposed = decompose_pubmed_query("(a[tiab] or b[tiab]) AND c[tiab] not d[tiab]")
+    assert [block.terms for block in decomposed.and_blocks] == [("a[tiab]", "b[tiab]"), ("c[tiab]",)]
+    assert [block.text for block in decomposed.not_blocks] == ["d[tiab]"]
+    assert parse_pubmed_query("a[tiab] or b[tiab]").operators == ["OR"]
+    assert decomposed.full() == "(a[tiab] or b[tiab]) AND c[tiab] NOT d[tiab]"
+    for word in ("and", "Or", "Not", "oR"):
+        assert parse_pubmed_query(f"a[tiab] {word} b[tiab]").is_term, word
+
+
 def test_nested_and_inside_block_is_kept_whole() -> None:
     decomposed = decompose_pubmed_query("(a[tiab] AND b[tiab]) AND (c[tiab] OR d[tiab])")
     assert decomposed.and_blocks[0].or_list is False

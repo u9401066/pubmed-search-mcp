@@ -23,6 +23,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from .pubmed_boolean import boolean_operator
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
@@ -34,9 +36,6 @@ _MIN_PLURAL_CHARS = 4
 
 RecordType = Literal["descriptor", "supplementary_concept", "publication_type"]
 MatchedOn = Literal["preferred", "entry_term"]
-
-# Case-sensitive PubMed Boolean operators split a topic into independent segments.
-_BOOLEAN_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
 # Words that may occur inside a MeSH term ("Length of Stay", "Head and Neck
 # Neoplasms") but never begin or end one.
@@ -208,7 +207,11 @@ def _has_letter(token: str) -> bool:
 
 
 def _segments(topic: str) -> list[list[str]]:
-    """Split on punctuation, quotes, field tags and Boolean operators; keep hyphenated words."""
+    """Split on punctuation, quotes, field tags and PubMed operators; keep hyphenated words.
+
+    PubMed operators include lowercase ``or``/``not`` but not ``and``, which
+    may occur inside a heading ("Head and Neck Neoplasms").
+    """
     text = _FIELD_TAG.sub(" | ", unicodedata.normalize("NFKC", topic))
     segments: list[list[str]] = [[]]
     last_end = 0
@@ -216,9 +219,10 @@ def _segments(topic: str) -> list[list[str]]:
         gap = text[last_end : match.start()]
         last_end = match.end()
         token = match.group()
-        if (gap.strip() or token in _BOOLEAN_OPERATORS) and segments[-1]:
+        operator = boolean_operator(token) is not None
+        if (gap.strip() or operator) and segments[-1]:
             segments.append([])
-        if token not in _BOOLEAN_OPERATORS:
+        if not operator:
             segments[-1].append(token)
     return [segment for segment in segments if segment]
 

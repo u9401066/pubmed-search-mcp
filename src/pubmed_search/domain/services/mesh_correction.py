@@ -40,6 +40,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from .mesh_phrase_matching import lookup_variants, term_key
+from .pubmed_boolean import boolean_operator, resembles_operator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -53,7 +54,6 @@ MAX_TEXT_WORD_VARIANTS = 6
 TEXT_WORD_FIELD = "tiab"
 MEDLINE_SUBSET = "medline[sb]"
 
-_BOOLEAN = frozenset({"AND", "OR", "NOT"})
 _MESH_TAG = re.compile(
     r"\[\s*(?P<field>mesh\s+terms|mesh\s+major\s+topic|mesh|mh|majr)(?P<noexp>\s*:\s*noexp)?\s*\]",
     re.IGNORECASE,
@@ -379,14 +379,24 @@ def _quote_balance_is_even(text: str) -> bool:
 
 
 def _bare_term_start(query: str, end: int) -> int | None:
-    """Start of the unquoted words that a field tag at ``end`` applies to."""
+    """Start of the unquoted words that a field tag at ``end`` applies to.
+
+    The words stop at a PubMed operator (``AND``, ``OR``/``or``, ``NOT``/``not``).
+    A leading ``and`` (a stopword PubMed glues onto the phrase) or a
+    mixed-case ``Not``/``Or`` is not part of the heading: PubMed itself then
+    reports the heading words (``... and pacu[mh]`` -> PhraseNotFound
+    ``pacu``). An inner ``and`` stays (``Delirium/prevention and control``).
+    """
     boundary = max(query.rfind(char, 0, end) for char in _DELIMITERS) + 1
-    start: int | None = None
+    words: list[re.Match[str]] = []
     for match in reversed(list(_WORD.finditer(query, boundary, end))):
-        if match.group() in _BOOLEAN:
+        if boolean_operator(match.group()) is not None:
             break
-        start = match.start()
-    return start
+        words.append(match)
+    words.reverse()
+    while words and resembles_operator(words[0].group()):
+        words.pop(0)
+    return words[0].start() if words else None
 
 
 def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:

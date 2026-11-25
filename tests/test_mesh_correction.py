@@ -117,6 +117,25 @@ def test_a_slash_separates_only_a_real_mesh_subheading():
     ]
 
 
+def test_bare_mesh_terms_stop_at_pubmed_operators_in_either_case():
+    # Live ESearch 2026-11-25: "not"/"or" are operators; "and" is a stopword that PubMed glues
+    # onto the next bare phrase but reports the heading itself (PhraseNotFound: ["pacu"]).
+    query = (
+        "delirium[tiab] not pacu[mh] AND x[tiab] or recovery room[mh] AND y[tiab] and PACU[mh] "
+        "AND Delirium/prevention and control[mh] AND z[tiab] Not head and neck neoplasms[mh]"
+    )
+
+    terms = find_mesh_terms(query)
+
+    assert [term.clause for term in terms] == [
+        "pacu[mh]",
+        "recovery room[mh]",
+        "PACU[mh]",
+        "Delirium/prevention and control[mh]",
+        "head and neck neoplasms[mh]",
+    ]
+
+
 def test_only_clauses_named_by_ncbi_are_flagged():
     terms = find_mesh_terms(f'{PACU} AND "Delirium"[Mesh] AND PACU[mh] AND post-anesthesia care units[mh]')
     diagnostics = PubMedQueryDiagnostics(
@@ -306,6 +325,16 @@ async def test_a_flagged_clause_that_already_names_the_heading_and_an_allowed_qu
 
     assert (result.corrected_query, result.corrections) == (query, ())
     assert any("left unchanged" in warning for warning in result.warnings)
+
+
+async def test_a_lowercase_operator_is_never_swallowed_into_the_rewritten_clause(fake: FakeEntrez):
+    # Before: "not PACU[mh]" was one bare term, rewritten to the text words "not PACU", which
+    # turned the exclusion into an inclusion.
+    result = await make_service().correct_query("delirium[tiab] not PACU[mh]")
+
+    assert [item.original for item in result.corrections] == ["PACU[mh]"]
+    assert result.corrected_query.startswith("delirium[tiab] not ")
+    assert '"not PACU"' not in result.corrected_query
 
 
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):
