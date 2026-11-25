@@ -64,25 +64,43 @@ descriptors describe what a paper is about and are never used. Only when
 indexing states no design may a title or a self-describing abstract phrase
 supply one, with `basis="text_pattern_heuristic"` and a `[heuristic]` display
 marker; a `Review` type may be refined from its title to a systematic review.
-Retracted publications are flagged. The entry title and
+"Non-randomized" and "quasi-randomised" studies are never labelled RCTs. A
+protocol (`Clinical Trial Protocol`, even alongside `Randomized Controlled
+Trial`, or a "Protocol for a randomised trial" title) is labelled a protocol,
+and errata, retraction notices and expressions of concern are publication
+notices; neither reports results, so neither becomes a milestone or carries
+an evidence level. Retracted publications are flagged. The entry title and
 `EvidenceArticle.article_type` use this label, and `entry_label_basis` records
 where it came from.
 
 Indexed publication types outrank text-pattern milestone heuristics. A title
 or abstract pattern may add what the type vocabulary lacks, such as a trial
-phase, but cannot relabel an indexed trial, synthesis or cohort as a safety
-alert, approval, debate or breakthrough. Abstract patterns apply only to
-records without an indexed design and only to self-describing designs. A
-safety alert requires an explicit safety communication or boxed warning, not a
-mention of adverse events. The `study_design_labels` audit lists heuristic
-labels and warns on any safety or debate category attached to an indexed
-research design.
+phase, but cannot relabel an indexed trial or synthesis as a safety alert,
+approval, debate or breakthrough. An observational or generic (comparative,
+multicenter) study may still carry a trial phase or an explicit safety signal,
+as before indexed designs were consulted. MeSH design descriptors refine labels
+but never veto a text milestone, so a MeSH-only design cannot remove a paper
+from a capped topic timeline. Abstract patterns match only self-describing
+design phrases ("In this phase 3 trial", "We performed a meta-analysis", "A
+meta-analysis of 12 trials was performed"), never sentences about other work
+("A recent meta-analysis suggested..."), and only within the categories an
+indexed design is compatible with. A safety alert requires an explicit safety
+communication, safety signal or boxed warning, not a mention of adverse
+events. The `study_design_labels` audit lists heuristic labels and
+abstract-derived categories (`abstract_pattern_categories`) and warns on a
+safety or debate category attached to an incompatible indexed research design.
 
 `provenance.extractive_highlight` (`chronicle-extractive-highlight/v1`) quotes
 one sentence of the paper's own abstract: the first substantive sentence of a
 structured CONCLUSIONS section, else the last RESULTS sentence, else a
-conclusion-cue or final sentence. Registration, funding and copyright text is
-never quoted. `char_start` and `char_end` are Unicode code-point offsets into
+conclusion-cue or final sentence. Registration, funding, competing-interest,
+licence and publisher text is never quoted, and sentence splitting keeps
+abbreviations such as "(e.g.", "vs.", "et al." and "Fig." inside the sentence.
+When an abstract is known to be incomplete (a PubMed `ABSTRACT TRUNCATED`
+notice, or only the first 20,000 characters stored), the notice and the cut
+fragment are never quoted, `provenance.abstract_truncation` and the
+highlight's `abstract_truncated` record it, and the `extractive_highlights`
+audit warns. `char_start` and `char_end` are Unicode code-point offsets into
 `EvidenceArticle.abstract`, pinned by `abstract_sha256` and length, so
 `abstract[char_start:char_end] == text` can be checked from the snapshot alone.
 The summary claim, the summary highlights and the narrative quote this text and
@@ -428,8 +446,10 @@ The release gate covers:
   outage coverage in topic and explicit-PMID modes, and contradictory
   provenance claims;
 - PubMed-first study-design labels, disclosed heuristics, no text-pattern
-  safety category on indexed research designs, and verified extractive
-  highlight offsets;
+  safety category on indexed trials or syntheses, protocols and notices kept
+  out of milestones, milestones master emitted for observational and MeSH-only
+  designs, self-describing abstract patterns, and verified extractive
+  highlight offsets that never quote boilerplate or truncated text;
 - exclusion of topic-restating descriptors from branch formation;
 - revision integrity, scope-aware diffing, narration, milestones, and compare;
 - strict discriminated request schemas and rejection of legacy shapes;

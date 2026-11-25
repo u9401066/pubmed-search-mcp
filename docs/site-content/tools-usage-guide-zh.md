@@ -169,7 +169,10 @@ MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的
 **MeSH correction** 行）列出 NCBI 原因、替換內容、tier、證據、信心與 PubMed 前後總數，`broadening.mechanisms`
 以 `mesh_correction` 開頭。被取代的原查詢仍保留在 `broadening.attempts`，校正後的紀錄其 retrieval strategy 為
 `original:mesh_corrected`。可用 `options="no_mesh_correction"` 關閉；`no_relax` 只關閉 broadening。PubMed 能解析
-其 MeSH 子句的查詢不會多花任何請求。
+其 MeSH 子句的查詢不會多花任何請求。在 NOT 運算元內，只有保留所有限制（qualifier、`[Majr]`、`:noexp`）的
+精確更正會在各 tier 套用；其餘列在 `mesh_correction.suggestions`，原子句保持不變。`/qualifier` 只在確實是
+MeSH subheading 時才被辨識，並會核對該 heading 允許的 qualifier。運算子依 PubMed 規則：小寫 `or`、`not`
+有效，但小寫 `and` 是停用詞（放在標記片語前會變成片語的一部分），請寫 `AND`。
 
 保存的 pipeline 不會被改寫。pipeline 的 PubMed 步驟（bounded、exhaustive 或 `block_analysis`）只記錄
 `applied: false` 的 `mesh_correction` 建議，顯示在 run 的 `warnings`、Markdown 報告與
@@ -233,7 +236,8 @@ strategy deadline 仍然有效。
 
 | 欄位 | 意義 |
 | --- | --- |
-| `needed` / `applied` | exact tier 是否不足 `limit`，以及是否真的執行了較低精準度查詢 |
+| `needed` / `applied` | exact tier 是否不足 `limit`，以及自動查詢變更（MeSH 更正、deepen、broaden 或 relax）是否執行且得到 provider 回應 |
+| `failed_attempts` | 失敗或逾時的放寬／relax 請求；一律回報為失敗，不會當成空結果 |
 | `summary` | 一行原因，例如 `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` 或 `no broadening needed (original total 45 ≥ limit 15)` |
 | `attempts[]` | 每個策略的 `tier`、`phase`、實際查詢、`total_available`、`returned`、去重後 `contributed` 與 `skip_reason` |
 | `articles[].retrieval` | 紀錄層級 provenance；`broadened=true`（Markdown 🔻）代表只有較低精準度查詢找到該筆 |
@@ -278,7 +282,9 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 當 manuscript、bibliography 或 agent 產生的回答需要 PubMed-backed citation checking 時，使用 `verify_reference_list`。match / mismatch 應視為 audit trail，而不是只看生成摘要。
 
 `verified` 代表書目資料與解析出的 PubMed 紀錄一致。即使 DOI 或 PMID 相符，
-只要其他提供的欄位衝突或無法確認，仍回報 `partial_match` 並加入人工複核佇列。
+也不會蓋過衝突或無法確認的其他欄位。引用的 PMID／DOI 與其他欄位不一致時，會繼續以 ECitMatch
+與不限年份的搜尋解析；`identifier_assessment` 會標示 `probably_wrong`（該列為 `unresolved`）或
+`weakly_corroborated`（`partial_match` 但不提供更正）。
 DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的識別碼。
 單篇查詢失敗會保留其他結果並回報 `source_unavailable`，不當成文獻不存在。
 這項驗證沒有判定文獻是否支持某個論述，需要讀取相關原文段落後才能判斷引用語境。
@@ -289,7 +295,8 @@ ECitMatch 找不到時，會以**不限定引用年份**的標題字詞搜尋，
 （引用沒有標題時，作者、期刊、卷與起始頁須全部相符）；
 同一著作的多個版本依最接近的年份、作者順序與卷頁一致度排序。該列回報 `partial_match`，
 並附 `corrections`，例如 `{"field": "year", "cited": "2018", "pubmed": "2019"}`。
-若引用標題與紀錄衝突，或多個版本同樣吻合，則不提供更正。套用前請先確認 `matched_article` 是要引用的文獻。
+只有在找到該紀錄的標題、定位資訊或識別碼之外，還有至少兩個獨立的引用欄位相符時才提供更正；否則以
+`corrections_withheld_reason` 交由人工複核。若引用標題與紀錄衝突，或多個版本同樣吻合，也不提供更正。套用前請先確認 `matched_article` 是要引用的文獻。
 `unresolved` 列會列出 `attempted_strategies`，代表 PubMed 沒有可接受的紀錄，不等於該文獻是捏造的。
 
 ### 全文、圖表與圖片證據
