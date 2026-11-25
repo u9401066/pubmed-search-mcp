@@ -146,7 +146,10 @@ Suggested initial source inventory:
 
 | Key | Identifiers | Capabilities | Current implementation path |
 | --- | --- | --- | --- |
+| `registered_fulltext` | `pmid`, `pmcid`, `doi` | supplied text (not a provider) | tenant supplied-fulltext store |
 | `europe_pmc` | `pmcid` | `structured`, `pdf` | direct Europe PMC client |
+| `ncbi_pmc` | `pmcid` | `structured`, `official_host` | NCBI E-utilities `efetch db=pmc` |
+| `pmc_html` | `pmcid` | `structured`, `official_host`, `single_article_only` | public PMC article page |
 | `pmc` | `pmcid`, `pmid` | `pdf`, `landing_page_resolution` | downloader |
 | `unpaywall` | `doi` | `pdf`, `landing_page_resolution` | direct or downloader |
 | `core` | `doi` | `pdf`, `landing_page_resolution`, `fulltext_text` | direct or downloader |
@@ -374,7 +377,61 @@ importing infrastructure:
 
 `FulltextCache` re-raises the adapter's own sanitized exception; it never
 rewrites an upstream failure as a cache error. `source_notices` holds
-`no_body`, `front_matter_only` and `superseded`; none of them is fulltext.
+`no_body`, `front_matter_only`, `superseded` and `supplied_not_verified`; none
+of the first three is fulltext, and the last marks text registered by the host
+agent or user.
+
+### Phase 6: Single-article PMC page, acquisition plan and supplied text (v0.12.0)
+
+Motivation: in an agent benchmark the host agent read the ENGAGES trial
+(PMID 30721296, PMC6439616) from its public PMC page while the server returned
+only links: Europe PMC timed out and NCBI `efetch` was `front_matter_only`
+because the publisher forbids XML reuse.
+
+- **`pmc_html` source** (`infrastructure/sources/pmc_html.py`): reads
+  `https://pmc.ncbi.nlm.nih.gov/articles/PMCxxxxxxx/` through the fail-closed
+  outbound layer (`fetch_public_url`) with the configured NCBI identity, a
+  dedicated process-wide budget (`ncbi-pmc-article-page`, 1 request/s) and a
+  4 MiB cap; parses the page into the shared section model (title + subtitle,
+  "Abstract" block, nested body sections, figure captions, references with
+  PMID/DOI, the displayed copyright/license text, courtesy note); drops site
+  chrome, author pop-ups, table wraps, supplementary boxes and the side panel.
+  A page that declares another canonical PMCID, an error page or a redirect off
+  NCBI is `invalid_response`; 404/410 is an absence; 429 or a CAPTCHA
+  interstitial is `rate_limited` with a shared cooldown, and later reads fail
+  fast during the cooldown instead of waiting inside the request deadline.
+- **Explicit single-article only.** `FulltextRequest.explicit_article_read`
+  defaults to `False`; only the `get_fulltext` tool sets it. The page joins the
+  structured race as a `HedgedAttempt(start_on_hedge=False)`: it starts only
+  after an XML attempt failed, had no body or was `front_matter_only`, never
+  merely because XML is slow, and a later usable XML body still wins. Search
+  prefetch uses its own XML-only fetcher and can never reach the page
+  (`tests/test_fulltext_pmc_html.py` proves both). Parsed pages are cached per
+  tenant (16 entries, 1 h) in `ToolSessionRuntime.article_page_cache`;
+  `PUBMED_FULLTEXT_PMC_HTML=false` removes the source. The body is reported as
+  `fulltext_provenance: direct` with `fulltext_retrieval` (`source: pmc_html`,
+  URL, `retrieved_at`, displayed license text, courtesy note,
+  `usage: individual_reading`).
+- **`fulltext_plan`** (`application/fulltext/plan.py`): when no usable body is
+  obtained (or only unstructured PDF text), an ordered list of applicable steps
+  for the host agent: `retry_later`, `host_fetch`, `download_oa_pdf`,
+  `expand_discovery`, `institutional`, `zotero_attachment`, `ask_user_for_pdf`.
+  Each carries `why`, `legal`, optional `url`/`via`/`tool_hint`/`then` and a
+  pre-filled `register_with` skeleton. Steps are emitted only when they apply
+  (PMCID, located OA links, configured OpenURL/EZproxy/broker, a DOI or PMID).
+- **Supplied text** (`application/fulltext/intake.py`, `supplied.py`;
+  `register_fulltext` tool): mandatory provenance, bounded inline content,
+  allow-listed local files (workspace, notes, tenant data,
+  `PUBMED_FULLTEXT_INTAKE_ROOTS`; no `..`, symlinks resolved before the root
+  check, none for remote authenticated callers), JATS/HTML/PDF parsed with the
+  provider adapters, stored per tenant beside the session artifacts as
+  `agent_supplied` / `user_supplied`. `get_fulltext` serves it first as
+  `registered_fulltext` with `supplied_not_verified` (opt out with
+  `use_registered_fulltext=false`); note export records `fulltext_state`.
+
+NCBI permits reading individual PMC articles but prohibits systematic or bulk
+downloading from the PMC website. Nothing in this phase loops over search
+results; bulk reuse belongs to the PMC Open Access subset services.
 
 ### Phase 5: New high-value sources
 

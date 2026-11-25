@@ -286,8 +286,9 @@ build_citation_tree(pmid="12345678", depth=2, direction="both")
 ### 全文取得
 - 預計深入閱讀時，可用 unified_search(fulltext="prefetch") 在背景準備排名前三篇中已有 PMCID 的 XML；一般探索維持預設 off。
 - 選定後以回應列出的 PMCID 呼叫 get_fulltext，共用已完成／進行中的 XML，不必輪詢；只需文字時可用 include_pdf_links=False。
-- get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；Europe PMC XML → NCBI PMC efetch fallback, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
-- 判讀 get_fulltext 前先看 source_errors[].code（rate_limited / upstream_retries_exhausted / timeout / deadline_exceeded / cache_error）、source_notices（front_matter_only 不是全文）與 sources_skipped；未查完的來源不能當作「沒有全文」。
+- get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；已登錄全文 → Europe PMC XML → NCBI PMC efetch fallback → 單篇請求才讀的公開 PMC 文章頁 pmc_html → Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
+- 判讀 get_fulltext 前先看 source_errors[].code（rate_limited / upstream_retries_exhausted / timeout / deadline_exceeded / cache_error）、source_notices（front_matter_only 不是全文；supplied_not_verified 是登錄文字）與 sources_skipped；未查完的來源不能當作「沒有全文」。
+- 沒有正文時照 fulltext_plan 依序處理（host_fetch 用 host 的 WebFetch 讀公開單篇頁面、download_oa_pdf 後交 asset-aware-mcp ingest_documents、institutional、Zotero Keeper check_articles_owned、ask_user_for_pdf），取得逐字正文後用 register_fulltext 登錄（必填 provenance；標示 agent_supplied/user_supplied，不視為 provider 驗證）。只做單篇個人用途，不可批次或系統性下載 PMC／出版者網站，不繞過存取控制。
 
 ### 文本挖掘
 - get_text_mined_terms(source={kind,value}): 🔬 以明確 PMID/PMCID 來源物件取得標註 (基因、疾病、藥物，來自 Europe PMC)

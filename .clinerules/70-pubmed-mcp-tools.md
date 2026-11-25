@@ -31,6 +31,7 @@ paths:
 - When `unified_search` returns an `artifact_summary`, preserve the user-facing summary and use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})` for deeper audit files.
 - Use `get_fulltext`, `get_article_figures`, and institutional access tools only when full-text retrieval is requested.
 - For planned close reading, `unified_search(fulltext="prefetch")` prepares bounded XML; use the returned PMCID with `get_fulltext` without polling. See `docs/guides/TOOLS_USAGE_GUIDE.md`; keep prefetch off for broad screening.
+- When `get_fulltext` returns no usable body, follow its `fulltext_plan` in order with your own tools (WebFetch for a public page, browser only in the user's own session, asset-aware-mcp `ingest_documents` for PDFs, Zotero Keeper `check_articles_owned`), then call `register_fulltext` with provenance. One article at a time for the user's research; never batch or crawl PMC/publisher sites. Registered text stays `agent_supplied`/`user_supplied`, not provider-verified.
 - Export to RIS for Zotero/EndNote and BibTeX for LaTeX workflows.
 
 ## Tenant Isolation Rules

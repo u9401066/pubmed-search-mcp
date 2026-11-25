@@ -658,6 +658,29 @@ get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, sections="introductio
 get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"}, extended_sources=True)
 ```
 
+When a single, explicitly requested article has no usable XML body (for example
+the publisher allows only PMC front matter), the server reads the public PMC
+article page (`pmc_html`) for that one request; search prefetch never does. If
+it still returns no body, follow `fulltext_plan` in order with your own tools:
+`host_fetch` (fetch the public page verbatim, not a summary), `download_oa_pdf`
+(then asset-aware-mcp `ingest_documents` for citation-ready spans),
+`institutional` (only in the user's own session), `zotero_attachment`
+(Zotero Keeper `check_articles_owned`) and `ask_user_for_pdf`. Store the text
+once with `register_fulltext` and its provenance; later `get_fulltext`, notes and
+Chronicle evidence reuse it as `agent_supplied`/`user_supplied`, never as
+provider-verified text. Read one article at a time for the user's research;
+never batch or crawl PMC or publisher sites.
+
+```python
+register_fulltext(
+    source={"kind": "pmcid", "value": "PMC6439616"},
+    content="## Results\n...verbatim text...",
+    provenance={"retrieval_method": "host_fetch",
+                "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6439616/",
+                "retrieved_at": "2026-11-25T08:00:00Z"},
+)
+```
+
 ### 4. Research a Gene
 ```python
 search_gene(query="BRCA1", organism="human")
