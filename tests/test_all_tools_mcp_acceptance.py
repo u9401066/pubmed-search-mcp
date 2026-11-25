@@ -1211,8 +1211,13 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
     )
     await driver.call(
         "delete_pipeline",
-        {"name": "acceptance-pipeline"},
-        _contains('Pipeline "acceptance-pipeline" deleted', "global scope", "execution history record"),
+        {"name": "acceptance-pipeline", "delete_screening_log": True},
+        _contains(
+            'Pipeline "acceptance-pipeline" deleted',
+            "global scope",
+            "execution history record",
+            "Screening log permanently removed: 1 decision on 1 PMID",
+        ),
     )
 
     def validate_deleted_pipeline_listing(result: Any) -> None:

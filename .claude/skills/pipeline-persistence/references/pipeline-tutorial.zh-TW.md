@@ -612,7 +612,9 @@ pipeline_screening(request={"action": "flow", "pipeline": "pacu_peeg_ma"})   # M
 - `flow` 回報每個 run／資料庫的識別筆數、跨 run 移除的重複、已篩選、排除、尋求全文、未取得、
   已評估、依理由排除與納入，以及每個 run 尚未篩選的新文獻。
 - 較舊或有界的 run 可用 `{"action": "register_run"}` 明確登記；此時流程會警告識別不完整。
-- `delete_pipeline` 會一併刪除 run 歷史、紀錄集與篩選紀錄。
+- `delete_pipeline` 會刪除 run 歷史與紀錄集。篩選紀錄中已有決策時會拒絕且不刪除任何東西，
+  並回報將遺失的決策與 PMID 數；請先用 `{"action": "log"}` 匯出，再傳 `delete_screening_log=true`。
+  沒有決策的篩選紀錄會隨 pipeline 一併刪除。
 
 ## 驗證與精確上限
 

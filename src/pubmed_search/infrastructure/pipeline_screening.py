@@ -116,6 +116,17 @@ class SQLiteScreeningStore:
                     raise ValueError(f"Unsupported screening database version {version}")
                 yield db
 
+    def decision_summary(self) -> dict[str, int]:
+        """Count recorded decisions; a missing log is empty and is not created."""
+        if not self.exists():
+            return {"decisions": 0, "pmids": 0, "reviewers": 0, "records": 0}
+        with self._transaction(write=False) as db:
+            row = db.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT pmid), COUNT(DISTINCT reviewer) FROM decisions"
+            ).fetchone()
+            records = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+            return {"decisions": row[0], "pmids": row[1], "reviewers": row[2], "records": records}
+
     # ── Identification ──────────────────────────────────────────────────
 
     def register_run(

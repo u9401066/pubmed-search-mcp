@@ -62,6 +62,8 @@ class ScreeningStore(Protocol):
 
     def flow_counts(self) -> dict[str, Any]: ...
 
+    def decision_summary(self) -> dict[str, int]: ...
+
 
 def run_is_complete_identification(run: PipelineRun) -> bool:
     """Whether a run identified a complete record set (exhaustive, all PMIDs)."""
@@ -137,6 +139,10 @@ class ScreeningService:
 
     def __init__(self, store: ScreeningStore) -> None:
         self._store = store
+
+    def decision_summary(self) -> dict[str, int]:
+        """Return how many decisions (and decided PMIDs) the log holds."""
+        return self._store.decision_summary()
 
     def register_run(self, run: PipelineRun) -> dict[str, Any]:
         """Add a run's record set to identification (idempotent per run ID)."""

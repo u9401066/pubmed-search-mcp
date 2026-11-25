@@ -228,11 +228,76 @@ async def test_update_search_feeds_the_screening_queue_automatically(tmp_path: P
     assert "Records identified from databases: 7 (PubMed: 7)" in flow
     assert "Duplicate records removed (across runs): 3" in flow
 
-    # Deleting the pipeline removes its screening log with its history.
+    # Recorded decisions are human work: deletion refuses and removes nothing...
     db_path = store.screening_db_path("review")
     assert db_path.is_file()
-    assert "screening log" in tools["delete_pipeline"](name="review")
+    refused = tools["delete_pipeline"](name="review")
+    assert "was not deleted" in refused
+    assert "3 decisions on 3 PMIDs from 1 reviewer label" in refused
+    assert '"action": "log"' in refused
+    assert "delete_screening_log=true" in refused
+    assert db_path.is_file()
+    assert store.exists("review")
+    assert len(store.get_history("review", limit=10)) == 2
+    assert _service_for(store).decision_summary()["decisions"] == 3
+
+    # ...until the caller explicitly opts in.
+    deleted = tools["delete_pipeline"](name="review", delete_screening_log=True)
+    assert 'Pipeline "review" deleted' in deleted
+    assert "Screening log permanently removed: 3 decisions on 3 PMIDs" in deleted
     assert not db_path.exists()
+    assert not store.exists("review")
+
+
+def _service_for(store: PipelineStore) -> ScreeningService:
+    return ScreeningService(SQLiteScreeningStore(store.screening_db_path("review")))
+
+
+async def test_delete_without_decisions_removes_registered_log_as_before(tmp_path: Path) -> None:
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    tools = _tools(store)
+    await _execute_pipeline_mode_outcome(
+        "saved:review", "json", FakeHistorySearcher(["11", "12"]), pipeline_store=store
+    )
+    db_path = store.screening_db_path("review")
+    assert _service_for(store).decision_summary() == {"decisions": 0, "pmids": 0, "reviewers": 0, "records": 2}
+
+    deleted = tools["delete_pipeline"](name="review")
+
+    assert 'Pipeline "review" deleted' in deleted
+    assert "Screening log permanently removed: 0 decisions on 0 PMIDs" in deleted
+    assert not db_path.exists()
+    assert not store.exists("review")
+
+
+def test_delete_without_any_log_is_unchanged(tmp_path: Path) -> None:
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+
+    deleted = _tools(store)["delete_pipeline"](name="review")
+
+    assert 'Pipeline "review" deleted' in deleted
+    assert "Screening log" not in deleted
+    assert not store.screening_db_path("review").exists()
+
+
+def test_store_delete_fails_closed_when_a_log_exists_without_opt_in(tmp_path: Path) -> None:
+    from pubmed_search.application.pipeline.store import ScreeningLogPresentError
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    _service_for(store).register_run(_run("run1", ["1"]))
+    store.save_run("review", _run("20260101_000000_000000_abc", ["1"]))
+
+    with pytest.raises(ScreeningLogPresentError):
+        store.delete("review")
+
+    assert store.exists("review")
+    assert store.screening_db_path("review").is_file()
+    assert store.count_history("review") == 1
+    assert store.delete("review", delete_screening_log=True)[1] == 1
+    assert not store.screening_db_path("review").exists()
 
 
 async def test_unknown_pipeline_and_invalid_decisions_are_structured_errors(tmp_path: Path) -> None:

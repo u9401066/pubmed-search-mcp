@@ -164,7 +164,7 @@ Pipeline 持久化、載入、排程、PRISMA 篩選紀錄
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |
-| `delete_pipeline` | Permanently delete a saved pipeline, its execution history and screening log. |
+| `delete_pipeline` | Permanently delete a saved pipeline and its execution history. |
 | `get_pipeline_history` | Get execution history, a run's search record, or its persisted record set. |
 | `schedule_pipeline` | Schedule a saved pipeline for periodic execution. |
 | `unschedule_pipeline` | Remove the active schedule for a saved pipeline. |

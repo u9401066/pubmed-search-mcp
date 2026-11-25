@@ -61,6 +61,10 @@ class PipelineHistoryError(RuntimeError):
     """A persisted pipeline run record could not be decoded safely."""
 
 
+class ScreeningLogPresentError(ValueError):
+    """Deletion would remove a screening log the caller did not explicitly opt to delete."""
+
+
 def _config_to_dict(config: PipelineConfig, *, include_output_defaults: bool = False) -> dict[str, Any]:
     """Serialize one canonical pipeline mapping, optionally including output defaults for display."""
     data: dict[str, Any] = {}
@@ -548,19 +552,24 @@ class PipelineStore:
         return [meta for _, meta in indexed_results]
 
     @synchronized
-    def delete(self, name: str) -> tuple[PipelineScope, int]:
+    def delete(self, name: str, *, delete_screening_log: bool = False) -> tuple[PipelineScope, int]:
         """Delete a pipeline and its history.
 
-        Searches workspace first, then global.
+        Searches workspace first, then global. A screening log holds human
+        work, so its presence makes deletion fail closed (nothing is removed)
+        unless ``delete_screening_log`` is set; callers decide that from the
+        log's decision count before opting in.
 
         Args:
             name: Pipeline name.
+            delete_screening_log: Also delete an existing screening log.
 
         Returns:
             (scope_where_deleted, run_count_deleted)
 
         Raises:
             FileNotFoundError: If pipeline not found.
+            ScreeningLogPresentError: A screening log exists and was not opted in.
         """
         name = self._validate_name(name)
 
@@ -568,18 +577,28 @@ class PipelineStore:
         if self._workspace_dir:
             ws_yaml = self._workspace_pipelines_dir / f"{name}.yaml"
             if ws_yaml.exists():
-                return self._delete_from_scope(name, PipelineScope.WORKSPACE)
+                return self._delete_from_scope(name, PipelineScope.WORKSPACE, delete_screening_log=delete_screening_log)
 
         # Then global
         global_yaml = self._global_pipelines_dir / f"{name}.yaml"
         if global_yaml.exists():
-            return self._delete_from_scope(name, PipelineScope.GLOBAL)
+            return self._delete_from_scope(name, PipelineScope.GLOBAL, delete_screening_log=delete_screening_log)
 
         msg = f"Pipeline '{name}' not found"
         raise FileNotFoundError(msg)
 
-    def _delete_from_scope(self, name: str, scope: PipelineScope) -> tuple[PipelineScope, int]:
+    def _delete_from_scope(
+        self,
+        name: str,
+        scope: PipelineScope,
+        *,
+        delete_screening_log: bool = False,
+    ) -> tuple[PipelineScope, int]:
         """Delete pipeline + history from a specific scope."""
+        screening_db = self._scope_root(scope) / "pipeline_screening" / f"{name}.sqlite3"
+        if screening_db.is_file() and not delete_screening_log:
+            msg = f"Pipeline '{name}' has a screening log; refusing to delete it without explicit opt-in"
+            raise ScreeningLogPresentError(msg)
         pipelines_dir = self._pipelines_dir_for(scope)
         runs_dir = self._runs_dir_for(scope) / name
 
@@ -604,7 +623,6 @@ class PipelineStore:
             shutil.rmtree(artifacts_dir)
         # The screening log belongs to this pipeline's identification history;
         # leaving it would silently reattach decisions to a future same-name strategy.
-        screening_db = self._scope_root(scope) / "pipeline_screening" / f"{name}.sqlite3"
         for suffix in ("", "-wal", "-shm", "-journal"):
             sidecar = screening_db.with_name(screening_db.name + suffix)
             if sidecar.is_file():

@@ -129,6 +129,9 @@ load_pipeline(source="file:path/to/pipeline.yaml")    # 從檔案
 
 ```python
 delete_pipeline(name="old_search")  # 刪除配置 + 歷史
+# 篩選紀錄已有決策時會拒絕（不刪任何東西）並回報決策／PMID 數；
+# 先 pipeline_screening(request={"action":"log",...}) 匯出，再明確同意：
+delete_pipeline(name="old_search", delete_screening_log=True)
 ```
 
 ### get_pipeline_history — 查看執行歷史

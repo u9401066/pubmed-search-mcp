@@ -642,7 +642,10 @@ pipeline_screening(request={"action": "flow", "pipeline": "pacu_peeg_ma"})   # M
   excluded with reasons, and included, plus new unscreened records per run.
 - Use `{"action": "register_run"}` to add an older or bounded run explicitly;
   the flow then warns that identification is incomplete.
-- `delete_pipeline` removes the run history, record sets and screening log.
+- `delete_pipeline` removes the run history and record sets. If the screening log holds
+  decisions it refuses and removes nothing, reporting how many decisions and PMIDs would be
+  lost; export them with `{"action": "log"}` first, then pass `delete_screening_log=true`.
+  A log without decisions is removed with the pipeline.
 
 ## Validation and exact bounds
 

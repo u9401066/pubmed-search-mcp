@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
@@ -313,10 +315,66 @@ def _load_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, source:
     return "\n".join(parts)
 
 
-def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name: str) -> str:
+def _screening_decision_summary(store: PipelineStore, name: str) -> dict[str, int] | None:
+    """Count screening decisions without creating a log; ``None`` when there is no log."""
+    from .pipeline_screening import screening_service
+
+    db_path = store.screening_db_path(name)
+    if not isinstance(db_path, Path) or not db_path.is_file():
+        return None
+    return screening_service(store, name).decision_summary()
+
+
+def _counted(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _screening_loss(summary: dict[str, int]) -> str:
+    return f"{_counted(summary['decisions'], 'decision')} on {_counted(summary['pmids'], 'PMID')}"
+
+
+def _screening_log_refusal(tool_name: str, name: str, summary: dict[str, int]) -> str:
+    return ResponseFormatter.error(
+        f"Pipeline '{name}' was not deleted: its screening log holds {_screening_loss(summary)} "
+        f"from {_counted(summary['reviewers'], 'reviewer label')}, which deletion would permanently destroy. "
+        "Nothing was removed.",
+        suggestion=(
+            "Export the screening log first (page through pipeline_screening log; flow gives PRISMA counts), "
+            "then repeat with delete_screening_log=true to delete the pipeline together with its decisions"
+        ),
+        example=(
+            f'pipeline_screening(request={{"action": "log", "pipeline": "{name}", "offset": 0, "limit": 100}}); '
+            f'delete_pipeline(name="{name}", delete_screening_log=true)'
+        ),
+        tool_name=tool_name,
+    )
+
+
+def _delete_pipeline_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    name: str,
+    delete_screening_log: bool = False,
+) -> str:
     store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
+
+    # Screening decisions are human work: check before touching anything.
+    summary: dict[str, int] | None = None
+    if store.exists(name):
+        try:
+            summary = _screening_decision_summary(store, name)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            logger.warning("Pipeline screening log could not be inspected before deletion (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                f"Pipeline '{name}' was not deleted: its screening log could not be inspected. Nothing was removed.",
+                suggestion="Check data directory availability and retry",
+                tool_name=tool_name,
+            )
+        if summary is not None and summary["decisions"] > 0 and not delete_screening_log:
+            return _screening_log_refusal(tool_name, name, summary)
 
     scheduler = runtime.scheduler if current_tenant_id() == DEFAULT_TENANT_ID else None
     scheduled_entry = None
@@ -327,7 +385,8 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
             logger.warning("Unable to inspect pipeline schedule before deletion (%s)", type(exc).__name__)
 
     try:
-        scope, run_count = store.delete(name)
+        # Past the guard, an empty (or opted-in) log goes with the pipeline.
+        scope, run_count = store.delete(name, delete_screening_log=True)
     except FileNotFoundError:
         return ResponseFormatter.error(
             f"Pipeline '{name}' not found",
@@ -347,7 +406,9 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
 
     parts = [f'🗑️ Pipeline "{name}" deleted.']
     parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
-    parts.append(f"  - {run_count} execution history record(s), run record sets and screening log permanently removed")
+    parts.append(f"  - {run_count} execution history record(s) and run record sets permanently removed")
+    if summary is not None:
+        parts.append(f"  - Screening log permanently removed: {_screening_loss(summary)}")
     if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:
@@ -773,8 +834,15 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
     # ── Tool 4: delete_pipeline ──────────────────────────────────────────
 
     @mcp.tool()
-    def delete_pipeline(name: PipelineName) -> str:
-        """Permanently delete a saved pipeline, its execution history and screening log.
+    def delete_pipeline(name: PipelineName, delete_screening_log: bool = False) -> str:
+        """Permanently delete a saved pipeline and its execution history.
+
+        Run records and their record sets are removed with the pipeline. A
+        screening log that holds decisions is human work: deletion is refused
+        (nothing is removed) and reports how many decisions/PMIDs would be
+        lost, unless delete_screening_log=true. Export the log first with
+        pipeline_screening(request={"action":"log", ...}). A log without
+        decisions is removed with the pipeline.
 
         For the default tenant, any process-level schedule is removed only
         after the stored pipeline deletion succeeds. Isolated tenants never
@@ -782,14 +850,17 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
 
         Args:
             name: Name of the saved pipeline to delete.
+            delete_screening_log: Also delete screening decisions recorded for
+                this pipeline (default false: refuse when decisions exist).
 
         Returns:
-            Confirmation of deletion.
+            Confirmation of deletion, or a refusal that removed nothing.
         """
         return _delete_pipeline_impl(
             runtime=runtime,
             tool_name="delete_pipeline",
             name=name,
+            delete_screening_log=delete_screening_log,
         )
 
     # ── Tool 5: get_pipeline_history ─────────────────────────────────────

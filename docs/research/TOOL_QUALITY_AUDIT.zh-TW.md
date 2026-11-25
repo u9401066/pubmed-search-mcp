@@ -361,7 +361,7 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | `save_pipeline` | 驗證並保存一份具名 pipeline definition。 | Pipeline config parser、schema validator、workspace-scoped `PipelineStore` 與 history writer。 | destructive；strict definition 與 name；non-idempotent、local-only；建立 version 或取代 named head。 |
 | `list_pipelines` | 列出已保存 pipeline summary。 | Workspace-scoped `PipelineStore` index。 | none；strict filter 與 cap；read-only、idempotent、local-only。 |
 | `load_pipeline` | 載入具名 pipeline definition 以檢視或執行。 | `PipelineStore` current 或 versioned record；供 `unified_search` pipeline mode 使用。 | none；strict name 與 optional version；read-only、idempotent、local-only。 |
-| `delete_pipeline` | 刪除一份具名 persisted pipeline。 | `PipelineStore` deletion boundary 與 schedule consistency check。 | destructive；strict name；idempotent、local-only；移除 persistent state。 |
+| `delete_pipeline` | 刪除一份具名 persisted pipeline。 | `PipelineStore` deletion boundary、schedule consistency check 與篩選紀錄保護。 | destructive；strict name；idempotent、local-only；移除 persistent state，但未設 `delete_screening_log=true` 時拒絕刪除篩選決策。 |
 | `get_pipeline_history` | 讀取 run 歷史、單一 run 的 PRISMA-S 來源資訊，或分頁讀取保存的紀錄集。 | `PipelineStore` immutable run record 與紀錄集 artifact。 | none；strict name 與 cap；read-only、idempotent、local-only。 |
 | `schedule_pipeline` | 為 stored pipeline 建立或取代已驗證 APScheduler trigger。 | Stored pipeline runner、APScheduler adapter、scheduler persistence 與 pipeline validator。 | destructive；strict schedule 與 pipeline name；non-idempotent、open-world；改變 durable scheduling 與未來 provider call。 |
 | `unschedule_pipeline` | 移除單一 pipeline 的 schedule trigger，但不刪 definition。 | APScheduler adapter 與 schedule store；只和 `schedule_pipeline` 配對。 | destructive；strict pipeline name；idempotent、local-only；移除 scheduling state。 |
