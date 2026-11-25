@@ -16,7 +16,11 @@ from pubmed_search.application.unified.clinical_trials import (
     validate_clinical_trials_rows,
 )
 from pubmed_search.application.unified.mesh_correction import compact_mesh_correction, correction_summary
-from pubmed_search.application.unified.tiering import POLICY_SKIP_REASONS, compact_broadening
+from pubmed_search.application.unified.tiering import (
+    MECHANISM_MESH_CORRECTION,
+    POLICY_SKIP_REASONS,
+    compact_broadening,
+)
 from pubmed_search.shared.credential_sanitizer import (
     extract_credential_values,
     redact_known_credential_values,
@@ -743,7 +747,22 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
 
     broadening = execution.broadening
     if broadening:
-        if broadening.get("applied"):
+        if (
+            broadening.get("applied")
+            and not int(broadening.get("broadened_records") or 0)
+            and list(broadening.get("mechanisms") or []) == [MECHANISM_MESH_CORRECTION]
+        ):
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="info",
+                message=(
+                    "The PubMed query was corrected automatically (see mesh_correction); "
+                    "no lower-precision records were added."
+                ),
+                details=compact_broadening(broadening),
+            )
+        elif broadening.get("applied"):
             _add_check(
                 checks,
                 check="search_broadening",

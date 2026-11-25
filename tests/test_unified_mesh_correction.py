@@ -310,5 +310,6 @@ async def test_artifact_query_strategy_and_audit_record_the_correction(fake_entr
     assert strategy["broadening"]["mechanisms"] == ["mesh_correction"]
     checks = {check["check"]: check for check in files["audit.json"]["checks"]}
     assert checks["mesh_correction"]["severity"] == "info"
+    assert checks["search_broadening"]["message"].startswith("The PubMed query was corrected automatically")
     assert "hits 0 → 518" in checks["mesh_correction"]["message"]
     assert persisted["summary"]["mesh_correction"]["corrected_query"].endswith("AND delirium[tiab]")
