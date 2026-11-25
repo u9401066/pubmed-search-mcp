@@ -17,6 +17,7 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Coroutine, Mapping
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
@@ -107,6 +108,17 @@ _VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
 _FULL_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$")
 _PIPELINE_ALTERNATE_SOURCES = frozenset(PIPELINE_SEARCH_SOURCES - {"pubmed"})
 PipelineOutcomeStatus = Literal["completed", "partial", "failed"]
+
+
+@dataclass
+class _DeferredSuggestion:
+    """A suggest-only MeSH correction to compute once required pipeline work is done."""
+
+    target: dict[str, Any]
+    query: str
+    diagnostics: Any
+    observed_count: int | None
+    physical_query: str | None
 
 
 def _utc_now_iso() -> str:
@@ -228,6 +240,10 @@ class PipelineExecutor:
             "pipeline_run_budget",
             default=None,
         )
+        self._deferred_suggestions: ContextVar[list[_DeferredSuggestion] | None] = ContextVar(
+            "pipeline_deferred_suggestions",
+            default=None,
+        )
 
     # =====================================================================
     # Public API
@@ -249,6 +265,8 @@ class PipelineExecutor:
 
         budget = PipelineRunBudget(self._execution_policy)
         budget_token = self._run_budget.set(budget)
+        deferred: list[_DeferredSuggestion] = []
+        deferred_token = self._deferred_suggestions.set(deferred)
         results: dict[str, StepResult] = {}
         ordered_steps = [step for batch in batches for step in batch]
 
@@ -266,6 +284,9 @@ class PipelineExecutor:
                 budget,
                 reason="deadline_exhausted",
             )
+            # Optional suggestions run only after every step finished, so their
+            # up-front request reservation never starves required retrieval.
+            await self._run_deferred_suggestions(deferred)
             # Completion timing must not change report/result iteration order.
             results = {step.id: results[step.id] for step in ordered_steps}
 
@@ -312,6 +333,7 @@ class PipelineExecutor:
 
             return final_articles, results
         finally:
+            self._deferred_suggestions.reset(deferred_token)
             self._run_budget.reset(budget_token)
 
     @staticmethod
@@ -431,6 +453,42 @@ class PipelineExecutor:
             release=release,
             remaining_seconds=None if budget is None else budget.remaining_seconds(),
         )
+
+    async def _attach_mesh_correction(
+        self,
+        target: dict[str, Any],
+        query: str,
+        *,
+        diagnostics: Any,
+        observed_count: int | None,
+        physical_query: str | None,
+    ) -> None:
+        """Attach a suggest-only MeSH correction to ``target`` (deferred while a run executes)."""
+        deferred = self._deferred_suggestions.get()
+        if deferred is not None:
+            deferred.append(_DeferredSuggestion(target, query, diagnostics, observed_count, physical_query))
+            return
+        suggestion = await self._suggest_mesh_correction(
+            query, diagnostics=diagnostics, observed_count=observed_count, physical_query=physical_query
+        )
+        if suggestion is not None:
+            target["mesh_correction"] = suggestion
+
+    async def _run_deferred_suggestions(self, deferred: list[_DeferredSuggestion]) -> None:
+        """Compute deferred suggestions in step order within the remaining quota and deadline."""
+        for item in deferred:
+            try:
+                suggestion = await self._suggest_mesh_correction(
+                    item.query,
+                    diagnostics=item.diagnostics,
+                    observed_count=item.observed_count,
+                    physical_query=item.physical_query,
+                )
+            except Exception as exc:  # optional work never fails the run
+                logger.warning("Pipeline MeSH suggestion failed (%s)", type(exc).__name__)
+                continue
+            if suggestion is not None:
+                item.target["mesh_correction"] = suggestion
 
     def dry_run(
         self,
@@ -857,14 +915,13 @@ class PipelineExecutor:
         pubmed_result = source_results.get("pubmed")
         if pubmed_result is not None and pubmed_result.get("status") != "error":
             provenance = pubmed_result.get("provenance") or {}
-            suggestion = await self._suggest_mesh_correction(
+            await self._attach_mesh_correction(
+                metadata,
                 str(source_queries.get("pubmed") or query),
                 diagnostics=diagnostics_from_provenance(provenance),
                 observed_count=pubmed_result.get("total_count"),
                 physical_query=provenance.get("physical_query"),
             )
-            if suggestion is not None:
-                metadata["mesh_correction"] = suggestion
         return StepResult(
             step_id=step.id,
             action="search",
@@ -1001,43 +1058,43 @@ class PipelineExecutor:
                 }
             )
         snapshot = retrieval.snapshot
-        suggestion = await self._suggest_mesh_correction(
+        metadata: dict[str, Any] = {
+            **base_metadata,
+            "physical_query": snapshot.get("physical_query"),
+            "pubmed_history": self._public_history_snapshot(snapshot),
+            "retrieval": retrieval.summary(),
+            "source_api_counts": {"pubmed": len(retrieval.pmids)},
+            "source_errors": source_errors,
+            "source_results": {
+                "pubmed": {
+                    "status": "ok" if retrieval.pmids else "empty",
+                    "total_count": retrieval.total_count,
+                    "next_token": None,
+                    "cursor": None,
+                    "cost": None,
+                    "provenance": {
+                        "logical_query": query,
+                        "physical_query": snapshot.get("physical_query"),
+                        "provider_mode": "exhaustive",
+                        "query_executed": True,
+                    },
+                }
+            },
+        }
+        await self._attach_mesh_correction(
+            metadata,
             query,
             diagnostics=diagnostics_from_snapshot(snapshot),
             observed_count=retrieval.total_count,
             physical_query=snapshot.get("physical_query"),
         )
-        if suggestion is not None:
-            base_metadata["mesh_correction"] = suggestion
         return StepResult(
             step_id=step.id,
             action="search",
             articles=articles,
             pmids=list(retrieval.pmids),
             records=dict(retrieval.records),
-            metadata={
-                **base_metadata,
-                "physical_query": snapshot.get("physical_query"),
-                "pubmed_history": self._public_history_snapshot(snapshot),
-                "retrieval": retrieval.summary(),
-                "source_api_counts": {"pubmed": len(retrieval.pmids)},
-                "source_errors": source_errors,
-                "source_results": {
-                    "pubmed": {
-                        "status": "ok" if retrieval.pmids else "empty",
-                        "total_count": retrieval.total_count,
-                        "next_token": None,
-                        "cursor": None,
-                        "cost": None,
-                        "provenance": {
-                            "logical_query": query,
-                            "physical_query": snapshot.get("physical_query"),
-                            "provider_mode": "exhaustive",
-                            "query_executed": True,
-                        },
-                    }
-                },
-            },
+            metadata=metadata,
         )
 
     async def _action_block_analysis(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
@@ -1096,14 +1153,13 @@ class PipelineExecutor:
         full_diagnostics = diagnostics_from_snapshot(full_snapshot)
         annotate_unresolved_terms(analysis, full_diagnostics)
         if full_snapshot is not None:
-            suggestion = await self._suggest_mesh_correction(
+            await self._attach_mesh_correction(
+                analysis,
                 str(query),
                 diagnostics=full_diagnostics,
                 observed_count=analysis.get("full_count"),
                 physical_query=full_snapshot.get("physical_query"),
             )
-            if suggestion is not None:
-                analysis["mesh_correction"] = suggestion
         analysis.update(
             {"step_id": step.id, "source_step": source_step, "filters": filters, "executed_at": executed_at}
         )

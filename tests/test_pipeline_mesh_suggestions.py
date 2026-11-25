@@ -9,7 +9,9 @@ production gateway over ``tests.fixtures.mesh_entrez``.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
@@ -27,7 +29,7 @@ from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineT
 from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
 from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
 from tests.fixtures.mesh_entrez import PACU, PACU_QUERY, FakeEntrez, make_service
-from tests.test_pipeline_exhaustive import _pubmed_row
+from tests.test_pipeline_exhaustive import FakeHistorySearcher, _pubmed_row
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -227,3 +229,64 @@ def test_count_scope_reuses_the_compiled_filter_suffix() -> None:
     assert scope is not None and scope("b[tiab]") == "(b[tiab]) AND 2020/01/01:2100/12/31[dp]"
     assert count_scope_for("a[tiab]", "a[tiab]") is None
     assert count_scope_for("a[tiab]", "unrelated") is None
+
+
+class _ConcurrentSearcher(FakeHistorySearcher):
+    """A flagged bounded search runs beside an exhaustive step whose metadata needs many batches."""
+
+    async def search_page(self, *, query: str, limit: int, **_: Any) -> SourceSearchPage[dict[str, Any]]:
+        diagnostics = _diagnostics(query)
+        return SourceSearchPage(
+            source="pubmed",
+            items=[_pubmed_row(str(900_000 + index)) for index in range(limit)],
+            total=limit,
+            query=query,
+            metadata={"physical_query": query, "query_diagnostics": diagnostics.to_dict()},
+        )
+
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        await asyncio.sleep(0.01)  # metadata batches overlap the suggestion
+        return await super().fetch_details(pmids)
+
+
+class _SlowSuggestionService:
+    """Uses 2 of its 18 reserved requests and finishes after the concurrent metadata batches."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def correct_query(self, query: str, **_: Any) -> Any:
+        self.calls += 1
+        await asyncio.sleep(0.3)
+        return SimpleNamespace(
+            budget={"reserved": 2}, to_dict=lambda: {"corrections": []}, corrected_query=query, status="no_correction"
+        )
+
+
+@pytest.mark.parametrize(("max_calls", "suggestion_status"), [(30, "skipped"), (31, "no_correction")])
+async def test_optional_suggestion_never_starves_required_exhaustive_metadata(
+    max_calls: int, suggestion_status: str
+) -> None:
+    """Required calls: 1 bounded search + 1 ESearch + 11 metadata batches = 13; the suggestion reserves 18."""
+    service = _SlowSuggestionService()
+    executor = PipelineExecutor(
+        searcher=_ConcurrentSearcher([str(5000 + index) for index in range(1100)]),
+        execution_policy=PipelineExecutionPolicy(max_external_calls=max_calls),
+        exhaustive_metadata_batch_size=100,
+        mesh_correction=service,
+    )
+    config = _config(
+        [
+            {"id": "bd", "action": "search", "params": {"query": PACU_QUERY, "limit": 5}},
+            {"id": "ex", "action": "search", "params": {"query": "delirium[tiab]", "retrieval": "exhaustive"}},
+        ]
+    )
+
+    _articles, results = await executor.execute(config)
+
+    retrieval = results["ex"].metadata["retrieval"]
+    assert (retrieval["metadata_count"], retrieval["metadata_error"]) == (1100, None)
+    assert results["ex"].metadata["source_errors"] == []
+    suggestion = results["bd"].metadata["mesh_correction"]
+    assert suggestion["status"] == suggestion_status
+    assert service.calls == (1 if suggestion_status != "skipped" else 0)
