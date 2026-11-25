@@ -131,6 +131,7 @@ async def _search(
     output_format: str = "json",
     options: str = "no_oa",
     limit: int = 10,
+    searcher: Any | None = None,
 ) -> str:
     runners: dict[str, Any] = {"pubmed": pubmed}
     with (
@@ -142,7 +143,7 @@ async def _search(
         ),
     ):
         return await run_unified_search(
-            searcher=_empty_searcher(),
+            searcher=searcher or _empty_searcher(),
             query=query,
             limit=limit,
             sources=",".join(runners),
@@ -209,6 +210,38 @@ async def test_precision_first_fill_decides_on_the_corrected_results(fake_entrez
     tiers = [article["retrieval"]["tier"] for article in payload["articles"]]
     assert tiers[:3] == ["exact"] * 3 and set(tiers[3:]) == {"broad"}
     assert all(PACU not in call for call in pubmed.calls[1:])
+
+
+async def test_relaxed_records_after_an_empty_corrected_query_are_not_counted_as_exact(
+    fake_entrez: FakeEntrez,
+) -> None:
+    """Single pass: the corrected query returns 0, auto-relaxation returns 4 -- 4 relaxed, 0 exact."""
+    relaxed_page = SourceSearchPage(
+        source="pubmed",
+        items=[{"pmid": str(7000 + index), "title": f"Relaxed {index}", "authors": ["A B"]} for index in range(4)],
+        total=4,
+        query="relaxed",
+    )
+    searcher = MagicMock()
+    searcher.search_page = AsyncMock(return_value=relaxed_page)
+
+    payload = json.loads(
+        await _search(
+            _FakePubMed(corrected_hits=0, corrected_total=0),
+            service=make_service(),
+            options="shallow,no_oa",
+            searcher=searcher,
+        )
+    )
+
+    broadening = payload["broadening"]
+    assert broadening["mechanisms"] == ["mesh_correction", "auto_relax"]
+    assert (broadening["exact_eligible_unique"], broadening["eligible_unique"]) == (0, 4)
+    assert broadening["broadened_records"] == 4
+    corrected_row = next(row for row in broadening["attempts"] if row["strategy"] == "original:mesh_corrected")
+    assert (corrected_row["status"], corrected_row["returned"], corrected_row["contributed"]) == ("empty", 0, 0)
+    assert "corrected query returned 0 of requested 10 → auto-relaxed" in broadening["summary"]
+    assert {article["retrieval"]["tier"] for article in payload["articles"]} == {"relaxed"}
 
 
 async def test_shallow_markdown_discloses_the_correction(fake_entrez: FakeEntrez) -> None:

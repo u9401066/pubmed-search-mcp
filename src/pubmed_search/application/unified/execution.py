@@ -520,7 +520,9 @@ async def execute_unified_search(
         aggregator = ResultAggregator(plan.ranking_config)
         articles, stats = aggregator.aggregate(all_results)
         logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
-        exact_pubmed_total = source_api_counts.get("pubmed", (0, None))[1]
+        # Captured before auto-relaxation overwrites the PubMed counts: relaxed
+        # records must never also be counted as exact-tier records.
+        exact_pubmed_returned, exact_pubmed_total = source_api_counts.get("pubmed", (0, None))
 
         if (
             request.auto_relax
@@ -665,7 +667,7 @@ async def execute_unified_search(
             broadening_enabled=request.auto_relax,
             exact_pubmed_total=exact_pubmed_total,
             mesh_correction=mesh_correction_disclosure,
-            pubmed_returned=source_api_counts.get("pubmed", (0, None))[0],
+            pubmed_returned=exact_pubmed_returned,
         )
 
         result_filter_counts = {
