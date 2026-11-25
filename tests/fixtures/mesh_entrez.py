@@ -25,6 +25,11 @@ Fixture provenance (2026-11-25):
   Anesthesia, General and Pain Measurement backgrounds are synthetic.
 - Joint counts (evidence AND heading) are synthetic, sized like the shares
   above over the 3717 evidence records.
+- ``"Ischemia/Reperfusion Injury"[Mesh]`` came back as ``QuotedPhraseNotFound``
+  and so did the same phrase as a quoted db=mesh ``[MeSH Terms]`` clause, while
+  ``"Ischemia-Reperfusion Injury"[MeSH Terms]`` found D015427 (Reperfusion
+  Injury), whose live ESummary lists that hyphenated entry term. The Ischemia
+  record is reduced to its preferred term.
 """
 
 from __future__ import annotations
@@ -114,6 +119,17 @@ MESH_DOCS = [
     _doc("68011997", "Recovery Room", "Recovery Rooms", "Hospital Recovery Room", trees=("N02.278.388.493.592",)),
     _doc("68019990", "Anesthesia Recovery Period", "Recovery Period, Anesthesia", trees=("E03.155.086",)),
     _doc("67522201", "remimazolam", "CNS 7056", trees=("@167407",), scr=True),
+    _doc(
+        "68015427",
+        "Reperfusion Injury",
+        "Reperfusion Injuries",
+        "Injury, Ischemia-Reperfusion",
+        "Ischemia-Reperfusion Injury",
+        "Ischemia Reperfusion Injury",
+        "Reperfusion Damage",
+        trees=("C14.907.725", "C23.550.767.877"),
+    ),
+    _doc("68007511", "Ischemia", trees=("C14.907.553", "C23.550.513")),
 ]
 
 
@@ -152,6 +168,7 @@ class FakeEntrez:
             '"remimazolam"[mesh]',
             '"post-operative deliriums"[majr]',
             '"postanesthesia recovery wards"[mesh]',
+            '"ischemia/reperfusion injury"[mesh]',
         }
         self.bad_bare = {"pacu": "PACU", "units": "units"}
         self.headings = _pacu_headings()

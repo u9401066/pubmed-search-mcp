@@ -36,6 +36,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import pairwise
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from .mesh_phrase_matching import lookup_variants, term_key
@@ -59,6 +60,125 @@ _MESH_TAG = re.compile(
 )
 _DELIMITERS = '()"[]'
 _WORD = re.compile(r"\S+")
+
+# The 76 MeSH qualifiers (subheadings) and their two-letter abbreviations, as
+# listed by NLM's "Qualifiers - Scope Notes" (checked 2026-11-25). PubMed
+# attaches at most one directly to a heading ("Neoplasms/diet therapy",
+# "neoplasms/dh"); any other slash belongs to the heading text itself.
+MESH_QUALIFIERS: Mapping[str, str] = MappingProxyType(
+    {
+        "abnormalities": "AB",
+        "administration & dosage": "AD",
+        "adverse effects": "AE",
+        "agonists": "AG",
+        "analogs & derivatives": "AA",
+        "analysis": "AN",
+        "anatomy & histology": "AH",
+        "antagonists & inhibitors": "AI",
+        "biosynthesis": "BI",
+        "blood": "BL",
+        "blood supply": "BS",
+        "cerebrospinal fluid": "CF",
+        "chemical synthesis": "CS",
+        "chemically induced": "CI",
+        "chemistry": "CH",
+        "classification": "CL",
+        "complications": "CO",
+        "congenital": "CN",
+        "cytology": "CY",
+        "deficiency": "DF",
+        "diagnosis": "DI",
+        "diagnostic imaging": "DG",
+        "diet therapy": "DH",
+        "drug effects": "DE",
+        "drug therapy": "DT",
+        "economics": "EC",
+        "education": "ED",
+        "embryology": "EM",
+        "enzymology": "EN",
+        "epidemiology": "EP",
+        "ethics": "ES",
+        "ethnology": "EH",
+        "etiology": "ET",
+        "genetics": "GE",
+        "growth & development": "GD",
+        "history": "HI",
+        "immunology": "IM",
+        "injuries": "IN",
+        "innervation": "IR",
+        "instrumentation": "IS",
+        "isolation & purification": "IP",
+        "legislation & jurisprudence": "LJ",
+        "metabolism": "ME",
+        "methods": "MT",
+        "microbiology": "MI",
+        "mortality": "MO",
+        "nursing": "NU",
+        "organization & administration": "OG",
+        "parasitology": "PS",
+        "pathogenicity": "PY",
+        "pathology": "PA",
+        "pharmacokinetics": "PK",
+        "pharmacology": "PD",
+        "physiology": "PH",
+        "physiopathology": "PP",
+        "poisoning": "PO",
+        "prevention & control": "PC",
+        "psychology": "PX",
+        "radiation effects": "RE",
+        "radiotherapy": "RT",
+        "rehabilitation": "RH",
+        "secondary": "SC",
+        "standards": "ST",
+        "statistics & numerical data": "SN",
+        "supply & distribution": "SD",
+        "surgery": "SU",
+        "therapeutic use": "TU",
+        "therapy": "TH",
+        "toxicity": "TO",
+        "transmission": "TM",
+        "transplantation": "TR",
+        "trends": "TD",
+        "ultrastructure": "UL",
+        "urine": "UR",
+        "veterinary": "VE",
+        "virology": "VI",
+    }
+)
+
+
+def qualifier_form(text: str) -> str:
+    """Comparison form of a qualifier: case, ``&``/``and`` and spacing folded (ESummary writes ``and``)."""
+    return " ".join(text.casefold().replace("&", " and ").split())
+
+
+_QUALIFIER_BY_FORM = {qualifier_form(name): name for name in MESH_QUALIFIERS} | {
+    abbreviation.casefold(): name for name, abbreviation in MESH_QUALIFIERS.items()
+}
+
+
+def canonical_qualifier(text: str) -> str | None:
+    """Full MeSH qualifier name for a written name or two-letter abbreviation; None if it is not one."""
+    return _QUALIFIER_BY_FORM.get(qualifier_form(text))
+
+
+def split_qualifier(text: str) -> tuple[str, str | None]:
+    """``(heading, qualifier)`` of a MeSH clause text; only a real MeSH subheading is a qualifier.
+
+    ``Ischemia/Reperfusion Injury`` stays one heading because "Reperfusion
+    Injury" is not a subheading; ``Neoplasms/dh`` is Neoplasms with the diet
+    therapy qualifier. A trailing slash is dropped.
+    """
+    stripped = text.strip()
+    head, slash, tail = stripped.rpartition("/")
+    if not slash:
+        return stripped, None
+    if not tail.strip():
+        return head.strip(), None
+    if canonical_qualifier(tail) is not None:
+        return head.strip(), tail.strip()
+    return stripped, None
+
 
 # MEDLINE check tags: population, sex and organism descriptors added to most records.
 CHECK_TAG_DESCRIPTORS = frozenset(
@@ -248,7 +368,8 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
 
     Recognizes ``[Mesh]``, ``[MeSH Terms]``, ``[mh]``, ``[Majr]``, ``[MeSH Major
     Topic]`` and their ``:noexp`` forms, quoted or bare, with an optional
-    ``/qualifier``. Tags inside a quoted phrase are ignored.
+    ``/qualifier`` (a real MeSH subheading, see :func:`split_qualifier`). Tags
+    inside a quoted phrase are ignored.
     """
     terms: list[TaggedMeshTerm] = []
     for match in _MESH_TAG.finditer(query):
@@ -267,8 +388,8 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
             if bare_start is None:
                 continue
             start, text, quoted = bare_start, query[bare_start:end_of_term], False
-        descriptor, _, qualifier = text.partition("/")
-        if not descriptor.strip():
+        descriptor, qualifier = split_qualifier(text)
+        if not descriptor:
             continue
         tag = " ".join(match.group(0)[1:-1].split())
         field_name = " ".join(match.group("field").lower().split())
@@ -278,8 +399,8 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
                 start=start,
                 end=match.end(),
                 text=text.strip(),
-                descriptor=descriptor.strip(),
-                qualifier=qualifier.strip() or None,
+                descriptor=descriptor,
+                qualifier=qualifier,
                 tag=tag.replace(" :", ":").replace(": ", ":"),
                 major=field_name in {"majr", "mesh major topic"},
                 noexp=match.group("noexp") is not None,
@@ -449,8 +570,9 @@ def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tupl
     if not cleaned:
         return ()
     canonical: dict[str, str] = {}
-    if "-" in cleaned:
-        canonical = {variant.casefold(): variant for variant in lookup_variants(_closed_compound(cleaned))}
+    if "-" in cleaned or "/" in cleaned:
+        closed = _closed_compound(cleaned.replace("/", "-"))
+        canonical = {variant.casefold(): variant for variant in lookup_variants(closed)}
     variants: dict[str, str] = {}
     for raw in lookup_variants(cleaned):
         variant = canonical.get(raw.casefold(), raw)
@@ -506,6 +628,7 @@ def phrase_priority(phrases: Sequence[str], limit: int) -> list[str]:
 
 __all__ = [
     "CHECK_TAG_DESCRIPTORS",
+    "MESH_QUALIFIERS",
     "STUDY_DESIGN_DESCRIPTORS",
     "Confidence",
     "DescriptorShare",
@@ -515,6 +638,7 @@ __all__ = [
     "ShareTable",
     "TaggedMeshTerm",
     "apply_replacements",
+    "canonical_qualifier",
     "cooccurrence_confidence",
     "descriptor_clause",
     "descriptor_shares",
@@ -529,8 +653,10 @@ __all__ = [
     "or_block",
     "phrase_priority",
     "pubmed_text_key",
+    "qualifier_form",
     "rank_descriptors",
     "score_descriptor",
+    "split_qualifier",
     "text_word_block",
     "text_word_clauses",
     "text_word_variants",

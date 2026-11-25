@@ -100,6 +100,23 @@ def test_mesh_clauses_are_found_in_every_tag_form_and_only_there():
     assert all(query[term.start : term.end] == term.clause for term in terms)
 
 
+def test_a_slash_separates_only_a_real_mesh_subheading():
+    query = (
+        '"Ischemia/Reperfusion Injury"[Mesh] AND "Neoplasms/dh"[mh] AND "Delirium/Prevention & Control"[Majr] '
+        'AND Delirium/prevention and control[Mesh] AND "Delirium/"[Mesh] AND "/therapy"[Mesh]'
+    )
+
+    terms = find_mesh_terms(query)
+
+    assert [(term.descriptor, term.qualifier) for term in terms] == [
+        ("Ischemia/Reperfusion Injury", None),  # "Reperfusion Injury" is a heading, not a subheading
+        ("Neoplasms", "dh"),  # two-letter abbreviation of "diet therapy"
+        ("Delirium", "Prevention & Control"),
+        ("Delirium", "prevention and control"),
+        ("Delirium", None),
+    ]
+
+
 def test_only_clauses_named_by_ncbi_are_flagged():
     terms = find_mesh_terms(f'{PACU} AND "Delirium"[Mesh] AND PACU[mh] AND post-anesthesia care units[mh]')
     diagnostics = PubMedQueryDiagnostics(
@@ -172,6 +189,9 @@ def test_text_word_variants_fold_hyphen_space_duplicates_and_use_canonical_casin
     )
     assert text_word_variants("PACU") == ("PACU",)
     assert all("PostAnesthesia" not in variant for variant in text_word_variants("Post-Anesthesia care unit"))
+    slashed = text_word_variants("Ischemia/Reperfusion Injury")
+    assert {"Ischemia/Reperfusion Injury", "Ischemia-Reperfusion Injury", "Ischemiareperfusion Injury"} <= set(slashed)
+    assert all("IschemiaReperfusion" not in variant for variant in slashed)
 
 
 def test_overlapping_replacements_are_rejected():
@@ -233,6 +253,22 @@ async def test_plural_hyphen_and_noexp_variants_are_fixed_by_exact_lookup(fake: 
     assert by_original['"Recovery Rooms"[mesh:noexp]']["matched_on"] == "entry_term"
     assert fake.count("efetch") == 0  # exact matches need no co-occurrence evidence
     assert result.after_count == 412
+
+
+async def test_slashed_heading_is_corrected_as_one_concept_not_truncated(fake: FakeEntrez):
+    # Before: partition("/") read "Reperfusion Injury" as a qualifier and "corrected" the
+    # clause to "Ischemia"[Mesh] (exact, high), silently dropping the concept.
+    result = await make_service().correct_query('"Ischemia/Reperfusion Injury"[Mesh] AND stroke[tiab]')
+
+    (correction,) = result.corrections
+    assert result.corrected_query == '"Reperfusion Injury"[Mesh] AND stroke[tiab]'
+    assert (correction.tier, correction.confidence, correction.replacement_mesh) == (
+        "exact",
+        "high",
+        "Reperfusion Injury",
+    )
+    assert correction.evidence["matched_term"] == "Ischemia-Reperfusion Injury"
+    assert '"Ischemia-Reperfusion Injury"[MeSH Terms]' in str(fake.calls)
 
 
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):

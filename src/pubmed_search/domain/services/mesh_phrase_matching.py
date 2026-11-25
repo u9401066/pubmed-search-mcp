@@ -297,10 +297,18 @@ def _toggle_plural(word: str) -> str | None:
 
 
 def lookup_variants(phrase: str) -> tuple[str, ...]:
-    """Surface forms to search exactly: as written, hyphen spaced/closed, last-word plural toggled."""
+    """Surface forms to search exactly: as written, hyphen spaced/closed, last-word plural toggled.
+
+    A slash between words is also searched as a hyphen: MeSH spells such
+    compounds with hyphens ("Ischemia-Reperfusion Injury"), and db=mesh finds
+    no record for the slashed form.
+    """
     forms = [phrase]
-    if "-" in phrase:
-        forms.extend([phrase.replace("-", " "), phrase.replace("-", "")])
+    if "/" in phrase:
+        forms.append(phrase.replace("/", "-"))
+    for form in list(forms):
+        if "-" in form:
+            forms.extend([form.replace("-", " "), form.replace("-", "")])
     variants: list[str] = []
     for form in forms:
         variants.append(form)
