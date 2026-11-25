@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 import toons
@@ -66,8 +66,9 @@ def empty_fulltext_downloader():
 
 @pytest.fixture(autouse=True)
 def _disable_live_institutional_fetch(monkeypatch):
-    """Keep unit tests hermetic; direct DOI retrieval has dedicated adapter tests."""
+    """Keep unit tests hermetic; direct DOI and NCBI PMC retrieval have dedicated adapter tests."""
     monkeypatch.setenv("INSTITUTIONAL_DIRECT_FETCH", "false")
+    monkeypatch.setenv("PUBMED_FULLTEXT_NCBI_PMC_FALLBACK", "false")
 
 
 # ============================================================
@@ -685,6 +686,7 @@ class TestGetFulltext:
             doi="10.1234/test",
             strategy="extract_text",
             allow_browser_session=None,
+            total_timeout=ANY,
         )
         assert "Institutional PDF text" in result
         assert "publisher.example.edu/paper.pdf" in result
@@ -749,6 +751,7 @@ class TestGetFulltext:
             doi="10.1234/test",
             strategy="extract_text",
             allow_browser_session=True,
+            total_timeout=ANY,
         )
 
     @pytest.mark.asyncio

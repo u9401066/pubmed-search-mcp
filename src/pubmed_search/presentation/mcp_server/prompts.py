@@ -69,7 +69,8 @@ generate_search_queries(topic={json.dumps(topic, ensure_ascii=False)})
 ```
 This returns:
 - `corrected_topic`: Spell-corrected query
-- `mesh_terms`: MeSH standard vocabulary with synonyms
+- `mesh_terms`: Confirmed MeSH mappings (exact preferred/entry-term matches) with synonyms
+- `mesh_candidates` / `unmapped_phrases`: links to review and phrases to cover with text words
 - `suggested_queries`: Pre-built query strategies
 
 ### Step 2: Build a Boolean Query

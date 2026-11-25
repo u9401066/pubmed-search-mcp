@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Literal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -345,7 +345,10 @@ class TestFulltextService:
             doi="10.1234/test",
             strategy="extract_text",
             allow_browser_session=None,
+            total_timeout=ANY,
         )
+        # The downloader works inside what is left of the 90 s request budget.
+        assert 0 < mock_downloader.get_fulltext.await_args.kwargs["total_timeout"] < 90
         mock_downloader.close.assert_awaited_once()
         assert result.fulltext_content == "Institutional PDF text"
         assert result.extended_sources_attempted is extended

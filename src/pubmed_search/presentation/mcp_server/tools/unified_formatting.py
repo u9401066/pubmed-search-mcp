@@ -18,10 +18,16 @@ from pubmed_search.application.unified.clinical_trials import (
     ClinicalTrialsFormatError,
     clinical_trials_error_payload,
 )
+from pubmed_search.application.unified.mesh_correction import (
+    compact_mesh_correction,
+    correction_summary,
+)
+from pubmed_search.application.unified.tiering import compact_broadening, source_label
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     get_openurl_link,
 )
+from pubmed_search.shared.markdown import escape_markdown_code as _escape_markdown_code
 from pubmed_search.shared.markdown import escape_markdown_text as _escape_markdown_text
 from pubmed_search.shared.markdown import safe_markdown_url as _safe_markdown_url
 
@@ -271,6 +277,8 @@ def _build_unified_section_provenance(
     include_relaxation: bool,
     include_source_disagreement: bool,
     include_reproducibility: bool,
+    include_broadening: bool = False,
+    include_mesh_correction: bool = False,
 ) -> dict[str, dict[str, object]]:
     """Describe where each JSON section came from for agent chaining."""
     upstream_sources = [str(row["source"]) for row in source_rows]
@@ -317,6 +325,29 @@ def _build_unified_section_provenance(
             provenance="derived",
             note="Deep-search metrics summarize locally executed semantic expansion strategies.",
             upstream_sources=upstream_sources,
+        )
+    if include_broadening:
+        provenance["broadening"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note=(
+                "Precision-first broadening disclosure: whether lower-precision strategies or zero-result "
+                "relaxation added records, why, and each attempt's query, totals, and contribution."
+            ),
+            upstream_sources=upstream_sources,
+        )
+    if include_mesh_correction:
+        provenance["mesh_correction"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed",
+            provenance="derived",
+            note=(
+                "Automatic MeSH correction: PubMed's WarningList/ErrorList named a MeSH clause that matched "
+                "nothing; the rewrite, its tier, evidence (exact MeSH record or MEDLINE co-occurrence sample) "
+                'and before/after PubMed totals. Opt out with options="no_mesh_correction".'
+            ),
+            upstream_sources=["pubmed"],
         )
     if include_relaxation:
         provenance["relaxation"] = make_section_provenance(
@@ -408,6 +439,89 @@ def _relaxation_step_payload(step: Any) -> dict[str, Any]:
     return payload
 
 
+def _format_broadening_section(broadening: Mapping[str, Any] | None) -> list[str]:
+    """Render the precision-first broadening disclosure for markdown readers."""
+    if not broadening:
+        return []
+    summary = _escape_markdown_text(str(broadening.get("summary") or ""))
+    broadened_records = int(broadening.get("broadened_records") or 0)
+    failed_attempts = int(broadening.get("failed_attempts") or 0)
+    if broadening.get("applied") or failed_attempts:
+        icon = "⚠️"
+    elif broadening.get("needed"):
+        icon = "ℹ️"
+    else:
+        icon = "✅"
+    line = f"**Broadening**: {icon} {summary}"
+    if broadened_records:
+        line += ". Broadened records are marked 🔻 and ranked after records that match the original query."
+    lines = [line]
+
+    attempts = [row for row in broadening.get("attempts", []) if isinstance(row, dict)]
+    executed = [row for row in attempts if row.get("executed")]
+    if broadening.get("applied") or failed_attempts or int(broadening.get("deepened_records") or 0):
+        lines.append("")
+        lines.append("| Tier | Source | Strategy | Phase | Status | Total | Returned | Added |")
+        lines.append("| --- | --- | --- | --- | --- | ---: | ---: | ---: |")
+        for row in executed:
+            total = row.get("total_available")
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _escape_markdown_text(str(row.get("tier", ""))),
+                        _escape_markdown_text(source_label(str(row.get("source", "")))),
+                        _escape_markdown_text(str(row.get("strategy", ""))),
+                        _escape_markdown_text(str(row.get("phase", ""))),
+                        _escape_markdown_text(str(row.get("status", ""))),
+                        str(total) if total is not None else "?",
+                        str(int(row.get("returned") or 0)),
+                        str(int(row.get("contributed") or 0)),
+                    ]
+                )
+                + " |"
+            )
+    skipped = list(
+        dict.fromkeys(
+            f"{row.get('strategy')} ({row.get('skip_reason')})"
+            for row in attempts
+            if not row.get("executed") and row.get("skip_reason") not in {None, "narrows_exact_query"}
+        )
+    )
+    if skipped and broadening.get("needed"):
+        lines.append("")
+        lines.append(f"Skipped strategies: {_escape_markdown_text(', '.join(skipped))}")
+    return lines
+
+
+def _format_mesh_correction_section(mesh_correction: Mapping[str, Any] | None) -> list[str]:
+    """One Markdown line per MeSH correction attempt (applied or not)."""
+    summary = correction_summary(mesh_correction)
+    if not summary or mesh_correction is None:
+        return []
+    icon = "🔧" if mesh_correction.get("applied") else "⚠️"
+    line = f"**MeSH correction**: {icon} {_escape_markdown_text(summary)}"
+    corrected = mesh_correction.get("corrected_query")
+    if mesh_correction.get("applied") and isinstance(corrected, str):
+        line += f". Corrected PubMed query: `{_escape_markdown_code(corrected)}`"
+    opt_out = mesh_correction.get("opt_out")
+    if opt_out:
+        line += f". Opt out with `{_escape_markdown_code(str(opt_out))}`"
+    return [line + "."]
+
+
+def _retrieval_badge(article: UnifiedArticle) -> str | None:
+    """Return a visible badge for a record found only by automatic broadening."""
+    best = article.best_retrieval
+    if best is None or not best.broadened:
+        return None
+    return (
+        f"**Retrieval**: 🔻 broadened — found only by {_escape_markdown_text(source_label(best.source))} "
+        f"{_escape_markdown_text(best.strategy)} ({_escape_markdown_text(best.tier)} tier), "
+        "a lower-precision query than the original"
+    )
+
+
 # ============================================================================
 # Result Formatting
 # ============================================================================
@@ -437,6 +551,8 @@ async def _format_unified_results(
     counts_first: bool = False,
     result_filter_counts: Mapping[str, int] | None = None,
     exclude_seen_message: str | None = None,
+    broadening: Mapping[str, Any] | None = None,
+    mesh_correction: Mapping[str, Any] | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -558,6 +674,16 @@ async def _format_unified_results(
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
 
+    mesh_correction_lines = _format_mesh_correction_section(mesh_correction)
+    if mesh_correction_lines:
+        output_parts.extend(mesh_correction_lines)
+        output_parts.append("")
+
+    broadening_lines = _format_broadening_section(broadening)
+    if broadening_lines:
+        output_parts.extend(broadening_lines)
+        output_parts.append("")
+
     source_warning_text = _format_source_warnings(mutable_source_errors)
     if source_warning_text:
         output_parts.append(source_warning_text)
@@ -631,12 +757,21 @@ async def _format_unified_results(
 
     output_parts.append("---\n")
 
+    broadened_divider_shown = False
     for i, article in enumerate(articles, 1):
+        retrieval_badge = _retrieval_badge(article)
+        if retrieval_badge and not broadened_divider_shown:
+            output_parts.append(
+                "#### 🔻 Broadened results — lower precision than the original query; verify relevance\n"
+            )
+            broadened_divider_shown = True
         # Article header
         score_str = (
             f" (ranking score: {article.ranking_score:.2f})" if include_rank_scores and article.ranking_score else ""
         )
         output_parts.append(f"### {i}. {_escape_markdown_text(article.title)}{score_str}")
+        if retrieval_badge:
+            output_parts.append(retrieval_badge)
 
         # Identifiers
         ids = []
@@ -839,6 +974,9 @@ def _compact_article_payload(article: UnifiedArticle, *, include_rank_scores: bo
             payload["ranking_score"] = round(article.ranking_score, 4)
         if article.rank_percentile is not None:
             payload["rank_percentile"] = round(article.rank_percentile, 4)
+    retrieval = article.retrieval_payload()
+    if retrieval is not None:
+        payload["retrieval"] = retrieval
     return payload
 
 
@@ -915,6 +1053,10 @@ def _serialize_truncated_response_payload(
         truncated_payload["enrichment"] = payload["enrichment"]
     if payload.get("search_status"):
         truncated_payload["search_status"] = payload["search_status"]
+    if payload.get("broadening"):
+        truncated_payload["broadening"] = compact_broadening(payload["broadening"])
+    if payload.get("mesh_correction"):
+        truncated_payload["mesh_correction"] = compact_mesh_correction(payload["mesh_correction"])
     if payload.get("search_run"):
         truncated_payload["search_run"] = payload["search_run"]
 
@@ -1147,6 +1289,8 @@ def _format_as_json(
     clinical_trials_coverage: ClinicalTrialsCoverage | None = None,
     prefetched_trials: list[dict[str, Any]] | None = None,
     exclude_seen_message: str | None = None,
+    broadening: Mapping[str, Any] | None = None,
+    mesh_correction: Mapping[str, Any] | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
@@ -1185,6 +1329,10 @@ def _format_as_json(
             cap_context["clinical_trials"] = clinical_trials_payload
         if source_metadata:
             cap_context["source_metadata"] = source_metadata
+        if broadening:
+            cap_context["broadening"] = dict(broadening)
+        if mesh_correction:
+            cap_context["mesh_correction"] = dict(mesh_correction)
         if enrichment_metadata:
             cap_context["enrichment"] = enrichment_metadata
         if artifact_manifest:
@@ -1226,6 +1374,13 @@ def _format_as_json(
 
     if source_errors:
         result["source_errors"] = source_errors
+    if broadening:
+        # Always present (independent of no_analysis): agents must be able to
+        # tell exact-query matches from automatically broadened fill.
+        result["broadening"] = dict(broadening)
+    if mesh_correction:
+        # Always present when PubMed flagged a MeSH clause: what was rewritten and why.
+        result["mesh_correction"] = dict(mesh_correction)
     if source_metadata:
         result["source_metadata"] = source_metadata
     if enrichment_metadata:
@@ -1242,7 +1397,7 @@ def _format_as_json(
 
     # Add deep search metrics if available
     if include_analysis and deep_search_metrics:
-        result["deep_search"] = {
+        deep_search_payload: dict[str, Any] = {
             "enabled": True,
             "depth_score": deep_search_metrics.depth_score,
             "entities_resolved": deep_search_metrics.entities_resolved,
@@ -1259,12 +1414,21 @@ def _format_as_json(
                     "name": sr.strategy_name,
                     "query": sr.query,
                     "source": sr.source,
+                    "tier": sr.tier,
+                    "phase": sr.phase,
+                    "status": sr.status,
+                    "skip_reason": sr.skip_reason,
                     "articles_found": sr.articles_count,
+                    "contributed": sr.contributed,
+                    "total_available": sr.total_available,
                     "execution_time_ms": sr.execution_time_ms,
                 }
                 for sr in deep_search_metrics.strategy_results
             ],
         }
+        if deep_search_metrics.tier_outcome is not None:
+            deep_search_payload["tier_outcome"] = deep_search_metrics.tier_outcome.to_dict()
+        result["deep_search"] = deep_search_payload
 
     if relaxation_result and relaxation_result.successful_step:
         step = relaxation_result.successful_step
@@ -1319,6 +1483,8 @@ def _format_as_json(
             include_relaxation=relaxation_result is not None,
             include_source_disagreement=include_analysis and source_disagreement is not None,
             include_reproducibility=include_analysis and reproducibility_score is not None,
+            include_broadening=bool(broadening),
+            include_mesh_correction=bool(mesh_correction),
         )
 
     return _serialize_with_response_cap(

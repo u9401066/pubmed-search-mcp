@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 42-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 43-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 42-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 42 tools use a shared input contract (metadata `contractVersion: 4`).
+All 43 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -116,7 +116,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `research_workspace`, `read_session` and the seven pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
+| Persistence and sessions | `research_workspace`, `read_session` and the eight pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -133,6 +133,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
 | Resume a literature investigation | `research_workspace` with `read` loads prior decisions, source handoffs and outstanding actions. [Worked example](ADVANCED_RESEARCH_WORKFLOWS.md#resume-a-research-workspace) |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
+| Systematic review / meta-analysis | `save_pipeline` with `retrieval: exhaustive` -> `unified_search(pipeline="saved:<name>")` -> `get_pipeline_history(view="prisma_s")` -> `prepare_export(pipeline_run="<name>")` -> `pipeline_screening` |
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
 
@@ -145,6 +146,59 @@ Each feature family has a workflow diagram so users and developers can see where
 ![PubMed cochlear implant example showing the additional records found by relaxing each MeSH condition](../images/search-query-workflow.svg)
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
+
+#### MeSH headings PubMed cannot resolve
+
+PubMed reports clauses it could not resolve in ESearch's WarningList and ErrorList, for example
+`"Post-Anesthesia Care Units"[Mesh]` as `QuotedPhraseNotFound`. Such a clause matches nothing,
+so `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` returns 0. PubMed search pages keep
+PubMed's translation and both lists in `query_diagnostics`, and `unified_search` lists each issue in
+`source_metadata.pubmed.warnings`.
+
+When no MeSH record has a topic phrase as a preferred or entry term, `generate_search_queries` adds
+`mesh_candidates` with `reason: "co_occurrence"` for up to two `unmapped_phrases` (multi-word first).
+It searches the phrase as `[tiab]` in MEDLINE-indexed records and counts the MeSH headings of a
+150-record sample, dropping check tags (Humans, Male, Adult...) and study-design headings. The sample
+only nominates the six most frequent headings; each is then scored exactly from two PubMed counts:
+`recall = joint_count / evidence_total` and `precision = joint_count / background_count`, where
+`joint_count` is the evidence records indexed with the heading. Candidates rank by their F1 (`score`).
+Each phrase costs one search, one MEDLINE fetch and up to twelve counts, at most 20 requests per call;
+`coverage.mesh_cooccurrence` lists what ran.
+
+On 2026-11-25 the variants of "Post-Anesthesia Care Units" matched 3,717 MEDLINE records. Anesthesia
+Recovery Period scored 0.137 (673 of its 6,140 records use the phrase: recall 0.181, precision 0.110)
+and Recovery Room 0.110 (282 of 1,394: recall 0.076, precision 0.202). Postoperative Pain co-occurs
+about as often, but 57,605 records carry it, so its precision cannot exceed 3,717 / 57,605 = 0.065.
+Exact counts matter: a sample-based precision estimate let a recently introduced heading with 531
+records rank first.
+Candidates are related concepts, not synonyms; they never enter `mesh_terms` or
+`suggested_queries`. Keep the words when using one:
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`.
+With the phrase's spelling variants as `[tiab]` words OR that heading, `AND delirium[tiab]` returned
+518 records where the original query returned 0.
+
+`unified_search` applies this automatically. When the PubMed exact-tier search reports a MeSH clause as
+not found, the exact tier is re-run with a corrected query, and deepening, broadening and relaxation
+decide on the corrected results. Three tiers are tried: `exact` (a preferred or entry term after
+folding case, hyphen spacing and plurals; `"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`),
+`co_occurrence` (the words as `[tiab]` text words OR the best related heading, never the heading alone)
+and `text_words`. The response carries `mesh_correction` (Markdown **MeSH correction** line) with
+NCBI's reason, the replacement, tier, evidence, confidence and the before/after PubMed totals, and
+`broadening.mechanisms` starts with `mesh_correction`. The superseded original attempt stays in
+`broadening.attempts`; corrected records carry retrieval strategy `original:mesh_corrected`. Opt out
+with `options="no_mesh_correction"`; `no_relax` disables broadening only. Queries whose MeSH clauses
+PubMed resolves cost no extra request. Inside a NOT operand only an exact correction that keeps every
+restriction (qualifier, `[Majr]`, `:noexp`) is applied, in every tier; anything else is listed in
+`mesh_correction.suggestions` and the clause is left as written. A `/qualifier` is recognized only for real
+MeSH subheadings and is checked against the heading's allowable qualifiers. Operators follow PubMed: `or`
+and `not` work in lowercase, but a lowercase `and` is a stopword (before a tagged phrase it becomes part of
+the phrase), so write `AND`.
+
+Saved pipelines are never rewritten. A pipeline PubMed step (bounded, exhaustive or `block_analysis`)
+records a `mesh_correction` suggestion with `applied: false`, shown in the run's `warnings`, the Markdown
+report and `get_pipeline_history(view="prisma_s")`. Adopt it by saving a new pipeline version.
+`block_analysis` marks terms PubMed did not find (`pubmed_not_found`, `contribution_meaningful: false`)
+instead of reporting them as zero-contribution terms.
 
 #### Compare PubMed concept blocks
 
@@ -195,10 +249,32 @@ Source identifiers must be exact canonical keys such as `semantic_scholar`,
 `europe_pmc`, and `web_of_science`; aliases, case variants, surrounding token
 whitespace, empty tokens, and duplicates are rejected. Canonical filter keys
 are `year`, `age_group`, `sex`, `species`, `language`, and `clinical_query`.
-In normal deep mode, the same public `limit` is the **total budget for one source across
-all of its generated strategies**. The broker allocates that budget across the
-strategies, clips over-returning adapters, and applies bounded global and
-per-source concurrency plus strategy deadlines.
+Normal deep mode is **precision-first**. Your query (the `exact` tier) runs on
+every planned source with that source's full `limit`; a field-tagged or Boolean
+expert query is never diluted when it already fills the limit. Only when the
+exact tier returns fewer eligible unique records than `limit` (after
+deduplication and the `exclude_seen` / detected-preprint filters) does the
+broker fetch deeper into the same exact query and then run lower-precision
+strategies (`semantic`, then `broad`) one at a time, each filling only the
+remaining slots. A source whose exact query failed is never broadened, and
+`options="no_relax"` disables both this fill and zero-result auto-relaxation.
+Bounded global and per-source concurrency, adapter clipping, and strategy
+deadlines still apply.
+
+Read the `broadening` object (JSON/TOON, artifact `query_strategy.json`, and the
+Markdown **Broadening** line) before interpreting a deep or relaxed result:
+
+| Field | Meaning |
+| --- | --- |
+| `needed` / `applied` | Whether the exact tier under-filled `limit`, and whether an automatic query change (MeSH correction, deepening, broadening or relaxation) ran and was answered by the provider |
+| `failed_attempts` | Broadening or relaxation requests that failed or timed out; they are reported as failures, never as empty results |
+| `summary` | One-line reason, e.g. `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` or `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | Per strategy: `tier`, `phase`, executed query, `total_available`, `returned`, `contributed` after deduplication, and `skip_reason` |
+| `articles[].retrieval` | Record provenance; `broadened=true` (Markdown 🔻) means only a lower-precision query found the record |
+
+Broadened records are always ranked after records that match the original query.
+Zero-result auto-relaxation reports through the same object with
+`mechanisms=["auto_relax"]` and `tier="relaxed"`.
 
 JSON/TOON output and persistent artifacts preserve `retrieval_mode` and
 per-source `source_metadata`, including requested/provider mode, canonical or
@@ -241,11 +317,32 @@ Use `verify_reference_list` when a manuscript, bibliography, or generated answer
 
 `verified` confirms bibliographic consistency with the resolved PubMed record.
 A matching DOI or PMID does not override conflicting or unconfirmed supplied
-fields: these rows remain `partial_match` and enter the review queue. DOI
+fields. When a cited PMID/DOI disagrees with the other cited fields, resolution
+continues with ECitMatch and the year-tolerant searches; `identifier_assessment`
+reports it as `probably_wrong` (row `unresolved`) or `weakly_corroborated`
+(`partial_match` without corrections). DOI
 resolution requires an exact normalized DOI, and PMID lookup checks the returned
 record's identity. Individual lookup failures retain successful rows and report
 `source_unavailable`; they are not missing references. This check does not
 determine whether the cited paper supports a claim; read the relevant passage.
+
+The publication year is read from the citation locator (`Journal. 2019;321(5):473`),
+so a year inside a title such as `...surgery-2018.` does not break parsing. When
+ECitMatch finds nothing, a title-word search and a first-author + journal +
+volume/first-page search run **without the cited year**, because a wrong year is
+the most common citation error. A record found this way is accepted only when its
+title agrees and it does not conflict on both first author and journal (without a
+cited title, author, journal, volume and first page must all agree); the closest
+year, author order and locator agreement rank versions of the same work. Its row is
+`partial_match` with `corrections` such as
+`{"field": "year", "cited": "2018", "pubmed": "2019"}`. Corrections are offered only
+when at least two independent cited fields agree with the record besides the title,
+locator or identifier that found it; otherwise the candidate is returned for review
+with `corrections_withheld_reason`. They are also withheld when the cited title
+conflicts with the record or several versions match equally.
+Confirm `matched_article` before applying them. An `unresolved` row lists
+`attempted_strategies`; it means PubMed returned no acceptable record, not that
+the reference is fabricated.
 
 ### Full Text, Figures, And Image Evidence
 
@@ -334,7 +431,7 @@ A rebuild's default summary compares the preceding revision and lists up to five
 
 Chronology is the primary axis and research branches are a secondary projection of the same stored entries. Branches describe patterns observed in the selected query/PMID/source/year scope, not causal descent. `earliest_observed_in_scope` identifies the earliest dated retrieved candidate only; it does not establish the field's true first report. Date-precision intervals must be disjoint before the graph can assert `precedes` or `supersedes`.
 
-Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, graph integrity, chronology gaps, and per-source retrieval counts.
+Each chronicle entry carries a study-design label, a one-line claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. The label comes from PubMed publication types (then MeSH study-design descriptors); a title or abstract pattern is used only when PubMed has not indexed a design and is marked `[heuristic]`. Indexed designs outrank text-pattern milestones, so an RCT whose abstract mentions adverse events is not a safety alert. When an abstract exists, the claim quotes the paper's own conclusion sentence verbatim with its section and character offsets into the stored abstract (`provenance.extractive_highlight`); it is extractive, not an interpretation. Explicit-PMID builds apply validated iCite metrics for landmark scoring without re-ranking the set, and descriptors that merely restate the topic are excluded from branch formation (`lineage_diagnostics.excluded_topic_signals`). A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, heuristic study-design labels, quote integrity, citation-metric coverage, graph integrity, chronology gaps, and per-source retrieval counts.
 
 Topic mode applies `min_year` / `max_year` in the PubMed request before the relevance-capped fetch. Final event selection pins the first and last observed papers, prioritizes explicit landmark importance/citations, then fills the remaining capacity across the largest temporal gaps. Audit source coverage distinguishes PubMed `returned` from `available` and warns for capped samples, downstream selection, or unknown availability. An upstream failure or empty retrieval returns an error. Read a previously saved revision to continue while PubMed is unavailable and record which revision supplied the evidence.
 
@@ -358,7 +455,9 @@ Artifact preflight audits the names produced by the actual artifact payload buil
 
 ![Session and pipeline workflow](../images/session-pipeline-workflow.svg)
 
-Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, and `unschedule_pipeline`.
+Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline`, and `pipeline_screening`.
+
+For systematic reviews, a PubMed search step with `retrieval: exhaustive` collects the complete PMID set through the E-utilities History Server (cap `max_records` ≤ 10000; larger counts are refused, not truncated) and the saved run persists it with PRISMA-S provenance: database/platform, saved and executed query, PubMed query translation, total/retrieved counts, filters, UTC time, server version and an immutable config snapshot. `unified_search` returns only a bounded preview. `get_pipeline_history` offers `view="run"`, `view="prisma_s"` (Markdown + CSV) and `view="records"` (paged full set); `prepare_export(pipeline_run=...)` exports the full set as RIS/CSV/CSL-JSON; a `block_analysis` step audits MeSH blocks and term contributions with bounded count-only queries; `pipeline_screening` records per-PMID decisions and reports PRISMA 2020 flow counts. Records first identified by an update run enter the screening queue automatically.
 
 Local and service capabilities are intentionally different. A trusted local
 caller may use workspace scope, `file:` pipeline sources, and the in-process
@@ -532,7 +631,7 @@ Local-mode directory resolution:
 
 1. `output_dir`, if provided
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references` (falls back to `CLAUDE_PROJECT_DIR/references` when Claude Code launched the server)
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 

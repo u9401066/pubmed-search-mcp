@@ -70,6 +70,15 @@ def narrate_chronicle(snapshot: ChronicleSnapshot, *, mode: str = "brief") -> st
         lines.append("No chronicle entries were assembled, so no claims can be made.")
         return "\n".join(lines)
 
+    if any(isinstance(entry.provenance.get("extractive_highlight"), dict) for entry in snapshot.entries):
+        lines.extend(
+            [
+                "_Quoted sentences are verbatim from each paper's PubMed abstract (extractive, not interpretation). "
+                "Each locator names the abstract section and the character offsets into the stored abstract._",
+                "",
+            ]
+        )
+
     membership = resolve_chronicle_membership(snapshot)
     global_rank = {
         entry_index: order

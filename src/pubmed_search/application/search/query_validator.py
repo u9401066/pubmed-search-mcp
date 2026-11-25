@@ -29,6 +29,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from pubmed_search.domain.services.pubmed_boolean import PUBMED_BOOLEAN_OPERATORS, misspelled_operator
+
 # Maximum query length for PubMed (conservative estimate)
 MAX_QUERY_LENGTH = 4096
 
@@ -140,11 +142,18 @@ VALID_FIELD_TAGS = frozenset(
 # Pattern to match field tags in a query
 _FIELD_TAG_CAPTURE = re.compile(r"\[([^\]]+)\]")
 
-# Boolean operators
-_BOOL_OPS = {"AND", "OR", "NOT"}
-
-# Pattern for Boolean operators
-_BOOL_PATTERN = re.compile(r"\b(AND|OR|NOT)\b", re.IGNORECASE)
+# Boolean operators as PubMed spells them (AND, OR/or, NOT/not; see pubmed_boolean),
+# delimited like PubMed words: by whitespace, parentheses or quotes, not inside "Do-Not-Resuscitate".
+_OPERATOR = "(?:" + "|".join(sorted(PUBMED_BOOLEAN_OPERATORS, key=len, reverse=True)) + ")"
+_START, _STOP = r'(?<![^\s()"])', r'(?![^\s()"])'
+_CONSECUTIVE_OPERATORS = re.compile(rf"{_START}{_OPERATOR}\s+{_OPERATOR}{_STOP}")
+_LEADING_AND_OR = re.compile(rf"^\s*(?:AND|OR|or){_STOP}")
+_TRAILING_OPERATOR = re.compile(rf"{_START}{_OPERATOR}\s*$")
+_LEADING_NOT = re.compile(rf"^\s*(?:NOT|not){_STOP}")
+_OPERATOR_LOOKALIKE = re.compile(rf"{_START}(?i:and|or|not){_STOP}")
+# A lowercase "and" after a complete term, followed by bare words and a field tag: PubMed
+# searches it as part of that phrase (delirium[tiab] and pacu[tiab] -> "and pacu"[tiab]).
+_GLUED_AND = re.compile(r'[\])"]\s+and\s+((?:[^\s()"\[\]]+\s+)*[^\s()"\[\]]+)\s*\[')
 
 
 def pubmed_field_tags(query: str) -> list[str]:
@@ -339,23 +348,36 @@ class QueryValidator:
         stripped = re.sub(r'"[^"]*"', '""', query)
 
         # Check for consecutive Boolean operators: AND AND, OR OR, etc.
-        if re.search(r"\b(AND|OR|NOT)\s+(AND|OR|NOT)\b", stripped, re.IGNORECASE):
+        if _CONSECUTIVE_OPERATORS.search(stripped):
             errors.append(
                 "Consecutive Boolean operators detected (e.g., 'AND AND' or 'OR NOT' without operand between)"
             )
 
         # Check for leading Boolean operator
         stripped_trimmed = stripped.strip()
-        if re.match(r"^\s*(AND|OR)\b", stripped_trimmed, re.IGNORECASE):
+        if _LEADING_AND_OR.match(stripped_trimmed):
             errors.append("Query starts with a Boolean operator (AND/OR). Missing left operand.")
 
         # Check for trailing Boolean operator
-        if re.search(r"\b(AND|OR|NOT)\s*$", stripped_trimmed, re.IGNORECASE):
+        if _TRAILING_OPERATOR.search(stripped_trimmed):
             errors.append("Query ends with a Boolean operator. Missing right operand.")
 
         # Check NOT at start (valid in PubMed but warn)
-        if re.match(r"^\s*NOT\b", stripped_trimmed, re.IGNORECASE):
+        if _LEADING_NOT.match(stripped_trimmed):
             warnings.append("Query starts with NOT. PubMed may interpret this differently than expected.")
+
+        # Spellings of and/or/not that PubMed searches as words.
+        for word in dict.fromkeys(match.group() for match in _OPERATOR_LOOKALIKE.finditer(stripped)):
+            if misspelled_operator(word):
+                warnings.append(
+                    f"'{word}' is not a PubMed operator; PubMed searches it as a word. Only AND, OR/or and "
+                    f"NOT/not are operators: use {word.upper()}."
+                )
+        for match in _GLUED_AND.finditer(stripped):
+            warnings.append(
+                f"Lowercase 'and' is not a PubMed operator; before a tagged phrase PubMed searches it as part of "
+                f'the phrase ("and {" ".join(match.group(1).split())}"). Use AND.'
+            )
 
         return errors, warnings
 
@@ -424,18 +446,13 @@ class QueryValidator:
 
     @staticmethod
     def _fix_boolean_operators(query: str) -> str:
-        """Fix common Boolean operator issues."""
+        """Fix common Boolean operator issues (operators spelled as PubMed reads them)."""
         # Remove leading AND/OR
-        query = re.sub(r"^\s*(AND|OR)\s+", "", query, flags=re.IGNORECASE)
+        query = re.sub(rf"^\s*(?:AND|OR|or){_STOP}\s*", "", query)
         # Remove trailing AND/OR/NOT
-        query = re.sub(r"\s+(AND|OR|NOT)\s*$", "", query, flags=re.IGNORECASE)
+        query = re.sub(rf"\s+{_OPERATOR}\s*$", "", query)
         # Fix consecutive operators (keep the first one)
-        return re.sub(
-            r"\b(AND|OR|NOT)\s+(AND|OR|NOT)\b",
-            r"\1",
-            query,
-            flags=re.IGNORECASE,
-        )
+        return re.sub(rf"{_START}({_OPERATOR})\s+{_OPERATOR}{_STOP}", r"\1", query)
 
 
 def _is_close_match(a: str, b: str) -> bool:

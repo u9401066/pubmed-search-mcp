@@ -870,29 +870,29 @@ class TestNCBIStrategy:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
-        mock_record = {
-            "IdList": ["68003920"],
-            "TranslationStack": [],
-        }
-        mock_fetch_handle = MagicMock()
-        mock_fetch_handle.read.return_value = """1: Diabetes Mellitus
-Entry Terms:
-    Diabetes
-Tree Number(s): C18.452.394.750"""
+        search_record = {"Count": "1", "IdList": ["68003920"], "TranslationStack": []}
+        summary = [
+            {
+                "Id": "68003920",
+                "DS_MeshTerms": ["Diabetes Mellitus", "Diabetes"],
+                "DS_IdxLinks": [{"TreeNum": "C18.452.394.750"}],
+            }
+        ]
         with (
             patch(
                 "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch",
                 return_value=MagicMock(),
             ),
             patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch",
-                return_value=mock_fetch_handle,
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary",
+                return_value=MagicMock(),
             ),
             patch(
                 "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
-                return_value=mock_record,
+                side_effect=[search_record, summary],
             ),
         ):
             info = await sg.get_mesh_info("diabetes")
         assert info is not None
         assert info["preferred_term"] == "Diabetes Mellitus"
+        assert info["matched_on"] == "entry_term"

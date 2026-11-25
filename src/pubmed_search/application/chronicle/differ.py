@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
 
 from .assembler import canonical_topic_key
+from .highlights import abstract_digest
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
@@ -44,6 +45,18 @@ def _evidence_roles(bundle: EvidenceBundle) -> dict[str, list[EvidenceArticle]]:
     }
 
 
+def _article_payload(article: EvidenceArticle) -> dict[str, Any]:
+    """Return an article for delta reports with its abstract reduced to a digest.
+
+    Abstracts are stored so quoted sentences stay verifiable; a diff only
+    needs to show whether the text changed, not repeat it.
+    """
+    payload = article.to_dict()
+    if isinstance(article.abstract, str):
+        payload["abstract"] = {"sha256": abstract_digest(article.abstract), "chars": len(article.abstract)}
+    return payload
+
+
 def _article_index(articles: Iterable[EvidenceArticle]) -> dict[str, EvidenceArticle]:
     """Index evidence articles by stable identifier."""
     return {article.evidence_id: article for article in articles}
@@ -56,7 +69,7 @@ def _article_updates(
     """Return metadata changes for evidence IDs present on both sides."""
     updates: list[dict[str, Any]] = []
     for evidence_id in sorted(before.keys() & after.keys()):
-        changes = _mapping_changes(before[evidence_id].to_dict(), after[evidence_id].to_dict())
+        changes = _mapping_changes(_article_payload(before[evidence_id]), _article_payload(after[evidence_id]))
         if changes:
             updates.append({"evidence_id": evidence_id, "changes": changes})
     return updates
@@ -80,8 +93,8 @@ def _evidence_changes(before: EvidenceBundle, after: EvidenceBundle) -> dict[str
             role_deltas[role] = {
                 "added": added_ids,
                 "removed": removed_ids,
-                "added_articles": [after_role[evidence_id].to_dict() for evidence_id in added_ids],
-                "removed_articles": [before_role[evidence_id].to_dict() for evidence_id in removed_ids],
+                "added_articles": [_article_payload(after_role[evidence_id]) for evidence_id in added_ids],
+                "removed_articles": [_article_payload(before_role[evidence_id]) for evidence_id in removed_ids],
                 "updated": updated,
             }
 
@@ -375,8 +388,8 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
         "evidence": {
             "added": added_evidence_ids,
             "removed": removed_evidence_ids,
-            "added_details": [after_evidence[key].to_dict() for key in added_evidence_ids],
-            "removed_details": [before_evidence[key].to_dict() for key in removed_evidence_ids],
+            "added_details": [_article_payload(after_evidence[key]) for key in added_evidence_ids],
+            "removed_details": [_article_payload(before_evidence[key]) for key in removed_evidence_ids],
             "updated": evidence_updates,
             "total_before": len(before_evidence),
             "total_after": len(after_evidence),

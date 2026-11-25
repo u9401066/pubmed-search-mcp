@@ -26,7 +26,7 @@ from pubmed_search.application.pipeline import (
     ValidationResult,
 )
 from pubmed_search.application.pipeline.runner import StoredPipelineRunner
-from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
+from pubmed_search.application.pipeline.store import PipelineDeletion, PipelineHistoryError, _config_to_dict
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
 from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
@@ -419,7 +419,7 @@ class TestDeletePipeline:
     """Tests for delete_pipeline tool."""
 
     def test_delete_success(self, mcp, mock_store):
-        mock_store.delete.return_value = (PipelineScope.WORKSPACE, 3)
+        mock_store.delete.return_value = PipelineDeletion(scope=PipelineScope.WORKSPACE, run_count=3)
         output = mcp["delete_pipeline"](name="deleteme")
         assert "🗑️" in output
         assert "deleteme" in output
@@ -468,7 +468,8 @@ class TestGetPipelineHistory:
 
         output = mcp["get_pipeline_history"](name="hist")
         assert "hist" in output
-        assert "run_002" not in output  # run_id is not displayed directly
+        # Run IDs are shown so record pages, PRISMA-S tables and exports can address one run.
+        assert "| 5 | `run_002` | 2024-06-15 10:00 | 10 | legacy |" in output
         assert "10" in output  # article_count
         mock_store.count_history.assert_called_once_with("hist")
 
@@ -647,3 +648,19 @@ class TestToolsIntegration:
 
         assert "unknown action" in output.lower()
         assert "find" in output
+
+
+def test_same_name_pipelines_in_both_scopes_are_disclosed(mcp, real_store) -> None:
+    """A workspace pipeline shadowing a global one must never look like the only pipeline of that name."""
+    config_yaml = "template: pico\ntemplate_params:\n  P: ICU\n  I: remimazolam"
+    mcp["save_pipeline"](name="dup", config=config_yaml, scope="global")
+
+    saved = mcp["save_pipeline"](name="dup", config=config_yaml, scope="workspace")
+    listed = mcp["list_pipelines"]()
+    deleted = mcp["delete_pipeline"](name="dup")
+
+    assert "also exists in the global scope" in saved
+    assert "| dup | workspace (shadows global) |" in listed
+    assert "from workspace scope" in deleted
+    assert "remains in the global scope" in deleted
+    assert real_store.load("dup")[1].scope == PipelineScope.GLOBAL

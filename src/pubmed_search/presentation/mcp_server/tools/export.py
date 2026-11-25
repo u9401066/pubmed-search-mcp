@@ -41,6 +41,8 @@ if TYPE_CHECKING:
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
+    from .pipeline_tools import PipelineToolRuntime
+
 logger = logging.getLogger(__name__)
 
 # Export directory for prepared files
@@ -50,6 +52,16 @@ OfficialCitationFormat = Literal["ris", "medline", "csl"]
 NoteFormat = Literal["wiki", "foam", "markdown", "medpaper"]
 NotePath = Annotated[str, Field(min_length=1, max_length=4_096)]
 CollectionName = Annotated[str, Field(min_length=1, max_length=200)]
+PipelineRunReference = Annotated[
+    str,
+    Field(
+        strict=True,
+        min_length=1,
+        max_length=200,
+        pattern=r"^(saved:)?[a-z0-9][a-z0-9_-]{0,63}(@[A-Za-z0-9][A-Za-z0-9_.-]{0,127})?$",
+        description='Saved pipeline run: "<pipeline>" (latest run) or "<pipeline>@<run_id>".',
+    ),
+]
 
 
 def _tenant_reference_locator(path_value: object, root: Path) -> dict[str, str]:
@@ -100,15 +112,21 @@ def _redact_tenant_note_paths(result: dict[str, Any], root: Path) -> dict[str, A
     return redacted
 
 
-def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
+def register_export_tools(
+    mcp: MCPServer,
+    searcher: LiteratureSearcher,
+    *,
+    pipeline_runtime: PipelineToolRuntime | None = None,
+):
     """Register export-related tools."""
 
     @mcp.tool()
     async def prepare_export(
-        pmids: PMIDBatchInput,
+        pmids: PMIDBatchInput | None = None,
         format: Literal["ris", "medline", "csl", "bibtex", "csv", "json"] = "ris",
         include_abstract: bool = True,
         source: Literal["official", "local"] = "official",
+        pipeline_run: PipelineRunReference | None = None,
     ) -> str:
         """
         Export citations to reference manager formats.
@@ -135,6 +153,18 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         - bibtex: LaTeX documents (local only)
         - csv: Data analysis, Excel (local only)
 
+        ## Saved pipeline runs (systematic reviews)
+        Set pipeline_run="<pipeline>" (latest run) or "<pipeline>@<run_id>"
+        instead of pmids to export the run's complete persisted record set,
+        e.g. every PMID of a retrieval: exhaustive search, for Rayyan,
+        Covidence or Zotero import. Run exports are formatted locally from
+        the run artifact (ris, csv, csl, bibtex, medline, json; source does
+        not apply); missing metadata is fetched on demand (bounded) and
+        reported in the response. The pipeline_run summary states
+        record_basis, retrieval_mode and complete_record_set; a ranked
+        preview, mixed or incomplete run is exported with a warning that it
+        is not the complete search result.
+
         Args:
             pmids: Articles to export. Accepts:
                    - "last" → results from previous search
@@ -150,6 +180,8 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             source: Citation source (default: "official")
                    - "official": NCBI Citation API (recommended, best quality)
                    - "local": Local formatting (more formats, offline capable)
+            pipeline_run: Saved pipeline run to export instead of pmids:
+                   "<pipeline>" or "<pipeline>@<run_id>".
 
         Returns:
             JSON with status and export_text containing formatted citations.
@@ -163,7 +195,33 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
             # Get CSL-JSON for programmatic use
             prepare_export(pmids="last", format="csl", source="official")
+
+            # Export every record of the latest saved-pipeline run for screening
+            prepare_export(pipeline_run="pacu_peeg_ma", format="ris")
         """
+        if pipeline_run is not None:
+            if pmids is not None:
+                return ResponseFormatter.error(
+                    error="Provide either pmids or pipeline_run, not both",
+                    example='prepare_export(pipeline_run="my_review@<run_id>", format="ris")',
+                    tool_name="prepare_export",
+                    output_format="json",
+                )
+            return await _export_pipeline_run(
+                pipeline_runtime,
+                pipeline_run,
+                format_lower=format,
+                include_abstract=include_abstract,
+                searcher=searcher,
+            )
+        if pmids is None:
+            return ResponseFormatter.error(
+                error="pmids or pipeline_run is required",
+                suggestion="Use pmids='last', explicit PMIDs, or pipeline_run='<pipeline>[@<run_id>]'",
+                example='prepare_export(pmids="last", format="ris")',
+                tool_name="prepare_export",
+                output_format="json",
+            )
         try:
             normalized_pmids = InputNormalizer.normalize_pmids(pmids)
             pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
@@ -469,6 +527,65 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 suggestion="Check PMIDs and output directory permissions, then try again",
                 tool_name="save_literature_notes",
             )
+
+
+async def _export_pipeline_run(
+    pipeline_runtime: PipelineToolRuntime | None,
+    reference: str,
+    *,
+    format_lower: str,
+    include_abstract: bool,
+    searcher: LiteratureSearcher,
+) -> str:
+    """Export a saved pipeline run's complete record set through the export layer."""
+    from pubmed_search.application.pipeline.run_export import export_pipeline_run
+    from pubmed_search.application.pipeline.store import PipelineHistoryError
+
+    store = pipeline_runtime.store_for_current_tenant() if pipeline_runtime is not None else None
+    if store is None:
+        from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
+
+        return durable_storage_denied("prepare_export", output_format="json") or ResponseFormatter.error(
+            error="Pipeline store not initialized",
+            tool_name="prepare_export",
+            output_format="json",
+        )
+    try:
+        exported = await export_pipeline_run(
+            store,
+            reference,
+            fmt=format_lower,
+            include_abstract=include_abstract,
+            searcher=searcher,
+        )
+    except FileNotFoundError:
+        return ResponseFormatter.error(
+            error="Saved pipeline run was not found",
+            suggestion="Use get_pipeline_history(name=...) to list run IDs",
+            tool_name="prepare_export",
+            output_format="json",
+        )
+    except (ValueError, PipelineHistoryError) as exc:
+        return ResponseFormatter.error(error=str(exc), tool_name="prepare_export", output_format="json")
+    response = json.loads(
+        await asyncio.to_thread(
+            _format_export_response,
+            exported.content,
+            format_lower,
+            exported.record_count,
+            source="pipeline_run",
+        )
+    )
+    response["pipeline_run"] = exported.summary()
+    warnings = list(exported.warnings)
+    if exported.metadata_missing:
+        warnings.append(
+            f"{len(exported.metadata_missing)} records are exported with identifiers only; "
+            "retry later to fetch their metadata"
+        )
+    if warnings:
+        response["warning"] = " ".join(warnings)
+    return json.dumps(response, ensure_ascii=False)
 
 
 def _resolve_pmids(pmids: str) -> list[str]:

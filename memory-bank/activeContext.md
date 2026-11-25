@@ -1,5 +1,21 @@
 # Active Context
 
+## Release record — v0.11.0 systematic-review records and evidence quality (2026-11-25)
+
+A field benchmark (PACU processed-EEG question; native agent with E-utilities vs
+this server) showed the MCP lost on reference checking, MeSH mapping, expert
+queries diluted by broadening, fulltext status and Chronicle labels. Seven
+branches were merged into `release/v0.11.0`: reference-verification corrections,
+exact MeSH phrase mapping, precision-first deep strategy with broadening
+disclosure, NCBI PMC fulltext fallback, meta-analysis pipelines (exhaustive
+retrieval, PRISMA-S, block analysis, `pipeline_screening`, delete guard),
+Chronicle evidence quality, and MeSH auto-correction (unified_search automatic,
+pipelines suggest-only) plus the `CLAUDE_PROJECT_DIR` workspace fallback.
+Tool surface: 43 tools / 16 categories. Open follow-ups: AND-preserving
+`broad_tiab` for expert queries; PRISMA "other methods" branch and report-to-study
+grouping; QueryTranslation for bounded PubMed steps already added via diagnostics;
+publisher-restricted PMC records (e.g. JAMA) stay `front_matter_only` by design.
+
 ## Team preview and current documentation
 
 The feature branch adds research workspace handoff and bounded PubMed concept comparisons. See the [capability inventory](../docs/README.md#capability-inventory) for test evidence and the [roadmap](../ROADMAP.md) for open evaluations. The notes below record earlier release work.

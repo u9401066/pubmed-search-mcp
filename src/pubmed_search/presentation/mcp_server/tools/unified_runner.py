@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from pubmed_search.application.search.query_analyzer import QueryAnalyzer
 from pubmed_search.application.session.artifact_envelope import build_unified_search_artifact_envelope
 from pubmed_search.application.unified.execution import execute_unified_search
+from pubmed_search.application.unified.mesh_correction import correction_summary
 from pubmed_search.application.unified.planning import build_unified_search_plan
 from pubmed_search.application.unified.request import (
     normalize_unified_search_request,
@@ -40,6 +41,7 @@ from .search_run_journal import (
 )
 from .tool_response import ResponseFormatter
 from .tool_runtime import safe_report_progress
+from .tool_session import get_mesh_correction_service
 from .unified_formatting import _format_as_json, _format_unified_results
 from .unified_pipeline import _execute_pipeline_mode_outcome
 
@@ -156,6 +158,8 @@ async def persist_unified_search_artifact(
             clinical_trials_coverage=execution.clinical_trials_coverage,
             prefetched_trials=execution.prefetched_trials,
             exclude_seen_message=getattr(execution, "exclude_seen_message", None),
+            broadening=getattr(execution, "broadening", None),
+            mesh_correction=getattr(execution, "mesh_correction", None),
         )
     except Exception as exc:
         logger.warning("Failed to prepare unified_search artifact payload (%s)", type(exc).__name__)
@@ -301,8 +305,8 @@ async def run_unified_search(
                     payload["search_run"] = handoff
                     payload["search_status"] = {
                         "state": pipeline_outcome.status,
-                        "bounded": True,
-                        "exhaustive": False,
+                        "bounded": not pipeline_outcome.exhaustive,
+                        "exhaustive": pipeline_outcome.exhaustive,
                         "mode": "pipeline",
                     }
                     target_format = output_format if output_format in {"json", "toon"} else "json"
@@ -399,6 +403,7 @@ async def run_unified_search(
             enhancer_factory=enhancer_factory,
             source_registry_factory=lambda: registry,
             fulltext_prefetch=prefetch_search_fulltext if not dry_run else None,
+            mesh_correction=get_mesh_correction_service(),
         )
         plan_recorded = False
 
@@ -448,6 +453,9 @@ async def run_unified_search(
         plan = outcome.plan
         execution = outcome.execution
         await journal.record_execution(execution, plan)
+        mesh_note = correction_summary(getattr(execution, "mesh_correction", None))
+        if mesh_note:
+            journal.warnings.append(mesh_note)
 
         expected_status = classify_search_run_status(execution)
         provisional_run = journal.provisional_run(expected_status)
@@ -495,6 +503,8 @@ async def run_unified_search(
                 exclude_seen_message=execution.exclude_seen_message,
                 clinical_trials_coverage=execution.clinical_trials_coverage,
                 prefetched_trials=execution.prefetched_trials,
+                broadening=execution.broadening,
+                mesh_correction=execution.mesh_correction,
             )
 
         markdown_response = await _format_unified_results(
@@ -521,6 +531,8 @@ async def run_unified_search(
             counts_first=request.counts_first,
             result_filter_counts=execution.result_filter_counts,
             exclude_seen_message=execution.exclude_seen_message,
+            broadening=execution.broadening,
+            mesh_correction=execution.mesh_correction,
         )
         # Markdown rendering can add a typed adjunct-format failure. Refresh
         # the provisional terminal state before embedding it in the artifact.

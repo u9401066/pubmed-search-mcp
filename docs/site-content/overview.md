@@ -18,7 +18,7 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **42 MCP Tools**, including a persistent research workspace. |
+| Published v0.11.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.11.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
 | Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
@@ -29,16 +29,26 @@ Select the generated directory in your agent's plugin installer. Keep the checko
 
 Four blinded review cases tested whether MeSH previews improve search decisions. [Methods, screening costs and results](#/mesh-preflight)
 
+## What's new in v0.11.0
+
+- **Systematic reviews**: saved pipelines retrieve the complete PubMed set (up to 10,000 records), keep PRISMA-S run records, export RIS/CSV/CSL-JSON, analyse concept-block contributions and log screening decisions (`pipeline_screening`).
+- **Precision-first search**: your query fills the requested limit first; automatic broadening only fills a shortfall and every broadened record is labelled.
+- **MeSH you can trust**: confirmed mappings require an exact preferred or entry term; a heading PubMed cannot resolve is corrected automatically in `unified_search` (with evidence) and suggested, never applied, in saved pipelines.
+- **Reference checks that correct citations**: mis-cited years and volumes are reported as field corrections instead of looking fabricated.
+- **Evidence-grounded Chronicles and clearer fulltext status**: study-design labels from PubMed publication types, quoted conclusion sentences, NCBI PMC fallback and typed source errors.
+
+Details: [CHANGELOG](https://github.com/u9401066/pubmed-search-mcp/blob/master/CHANGELOG.md).
+
 ## Start with a research question
 
-For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 42 tool names.
+For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 43 tool names.
 
 | Research task | What the agent can do |
 | --- | --- |
 | Define the scope | Expand MeSH and synonyms, validate agent-supplied PICO, or compare which papers a Boolean condition excludes. [PubMed combination example](#/tools-usage-guide#compare-pubmed-concept-blocks) |
 | Search and extend | Search several providers, inspect per-source failures, then follow related papers, references or citing articles. [User guide](#/user-guide) |
 | Read and verify | Inspect an abstract, an available full-text passage, figures or bibliography matches. Use `diagnose_institutional_access` for a configured resolver. Record the source and what was actually read. [Tool guide](#/tools-usage-guide) |
-| Reuse a review strategy | Save a PICO or citation-expansion pipeline, run it again and inspect its history. Eligibility screening and statistical pooling remain researcher tasks. [Pipeline tutorial](#/pipeline-tutorial) |
+| Reuse a review strategy | Save a PICO or citation-expansion pipeline, retrieve the complete PubMed set, export PRISMA-S records and RIS/CSV, analyse each concept block's contribution and log screening decisions for PRISMA 2020 counts. Eligibility judgements and statistical pooling remain researcher tasks. [Pipeline tutorial](#/pipeline-tutorial) |
 | Explore research history | Review dated Chronicle branches, landmarks, earlier alternatives and revision differences. [Historical case and workspace handoff](#/advanced-workflows) |
 | Share results | Export citations or notes, record source identifiers and leave an open action. The host can cross-check an authorized local Zotero library. [Capability inventory and evidence](#/documentation-map#capability-inventory) |
 
@@ -46,7 +56,7 @@ For each of the 16 registry categories, see the implementation evidence and rema
 
 ## Search limits and recovery
 
-Generic literature discovery uses exactly one MCP entry point, `unified_search`. A source's result budget is divided across that source's query strategies. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
+Generic literature discovery uses exactly one MCP entry point, `unified_search`. Deep search is precision-first: your query gets each source's full result budget, and lower-precision strategies only fill missing slots, disclosed in `broadening`. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
 
 The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true` pipeline execution. Use `read_session(request={"action":"replay_search","run_id":"..."})` to recover the original credential-free arguments. There is no public cursor-resume parameter yet. Submitting the recovered request starts a new search. A reply with `search_run.status="history_unavailable"` has no guaranteed durable replay. [Recovery and artifact formats](#/tools-usage-guide)
 
@@ -56,7 +66,7 @@ The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true
 | --- | --- |
 | stdio or loopback HTTP | Trusted single-user deployment with a durable `default` tenant. The HTTP entry point is `pubmed-search-mcp-http --mode local --host 127.0.0.1`. |
 | Authenticated service | `--mode service` fails closed without a bearer principal. Authenticated callers cannot load `file:` pipelines or choose a server-host note path. The service Compose scheduler is disabled. [Deployment](#/deployment) |
-| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 42-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
+| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 43-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
 
 Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call `pubmed_search.api` directly. The optional `pubmed-browser-fetch-broker` runs on a machine with an authorized browser session. [Integration guide](#/troubleshooting) · [Python facade](#/python-sdk-http-cli-design)
 

@@ -35,6 +35,24 @@ get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 - `include_figures`: 是否一起帶 figure metadata
 - `extended_sources`: 是否擴展到更多來源
 
+### 來源順序
+
+1. 只有 PMID 時先解析 PMCID／DOI：Europe PMC metadata（`europe_pmc_metadata`）優先，失敗或過慢時改用 NCBI ESummary（`ncbi_metadata`）。
+2. 有 PMCID 時取結構化 JATS：Europe PMC（`europe_pmc`）優先；它失敗、沒有正文或數秒內未回應時，改向 PMC 正式主機 NCBI E-utilities `efetch db=pmc`（`ncbi_pmc`）。先取得正文者勝出，另一路標為 `superseded`。
+3. 之後才是 Unpaywall、institutional、CORE 與 PDF fallback；已取得正文時不再下載 PDF。
+4. 整個請求有一個總時限（預設 90 秒）。時限內未開始的來源列在 `sources_skipped`，不是「上游不可用」。
+
+### 判讀來源狀態
+
+| 欄位／代碼 | 意義 | 下一步 |
+| --- | --- | --- |
+| `source_errors[].code = rate_limited` | 上游限流，`retry_after_seconds` 為已套用的冷卻秒數 | 冷卻後只重讀這篇 |
+| `upstream_retries_exhausted` / `upstream_connection_error` / `timeout` | 上游重試後仍失敗、連線中斷或逾時 | 稍後重讀；其他來源的正文仍可用 |
+| `deadline_exceeded` 或 `sources_skipped` | 總時限到了，該來源沒查完或沒開始 | 不可據此判定沒有全文 |
+| `cache_error` | 本機全文快取故障，上游狀態未知 | 重讀一次；持續發生再回報 |
+| `source_notices[].code = front_matter_only` | PMC 有這篇，但出版者不允許 XML 下載，只回傳前置資料 | 不當成全文；用回傳的 PMC 頁面連結人工閱讀或改走 PDF／機構連結 |
+| `source_notices[].code = no_body` | 該來源完成但沒有正文 | 看其他來源結果 |
+
 ---
 
 ## 最常用範例
@@ -145,7 +163,7 @@ get_institutional_link(source={"kind":"pmid","value":"12345678"})
 | `get_fulltext` 的 JSON 回應含正文 | 核對 `content_sections` 或 `content` 的實際文字，保存 PMID／DOI、來源（`section_provenance`）、可辨認的文章版本及段落／表格位置。有截斷時讀回傳的 artifact。 |
 | 已取得 XML，但指定章節缺失 | 依 `section_selection.available` 修正一次章節名稱，或省略 `sections`；仍缺少時標明哪個章節尚待核對。 |
 | 僅有摘要、索引命中或連結 | 逐篇標明實際可讀範圍；保留文章在 Chronicle／篩選清單，將需要方法或結果佐證的陳述標為待核讀。 |
-| 來源逾時或限流 | 保留已取得的其他證據及 `coverage_status`、`source_errors`，將受影響的文章列為待補；依來源的等候時間，稍後僅重讀所需的文章。 |
+| 來源逾時、限流或被總時限略過 | 保留已取得的其他證據及 `coverage_status`、`source_errors[].code`、`sources_skipped`，將受影響的文章列為待補；依 `retry_after_seconds` 等候後，僅重讀所需的文章。 |
 
 ---
 

@@ -112,7 +112,8 @@ def register_unified_search_tools(
         ═══════════════════════════════════════════════════════════════════
         1. Analyzes your query (complexity, intent, PICO elements)
         2. Automatically selects best sources based on query type
-        3. Searches multiple sources in parallel
+        3. Searches multiple sources in parallel; deep mode runs your exact query
+           first and only broadens (disclosed, ranked last) to fill a shortfall
         4. Deduplicates and merges results
         5. Ranks by configurable criteria
         6. Enriches with OA links (Unpaywall)
@@ -234,7 +235,15 @@ def register_unified_search_tools(
                        compact        → compact structured JSON/TOON output
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
-                       no_relax       → disable auto-relaxation on 0 results
+                       no_relax       → disable automatic broadening (deep fill tiers
+                                        and auto-relaxation on 0 results); MeSH
+                                        correction still runs
+                       no_mesh_correction
+                                      → keep a PubMed MeSH clause that PubMed reports
+                                        as not found (QuotedPhraseNotFound /
+                                        PhraseNotFound) instead of re-running the
+                                        exact tier with a corrected query; the
+                                        PubMed warning is still shown
                        exclude_seen   → omit prior session results by PMID/DOI (not supported with pipeline)
                        native_semantic → use provider-native semantic retrieval;
                                          currently OpenAlex, max 50 results
@@ -344,6 +353,13 @@ def register_unified_search_tools(
             - Ranked articles with metadata
             - Open access links where available
             - Preprints (if options includes "preprints")
+            - Broadening disclosure (`broadening`: needed/applied/summary;
+              broadened records marked 🔻 / `retrieval.broadened`)
+            - MeSH correction (`mesh_correction` / Markdown **MeSH correction**):
+              when PubMed reports a MeSH clause as not found, the PubMed exact
+              tier is re-run with a corrected query; shows the NCBI reason,
+              replacement, tier (exact / co_occurrence / text_words),
+              evidence, confidence and before/after hits
             - Relaxation info (if auto_relax triggered)
             - Pipeline step summary (if pipeline mode)
         """

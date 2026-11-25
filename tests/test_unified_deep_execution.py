@@ -11,7 +11,7 @@ import pytest
 
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryComplexity, QueryIntent
 from pubmed_search.application.search.result_aggregator import RankingConfig
-from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
+from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan, StrategyTier
 from pubmed_search.application.unified.clinical_trials import ClinicalTrialsCoverage
 from pubmed_search.application.unified.execution import execute_unified_search
 from pubmed_search.application.unified.planning import UnifiedSearchPlan, _build_deep_strategies
@@ -52,7 +52,7 @@ async def _execute_plan(
     )
 
 
-def _strategy(name: str, source: str, priority: int) -> SearchPlan:
+def _strategy(name: str, source: str, priority: int, tier: StrategyTier = "exact") -> SearchPlan:
     return SearchPlan(
         name=name,
         query=name,
@@ -60,15 +60,18 @@ def _strategy(name: str, source: str, priority: int) -> SearchPlan:
         priority=priority,
         expected_precision=0.5,
         expected_recall=0.5,
+        tier=tier,
     )
 
 
 @pytest.mark.asyncio
-async def test_deep_search_enforces_per_source_budget_and_fair_parallelism() -> None:
+async def test_exact_tier_gets_full_budget_with_fair_parallelism_and_skips_unneeded_fill() -> None:
+    # Precision-first: every exact strategy receives the full per-source limit
+    # (no split across variants); fill tiers never run once the limit is met.
     strategies = [
-        _strategy("pubmed-high", "pubmed", 3),
-        _strategy("pubmed-mid", "pubmed", 2),
-        _strategy("pubmed-low", "pubmed", 1),
+        _strategy("pubmed-exact-a", "pubmed", 3),
+        _strategy("pubmed-exact-b", "pubmed", 2),
+        _strategy("pubmed-broad", "pubmed", 1, tier="broad"),
         _strategy("openalex", "openalex", 1),
     ]
     started = {"pubmed": asyncio.Event(), "openalex": asyncio.Event()}
@@ -138,13 +141,16 @@ async def test_deep_search_enforces_per_source_budget_and_fair_parallelism() -> 
     release.set()
     _results, metrics, _pubmed_total, counts, errors = await task
 
-    assert sorted(allocated["pubmed"]) == [1, 2, 2]
+    assert allocated["pubmed"] == [5, 5]
     assert allocated["openalex"] == [5]
-    assert sum(allocated["pubmed"]) == 5
-    assert counts == {"pubmed": (5, None), "openalex": (5, 100)}
+    assert counts == {"pubmed": (10, None), "openalex": (5, 100)}
     assert max_active == {"pubmed": 1, "openalex": 1}
     assert max_global_active == 2
-    assert metrics.strategies_executed == 4
+    assert metrics.strategies_executed == 3
+    skipped = [row for row in metrics.strategy_results if not row.executed]
+    assert [(row.strategy_name, row.skip_reason) for row in skipped] == [("pubmed-broad", "limit_filled")]
+    assert metrics.tier_outcome is not None
+    assert metrics.tier_outcome.broadening_needed is False
     assert errors == []
 
 
@@ -154,7 +160,7 @@ async def test_deep_source_status_is_partial_for_empty_success_plus_failed_attem
     request = normalize_unified_search_request(
         query=query,
         sources="pubmed",
-        options="no_relax,no_analysis,no_scores",
+        options="no_analysis,no_scores",
     )
     analysis = AnalyzedQuery(
         original_query=query,
@@ -162,7 +168,7 @@ async def test_deep_source_status_is_partial_for_empty_success_plus_failed_attem
         complexity=QueryComplexity.COMPLEX,
         intent=QueryIntent.EXPLORATION,
     )
-    strategies = [_strategy("exact", "pubmed", 2), _strategy("broad", "pubmed", 1)]
+    strategies = [_strategy("exact", "pubmed", 2), _strategy("broad", "pubmed", 1, tier="broad")]
     enhanced = EnhancedQuery(original_query=query, strategies=strategies)
     plan = UnifiedSearchPlan(
         request=request,
@@ -218,8 +224,19 @@ async def test_deep_source_status_is_partial_for_empty_success_plus_failed_attem
     assert execution.source_api_counts == {"pubmed": (0, None)}
     assert execution.source_errors[0]["kind"] == "timeout"
     metadata = execution.source_metadata["pubmed"]
-    assert metadata["budget"] == {"per_source_limit": 10, "allocated": 10, "returned": 0}
+    # The empty exact query under-fills the limit, so the broad tier runs with
+    # the full fill request (not a budget split) and its failure is partial.
+    assert metadata["budget"] == {
+        "policy": "precision_first",
+        "per_source_limit": 10,
+        "requested": 20,
+        # v0.10 consumers read the provider request total as ``allocated``.
+        "allocated": 20,
+        "fetched": 0,
+        "returned": 0,
+    }
     assert [attempt["status"] for attempt in metadata["attempts"]] == ["empty", "error"]
+    assert [attempt["phase"] for attempt in metadata["attempts"]] == ["exact", "broaden"]
     assert metadata["physical_queries"] == ["compiled:exact", "compiled:broad"]
     assert metadata["attempts"][1]["metadata"]["errors"][0]["retryable"] is True
 

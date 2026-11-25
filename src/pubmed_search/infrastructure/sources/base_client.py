@@ -12,9 +12,10 @@ a reusable base class with:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextvars import ContextVar
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 import httpx
 from typing_extensions import Self
@@ -38,25 +39,43 @@ _RESPONSE_STREAM_CHUNK_BYTES = 64 * 1024
 _MAX_REDIRECTS = 20
 
 
-class APIRequestError(RuntimeError):
-    """Sanitized upstream failure without URL, body, query, or credentials."""
+APIRequestFailureReason = Literal["timeout", "transport", "invalid_response", "too_large"]
 
-    def __init__(self, service_name: str, *, status_code: int | None = None) -> None:
+
+class APIRequestError(RuntimeError):
+    """Sanitized upstream failure without URL, body, query, or credentials.
+
+    ``reason`` is a coarse, query-safe failure class for callers that must
+    distinguish an upstream timeout or connection failure from an HTTP error
+    without inspecting the (deliberately discarded) original exception.
+    """
+
+    def __init__(
+        self,
+        service_name: str,
+        *,
+        status_code: int | None = None,
+        reason: APIRequestFailureReason | None = None,
+    ) -> None:
         suffix = f" with HTTP {status_code}" if status_code is not None else ""
         super().__init__(f"{service_name} request failed{suffix}")
         self.service_name = service_name
         self.status_code = status_code
+        self.reason = reason
 
 
 class ProviderSchemaError(APIRequestError):
     """Typed, sanitized failure for an invalid upstream response payload."""
+
+    def __init__(self, service_name: str, *, status_code: int | None = None) -> None:
+        super().__init__(service_name, status_code=status_code, reason="invalid_response")
 
 
 class APIResponseTooLargeError(APIRequestError):
     """Sanitized failure for an upstream response that exceeds the byte cap."""
 
     def __init__(self, service_name: str, *, max_bytes: int) -> None:
-        super().__init__(service_name)
+        super().__init__(service_name, reason="too_large")
         self.max_bytes = max_bytes
         self.args = (f"{service_name} response exceeded the {max_bytes}-byte limit",)
 
@@ -67,13 +86,19 @@ def raise_provider_schema_error(service_name: str) -> NoReturn:
     raise ProviderSchemaError(service_name) from None
 
 
-def raise_sanitized_retryable_error(service_name: str, error: RetryableOperationError) -> NoReturn:
+def raise_sanitized_retryable_error(
+    service_name: str,
+    error: RetryableOperationError,
+    *,
+    cooldown_seconds: float | None = None,
+) -> NoReturn:
     """Preserve retry metadata without exposing an upstream exception message."""
 
     raise RetryableOperationError(
         f"{service_name} request failed",
         retry_after=error.retry_after,
         status_code=error.status_code,
+        cooldown_seconds=cooldown_seconds if cooldown_seconds is not None else error.cooldown_seconds,
     ) from None
 
 
@@ -261,8 +286,8 @@ class BaseAPIClient:
             self._last_rate_limit_headers.set(None)
             return await self._transport_kernel.execute(perform_request, policy=policy)
         except RetryableOperationError as e:
-            await self._handle_exhausted_retryable_error(e, policy)
-            raise_sanitized_retryable_error(self._service_name, e)
+            cooldown = await self._handle_exhausted_retryable_error(e, policy)
+            raise_sanitized_retryable_error(self._service_name, e, cooldown_seconds=cooldown)
         except httpx.HTTPStatusError as e:
             logger.warning(
                 "%s HTTP error %s",
@@ -275,7 +300,8 @@ class BaseAPIClient:
             # URL. Provider queries and contact emails are private request
             # data in a multi-tenant service, so log only the exception class.
             logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
-            raise APIRequestError(self._service_name) from None
+            reason: APIRequestFailureReason = "timeout" if isinstance(e, httpx.TimeoutException) else "transport"
+            raise APIRequestError(self._service_name, reason=reason) from None
         except APIResponseTooLargeError:
             logger.warning(
                 "%s response exceeded the configured byte limit",
@@ -295,14 +321,22 @@ class BaseAPIClient:
                 logger.warning("%s: Circuit breaker open or rate limited, skipping request", self._service_name)
                 raise retryable_error from None
             logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
-            raise APIRequestError(self._service_name) from None
+            # The transport kernel reports per-attempt and total-budget expiry
+            # as asyncio timeouts; keep that class without the upstream text.
+            timeout_reason: APIRequestFailureReason | None = (
+                "timeout" if isinstance(e, (asyncio.TimeoutError, TimeoutError)) else None
+            )
+            raise APIRequestError(self._service_name, reason=timeout_reason) from None
 
     async def _handle_exhausted_retryable_error(
         self,
         error: RetryableOperationError,
         policy: RequestExecutionPolicy,
-    ) -> None:
-        """Handle an exhausted retryable response without noisy tracebacks."""
+    ) -> float | None:
+        """Handle an exhausted retryable response without noisy tracebacks.
+
+        Returns the shared rate-limit cooldown that was applied, if any.
+        """
         if error.status_code == 429:
             cooldown = error.retry_after if error.retry_after is not None else _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS
             await self._apply_rate_limit_cooldown(policy, cooldown)
@@ -311,13 +345,14 @@ class BaseAPIClient:
                 self._service_name,
                 cooldown,
             )
-            return
+            return cooldown
 
         logger.warning(
             "%s transient request failed after retries (status=%s)",
             self._service_name,
             error.status_code,
         )
+        return None
 
     @staticmethod
     async def _apply_rate_limit_cooldown(policy: RequestExecutionPolicy, cooldown: float) -> None:

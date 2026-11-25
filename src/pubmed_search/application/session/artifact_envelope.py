@@ -15,6 +15,12 @@ from pubmed_search.application.unified.clinical_trials import (
     ClinicalTrialsResponseError,
     validate_clinical_trials_rows,
 )
+from pubmed_search.application.unified.mesh_correction import compact_mesh_correction, correction_summary
+from pubmed_search.application.unified.tiering import (
+    MECHANISM_MESH_CORRECTION,
+    POLICY_SKIP_REASONS,
+    compact_broadening,
+)
 from pubmed_search.shared.credential_sanitizer import (
     extract_credential_values,
     redact_known_credential_values,
@@ -66,6 +72,7 @@ class UnifiedSearchArtifactPlan:
     dispatch_sources: list[str]
     effective_min_year: int | None
     effective_max_year: int | None
+    deep_strategies: list[Any] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,8 @@ class UnifiedSearchArtifactExecution:
     clinical_trials: list[dict[str, Any]] = field(default_factory=list)
     result_filter_counts: dict[str, int] | None = None
     enrichment_metadata: dict[str, Any] | None = None
+    broadening: dict[str, Any] | None = None
+    mesh_correction: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,7 @@ def normalize_unified_search_artifact_input(
             dispatch_sources=[str(item) for item in (getattr(plan, "dispatch_sources", []) or [])],
             effective_min_year=getattr(plan, "effective_min_year", None),
             effective_max_year=getattr(plan, "effective_max_year", None),
+            deep_strategies=_list_attr(plan, "deep_strategies"),
         )
 
     if isinstance(execution, UnifiedSearchArtifactExecution):
@@ -169,6 +179,8 @@ def normalize_unified_search_artifact_input(
             clinical_trials=clinical_trials,
             result_filter_counts=dict(getattr(execution, "result_filter_counts", {}) or {}),
             enrichment_metadata=dict(getattr(execution, "enrichment_metadata", {}) or {}),
+            broadening=_broadening_attr(execution),
+            mesh_correction=_mesh_correction_attr(execution),
         )
 
     return UnifiedSearchArtifactInput(
@@ -208,6 +220,16 @@ def _list_attr(value: Any, attr: str) -> list[Any]:
     return list(raw) if isinstance(raw, list | tuple) else []
 
 
+def _broadening_attr(execution: Any) -> dict[str, Any] | None:
+    raw = getattr(execution, "broadening", None)
+    return dict(raw) if isinstance(raw, dict) else None
+
+
+def _mesh_correction_attr(execution: Any) -> dict[str, Any] | None:
+    raw = getattr(execution, "mesh_correction", None)
+    return dict(raw) if isinstance(raw, dict) else None
+
+
 def _article_identifier(article: Any, name: str) -> str:
     raw = getattr(article, name, "")
     return str(raw or "").strip()
@@ -215,6 +237,11 @@ def _article_identifier(article: Any, name: str) -> str:
 
 def _article_title(article: Any) -> str:
     return str(getattr(article, "title", "") or "").strip()
+
+
+def _article_tier_rank(article: Any) -> int:
+    raw = getattr(article, "retrieval_tier_rank", 0)
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else 0
 
 
 def _article_year(article: Any) -> int | str | None:
@@ -248,6 +275,15 @@ def _strategy_result_payload(strategy_result: Any) -> dict[str, Any]:
         "total_available": getattr(strategy_result, "total_available", None),
         "physical_query": getattr(strategy_result, "physical_query", None),
         "query_executed": bool(getattr(strategy_result, "query_executed", False)),
+        "tier": str(getattr(strategy_result, "tier", "exact") or "exact"),
+        "tier_rank": int(getattr(strategy_result, "tier_rank", 0) or 0),
+        "phase": str(getattr(strategy_result, "phase", "exact") or "exact"),
+        "new_unique": int(getattr(strategy_result, "new_unique", 0) or 0),
+        "contributed": int(getattr(strategy_result, "contributed", 0) or 0),
+        "duplicates": int(getattr(strategy_result, "duplicates", 0) or 0),
+        "ineligible": int(getattr(strategy_result, "ineligible", 0) or 0),
+        "surplus_discarded": int(getattr(strategy_result, "surplus_discarded", 0) or 0),
+        "skip_reason": getattr(strategy_result, "skip_reason", None),
     }
 
 
@@ -257,6 +293,7 @@ def _search_plan_payload(strategy: Any) -> dict[str, Any]:
         "query": str(getattr(strategy, "query", "") or ""),
         "source": str(getattr(strategy, "source", "") or ""),
         "priority": int(getattr(strategy, "priority", 0) or 0),
+        "tier": str(getattr(strategy, "tier", "exact") or "exact"),
     }
     precision = getattr(strategy, "expected_precision", None)
     recall = getattr(strategy, "expected_recall", None)
@@ -270,18 +307,31 @@ def _search_plan_payload(strategy: Any) -> dict[str, Any]:
 def _deep_search_payload(plan: Any, execution: Any) -> dict[str, Any]:
     enhanced_query = getattr(plan, "enhanced_query", None)
     metrics = getattr(execution, "deep_search_metrics", None)
-    generated_strategies = [_search_plan_payload(strategy) for strategy in _list_attr(enhanced_query, "strategies")]
-    executed_strategy_results = [_strategy_result_payload(result) for result in _list_attr(metrics, "strategy_results")]
+    # Prefer the finalized plan (after source filtering and precision-first
+    # pruning) over raw enhancer candidates, so "generated" means "planned".
+    planned = _list_attr(plan, "deep_strategies") or _list_attr(enhanced_query, "strategies")
+    generated_strategies = [_search_plan_payload(strategy) for strategy in planned]
+    strategy_rows = _list_attr(metrics, "strategy_results")
+    executed_strategy_results = [_strategy_result_payload(result) for result in strategy_rows]
+    policy_skipped = {
+        (str(getattr(row, "strategy_name", "")), str(getattr(row, "source", "")))
+        for row in strategy_rows
+        if getattr(row, "status", None) == "skipped" and getattr(row, "skip_reason", None) in POLICY_SKIP_REASONS
+    }
+    tier_outcome = getattr(metrics, "tier_outcome", None)
     return {
         "enabled": bool(getattr(getattr(plan, "request", None), "deep_search", False)),
+        "policy": "precision_first",
         "entities": _to_dict(enhanced_query).get("entities", []),
         "expanded_terms": _to_dict(enhanced_query).get("expanded_terms", []),
         "strategies_generated": int(getattr(metrics, "strategies_generated", len(generated_strategies)) or 0),
         "strategies_executed": int(getattr(metrics, "strategies_executed", len(executed_strategy_results)) or 0),
+        "strategies_skipped_by_policy": len(policy_skipped),
         "strategies_with_results": int(getattr(metrics, "strategies_with_results", 0) or 0),
         "depth_score": float(getattr(metrics, "depth_score", 0.0) or 0.0),
         "generated_strategies": generated_strategies,
         "strategy_results": executed_strategy_results,
+        "tier_outcome": _to_dict(tier_outcome) or None,
     }
 
 
@@ -333,8 +383,10 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         if source:
             deep_strategy_sources.add(source)
         if source and query and getattr(strategy, "query_executed", False):
-            physical = getattr(strategy, "physical_query", None) or query
-            deep_strategy_queries.setdefault(source, []).append(str(physical))
+            physical = str(getattr(strategy, "physical_query", None) or query)
+            source_physical_queries = deep_strategy_queries.setdefault(source, [])
+            if physical not in source_physical_queries:
+                source_physical_queries.append(physical)
     source_counts = dict(getattr(execution, "source_api_counts", {}) or {})
     source_statuses = dict(getattr(execution, "source_statuses", {}) or {})
     attempted_sources = list(source_counts)
@@ -412,6 +464,8 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "enrichment": dict(getattr(execution, "enrichment_metadata", {}) or {}),
         "deep_search": _deep_search_payload(plan, execution),
         "relaxation": _relaxation_payload(execution),
+        "broadening": execution.broadening,
+        "mesh_correction": execution.mesh_correction,
     }
 
 
@@ -664,27 +718,113 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
         )
 
     deep = _deep_search_payload(plan, execution)
-    if deep["enabled"] and deep["strategies_generated"] > deep["strategies_executed"]:
+    deep_details = {
+        "strategies_generated": deep["strategies_generated"],
+        "strategies_executed": deep["strategies_executed"],
+        "strategies_skipped_by_policy": deep["strategies_skipped_by_policy"],
+    }
+    if deep["enabled"] and (
+        deep["strategies_generated"] > deep["strategies_executed"] + deep["strategies_skipped_by_policy"]
+    ):
         _add_check(
             checks,
             check="deep_search_strategy_execution",
             severity="warn",
-            message="Not all generated deep-search strategies were executed.",
-            details={
-                "strategies_generated": deep["strategies_generated"],
-                "strategies_executed": deep["strategies_executed"],
-            },
+            message="Some planned deep-search strategies were neither executed nor skipped by the precision-first policy.",
+            details=deep_details,
         )
     elif deep["enabled"]:
         _add_check(
             checks,
             check="deep_search_strategy_execution",
             severity="pass",
-            message="Generated deep-search strategies were executed.",
-            details={
-                "strategies_generated": deep["strategies_generated"],
-                "strategies_executed": deep["strategies_executed"],
-            },
+            message=(
+                "Planned deep-search strategies were executed or intentionally skipped "
+                "by the precision-first policy (not needed or disabled)."
+            ),
+            details=deep_details,
+        )
+
+    broadening = execution.broadening
+    if broadening:
+        failed_attempts = int(broadening.get("failed_attempts") or 0)
+        if failed_attempts:
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="warn",
+                message=(
+                    f"{failed_attempts} automatic deepening/broadening/relaxation request(s) failed or timed out; "
+                    "the coverage they were meant to add is unknown, not empty."
+                ),
+                details=compact_broadening(broadening),
+            )
+        elif (
+            broadening.get("applied")
+            and not int(broadening.get("broadened_records") or 0)
+            and list(broadening.get("mechanisms") or []) == [MECHANISM_MESH_CORRECTION]
+        ):
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="info",
+                message=(
+                    "The PubMed query was corrected automatically (see mesh_correction); "
+                    "no lower-precision records were added."
+                ),
+                details=compact_broadening(broadening),
+            )
+        elif broadening.get("applied"):
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="info",
+                message="Automatic broadening ran; broadened records are lower precision than the original query.",
+                details=compact_broadening(broadening),
+            )
+        elif broadening.get("needed"):
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="info",
+                message="The original query under-filled the requested limit and no broadening ran.",
+                details=compact_broadening(broadening),
+            )
+        else:
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="pass",
+                message="No broadening was needed; every record came from the original query tier.",
+                details=compact_broadening(broadening),
+            )
+
+    mesh_correction = execution.mesh_correction
+    if mesh_correction:
+        _add_check(
+            checks,
+            check="mesh_correction",
+            severity="info" if mesh_correction.get("applied") else "warn",
+            message=correction_summary(mesh_correction) or "PubMed could not resolve a MeSH clause.",
+            details=compact_mesh_correction(mesh_correction),
+        )
+
+    tier_ranks = [_article_tier_rank(article) for article in ranked]
+    if tier_ranks != sorted(tier_ranks):
+        _add_check(
+            checks,
+            check="retrieval_tier_order",
+            severity="fail",
+            message="A broadened record is ranked above a record from a more precise query tier.",
+            details={"tier_ranks": tier_ranks},
+        )
+    elif any(tier_ranks):
+        _add_check(
+            checks,
+            check="retrieval_tier_order",
+            severity="pass",
+            message="Broadened records are ranked after every record from more precise query tiers.",
+            details={"broadened_records": sum(1 for rank in tier_ranks if rank > 0)},
         )
 
     failures = sum(1 for item in checks if item["severity"] == "fail")
@@ -772,6 +912,10 @@ def build_unified_search_artifact_envelope(
             "query strategy, and audit evidence."
         ),
     }
+    if execution.broadening:
+        summary["broadening"] = compact_broadening(execution.broadening)
+    if execution.mesh_correction:
+        summary["mesh_correction"] = compact_mesh_correction(execution.mesh_correction)
     metadata = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "artifact_role": "research_output",

@@ -99,8 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--workspace-dir",
-        default=os.environ.get("PUBMED_WORKSPACE_DIR"),
-        help="Explicit workspace root for workspace-scoped pipeline persistence",
+        default=None,
+        help=(
+            "Explicit workspace root for workspace-scoped pipeline persistence "
+            "(default: PUBMED_WORKSPACE_DIR, then CLAUDE_PROJECT_DIR)"
+        ),
     )
     return parser
 
@@ -337,7 +340,7 @@ def main() -> None:
         json_response=args.copilot_compatible,
         stateless_http=args.copilot_compatible,
         data_dir=settings.data_dir,
-        workspace_dir=args.workspace_dir,
+        workspace_dir=args.workspace_dir or settings.workspace_dir,
         mode=args.mode,
         allow_container_bind=args.allow_container_bind,
     )

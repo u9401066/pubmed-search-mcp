@@ -17,7 +17,9 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Coroutine, Mapping
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Literal, cast
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Literal, cast
 
 from pubmed_search.application.pipeline.action_contracts import (
     PIPELINE_SEARCH_SOURCES,
@@ -27,7 +29,12 @@ from pubmed_search.application.pipeline.action_contracts import (
     validate_pipeline_details_pmids,
     validate_pipeline_discovery_pmid,
 )
+from pubmed_search.application.pipeline.block_analysis import analyze_strategy_blocks, annotate_unresolved_terms
 from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT,
+    PIPELINE_EXHAUSTIVE_METADATA_BATCH,
+    PIPELINE_EXHAUSTIVE_PAGE_SIZE,
+    PIPELINE_EXHAUSTIVE_RECORD_LIMIT,
     PIPELINE_SEED_LIMIT,
     PipelineBudgetExceededError,
     PipelineExecutionPolicy,
@@ -36,11 +43,34 @@ from pubmed_search.application.pipeline.budgets import (
     validate_bounded_limit,
     validate_pipeline_budgets,
 )
+from pubmed_search.application.pipeline.exhaustive import (
+    ExhaustiveCapExceededError,
+    ExhaustiveRetrievalIncompleteError,
+    retrieve_pubmed_exhaustive,
+    search_filters,
+)
+from pubmed_search.application.pipeline.mesh_suggestions import (
+    diagnostics_from_provenance,
+    diagnostics_from_snapshot,
+    suggest_mesh_correction,
+)
+
+# Record-set helpers live in record_lineage; ``__all__`` re-exports them for existing callers.
+from pubmed_search.application.pipeline.record_lineage import (
+    FINAL_STEP_METADATA_KEY,
+    RECORD_LINEAGE_METADATA_KEY,
+    article_lacks_metadata,
+    collected_records,
+    final_record_set,
+    is_exhaustive_step,
+    record_lineage,
+)
 from pubmed_search.application.pipeline.scheduling import run_ready_steps
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.source_models import SourceSearchPage
-from pubmed_search.domain.entities.article import CitationMetrics
+from pubmed_search.domain.entities.article import CitationMetrics, UnifiedArticle
 from pubmed_search.domain.entities.pipeline import (
+    ANALYSIS_ACTIONS,
     MAX_PIPELINE_STEPS,
     VALID_ACTIONS,
     PipelineConfig,
@@ -64,9 +94,6 @@ from pubmed_search.shared.source_contracts import (
     validate_source_adapter_result,
 )
 
-if TYPE_CHECKING:
-    from pubmed_search.domain.entities.article import UnifiedArticle
-
 # Dependency-injection contracts for alternate-source search.
 #
 # ``AlternateSearchAdapterFn`` is the sole contract: items are provider DTOs and
@@ -81,6 +108,32 @@ _VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
 _FULL_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$")
 _PIPELINE_ALTERNATE_SOURCES = frozenset(PIPELINE_SEARCH_SOURCES - {"pubmed"})
 PipelineOutcomeStatus = Literal["completed", "partial", "failed"]
+
+
+@dataclass
+class _DeferredSuggestion:
+    """A suggest-only MeSH correction to compute once required pipeline work is done."""
+
+    target: dict[str, Any]
+    query: str
+    diagnostics: Any
+    observed_count: int | None
+    physical_query: str | None
+
+
+def _utc_now_iso() -> str:
+    """Return a second-resolution UTC timestamp for search provenance."""
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def config_requests_exhaustive_retrieval(config: PipelineConfig) -> bool:
+    """Whether a prepared config contains a ``retrieval: exhaustive`` search step."""
+    return any(step.action == "search" and step.params.get("retrieval") == "exhaustive" for step in config.steps)
+
+
+def run_uses_exhaustive_retrieval(step_results: Mapping[str, StepResult]) -> bool:
+    """Whether any step in a run requested exhaustive PubMed retrieval."""
+    return any(is_exhaustive_step(result) for result in step_results.values())
 
 
 def classify_pipeline_outcome(
@@ -162,15 +215,33 @@ class PipelineExecutor:
         alternate_search_adapter: AlternateSearchAdapterFn | None = None,
         execution_policy: PipelineExecutionPolicy | None = None,
         semantic_enhancer_factory: Callable[[], Any] | None = None,
+        *,
+        exhaustive_page_size: int = PIPELINE_EXHAUSTIVE_PAGE_SIZE,
+        exhaustive_metadata_batch_size: int = PIPELINE_EXHAUSTIVE_METADATA_BATCH,
+        mesh_correction: Any = None,
     ) -> None:
-        """Create an executor with one validated provider-adapter seam."""
+        """Create an executor with one validated provider-adapter seam.
+
+        ``mesh_correction`` (a ``MeshCorrectionService``) only *suggests*
+        corrections for MeSH clauses PubMed reports as not found; saved
+        strategies are never rewritten.
+        """
 
         self._searcher = searcher
+        self._mesh_correction = mesh_correction
         self._alternate_search_adapter = alternate_search_adapter
         self._execution_policy = execution_policy or PipelineExecutionPolicy()
         self._semantic_enhancer_factory = semantic_enhancer_factory
+        if exhaustive_page_size < 1 or exhaustive_metadata_batch_size < 1:
+            raise ValueError("Exhaustive page and metadata batch sizes must be positive")
+        self._exhaustive_page_size = exhaustive_page_size
+        self._exhaustive_metadata_batch_size = exhaustive_metadata_batch_size
         self._run_budget: ContextVar[PipelineRunBudget | None] = ContextVar(
             "pipeline_run_budget",
+            default=None,
+        )
+        self._deferred_suggestions: ContextVar[list[_DeferredSuggestion] | None] = ContextVar(
+            "pipeline_deferred_suggestions",
             default=None,
         )
 
@@ -194,6 +265,8 @@ class PipelineExecutor:
 
         budget = PipelineRunBudget(self._execution_policy)
         budget_token = self._run_budget.set(budget)
+        deferred: list[_DeferredSuggestion] = []
+        deferred_token = self._deferred_suggestions.set(deferred)
         results: dict[str, StepResult] = {}
         ordered_steps = [step for batch in batches for step in batch]
 
@@ -211,6 +284,9 @@ class PipelineExecutor:
                 budget,
                 reason="deadline_exhausted",
             )
+            # Optional suggestions run only after every step finished, so their
+            # up-front request reservation never starves required retrieval.
+            await self._run_deferred_suggestions(deferred)
             # Completion timing must not change report/result iteration order.
             results = {step.id: results[step.id] for step in ordered_steps}
 
@@ -223,6 +299,7 @@ class PipelineExecutor:
             # Collect final articles from the last step. If a run budget ended
             # the DAG, retain the latest completed evidence as a typed partial.
             final_step_id = stop_at if stop_at else steps_to_run[-1].id
+            final_step_id = self._record_producing_step_id(steps_to_run, final_step_id)
             if final_step_id not in results and results:
                 final_step_id = next(reversed(results))
             final_step = results.get(final_step_id)
@@ -235,6 +312,16 @@ class PipelineExecutor:
                         final_articles = candidate.articles
                         final_step_id = step.id
                         break
+            if final_step_id in results:
+                # Persistence uses the complete final-step set; ranking and
+                # output.limit only shape the response preview below.
+                results[final_step_id].metadata[FINAL_STEP_METADATA_KEY] = True
+                if run_uses_exhaustive_retrieval(results):
+                    # Completeness and identification claims cover only the
+                    # sources whose records reach this final set.
+                    results[final_step_id].metadata[RECORD_LINEAGE_METADATA_KEY] = record_lineage(
+                        steps_to_run, results, final_step_id
+                    )
 
             # Apply ranking & limit from output config
             if final_articles:
@@ -246,7 +333,20 @@ class PipelineExecutor:
 
             return final_articles, results
         finally:
+            self._deferred_suggestions.reset(deferred_token)
             self._run_budget.reset(budget_token)
+
+    @staticmethod
+    def _record_producing_step_id(steps: list[PipelineStep], candidate: str) -> str:
+        """Analysis steps never own the run's record set; use the last producing step."""
+        by_id = {step.id: step for step in steps}
+        if by_id.get(candidate) is None or by_id[candidate].action not in ANALYSIS_ACTIONS:
+            return candidate
+        position = next(index for index, step in enumerate(steps) if step.id == candidate)
+        for step in reversed(steps[:position]):
+            if step.action not in ANALYSIS_ACTIONS:
+                return step.id
+        return candidate
 
     def _record_step_outcome(
         self,
@@ -319,6 +419,76 @@ class PipelineExecutor:
         budget = self._run_budget.get()
         if budget is not None:
             await budget.reserve_external_call()
+
+    async def _reserve_count_query(self) -> None:
+        budget = self._run_budget.get()
+        if budget is not None:
+            await budget.reserve_count_query()
+
+    async def _suggest_mesh_correction(
+        self,
+        query: str,
+        *,
+        diagnostics: Any,
+        observed_count: int | None,
+        physical_query: str | None,
+    ) -> dict[str, Any] | None:
+        """Suggest-only MeSH correction bounded by the run's quota and deadline."""
+        budget = self._run_budget.get()
+
+        async def reserve(count: int) -> bool:
+            return True if budget is None else await budget.try_reserve_external_calls(count)
+
+        async def release(count: int) -> None:
+            if budget is not None:
+                await budget.release_external_calls(count)
+
+        return await suggest_mesh_correction(
+            self._mesh_correction,
+            query,
+            diagnostics=diagnostics,
+            observed_count=observed_count,
+            physical_query=physical_query,
+            reserve=reserve,
+            release=release,
+            remaining_seconds=None if budget is None else budget.remaining_seconds(),
+        )
+
+    async def _attach_mesh_correction(
+        self,
+        target: dict[str, Any],
+        query: str,
+        *,
+        diagnostics: Any,
+        observed_count: int | None,
+        physical_query: str | None,
+    ) -> None:
+        """Attach a suggest-only MeSH correction to ``target`` (deferred while a run executes)."""
+        deferred = self._deferred_suggestions.get()
+        if deferred is not None:
+            deferred.append(_DeferredSuggestion(target, query, diagnostics, observed_count, physical_query))
+            return
+        suggestion = await self._suggest_mesh_correction(
+            query, diagnostics=diagnostics, observed_count=observed_count, physical_query=physical_query
+        )
+        if suggestion is not None:
+            target["mesh_correction"] = suggestion
+
+    async def _run_deferred_suggestions(self, deferred: list[_DeferredSuggestion]) -> None:
+        """Compute deferred suggestions in step order within the remaining quota and deadline."""
+        for item in deferred:
+            try:
+                suggestion = await self._suggest_mesh_correction(
+                    item.query,
+                    diagnostics=item.diagnostics,
+                    observed_count=item.observed_count,
+                    physical_query=item.physical_query,
+                )
+            except Exception as exc:  # optional work never fails the run
+                logger.warning("Pipeline MeSH suggestion failed (%s)", type(exc).__name__)
+                continue
+            if suggestion is not None:
+                item.target["mesh_correction"] = suggestion
 
     def dry_run(
         self,
@@ -523,6 +693,7 @@ class PipelineExecutor:
             "metrics": self._action_metrics,
             "merge": self._action_merge,
             "filter": self._action_filter,
+            "block_analysis": self._action_block_analysis,
         }
         handler = handler_map.get(step.action)
         if handler is None:
@@ -544,6 +715,8 @@ class PipelineExecutor:
 
     async def _action_search(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
         """Execute parallel multi-source literature search."""
+        if step.params.get("retrieval") == "exhaustive":
+            return await self._action_search_exhaustive(step, inputs)
         query = self._resolve_query(step, inputs)
         if not query:
             return StepResult(
@@ -614,6 +787,7 @@ class PipelineExecutor:
 
         min_year = step.params.get("min_year")
         max_year = step.params.get("max_year")
+        executed_at = _utc_now_iso()
 
         all_articles: list[UnifiedArticle] = []
         coros: list[Any] = []
@@ -728,20 +902,290 @@ class PipelineExecutor:
 
         pmids = [a.pmid for a in all_articles if a.pmid]
         all_sources_failed = bool(source_order) and len(failed_sources) == len(source_order)
+        metadata: dict[str, Any] = {
+            "query": query,
+            "source_queries": source_queries,
+            "source_api_counts": source_api_counts,
+            "source_errors": source_errors,
+            "source_results": source_results,
+            "filters": search_filters(step.params),
+            "retrieval": {"mode": "bounded", "exhaustive": False, "limit": limit},
+            "executed_at": executed_at,
+        }
+        pubmed_result = source_results.get("pubmed")
+        if pubmed_result is not None and pubmed_result.get("status") != "error":
+            provenance = pubmed_result.get("provenance") or {}
+            await self._attach_mesh_correction(
+                metadata,
+                str(source_queries.get("pubmed") or query),
+                diagnostics=diagnostics_from_provenance(provenance),
+                observed_count=pubmed_result.get("total_count"),
+                physical_query=provenance.get("physical_query"),
+            )
         return StepResult(
             step_id=step.id,
             action="search",
             articles=all_articles,
             pmids=pmids,
-            metadata={
-                "query": query,
-                "source_queries": source_queries,
-                "source_api_counts": source_api_counts,
-                "source_errors": source_errors,
-                "source_results": source_results,
-            },
+            metadata=metadata,
             error="All selected search sources failed" if all_sources_failed else None,
         )
+
+    async def _action_search_exhaustive(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        """Collect the complete PubMed record set for one systematic search step."""
+        executed_at = _utc_now_iso()
+        filters = search_filters(step.params)
+        base_metadata: dict[str, Any] = {
+            "filters": filters,
+            "executed_at": executed_at,
+            "source_api_counts": {},
+            "source_errors": [],
+        }
+        query = self._resolve_query(step, inputs, source="pubmed")
+        if not query:
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error="No query provided or derivable from inputs",
+                metadata=base_metadata,
+            )
+        base_metadata.update({"query": query, "source_queries": {"pubmed": query}})
+        sources = step.params.get("sources", ["pubmed"])
+        if sources != ["pubmed"]:
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error="retrieval: exhaustive supports only sources: [pubmed]",
+                metadata=base_metadata,
+            )
+        required = ("esearch_snapshot", "fetch_history_pmids", "fetch_details")
+        if self._searcher is None or any(not callable(getattr(self._searcher, name, None)) for name in required):
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error="Pipeline exhaustive PubMed retrieval adapter unavailable",
+                metadata=base_metadata,
+            )
+        try:
+            max_records = validate_bounded_limit(
+                step.params.get("max_records", PIPELINE_EXHAUSTIVE_RECORD_LIMIT.default),
+                PIPELINE_EXHAUSTIVE_RECORD_LIMIT,
+                field="Pipeline exhaustive max_records",
+            )
+        except ValueError as exc:
+            return StepResult(step_id=step.id, action="search", error=str(exc), metadata=base_metadata)
+        fetch_metadata = step.params.get("fetch_metadata", True)
+        if not isinstance(fetch_metadata, bool):
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error="Pipeline exhaustive fetch_metadata must be a boolean",
+                metadata=base_metadata,
+            )
+
+        budget = self._run_budget.get()
+        try:
+            retrieval = await retrieve_pubmed_exhaustive(
+                self._searcher,
+                query,
+                filters=filters,
+                max_records=max_records,
+                reserve_call=self._reserve_external_call,
+                fetch_metadata=fetch_metadata,
+                page_size=self._exhaustive_page_size,
+                metadata_batch_size=self._exhaustive_metadata_batch_size,
+                remaining_seconds=None if budget is None else budget.remaining_seconds,
+            )
+        except ExhaustiveCapExceededError as exc:
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error=str(exc),
+                metadata={
+                    **base_metadata,
+                    "physical_query": exc.snapshot.get("physical_query"),
+                    "pubmed_history": self._public_history_snapshot(exc.snapshot),
+                    "retrieval": {
+                        "mode": "exhaustive",
+                        "exhaustive": False,
+                        "total_count": exc.total_count,
+                        "retrieved_count": 0,
+                        "cap": exc.cap,
+                        "terminal_reason": "cap_exceeded",
+                    },
+                    "source_api_counts": {"pubmed": 0},
+                },
+            )
+        except ExhaustiveRetrievalIncompleteError as exc:
+            return StepResult(
+                step_id=step.id,
+                action="search",
+                error=str(exc),
+                metadata={
+                    **base_metadata,
+                    "physical_query": exc.snapshot.get("physical_query"),
+                    "pubmed_history": self._public_history_snapshot(exc.snapshot),
+                    "retrieval": {
+                        "mode": "exhaustive",
+                        "exhaustive": False,
+                        "total_count": exc.total_count,
+                        "retrieved_count": exc.retrieved,
+                        "cap": max_records,
+                        "terminal_reason": exc.reason,
+                    },
+                    "source_api_counts": {"pubmed": 0},
+                    "retryable": True,
+                },
+            )
+
+        articles = [
+            article_from_pubmed(retrieval.records[pmid])
+            if pmid in retrieval.records
+            else UnifiedArticle(title="", pmid=pmid, primary_source="pubmed")
+            for pmid in retrieval.pmids
+        ]
+        source_errors: list[dict[str, Any]] = []
+        if retrieval.metadata_error is not None:
+            source_errors.append(
+                {
+                    "source": "pubmed",
+                    "operation": "pipeline_exhaustive_metadata",
+                    "message": retrieval.warnings[-1] if retrieval.warnings else "PubMed metadata incomplete",
+                    "kind": retrieval.metadata_error.get("kind", "provider"),
+                    "retryable": True,
+                    "status_code": None,
+                    "status": "metadata_incomplete",
+                }
+            )
+        snapshot = retrieval.snapshot
+        metadata: dict[str, Any] = {
+            **base_metadata,
+            "physical_query": snapshot.get("physical_query"),
+            "pubmed_history": self._public_history_snapshot(snapshot),
+            "retrieval": retrieval.summary(),
+            "source_api_counts": {"pubmed": len(retrieval.pmids)},
+            "source_errors": source_errors,
+            "source_results": {
+                "pubmed": {
+                    "status": "ok" if retrieval.pmids else "empty",
+                    "total_count": retrieval.total_count,
+                    "next_token": None,
+                    "cursor": None,
+                    "cost": None,
+                    "provenance": {
+                        "logical_query": query,
+                        "physical_query": snapshot.get("physical_query"),
+                        "provider_mode": "exhaustive",
+                        "query_executed": True,
+                    },
+                }
+            },
+        }
+        await self._attach_mesh_correction(
+            metadata,
+            query,
+            diagnostics=diagnostics_from_snapshot(snapshot),
+            observed_count=retrieval.total_count,
+            physical_query=snapshot.get("physical_query"),
+        )
+        return StepResult(
+            step_id=step.id,
+            action="search",
+            articles=articles,
+            pmids=list(retrieval.pmids),
+            records=dict(retrieval.records),
+            metadata=metadata,
+        )
+
+    async def _action_block_analysis(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        """Count-only analysis of a strategy's AND blocks, cumulative combinations and terms."""
+        executed_at = _utc_now_iso()
+        query = step.params.get("query")
+        filters = search_filters(step.params)
+        source_step: str | None = None
+        if not query:
+            source_step = step.inputs[0] if len(step.inputs) == 1 else None
+            source = inputs.get(source_step or "")
+            if source is None or source.action != "search" or not source.ok:
+                return StepResult(
+                    step_id=step.id,
+                    action="block_analysis",
+                    error="block_analysis needs a query or one successful input search step",
+                )
+            source_queries = source.metadata.get("source_queries") or {}
+            query = source_queries.get("pubmed") if isinstance(source_queries, dict) else None
+            if not isinstance(query, str) or not query:
+                return StepResult(
+                    step_id=step.id,
+                    action="block_analysis",
+                    error="block_analysis input step did not search PubMed",
+                )
+            filters = {**dict(source.metadata.get("filters") or {}), **filters}
+        if self._searcher is None or not callable(getattr(self._searcher, "esearch_snapshot", None)):
+            return StepResult(
+                step_id=step.id,
+                action="block_analysis",
+                error="Pipeline PubMed count adapter unavailable",
+            )
+        try:
+            max_queries = validate_bounded_limit(
+                step.params.get("max_count_queries", PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT.default),
+                PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT,
+                field="Pipeline block_analysis max_count_queries",
+            )
+        except ValueError as exc:
+            return StepResult(step_id=step.id, action="block_analysis", error=str(exc))
+
+        searcher = self._searcher
+        snapshots: dict[str, dict[str, Any]] = {}
+
+        async def count(candidate: str) -> int:
+            await self._reserve_count_query()
+            snapshot = await searcher.esearch_snapshot(candidate, retmax=0, use_history=False, **filters)
+            value = snapshot.get("count") if isinstance(snapshot, dict) else None
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise TypeError("PubMed count response is invalid")
+            snapshots[candidate] = snapshot
+            return value
+
+        analysis = await analyze_strategy_blocks(str(query), count=count, max_count_queries=max_queries)
+        full_snapshot = snapshots.get(str(query).strip())
+        full_diagnostics = diagnostics_from_snapshot(full_snapshot)
+        annotate_unresolved_terms(analysis, full_diagnostics)
+        if full_snapshot is not None:
+            await self._attach_mesh_correction(
+                analysis,
+                str(query),
+                diagnostics=full_diagnostics,
+                observed_count=analysis.get("full_count"),
+                physical_query=full_snapshot.get("physical_query"),
+            )
+        analysis.update(
+            {"step_id": step.id, "source_step": source_step, "filters": filters, "executed_at": executed_at}
+        )
+        error = None
+        if analysis.get("decomposable") and analysis.get("full_count") is None:
+            reason = (analysis.get("count_queries") or {}).get("truncation_reason")
+            error = f"Block analysis could not count the full strategy ({reason})"
+        return StepResult(
+            step_id=step.id,
+            action="block_analysis",
+            metadata={"query": query, "filters": filters, "executed_at": executed_at, "block_analysis": analysis},
+            error=error,
+        )
+
+    @staticmethod
+    def _public_history_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+        """Keep provider provenance that belongs in a search record, never History keys."""
+        return {
+            "logical_query": snapshot.get("logical_query"),
+            "physical_query": snapshot.get("physical_query"),
+            "count": snapshot.get("count"),
+            "query_translation": snapshot.get("query_translation"),
+            "translation_set": list(snapshot.get("translation_set") or []),
+            "provider_errors": dict(snapshot.get("provider_errors") or {}),
+            "provider_warnings": dict(snapshot.get("provider_warnings") or {}),
+        }
 
     async def _search_pubmed(
         self,
@@ -1345,28 +1789,40 @@ class PipelineExecutor:
         filtered: list[UnifiedArticle] = []
         reason_counter: Counter[str] = Counter()
         excluded_examples: list[dict[str, Any]] = []
+        # Identifier-only records (metadata never fetched) cannot be judged by
+        # bibliographic criteria: every filter type keeps them unevaluated and
+        # reports them, rather than one filter keeping and another dropping them.
+        metadata_missing: list[str] = []
+        bibliographic_criteria = min_year is not None or max_year is not None or bool(requested_article_types)
+        bibliographic_criteria = bibliographic_criteria or bool(require_abstract)
         for a in articles:
             reasons: list[str] = []
+            lacks_metadata = article_lacks_metadata(a)
+            unevaluated = lacks_metadata and bibliographic_criteria
             year = getattr(a, "year", None)
-            if min_year is not None and year and year < min_year:
-                reasons.append("year_before_min")
-            if max_year is not None and year and year > max_year:
-                reasons.append("year_after_max")
-            if requested_article_types:
-                type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
-                if type_val not in requested_article_types:
-                    reasons.append("article_type_mismatch")
+            if not lacks_metadata:
+                if min_year is not None and year and year < min_year:
+                    reasons.append("year_before_min")
+                if max_year is not None and year and year > max_year:
+                    reasons.append("year_after_max")
+                if requested_article_types:
+                    type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
+                    if type_val not in requested_article_types:
+                        reasons.append("article_type_mismatch")
+                if require_abstract and not getattr(a, "abstract", None):
+                    reasons.append("missing_abstract")
             if min_citations is not None:
-                cc = self._article_citation_count(a)
-                if cc < min_citations:
+                if lacks_metadata and not self._has_citation_count(a):
+                    unevaluated = True
+                elif self._article_citation_count(a) < min_citations:
                     reasons.append("citation_count_below_min")
-            if require_abstract and not getattr(a, "abstract", None):
-                reasons.append("missing_abstract")
             if reasons:
                 reason_counter.update(reasons)
                 if len(excluded_examples) < 5:
                     excluded_examples.append(self._excluded_article_example(a, reasons))
                 continue
+            if unevaluated and a.pmid:
+                metadata_missing.append(a.pmid)
             filtered.append(a)
 
         pmids = [a.pmid for a in filtered if a.pmid]
@@ -1385,9 +1841,39 @@ class PipelineExecutor:
             "removal_reasons": dict(reason_counter),
             "excluded_examples": excluded_examples,
         }
+        warnings: list[str] = []
         if articles and requested_article_types and not filtered:
-            metadata["warning"] = "Article type filter removed all articles. Check article_types and removal_reasons."
+            warnings.append("Article type filter removed all articles. Check article_types and removal_reasons.")
+        if metadata_missing:
+            metadata["metadata_missing"] = {
+                "count": len(metadata_missing),
+                "pmid_preview": metadata_missing[:20],
+                "policy": "kept_unevaluated",
+            }
+            warnings.append(
+                f"{len(metadata_missing)} records without metadata could not be evaluated and were kept; "
+                "fetch their metadata (fetch_metadata: true, or prepare_export backfill) before filtering on it"
+            )
+        if warnings:
+            metadata["warning"] = " ".join(warnings)
         return StepResult(step_id=step.id, action="filter", articles=filtered, pmids=pmids, metadata=metadata)
+
+    @staticmethod
+    def _has_citation_count(article: UnifiedArticle) -> bool:
+        """Whether a citation count is known (as opposed to defaulting to zero)."""
+        metrics = getattr(article, "citation_metrics", None)
+        pipeline_metrics = getattr(article, "_pipeline_metrics", None)
+        return (
+            getattr(article, "citation_count", None) is not None
+            or (metrics is not None and getattr(metrics, "citation_count", None) is not None)
+            or (
+                isinstance(pipeline_metrics, dict)
+                and any(
+                    pipeline_metrics.get(key) is not None
+                    for key in ("citation_count", "citations", "cited_by_count", "citedByCount")
+                )
+            )
+        )
 
     @classmethod
     def _article_citation_count(cls, article: UnifiedArticle) -> int:
@@ -1628,3 +2114,19 @@ class PipelineExecutor:
         }
         factory = preset_map.get(config.output.ranking, RankingConfig.default)
         return ResultAggregator().rank(articles, factory(), query=query)
+
+
+__all__ = [
+    "FINAL_STEP_METADATA_KEY",
+    "AlternateSearchAdapterFn",
+    "PipelineExecutor",
+    "PipelineOutcomeStatus",
+    "classify_pipeline_outcome",
+    "collected_records",
+    "config_requests_exhaustive_retrieval",
+    "final_record_set",
+    "is_exhaustive_step",
+    "pipeline_outcome_message",
+    "pipeline_run_status",
+    "run_uses_exhaustive_retrieval",
+]

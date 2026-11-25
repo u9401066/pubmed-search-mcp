@@ -175,7 +175,7 @@ options="preprints,shallow"
 
 - `preprints`: 想補最新未正式出版研究
 - `shallow`: 只想快速掃過
-- `no_relax`: 不希望零結果時自動放寬
+- `no_relax`: 不希望任何自動放寬（deep 補足與零結果放寬）
 - `no_analysis`: 程式輸出較乾淨
 - `systematic`: 使用 capability-validated 的 bounded review-seed mode；每個來源最多 100 筆，並非窮盡檢索
 
@@ -201,9 +201,10 @@ complexity hint 判斷搜尋是否成功。
 
 一般 JSON/TOON result envelope 的 `search_status` 才是 agent routing contract：它會區分
 `completed`／合法 `empty`／`partial`／`failed`，並固定揭露 bounded、
-non-exhaustive、source sets 與 continuation/unknown-completeness。一般 deep mode 的
-`limit` 是單一來源所有 strategies 共用的總額度；未知或格式錯誤的 filters/options
-會在 provider I/O 前 fail closed。
+non-exhaustive、source sets 與 continuation/unknown-completeness。一般 deep mode
+採精準優先：原始查詢先以每個來源完整的 `limit` 執行，不足時才由較低精準度策略補足剩餘
+名額；`broadening.summary` 說明是否放寬與原因，`retrieval.broadened=true`（🔻）的紀錄
+排在原始查詢結果之後。未知或格式錯誤的 filters/options 會在 provider I/O 前 fail closed。
 
 需要回復歷程時，依序使用
 `read_session(request={"action":"search_runs"})`、`read_session(request={"action":"search_run","run_id":"..."})`、`read_session(request={"action":"replay_search","run_id":"..."})`。Replay 只回傳

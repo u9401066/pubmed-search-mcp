@@ -16,11 +16,13 @@ from pubmed_search.domain.entities.chronicle import (
     ChronicleAudit,
     ChronicleAuditFinding,
     ChronicleEdgeType,
+    ChronicleEntryType,
     ChronicleNodeType,
     resolve_chronicle_membership,
 )
 
 from .graph import branch_node_id, topic_node_id
+from .highlights import verify_highlight
 from .ordering import chronicle_time_status, chronology_key, definitely_precedes, parse_chronicle_time
 
 if TYPE_CHECKING:
@@ -67,6 +69,8 @@ def audit_chronicle(snapshot: ChronicleSnapshot, *, artifact_files: list[str] | 
         _audit_identifiers(snapshot),
         _audit_branches(snapshot),
         _audit_lineage_semantics(snapshot),
+        _audit_study_design_labels(snapshot),
+        _audit_extractive_highlights(snapshot),
         _audit_mermaid_validation(snapshot),
         _audit_graph(snapshot),
         _audit_chronology(snapshot),
@@ -453,6 +457,199 @@ def _audit_lineage_semantics(snapshot: ChronicleSnapshot) -> ChronicleAuditFindi
     )
 
 
+#: Event categories that a research design indexed by PubMed cannot carry on
+#: the strength of text patterns alone, mapped to the design families that
+#: may. An observational or generic (comparative, multicenter...) study may
+#: report a safety signal, for example from pharmacovigilance data.
+_COMMUNICATION_DESIGN_FAMILIES: dict[ChronicleEntryType, frozenset[str]] = {
+    ChronicleEntryType.SAFETY: frozenset({"commentary", "review", "observational", "other"}),
+    ChronicleEntryType.CONTROVERSY: frozenset({"commentary", "review"}),
+}
+_TEXT_LABEL_MARKERS = ("milestone_detection:title_pattern", "milestone_detection:abstract_pattern")
+_AUDIT_SAMPLE = 20
+
+
+def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding:
+    """Disclose which entry labels come from PubMed indexing versus text heuristics."""
+    by_basis: Counter[str] = Counter()
+    heuristic_designs: list[dict[str, Any]] = []
+    heuristic_categories: list[dict[str, Any]] = []
+    abstract_categories: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    for entry in snapshot.entries:
+        evidence_ids = [article.evidence_id for article in entry.evidence.supporting_articles]
+        design = entry.provenance.get("study_design")
+        if not isinstance(design, dict):
+            by_basis["not_recorded"] += 1
+            continue
+        by_basis[str(design.get("basis") or "unknown")] += 1
+        if design.get("heuristic") is True:
+            matched = design.get("matched")
+            heuristic_designs.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": evidence_ids,
+                    "label": design.get("display_label"),
+                    "matched": list(matched)[:3] if isinstance(matched, list) else [],
+                    "indexed_publication_types": design.get("indexed_publication_types") or [],
+                }
+            )
+        detection = entry.provenance.get("milestone_detection")
+        if isinstance(detection, dict) and detection.get("strategy") == "abstract_pattern":
+            abstract_categories.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": evidence_ids,
+                    "milestone_type": entry.provenance.get("milestone_type"),
+                    "matched_value": detection.get("matched_value"),
+                    "basis": detection.get("basis"),
+                }
+            )
+        label_basis = entry.provenance.get("entry_label_basis")
+        if isinstance(label_basis, str) and any(marker in label_basis for marker in _TEXT_LABEL_MARKERS):
+            heuristic_categories.append(
+                {"entry_id": entry.entry_id, "evidence_ids": evidence_ids, "label": entry.title}
+            )
+        if (
+            design.get("indexed") is True
+            and entry.entry_type in _COMMUNICATION_DESIGN_FAMILIES
+            and design.get("family") not in _COMMUNICATION_DESIGN_FAMILIES[entry.entry_type]
+        ):
+            conflicts.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": evidence_ids,
+                    "entry_type": entry.entry_type.value,
+                    "indexed_design": design.get("display_label"),
+                }
+            )
+    details = {
+        "label_basis_counts": dict(sorted(by_basis.items())),
+        "heuristic_design_labels": heuristic_designs[:_AUDIT_SAMPLE],
+        "heuristic_category_labels": heuristic_categories[:_AUDIT_SAMPLE],
+        "abstract_pattern_categories": abstract_categories[:_AUDIT_SAMPLE],
+        "category_conflicts_with_indexed_design": conflicts[:_AUDIT_SAMPLE],
+        "primary_source": "PubMed PublicationType, then MeSH study-design descriptors",
+    }
+    indexed = by_basis["pubmed_publication_type"] + by_basis["mesh_study_design_descriptor"]
+    if conflicts:
+        return ChronicleAuditFinding(
+            check="study_design_labels",
+            status="warn",
+            message=(
+                f"{len(conflicts)} entries carry a safety or debate category although PubMed indexes them as a "
+                "research design; treat that category as unverified."
+            ),
+            details=details,
+        )
+    abstract_note = (
+        f" {len(abstract_categories)} event categories come from the abstract's own wording (for example "
+        '"In this phase 3 trial"), not from indexing; confirm the paper itself is that design.'
+        if abstract_categories
+        else ""
+    )
+    if heuristic_designs or heuristic_categories or abstract_categories:
+        return ChronicleAuditFinding(
+            check="study_design_labels",
+            status="warn",
+            message=(
+                f"{len(heuristic_designs) + len(heuristic_categories)} entry labels come from title/abstract text "
+                "patterns, either because PubMed has not indexed a study design for them or as a refinement of an "
+                "indexed design; they are marked [heuristic] and should be checked against the paper. "
+                f"{indexed} labels come from PubMed indexing.{abstract_note}"
+            ),
+            details=details,
+        )
+    return ChronicleAuditFinding(
+        check="study_design_labels",
+        status="pass",
+        message=(
+            f"{indexed} of {len(snapshot.entries)} entry labels come from PubMed publication types or MeSH "
+            "study-design descriptors; no text-pattern labels were used."
+        ),
+        details=details,
+    )
+
+
+def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding:
+    """Verify that every quoted abstract sentence round-trips to its stored abstract."""
+    verified = 0
+    without_abstract = 0
+    abstract_without_highlight = 0
+    problems: list[dict[str, Any]] = []
+    truncated: list[dict[str, Any]] = []
+    for entry in snapshot.entries:
+        highlight = entry.provenance.get("extractive_highlight")
+        articles = {article.evidence_id: article for article in entry.evidence.all_articles}
+        truncation = entry.provenance.get("abstract_truncation")
+        if isinstance(truncation, dict) and truncation.get("truncated") is True:
+            truncated.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": [article.evidence_id for article in entry.evidence.supporting_articles],
+                    "basis": truncation.get("basis") or [],
+                    "stored_char_length": truncation.get("stored_char_length"),
+                    "source_char_length": truncation.get("source_char_length"),
+                }
+            )
+        if highlight is None:
+            if any(article.abstract for article in articles.values()):
+                abstract_without_highlight += 1
+            else:
+                without_abstract += 1
+            continue
+        evidence_id = highlight.get("evidence_id") if isinstance(highlight, dict) else None
+        article = articles.get(evidence_id) if isinstance(evidence_id, str) else None
+        issues = verify_highlight(highlight, article.abstract if article is not None else None)
+        if article is not None and isinstance(highlight, dict) and article.claim_excerpt != highlight.get("text"):
+            issues.append("claim_excerpt differs from the quoted text")
+        if issues:
+            problems.append({"entry_id": entry.entry_id, "evidence_id": evidence_id, "problems": issues})
+        else:
+            verified += 1
+    details = {
+        "entries": len(snapshot.entries),
+        "verified_highlights": verified,
+        "entries_without_stored_abstract": without_abstract,
+        "entries_with_abstract_but_no_highlight": abstract_without_highlight,
+        "integrity_problems": problems[:_AUDIT_SAMPLE],
+        "truncated_abstract_count": len(truncated),
+        "truncated_abstracts": truncated[:_AUDIT_SAMPLE],
+        "offset_unit": "unicode_code_points",
+    }
+    if problems:
+        return ChronicleAuditFinding(
+            check="extractive_highlights",
+            status="fail",
+            message=(
+                f"{len(problems)} quoted abstract sentences do not round-trip to their stored abstract; "
+                "do not cite those quotes."
+            ),
+            details=details,
+        )
+    if truncated:
+        return ChronicleAuditFinding(
+            check="extractive_highlights",
+            status="warn",
+            message=(
+                f"{verified} of {len(snapshot.entries)} entries quote a verified abstract sentence, but "
+                f"{len(truncated)} stored abstracts are truncated (PubMed truncation notice or the stored "
+                "character limit); their quotes come from the retained text, the cut fragment is never quoted, "
+                "and later sections such as the conclusions may be missing. Read the full record before citing."
+            ),
+            details=details,
+        )
+    return ChronicleAuditFinding(
+        check="extractive_highlights",
+        status="pass",
+        message=(
+            f"{verified} of {len(snapshot.entries)} entries quote a verbatim abstract sentence whose character "
+            f"offsets were verified; {without_abstract} entries had no stored abstract."
+        ),
+        details=details,
+    )
+
+
 def _bounded_diagnostic_ratio(value: object) -> float:
     """Coerce an untrusted persisted diagnostic into a finite 0-1 ratio."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
@@ -731,15 +928,26 @@ def _audit_citation_metrics_coverage(snapshot: ChronicleSnapshot) -> ChronicleAu
         "ranking_requested": ranking_requested,
         "effective_ranking": ranking,
     }
-    if retrieval_mode != "topic_search":
+    explicit_mode = retrieval_mode == "explicit_pmids"
+    raw_coverage = retrieval.get("citation_metrics")
+    if retrieval_mode is None:
         return ChronicleAuditFinding(
             check="citation_metrics_coverage",
             status="pass",
             message="Citation-metric enrichment is not applicable to this retrieval mode.",
             details={**base_details, "status": "not_applicable"},
         )
-
-    raw_coverage = retrieval.get("citation_metrics")
+    if explicit_mode and not isinstance(raw_coverage, dict):
+        # Revisions built before explicit-PMID enrichment carry no envelope.
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="pass",
+            message=(
+                "No iCite enrichment was recorded for this explicit-PMID revision; "
+                "landmark ranking relies on stored citation counts only."
+            ),
+            details={**base_details, "status": "not_recorded"},
+        )
     if not isinstance(raw_coverage, dict):
         return ChronicleAuditFinding(
             check="citation_metrics_coverage",
@@ -778,8 +986,8 @@ def _audit_citation_metrics_coverage(snapshot: ChronicleSnapshot) -> ChronicleAu
     structurally_valid = (
         raw_coverage.get("schema_version") == "citation-metrics-coverage/v1"
         and raw_coverage.get("source") == "nih_icite"
-        and ranking is not None
-        and ranking_requested is not None
+        # An explicit PMID set is never re-ranked, so it makes no ranking claim.
+        and (explicit_mode or (ranking is not None and ranking_requested is not None))
         and status in expected_statuses
         and all(count is not None for count in counts)
         and complete is not None
@@ -862,25 +1070,37 @@ def _audit_citation_metrics_coverage(snapshot: ChronicleSnapshot) -> ChronicleAu
             message="iCite coverage metadata is malformed; citation enrichment completeness is unknown.",
             details=details,
         )
+    fallback_note = (
+        "landmark scores were not computed, so landmark ranking used stored citation counts, then chronology"
+        if explicit_mode
+        else "effective ranking fell back to PubMed relevance"
+    )
     if status == "error":
         return ChronicleAuditFinding(
             check="citation_metrics_coverage",
             status="warn",
-            message="iCite enrichment failed; effective ranking fell back to PubMed relevance.",
+            message=f"iCite enrichment failed; {fallback_note}.",
             details=details,
         )
     if status == "partial":
         return ChronicleAuditFinding(
             check="citation_metrics_coverage",
             status="warn",
-            message=f"iCite metrics covered {applied} of {requested} requested articles.",
+            message=(
+                f"iCite metrics covered {applied} of {requested} requested articles"
+                + ("; entries without metrics carry no citation impact in landmark scores." if explicit_mode else ".")
+            ),
             details=details,
         )
     if status == "empty":
         return ChronicleAuditFinding(
             check="citation_metrics_coverage",
             status="warn",
-            message="iCite returned no metrics for the requested articles; effective ranking remained PubMed relevance.",
+            message=(
+                "iCite returned no metrics for the requested articles; "
+                + (fallback_note if explicit_mode else "effective ranking remained PubMed relevance")
+                + "."
+            ),
             details=details,
         )
     if status == "not_requested":

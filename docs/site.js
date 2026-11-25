@@ -247,7 +247,7 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for all 42 MCP tools across 16 registry categories.",
+    blurb: "Fast lookup for all 43 MCP tools across 16 registry categories.",
     blurbByLang: { zh: "42 個 MCP tools 與 16 個 registry categories 的快速查找。" },
     keywords: "42 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
@@ -838,8 +838,8 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "Pipeline 管理", en: "Pipeline" },
     icon: "🔁",
     summary: {
-      zh: "檢視 Pipeline 過往執行歷史、結果數量與新舊文章差異分析。",
-      en: "Get execution history and result diff analysis for a pipeline.",
+      zh: "檢視 Pipeline 執行歷史與策略版本、PRISMA-S 檢索紀錄（Markdown + CSV），或分頁讀取完整紀錄集。",
+      en: "Get run history with strategy versions, a PRISMA-S search record (Markdown + CSV), or page a run's full record set.",
     },
     example: 'get_pipeline_history(name="daily_sedation")',
     docLink: "pipeline-tutorial",
@@ -866,6 +866,18 @@ const MCP_TOOLS_DATA = [
       en: "Remove the recurring schedule for a saved pipeline.",
     },
     example: 'unschedule_pipeline(name="daily_sedation")',
+    docLink: "pipeline-tutorial",
+  },
+  {
+    name: "pipeline_screening",
+    cat: "pipeline",
+    catName: { zh: "Pipeline 管理", en: "Pipeline" },
+    icon: "🔁",
+    summary: {
+      zh: "記錄系統性回顧的逐篇篩選決策（標題摘要／全文），更新檢索的新文獻自動進入待篩佇列，並產出 PRISMA 2020 流程數字。",
+      en: "Record per-PMID screening decisions, queue new records from update searches, and report PRISMA 2020 flow counts.",
+    },
+    example: 'pipeline_screening(request={"action":"flow","pipeline":"daily_sedation"})',
     docLink: "pipeline-tutorial",
   },
 ];
@@ -1691,7 +1703,7 @@ function renderNav(filter = "") {
 // ──────────────────────────────────────────────────────────────────────────
 
 const TOOL_CATEGORIES_LIST = [
-  { key: "all", labelZh: "全部 (42)", labelEn: "All (42)" },
+  { key: "all", labelZh: "全部 (43)", labelEn: "All (43)" },
   { key: "search", labelZh: "🔍 核心搜尋 (1)", labelEn: "🔍 Search (1)" },
   { key: "query_intelligence", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
   { key: "discovery", labelZh: "📑 文章探索 (5)", labelEn: "📑 Discovery (5)" },
@@ -1707,7 +1719,7 @@ const TOOL_CATEGORIES_LIST = [
   { key: "icd", labelZh: "🔄 ICD 轉換 (1)", labelEn: "🔄 ICD-MeSH (1)" },
   { key: "chronicle", labelZh: "🕰️ 研究編年史 (2)", labelEn: "🕰️ Chronicle (2)" },
   { key: "image_search", labelZh: "🖼️ 圖片搜尋 (1)", labelEn: "🖼️ Image Search (1)" },
-  { key: "pipeline", labelZh: "🔁 Pipeline 工作流 (7)", labelEn: "🔁 Pipelines (7)" },
+  { key: "pipeline", labelZh: "🔁 Pipeline 工作流 (8)", labelEn: "🔁 Pipelines (8)" },
 ];
 
 function renderToolCategoryChips() {

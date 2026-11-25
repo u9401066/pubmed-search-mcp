@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 42 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 43 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 
@@ -13,7 +13,7 @@
 
 ## 輸入格式與防呆
 
-全部 42 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+全部 43 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
 可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
 `tools/list.inputSchema` 也會列出可接受的替代表示法。
 
@@ -103,7 +103,7 @@ Agent 應一起修正已列出的欄位，
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `research_workspace`、`read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `research_workspace`、`read_session` 與八個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -132,6 +132,48 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 ![人工耳蝸 PubMed 案例：逐一放寬 MeSH 條件後新增的篇數](../images/search-query-workflow.svg)
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
+
+#### PubMed 無法解析的 MeSH 標目
+
+PubMed 會在 ESearch 的 WarningList 與 ErrorList 回報無法解析的子句，例如
+`"Post-Anesthesia Care Units"[Mesh]` 會列為 `QuotedPhraseNotFound`。這種子句不會比對到任何紀錄，
+所以 `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` 得到 0 筆。PubMed 搜尋結果會在
+`query_diagnostics` 保留 PubMed 的轉譯與這兩份清單，`unified_search` 也會把每個問題列在
+`source_metadata.pubmed.warnings`。
+
+若沒有任何 MeSH 紀錄以主題片語為 preferred 或 entry term，`generate_search_queries` 會替最多兩個
+`unmapped_phrases`（多字片語優先）加上 `reason: "co_occurrence"` 的 `mesh_candidates`。做法是在
+MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的 MeSH 標目並排除 check tags
+（Humans、Male、Adult…）與研究設計標目。樣本只用來提名出現最多的六個標目，再以兩次 PubMed 計數精確評分：
+`recall = joint_count / evidence_total`、`precision = joint_count / background_count`，其中 `joint_count`
+是同時被該標目索引的證據紀錄數，候選依 F1（`score`）排序。每個片語需一次搜尋、一次 MEDLINE 擷取與最多
+十二次計數，每次呼叫最多 20 個請求；實際執行內容見 `coverage.mesh_cooccurrence`。
+
+2026-11-25 實測 "Post-Anesthesia Care Units" 各變體共命中 3,717 筆 MEDLINE 紀錄。Anesthesia Recovery Period
+得分 0.137（其 6,140 筆紀錄中 673 筆使用該片語：recall 0.181、precision 0.110），Recovery Room 0.110
+（1,394 筆中 282 筆：recall 0.076、precision 0.202）。Postoperative Pain 共現次數相近，但有 57,605 筆紀錄
+使用該標目，precision 不可能超過 3,717 / 57,605 = 0.065。必須用精確計數：若用樣本推估 precision，
+一個近年才新增、只有 531 筆紀錄的標目會被排到第一。
+候選標目是相關概念而非同義詞，不會進入 `mesh_terms` 或 `suggested_queries`。採用時保留原詞：
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`。
+以片語各拼寫變體的 `[tiab]` 自由詞 OR 該標目，再 `AND delirium[tiab]`，得到 518 筆；原查詢為 0 筆。
+
+`unified_search` 會自動套用。PubMed exact tier 的搜尋若回報某 MeSH 子句找不到，會以校正後查詢重跑 exact tier，
+之後的 deepening、broadening 與 relaxation 都依校正後結果判斷。依序嘗試三個 tier：`exact`（忽略大小寫、連字號間距與
+複數後等於 preferred 或 entry term；`"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`）、`co_occurrence`
+（原詞的 `[tiab]` 自由詞 OR 最佳相關標目，絕不只換成標目）與 `text_words`。回應的 `mesh_correction`（Markdown
+**MeSH correction** 行）列出 NCBI 原因、替換內容、tier、證據、信心與 PubMed 前後總數，`broadening.mechanisms`
+以 `mesh_correction` 開頭。被取代的原查詢仍保留在 `broadening.attempts`，校正後的紀錄其 retrieval strategy 為
+`original:mesh_corrected`。可用 `options="no_mesh_correction"` 關閉；`no_relax` 只關閉 broadening。PubMed 能解析
+其 MeSH 子句的查詢不會多花任何請求。在 NOT 運算元內，只有保留所有限制（qualifier、`[Majr]`、`:noexp`）的
+精確更正會在各 tier 套用；其餘列在 `mesh_correction.suggestions`，原子句保持不變。`/qualifier` 只在確實是
+MeSH subheading 時才被辨識，並會核對該 heading 允許的 qualifier。運算子依 PubMed 規則：小寫 `or`、`not`
+有效，但小寫 `and` 是停用詞（放在標記片語前會變成片語的一部分），請寫 `AND`。
+
+保存的 pipeline 不會被改寫。pipeline 的 PubMed 步驟（bounded、exhaustive 或 `block_analysis`）只記錄
+`applied: false` 的 `mesh_correction` 建議，顯示在 run 的 `warnings`、Markdown 報告與
+`get_pipeline_history(view="prisma_s")`。要採用請保存成新的 pipeline 版本。`block_analysis` 會標示 PubMed 找不到的詞
+（`pubmed_not_found`、`contribution_meaningful: false`），不再當成零獨特貢獻的詞。
 
 #### 比較 PubMed 概念組合
 
@@ -176,9 +218,28 @@ Input validation 會在 provider I/O 前嚴格執行。`limit` 必須是 `1..100
 filter token 必須使用支援的 `key:value`；year bounds 必須在 1000–2100 內且順序
 正確；未知 option、ranking mode 或 output format 會直接被拒絕，不會無聲忽略。
 Source identifier 必須是 `semantic_scholar`、`europe_pmc`、`web_of_science` 等完全相等的 canonical key；alias、大小寫變體、token 前後空白、空 token 與重複 token 均會被拒絕。Canonical filter keys 是 `year`、`age_group`、`sex`、`species`、`language` 與 `clinical_query`。
-一般 deep mode 中，公開 `limit` 是單一 source 所有 generated strategies 共用的
-**總額度**。Broker 會把額度分配到 strategies、裁切超額 adapter response，並套用
-有界的全域／每來源 concurrency 與 strategy deadline。
+一般 deep mode 採**精準優先（precision-first）**。使用者的查詢（`exact` tier）
+在每個規劃的 source 上使用該 source 完整的 `limit`；含欄位標籤或布林運算的專家查詢
+已足額時絕不會被稀釋。只有 exact tier 的 eligible unique 筆數（去重並套用
+`exclude_seen`／detected-preprint 過濾後）少於 `limit` 時，broker 才會先在同一個
+exact query 往下取，再依精準度遞減逐一執行 `semantic`、`broad` 策略，且每個策略只補
+剩餘名額。exact query 失敗的 source 不會被放寬；`options="no_relax"` 會同時關閉這個
+補足與零結果 auto-relaxation。有界的全域／每來源 concurrency、adapter clipping 與
+strategy deadline 仍然有效。
+
+解讀 deep 或 relaxed 結果前，先讀 `broadening` 物件（JSON/TOON、artifact
+`query_strategy.json` 與 Markdown 的 **Broadening** 行）：
+
+| 欄位 | 意義 |
+| --- | --- |
+| `needed` / `applied` | exact tier 是否不足 `limit`，以及自動查詢變更（MeSH 更正、deepen、broaden 或 relax）是否執行且得到 provider 回應 |
+| `failed_attempts` | 失敗或逾時的放寬／relax 請求；一律回報為失敗，不會當成空結果 |
+| `summary` | 一行原因，例如 `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` 或 `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | 每個策略的 `tier`、`phase`、實際查詢、`total_available`、`returned`、去重後 `contributed` 與 `skip_reason` |
+| `articles[].retrieval` | 紀錄層級 provenance；`broadened=true`（Markdown 🔻）代表只有較低精準度查詢找到該筆 |
+
+放寬取得的紀錄一律排在符合原始查詢的紀錄之後。零結果 auto-relaxation 也使用同一個
+物件，並標示 `mechanisms=["auto_relax"]` 與 `tier="relaxed"`。
 
 JSON/TOON 與 persistent artifact 會保存 `retrieval_mode` 及每來源
 `source_metadata`，包括 requested/provider mode、canonical 或 compiled query、
@@ -217,10 +278,22 @@ ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-searc
 當 manuscript、bibliography 或 agent 產生的回答需要 PubMed-backed citation checking 時，使用 `verify_reference_list`。match / mismatch 應視為 audit trail，而不是只看生成摘要。
 
 `verified` 代表書目資料與解析出的 PubMed 紀錄一致。即使 DOI 或 PMID 相符，
-只要其他提供的欄位衝突或無法確認，仍回報 `partial_match` 並加入人工複核佇列。
+也不會蓋過衝突或無法確認的其他欄位。引用的 PMID／DOI 與其他欄位不一致時，會繼續以 ECitMatch
+與不限年份的搜尋解析；`identifier_assessment` 會標示 `probably_wrong`（該列為 `unresolved`）或
+`weakly_corroborated`（`partial_match` 但不提供更正）。
 DOI 解析須精確比對正規化 DOI；PMID 查詢也會核對回傳紀錄的識別碼。
 單篇查詢失敗會保留其他結果並回報 `source_unavailable`，不當成文獻不存在。
 這項驗證沒有判定文獻是否支持某個論述，需要讀取相關原文段落後才能判斷引用語境。
+
+出版年份取自引用定位段（`Journal. 2019;321(5):473`），標題內的年份（如 `...surgery-2018.`）不會打亂解析。
+ECitMatch 找不到時，會以**不限定引用年份**的標題字詞搜尋，以及第一作者＋期刊＋卷／起始頁搜尋補查，
+因為年份錯誤是最常見的引用錯誤。這類候選必須標題相符，且第一作者與期刊不能同時衝突才會採用
+（引用沒有標題時，作者、期刊、卷與起始頁須全部相符）；
+同一著作的多個版本依最接近的年份、作者順序與卷頁一致度排序。該列回報 `partial_match`，
+並附 `corrections`，例如 `{"field": "year", "cited": "2018", "pubmed": "2019"}`。
+只有在找到該紀錄的標題、定位資訊或識別碼之外，還有至少兩個獨立的引用欄位相符時才提供更正；否則以
+`corrections_withheld_reason` 交由人工複核。若引用標題與紀錄衝突，或多個版本同樣吻合，也不提供更正。套用前請先確認 `matched_article` 是要引用的文獻。
+`unresolved` 列會列出 `attempted_strategies`，代表 PubMed 沒有可接受的紀錄，不等於該文獻是捏造的。
 
 ### 全文、圖表與圖片證據
 
@@ -300,7 +373,7 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
-每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+每個 chronicle entry 都帶有研究設計標籤、一行附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。標籤優先來自 PubMed PublicationType，其次是 MeSH 研究設計 descriptor；只有 PubMed 尚未標引設計時才以標題或摘要文字推斷，並標示 `[heuristic]`。已標引的研究設計優先於文字樣式 milestone，因此摘要提到 adverse events 的 RCT 不會被標成 safety alert。有摘要時，claim 會逐字引用該論文的結論句，並附章節與指向保存摘要的字元位置（`provenance.extractive_highlight`）；這是摘錄，不是詮釋。PMID 模式也會套用經驗證的 iCite metrics 計算 landmark score，但不重新排序指定集合；只是重述主題的 descriptor 不會形成分支（見 `lineage_diagnostics.excluded_topic_signals`）。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、heuristic 研究設計標籤、引文完整性、引用指標覆蓋率、graph 完整性、時序缺口與各來源回傳量。
 
 Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。上游失敗或零篇回傳時會回報錯誤。PubMed 無法存取期間，可讀取既有 revision 繼續查證，並記下採用的版次。
 
@@ -324,7 +397,9 @@ Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（�
 
 ![Session 與 Pipeline 流程](../images/session-pipeline-workflow.svg)
 
-這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`。
+這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline`、`unschedule_pipeline` 與 `pipeline_screening`。
+
+系統性回顧時，PubMed search step 設 `retrieval: exhaustive` 會透過 E-utilities History Server 取得完整 PMID 集合（上限 `max_records` ≤ 10000；超過直接拒絕、不截斷），saved run 會連同 PRISMA-S 來源資訊一併保存：資料庫／平台、保存與實際查詢、PubMed query translation、總數／取回數、篩選條件、UTC 時間、server 版本與不可變 config snapshot。`unified_search` 只回傳有界預覽；`get_pipeline_history` 提供 `view="run"`、`view="prisma_s"`（Markdown + CSV）與 `view="records"`（完整集合分頁）；`prepare_export(pipeline_run=...)` 以 RIS/CSV/CSL-JSON 匯出完整集合；`block_analysis` step 以有界的僅計數查詢稽核 MeSH 區塊與詞彙貢獻；`pipeline_screening` 記錄逐篇篩選決策並產出 PRISMA 2020 流程數字。更新檢索第一次出現的文獻會自動進入待篩佇列。
 
 本機與 service 能力刻意不同。可信任的本機 caller 可使用 workspace scope、`file:`
 pipeline source 與 in-process scheduler。認證 service caller 只能讀取 tenant-derived store 中
@@ -465,7 +540,7 @@ save_literature_notes(pmids="last", note_format="wiki")
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references`（未設定時，若由 Claude Code 啟動則改用 `CLAUDE_PROJECT_DIR/references`）
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 

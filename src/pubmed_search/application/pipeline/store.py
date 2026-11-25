@@ -10,14 +10,18 @@ Resolution order: workspace → global (load), auto-detect (save).
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
+import shutil
 import threading
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import yaml
 
@@ -45,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum execution history records per pipeline
 _MAX_HISTORY = 100
+_RUN_RECORDS_FILE = "records.jsonl"
 _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 # MCP SDK v2 runs synchronous tools in AnyIO worker threads. Pipeline metadata
@@ -57,6 +62,56 @@ _PIPELINE_PERSISTENCE_LOCK = threading.RLock()
 
 class PipelineHistoryError(RuntimeError):
     """A persisted pipeline run record could not be decoded safely."""
+
+
+class ScreeningLogPresentError(ValueError):
+    """Deletion would remove a screening log the caller did not explicitly opt to delete."""
+
+    def __init__(self, message: str, *, summary: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.summary = summary
+
+
+class PipelineDeletionError(RuntimeError):
+    """Deletion stopped early; the pipeline still exists and a retry completes it."""
+
+
+class RetirableScreeningLog(Protocol):
+    """Screening-log operations deletion needs (implemented by the SQLite log)."""
+
+    def retire(self, *, allow_decisions: bool) -> dict[str, Any]: ...
+
+    def restore(self) -> None: ...
+
+
+ScreeningLogFactory = Callable[[Path], RetirableScreeningLog]
+
+
+@dataclass(frozen=True)
+class PipelineDeletion:
+    """What one successful deletion removed."""
+
+    scope: PipelineScope
+    run_count: int
+    # Summary (decisions, PMIDs, reviewers, records) of a removed screening log.
+    screening_log: dict[str, Any] | None = None
+
+
+_SCREENING_LOG_SIDECARS = ("-journal", "-wal", "-shm", "")
+WORKSPACE_DATA_DIRNAME = ".pubmed-search"
+# Written once into a workspace data directory this store creates. Run record
+# sets carry titles and abstracts and the screening log holds reviewers' work;
+# neither should reach a project repository by accident.
+WORKSPACE_GITIGNORE = """# Created by pubmed-search-mcp: local research data (saved pipelines, run record
+# sets with titles/abstracts, screening decisions, reports). Ignored by default.
+# To share saved pipeline definitions through git, replace this file, e.g. with:
+#   /*
+#   !/.gitignore
+#   !/pipelines/
+#   /pipelines/*
+#   !/pipelines/*.yaml
+*
+"""
 
 
 def _config_to_dict(config: PipelineConfig, *, include_output_defaults: bool = False) -> dict[str, Any]:
@@ -117,14 +172,53 @@ class PipelineStore:
         self._lock = _PIPELINE_PERSISTENCE_LOCK
         self._global_dir = Path(global_data_dir)
         self._workspace_dir = Path(workspace_dir) if workspace_dir else None
+        # Set only on views returned by pinned_to(): name lookups use this scope.
+        self._pinned_scope: PipelineScope | None = None
 
         # Ensure directories exist
         self._global_pipelines_dir.mkdir(parents=True, exist_ok=True)
         self._global_runs_dir.mkdir(parents=True, exist_ok=True)
 
         if self._workspace_dir:
+            data_root = self._workspace_dir / WORKSPACE_DATA_DIRNAME
+            created_root = not data_root.exists()
             self._workspace_pipelines_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_runs_dir.mkdir(parents=True, exist_ok=True)
+            if created_root:
+                self._write_workspace_gitignore(data_root)
+
+    @staticmethod
+    def _write_workspace_gitignore(data_root: Path) -> None:
+        """Ignore a newly created workspace data directory; never replace an existing file."""
+        try:
+            with (data_root / ".gitignore").open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(WORKSPACE_GITIGNORE)
+        except FileExistsError:
+            return
+        except OSError as exc:
+            logger.warning("Could not create the workspace data .gitignore (%s)", type(exc).__name__)
+
+    def pinned_to(self, scope: PipelineScope) -> PipelineStore:
+        """Return a view of this store whose name lookups always use ``scope``.
+
+        A workspace pipeline shadows a same-name global one. A run persists
+        through the view pinned to the scope its pipeline was loaded from, so
+        its run record, record set, report, history pruning and screening log
+        stay in that scope even if a same-name pipeline appears or disappears
+        in the other scope meanwhile.
+        """
+        if scope == PipelineScope.WORKSPACE and not self._workspace_dir:
+            msg = "Workspace scope requested but no workspace directory is configured"
+            raise ValueError(msg)
+        view = copy.copy(self)
+        view._pinned_scope = scope  # noqa: SLF001 - a view of this class
+        return view
+
+    def _lookup_scopes(self) -> list[PipelineScope]:
+        """Scopes searched for a pipeline name, in precedence order."""
+        if self._pinned_scope is not None:
+            return [self._pinned_scope]
+        return [PipelineScope.WORKSPACE, PipelineScope.GLOBAL] if self._workspace_dir else [PipelineScope.GLOBAL]
 
     def rebased(self, global_data_dir: str | Path) -> PipelineStore:
         """Return an equivalent store rooted at a different global directory.
@@ -414,16 +508,11 @@ class PipelineStore:
         """
         name = self._validate_name(name, allow_saved_prefix=True)
 
-        # Try workspace first
-        if self._workspace_dir:
-            ws_path = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_path.exists():
-                return self._load_from_file(ws_path, PipelineScope.WORKSPACE, name)
-
-        # Then global
-        global_path = self._global_pipelines_dir / f"{name}.yaml"
-        if global_path.exists():
-            return self._load_from_file(global_path, PipelineScope.GLOBAL, name)
+        # Workspace first, then global (only the pinned scope for a pinned view).
+        for scope in self._lookup_scopes():
+            path = self._pipelines_dir_for(scope) / f"{name}.yaml"
+            if path.exists():
+                return self._load_from_file(path, scope, name)
 
         msg = (
             f"Pipeline '{name}' not found. "
@@ -546,53 +635,138 @@ class PipelineStore:
         return [meta for _, meta in indexed_results]
 
     @synchronized
-    def delete(self, name: str) -> tuple[PipelineScope, int]:
+    def delete(
+        self,
+        name: str,
+        *,
+        delete_screening_log: bool = False,
+        screening_log: ScreeningLogFactory | None = None,
+    ) -> PipelineDeletion:
         """Delete a pipeline and its history.
 
-        Searches workspace first, then global.
+        Searches workspace first, then global. A screening log holds human
+        work. With ``screening_log`` (a factory for the log at a path), the
+        decision check and the log's retirement happen in one log
+        transaction, so deletion refuses (nothing is removed) whenever the
+        log holds decisions and ``delete_screening_log`` is false, even if a
+        decision is recorded concurrently. Without a factory, any existing
+        log makes deletion fail closed unless ``delete_screening_log`` is set.
 
-        Args:
-            name: Pipeline name.
-
-        Returns:
-            (scope_where_deleted, run_count_deleted)
+        Removal order keeps every failure retryable: the screening log first
+        (a locked log is restored and nothing else is touched), then run
+        history and record artifacts, and the YAML/index last, so the
+        pipeline exists until everything else is gone.
 
         Raises:
             FileNotFoundError: If pipeline not found.
+            ScreeningLogPresentError: The screening log must not be deleted.
+            PipelineDeletionError: A file could not be removed (e.g. locked on
+                Windows); the pipeline still exists and a retry completes it.
         """
         name = self._validate_name(name)
 
-        # Try workspace first
-        if self._workspace_dir:
-            ws_yaml = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_yaml.exists():
-                return self._delete_from_scope(name, PipelineScope.WORKSPACE)
-
-        # Then global
-        global_yaml = self._global_pipelines_dir / f"{name}.yaml"
-        if global_yaml.exists():
-            return self._delete_from_scope(name, PipelineScope.GLOBAL)
+        # Workspace first, then global (only the pinned scope for a pinned view).
+        for scope in self._lookup_scopes():
+            if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists():
+                return self._delete_from_scope(
+                    name, scope, delete_screening_log=delete_screening_log, screening_log=screening_log
+                )
 
         msg = f"Pipeline '{name}' not found"
         raise FileNotFoundError(msg)
 
-    def _delete_from_scope(self, name: str, scope: PipelineScope) -> tuple[PipelineScope, int]:
-        """Delete pipeline + history from a specific scope."""
+    def _remove_screening_log(
+        self,
+        name: str,
+        screening_db: Path,
+        *,
+        delete_screening_log: bool,
+        screening_log: ScreeningLogFactory | None,
+    ) -> dict[str, Any] | None:
+        """Remove the screening log first; on any failure nothing else has been touched."""
+        if not screening_db.is_file():
+            return None
+        refusal = f"Pipeline '{name}' has a screening log; refusing to delete it without explicit opt-in"
+        log = None
+        summary: dict[str, Any] | None = None
+        if screening_log is None:
+            if not delete_screening_log:
+                raise ScreeningLogPresentError(refusal)
+        else:
+            log = screening_log(screening_db)
+            try:
+                summary = log.retire(allow_decisions=delete_screening_log)
+            except Exception as exc:
+                msg = (
+                    f"Pipeline '{name}' was not deleted: its screening log could not be inspected "
+                    f"({type(exc).__name__}). Nothing was removed."
+                )
+                raise PipelineDeletionError(msg) from exc
+            if not summary.get("retired"):
+                raise ScreeningLogPresentError(refusal, summary=summary)
+        try:
+            # The log belongs to this pipeline's identification history; leaving
+            # it would silently reattach decisions to a future same-name strategy.
+            for suffix in _SCREENING_LOG_SIDECARS:
+                sidecar = screening_db.with_name(screening_db.name + suffix)
+                if sidecar.is_file():
+                    sidecar.unlink()
+        except OSError as exc:
+            if log is not None and screening_db.is_file():
+                try:
+                    log.restore()
+                except Exception as restore_exc:  # the log stays retired; a retried delete finishes it
+                    logger.warning("Screening log could not be restored (%s)", type(restore_exc).__name__)
+            msg = (
+                f"Pipeline '{name}' was not deleted: its screening log is in use by another process "
+                f"({type(exc).__name__}). Nothing was removed; close other screening sessions and retry."
+            )
+            raise PipelineDeletionError(msg) from exc
+        return summary
+
+    def _delete_from_scope(
+        self,
+        name: str,
+        scope: PipelineScope,
+        *,
+        delete_screening_log: bool = False,
+        screening_log: ScreeningLogFactory | None = None,
+    ) -> PipelineDeletion:
+        """Delete pipeline + history from a specific scope, YAML last."""
+        screening_db = self._scope_root(scope) / "pipeline_screening" / f"{name}.sqlite3"
+        had_log = screening_db.is_file()
+        removed_log = self._remove_screening_log(
+            name, screening_db, delete_screening_log=delete_screening_log, screening_log=screening_log
+        )
+        log_note = "its screening log was removed, but " if had_log else ""
         pipelines_dir = self._pipelines_dir_for(scope)
         runs_dir = self._runs_dir_for(scope) / name
 
-        # Remove YAML file
-        yaml_path = pipelines_dir / f"{name}.yaml"
-        if yaml_path.exists():
-            yaml_path.unlink()
-
-        # Remove run history
         run_count = 0
-        if runs_dir.exists():
-            for f in runs_dir.iterdir():
-                f.unlink()
-                run_count += 1
-            runs_dir.rmdir()
+        try:
+            artifacts_dir = self._artifacts_dir_for(scope) / name
+            if artifacts_dir.is_dir() and not artifacts_dir.is_symlink():
+                shutil.rmtree(artifacts_dir)
+            if runs_dir.exists():
+                for f in runs_dir.iterdir():
+                    if f.is_dir() and not f.is_symlink():
+                        shutil.rmtree(f)
+                        continue
+                    if f.suffix == ".json":
+                        run_count += 1
+                    f.unlink()
+                runs_dir.rmdir()
+            # The YAML goes last: until it is gone the pipeline still exists and
+            # a retried deletion finds whatever is left.
+            yaml_path = pipelines_dir / f"{name}.yaml"
+            if yaml_path.exists():
+                yaml_path.unlink()
+        except OSError as exc:
+            msg = (
+                f"Pipeline '{name}' was only partly deleted: {log_note}some of its files are in use "
+                f"({type(exc).__name__}). The pipeline still exists; retry delete_pipeline to finish."
+            )
+            raise PipelineDeletionError(msg) from exc
 
         # Update index
         index = self._load_index(scope)
@@ -601,7 +775,7 @@ class PipelineStore:
         self.delete_schedule(name)
 
         logger.info("Deleted one pipeline from %s scope (%d runs)", scope.value, run_count)
-        return scope, run_count
+        return PipelineDeletion(scope=scope, run_count=run_count, screening_log=removed_log)
 
     # ── Schedule Persistence ────────────────────────────────────────────
 
@@ -721,8 +895,8 @@ class PipelineStore:
             index[name].run_count += int(is_new)
             self._save_index(scope, index)
 
-        # Prune old history
-        self._prune_history(runs_dir)
+        # Prune old history (in the scope this run was written to)
+        self._prune_history(runs_dir, scope)
 
         logger.info("Saved one pipeline run")
 
@@ -773,26 +947,120 @@ class PipelineStore:
         return sum(1 for path in runs_dir.glob("*.json") if path.is_file())
 
     def _find_pipeline_scope(self, name: str) -> PipelineScope:
-        """Find which scope a pipeline lives in."""
+        """Find which scope a pipeline lives in (always the pinned scope for a pinned view)."""
         name = self._validate_name(name)
-        if self._workspace_dir:
-            ws_path = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_path.exists():
-                return PipelineScope.WORKSPACE
-
-        global_path = self._global_pipelines_dir / f"{name}.yaml"
-        if global_path.exists():
-            return PipelineScope.GLOBAL
+        if self._pinned_scope is not None:
+            return self._pinned_scope
+        for scope in self._lookup_scopes():
+            if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists():
+                return scope
 
         # Default to global if not found (e.g., for creating runs before save)
         return PipelineScope.GLOBAL
 
-    def _prune_history(self, runs_dir: Path) -> None:
-        """Keep only the most recent _MAX_HISTORY runs."""
+    def _prune_history(self, runs_dir: Path, scope: PipelineScope) -> None:
+        """Keep only the most recent _MAX_HISTORY runs (and their record artifacts) of one scope."""
         run_files = sorted(runs_dir.glob("*.json"))
         if len(run_files) > _MAX_HISTORY:
+            artifacts_dir = self._artifacts_dir_for(scope) / runs_dir.name
             for f in run_files[: len(run_files) - _MAX_HISTORY]:
                 f.unlink()
+                pruned_artifacts = artifacts_dir / f.stem
+                if pruned_artifacts.is_dir() and not pruned_artifacts.is_symlink():
+                    shutil.rmtree(pruned_artifacts)
+
+    # ── Run record artifacts ─────────────────────────────────────────────
+
+    def _scope_root(self, scope: PipelineScope) -> Path:
+        if scope == PipelineScope.WORKSPACE:
+            if not self._workspace_dir:
+                msg = "No workspace directory configured"
+                raise RuntimeError(msg)
+            return self._workspace_dir / ".pubmed-search"
+        return self._global_dir
+
+    def _artifacts_dir_for(self, scope: PipelineScope) -> Path:
+        return self._scope_root(scope) / "pipeline_artifacts"
+
+    def screening_db_path(self, name: str) -> Path:
+        """Return the screening-log database path for one saved pipeline."""
+        name = self._validate_name(name)
+        return self._scope_root(self._find_pipeline_scope(name)) / "pipeline_screening" / f"{name}.sqlite3"
+
+    def scope_data_dir(self, name: str) -> Path:
+        """Return the data root of the scope that owns ``name`` (for sibling stores)."""
+        return self._scope_root(self._find_pipeline_scope(self._validate_name(name)))
+
+    def _run_records_path(self, name: str, run_id: str) -> Path:
+        name = self._validate_name(name)
+        run_id = self._validate_run_id(run_id)
+        scope = self._find_pipeline_scope(name)
+        return self._artifacts_dir_for(scope) / name / run_id / _RUN_RECORDS_FILE
+
+    @synchronized
+    def save_run_records(self, name: str, run_id: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+        """Persist the complete record set of one run as JSON Lines.
+
+        Each line is one record keyed by ``pmid``; provider-native metadata is
+        stored verbatim so exports use the same fields as ``prepare_export``.
+        Returns a logical, host-path-free locator for the run record.
+        """
+        path = self._run_records_path(name, run_id)
+        lines: list[str] = []
+        for record in records:
+            pmid = str(record.get("pmid") or "").strip()
+            if not pmid.isdigit():
+                msg = "Every run record must carry a canonical PMID"
+                raise ValueError(msg)
+            lines.append(json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
+        return {
+            "kind": "pipeline_run_records",
+            "format": "jsonl",
+            "locator": f"pipeline_artifacts/{self._validate_name(name)}/{self._validate_run_id(run_id)}/{_RUN_RECORDS_FILE}",
+            "scope": self._find_pipeline_scope(name).value,
+            "count": len(lines),
+        }
+
+    @synchronized
+    def load_run_records(self, name: str, run_id: str) -> list[dict[str, Any]]:
+        """Load every persisted record of one run, in stored order."""
+        path = self._run_records_path(name, run_id)
+        if not path.is_file():
+            return []
+        rows: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict) or not str(row.get("pmid") or "").isdigit():
+                msg = "Pipeline run record artifact is invalid"
+                raise PipelineHistoryError(msg)
+            rows.append(row)
+        return rows
+
+    @synchronized
+    def get_run(self, name: str, run_id: str | None = None) -> PipelineRun:
+        """Load one run by ID, or the newest run when ``run_id`` is omitted."""
+        name = self._validate_name(name)
+        if run_id is None:
+            latest = self.get_history(name, limit=1)
+            if not latest:
+                msg = f"Pipeline '{name}' has no execution history"
+                raise FileNotFoundError(msg)
+            return latest[0]
+        run_id = self._validate_run_id(run_id)
+        path = self._runs_dir_for(self._find_pipeline_scope(name)) / name / f"{run_id}.json"
+        if not path.is_file():
+            msg = f"Pipeline run '{run_id}' was not found"
+            raise FileNotFoundError(msg)
+        try:
+            return PipelineRun.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            raise PipelineHistoryError(
+                "Pipeline run history is unavailable because a stored record is invalid"
+            ) from exc
 
     # ── Utility ──────────────────────────────────────────────────────────
 
@@ -835,11 +1103,17 @@ class PipelineStore:
 
     @synchronized
     def exists(self, name: str) -> bool:
-        """Check if a pipeline exists in any scope."""
+        """Check if a pipeline exists in any scope (only the pinned scope for a pinned view)."""
         name = self._validate_name(name)
-        if self._workspace_dir and (self._workspace_pipelines_dir / f"{name}.yaml").exists():
-            return True
-        return (self._global_pipelines_dir / f"{name}.yaml").exists()
+        return any((self._pipelines_dir_for(scope) / f"{name}.yaml").exists() for scope in self._lookup_scopes())
+
+    @synchronized
+    def shadowed_scopes(self, name: str) -> list[PipelineScope]:
+        """Return every scope that holds ``name`` when more than one does (workspace wins)."""
+        name = self._validate_name(name)
+        scopes = [PipelineScope.WORKSPACE, PipelineScope.GLOBAL] if self._workspace_dir else [PipelineScope.GLOBAL]
+        present = [scope for scope in scopes if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists()]
+        return present if len(present) > 1 else []
 
     @synchronized
     def create_run_id(self, name: str, started: datetime | None = None) -> str:

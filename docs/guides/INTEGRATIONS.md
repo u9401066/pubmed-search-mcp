@@ -89,7 +89,7 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (canonical 42-tool Copilot Studio smoke)
+# Via run_copilot.py (canonical 43-tool Copilot Studio smoke)
 uv run python run_copilot.py --port 8765
 ```
 
@@ -323,11 +323,13 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_TENANT_ISOLATION` | Service forces `true` | Keep authenticated principals in separate state/storage scopes | `true` |
 | `PUBMED_TENANT_MAX_CONCURRENCY` | No | Maximum in-flight requests per authenticated principal | `8` |
 | `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
-| `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
+| `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback. Precedence: HTTP `--workspace-dir`, then this variable, then `CLAUDE_PROJECT_DIR`; blank values count as unset | `CLAUDE_PROJECT_DIR` when Claude Code launched the server, otherwise none |
 | `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
 | `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS` | No | Include server-local artifact paths for trusted local clients | `false` |
 | `PUBMED_FULLTEXT_INLINE_MAX_CHARS` | No | Maximum inline full-text characters before artifact paging | `20000` |
 | `PUBMED_FULLTEXT_PREFETCH_LIMIT` | No | Top-result window (0–3) for explicit `fulltext="prefetch"`; 0 disables background XML | `3` |
+| `PUBMED_FULLTEXT_DEADLINE_SECONDS` | No | Overall `get_fulltext` budget (10–600 s); sources not started in time are reported in `sources_skipped` | `90` |
+| `PUBMED_FULLTEXT_NCBI_PMC_FALLBACK` | No | Allow the NCBI E-utilities PMC fallback (`efetch db=pmc`, ESummary PMCID lookup) when Europe PMC cannot supply a body; uses the shared NCBI rate budget | `true` |
 | `PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS` | No | End-to-end deadline shared by every step in one pipeline run (greater than 0, at most 3600 seconds) | `120` |
 | `PUBMED_PIPELINE_MAX_EXTERNAL_CALLS` | No | Aggregate external-call quota shared by sequential and parallel steps in one pipeline run (1–1000) | `40` |
 | `PUBMED_SCHEDULER_ENABLED` | No | Enable the saved-pipeline scheduler for a trusted local process; the authenticated service Compose profile forces it off | `true` |
@@ -566,6 +568,12 @@ claude mcp add pubmed-search -- uvx pubmed-search-mcp
 
 **Verification**: Run `claude mcp list` → should show `pubmed-search` as connected.
 
+**Workspace root**: Claude Code exports `CLAUDE_PROJECT_DIR` to the MCP servers it
+launches. When `PUBMED_WORKSPACE_DIR` is unset or blank, the server uses that project
+directory as its workspace root, so `scope="auto"` pipelines are saved under
+`<project>/.pubmed-search/` and literature notes default to `<project>/references`
+unless `PUBMED_NOTES_DIR` is set. Set `PUBMED_WORKSPACE_DIR` to choose another root.
+
 ---
 
 ### Zed AI
@@ -764,7 +772,7 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](../../plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.10.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.11.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
@@ -809,7 +817,7 @@ Before PyPI upload, the tag workflow checks plugin drift and runs
 `mcp-publisher validate server.json` with a pinned, SHA-256-verified publisher.
 Release smoke verifies that registry/plugin metadata names the exact wheel,
 its METADATA contains the ownership marker, and its installed console script
-serves all 42 tools with only registry-declared application environment variables.
+serves all 43 tools with only registry-declared application environment variables.
 These are release checks, not proof that a release has already been published.
 
 ---
@@ -829,7 +837,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 42-tool primary MCP surface with an assigned ngrok dev/custom domain
+# Option A: Full 43-tool primary MCP surface with an assigned ngrok dev/custom domain
 export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -839,7 +847,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: canonical 42-tool local schema smoke (never tunnel this mode)
+# Option C: canonical 43-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -915,7 +923,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; a v0.10.0 server should enumerate 42 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; a v0.11.0 server should enumerate 43 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.

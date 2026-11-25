@@ -118,7 +118,11 @@ class OperationBudgetExceeded(asyncio.TimeoutError):
 
 
 class RetryableOperationError(Exception):
-    """Signal that an operation should be retried by the transport kernel."""
+    """Signal that an operation should be retried by the transport kernel.
+
+    ``cooldown_seconds`` is informational only: the shared cooldown a client
+    already applied after exhausting retries. Retry scheduling never reads it.
+    """
 
     def __init__(
         self,
@@ -126,10 +130,12 @@ class RetryableOperationError(Exception):
         *,
         retry_after: float | None = None,
         status_code: int | None = None,
+        cooldown_seconds: float | None = None,
     ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
         self.status_code = status_code
+        self.cooldown_seconds = cooldown_seconds
 
 
 def parse_retry_after(value: str | None) -> float | None:

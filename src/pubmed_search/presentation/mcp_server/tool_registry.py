@@ -212,7 +212,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "pipeline": {
         "name": "Pipeline 管理",
-        "description": "Pipeline 持久化、載入、排程",
+        "description": "Pipeline 持久化、載入、排程、PRISMA 篩選紀錄",
         "tools": [
             "save_pipeline",
             "list_pipelines",
@@ -221,6 +221,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             "get_pipeline_history",
             "schedule_pipeline",
             "unschedule_pipeline",
+            "pipeline_screening",
         ],
     },
 }
@@ -238,8 +239,13 @@ def build_pipeline_runtime(
     source_runtime: SourceRuntime,
     workspace_dir: str | None = None,
     settings: AppSettings | None = None,
+    mesh_correction: Any | None = None,
 ) -> PipelineToolRuntime:
-    """Build one isolated pipeline runtime for one MCP server instance."""
+    """Build one isolated pipeline runtime for one MCP server instance.
+
+    ``mesh_correction`` lets scheduled and saved runs record suggest-only MeSH
+    corrections; it never rewrites a saved strategy.
+    """
     from pathlib import Path
 
     from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
@@ -251,6 +257,7 @@ def build_pipeline_runtime(
     from pubmed_search.infrastructure.sources.runtime import bind_source_runtime
     from pubmed_search.shared.async_utils import bind_shared_async_client_runtime
 
+    from .tools.pipeline_screening import screening_run_observer
     from .tools.pipeline_tools import PipelineToolRuntime
 
     base_dir = session_manager.data_dir  # tenant-ok: PipelineToolRuntime resolves each caller's store from this base.
@@ -283,6 +290,7 @@ def build_pipeline_runtime(
 
     pipeline_runner = StoredPipelineRunner(
         store=pipeline_store,
+        run_observer=screening_run_observer(pipeline_store),
         searcher=searcher,
         alternate_search_adapter=_runtime_bound_source_search,
         semantic_enhancer_factory=get_semantic_enhancer,
@@ -291,6 +299,7 @@ def build_pipeline_runtime(
             max_external_calls=resolved_settings.pipeline_max_external_calls,
         ),
         execution_context=_bind_pipeline_execution_runtime,
+        mesh_correction=mesh_correction,
     )
     pipeline_scheduler = APSPipelineScheduler(
         store=pipeline_store,
@@ -325,6 +334,7 @@ def register_all_mcp_tools(
     source_runtime: SourceRuntime,
     strategy_generator: Any | None = None,
     session_registry: SessionManagerRegistry | None = None,
+    mesh_correction: Any | None = None,
 ) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
@@ -337,6 +347,7 @@ def register_all_mcp_tools(
         source_runtime: Explicit server-scoped provider dependencies.
         strategy_generator: Optional strategy generator
         session_registry: Optional request-time tenant router for session tools and resources.
+        mesh_correction: Optional MeshCorrectionService for disclosed MeSH corrections and candidates.
 
     Returns:
         Dict with category names and tool counts
@@ -355,6 +366,7 @@ def register_all_mcp_tools(
             session_manager=session_manager,
             session_registry=session_registry,
             strategy_generator=strategy_generator,
+            mesh_correction=mesh_correction,
             source_runtime=source_runtime,
         )
     )

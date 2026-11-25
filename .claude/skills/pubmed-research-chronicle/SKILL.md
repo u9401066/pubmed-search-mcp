@@ -84,6 +84,8 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 ### Lineage 的依據
 
 - 優先使用多篇論文共同出現、且具有區辨力的 MeSH descriptor 與作者 keyword。
+- 只是重述主題的詞不能形成分支：詞彙或多字縮寫已出現在 topic 中（例如 topic 有 `PACU`、`EEG` 時的 `post-anesthesia care unit`、`EEG`）、出現在每一筆 entry，或在 8 筆以上的版本中出現於至少一半 entries 且與其他重複 descriptor 的共現接近其基準比例（橫跨各線而非分開它們，例如 EEG 主題中的 `Electroencephalography`）。被排除的詞、比例與理由列在 `lineage_diagnostics.excluded_topic_signals`。
+- 分支依「新覆蓋論文」的 inverse-frequency 權重逐輪挑選（`signal_selection="greedy_marginal_coverage"`，MeSH 同分優先），所以每條線至少有兩篇先前線條沒有涵蓋的論文；仍然同時符合的訊號保存在 `cross_signal_links`。
 - 每個 branch 保存 `lineage_basis`、signal source 與 confidence；每個 entry 保存 global order 與 branch order。
 - 同一篇論文可符合多個 selected signals，但 tree 只給它一個 primary branch；其他符合項保存在 `cross_signal_links`，避免假裝 branches 完全互斥。全部或已分派 entries 的 overlap 達 20% 時，audit 會警告。
 - 單篇論文獨有的 singleton term 不足以建立語意 branch。若訊號不能支持至少兩個主題分支，會退回 Discovery / Clinical / Safety 等研究階段分類並產生 audit warning；不可把它描述成「發現出的語意主題演化」。
@@ -95,6 +97,7 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 - Topic mode 會把 `min_year`／`max_year` 送到 PubMed，再做 bounded retrieval；最後保留觀察到的首篇、末篇、landmark 與 temporal spread。audit 的 `source_counts.pubmed` 分開記錄 `returned`／`available`；總量未知、來源有 cap 或後續 selection 截斷時必須揭露 warning。
 - Topic mode 的 retrieval provenance 會分開保存 `ranking_requested` 與實際 `ranking`。只有至少一筆經驗證的 iCite `citation_count` 真正套用後，才可宣稱 `icite_citation_count_then_pubmed_relevance`；否則有效排序仍是 `pubmed_relevance`。
 - `citation_metrics` 使用 `citation-metrics-coverage/v1`，分辨 `complete`、`partial`、`empty`、`error` 與 `not_requested`，並列出 requested／returned／applied／sortable-count 數量。outage 或 malformed response 不是零引用，也不能寫成已完成 enrichment。
+- PMID 模式同樣以一次批次、有快取的 iCite 請求套用經驗證的 metrics，並記錄同一個 envelope；`evidence_selection="explicit_pmid_set_without_ranking"` 表示指定的 PMID 集合不會被重新排序或截斷。metrics 用於 landmark score 與引用門檻 milestone。若 iCite 沒有可用資料，就不計算 landmark 綜合分數，highlights 改依已存引用數、再依時序排列，summary 與 audit 都會說明原因。
 - 建版的 JSON 錯誤中，`category="api"` 表示 PubMed 取證失敗，`category="data"` 且訊息為零筆文章則表示本次搜尋沒有可建版的證據。兩種情況都可依 `example` 讀取先前保存的版本。明確 PMID 只接受正 ASCII digits（最多 20 位）或 `PMID:` prefix。
 - entry ID 依 PMID、其次 DOI 的 evidence identity 保持穩定；日期或 milestone reclassification 應出現在 `updated`，不應造成假的 remove/add。topic identity、exact lookup、compare 與 continuity 共用 Unicode normalization、case-folding、空白折疊後的 canonical key。
 
@@ -146,7 +149,11 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 
 | 欄位 | 說明 |
 | --- | --- |
-| `summary_claim` | 一句附引用的主張（含 PMID/DOI） |
+| `title` | 研究設計標籤。優先採 PubMed PublicationType（RCT、Meta-Analysis、Systematic Review、Observational Study、Guideline 等），其次 MeSH 研究設計 descriptor（如 `Prospective Studies`）；只有 PubMed 尚未標引設計時才用標題或摘要文字推斷，並標 `[heuristic]`。`non-randomized`／`quasi-randomised` 不算 RCT；試驗 protocol（含同時標 RCT 的 `Clinical Trial Protocol`）標成 protocol，勘誤、撤回通知與 expression of concern 標成 publication notice，兩者都不是 milestone |
+| `summary_claim` | 一行附引用的主張。有摘要時直接引用該論文摘要的結論句（逐字摘錄，附章節與字元位置；註冊、經費、利益衝突、授權與出版社聲明不會被引用）；沒有摘要時才用保守模板 |
+| `provenance.study_design` | 標籤依據 `basis`（`pubmed_publication_type`／`mesh_study_design_descriptor`／`text_pattern_heuristic`／未標引）、符合的類型與 retracted 等旗標 |
+| `provenance.extractive_highlight` | 摘錄句、`char_start`／`char_end`（指向 `EvidenceArticle.abstract` 的 Unicode code point 位置）、章節、選句規則、摘要 SHA-256 與 `abstract_truncated` |
+| `provenance.abstract_truncation` | 摘要不完整時（PubMed 的 `ABSTRACT TRUNCATED` 註記，或只保存了前 20,000 字元）記錄原因與長度；截斷處的殘句不會被引用，結論段可能缺失 |
 | `evidence` | supporting / contradicting / updating 三類證據 |
 | `branch_id` | 所屬研究分支（lineage） |
 | `confidence` | 信心分數 |
@@ -156,6 +163,10 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 
 `confidence` 的精確語意是 milestone detection confidence，不是 scientific importance。landmark ranking 先看 `provenance.landmark_importance_score`，沒有才退回 citation count；不可用 detection confidence 排「最重要論文」。
 
+PubMed PublicationType 標引的研究設計優先於文字樣式推斷。標題或摘要樣式只能補充 PublicationType 沒有的資訊（例如試驗 phase），不能把已標引的 RCT 或統合分析改標成 Safety Alert、核准、爭議或突破；觀察性研究（以及 Comparative／Multicenter Study 等泛用類型）仍可帶試驗 phase 或明確的 safety signal（藥物安全監視）。只有 MeSH 設計 descriptor 時不會擋掉文字 milestone。摘要提到 adverse events 不構成安全警訊；`Safety Alert` 需要明確的安全通報、safety signal 或 boxed warning。摘要樣式只採用自我描述的句子（如「In this phase 3 trial」「We performed a meta-analysis」），「A recent meta-analysis suggested…」這類背景引述不算。
+
+引用摘錄句時，要說明它是作者摘要中的原句，而不是你的詮釋；可用 `output="evidence"` 取得完整摘要，以 `abstract[char_start:char_end]` 核對。
+
 ---
 
 ## Audit：知道這份脈絡有多完整
@@ -163,6 +174,8 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 每次 build 都會產生 audit，回報：
 
 - 證據覆蓋率（有沒有 entry 缺證據）
+- 研究設計標籤來源（`study_design_labels`）：列出 `[heuristic]` 標籤與來自摘要文字的類別（`abstract_pattern_categories`），並在已標引研究設計卻帶不相容的 safety／debate 類別時警告
+- 摘錄句完整性（`extractive_highlights`）：每句引文都必須能以字元位置對回保存的摘要，否則 fail；摘要被截斷時警告（`truncated_abstracts`）
 - 識別碼覆蓋率（有沒有文章缺 PMID/DOI/PMCID）
 - 分支覆蓋率（空分支、未分派 entry）
 - lineage 語意依據與覆蓋率（MeSH/keyword 或研究階段 fallback）
@@ -170,7 +183,7 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 - graph 完整性（invariant 違反）
 - 時序缺口（無法定年的 entry）
 - 各來源回傳量
-- iCite coverage 與 requested/effective ranking 是否一致；outage、partial、empty 會警告，無有效 citation count 卻宣稱 iCite ranking 會失敗
+- iCite coverage 與 requested/effective ranking 是否一致（topic 與 PMID 模式皆檢查）；outage、partial、empty 會警告，無有效 citation count 卻宣稱 iCite ranking 會失敗
 - 實際 artifact payload builder 產出的 required file names（加上 store 產生的 manifest）；這是 preparation preflight，不等於 persistence 成功
 
 audit 狀態為 `pass` / `warn` / `fail`。**回答使用者時要一併說明 caveats**，不要把 `warn` 當成完整答案。
@@ -184,7 +197,7 @@ read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":
 read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})   # 全部 entry
 ```
 
-輸出的**每一句 claim 都附 entry ID 與文獻識別碼**，可直接查證，適合寫作與報告。
+輸出的**每一句 claim 都附 entry ID 與文獻識別碼**，可直接查證，適合寫作與報告。有摘要的 entry 會逐字引用作者的結論句並標示章節與字元位置；這是摘錄，不是詮釋。
 
 ---
 
@@ -198,6 +211,8 @@ read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":
 | 把同年排列解讀成先後關係 | 只在日期 precision 足以證明時宣稱先後 |
 | topic compare 回報 ambiguity | 先送 `request={"action":"list"}`，再用 `selection.kind="chronicle_ids"` 傳兩個以上不同 ID |
 | 忽略 audit warnings | 回答時要說明覆蓋率限制 |
+| 把 `[heuristic]` 標籤當成 PubMed 標引 | 說明它來自標題或摘要文字，並對照原文確認設計 |
+| 把摘錄句改寫後仍當成引文 | 引用時保留原句與 PMID、章節、字元位置；自己的歸納另外標示 |
 | 每次都重新 build 來看里程碑 | 用 `request={"action":"milestones","chronicle_id":"..."}` 讀已存的 |
 
 ---

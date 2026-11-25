@@ -99,6 +99,18 @@ def _recorded_score_components(entry: ChronicleEntry) -> list[dict[str, Any]] | 
     return components or None
 
 
+def landmark_citation_policy(entry: ChronicleEntry) -> str | None:
+    """Return the citation-impact policy recorded in the entry's landmark score.
+
+    ``None`` means no landmark score was recorded; ``"none"`` means the score
+    was computed without any citation metric for this paper.
+    """
+    for component in _recorded_score_components(entry) or []:
+        if component["component"] == "citation_impact":
+            return str(component["policy"])
+    return None
+
+
 def _observed_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> Iterator[tuple[str, int]]:
     # Timeline events historically substituted zero for unavailable counts.
     # The event's provenance describes its source article, not every attached paper.
@@ -117,6 +129,15 @@ def _observed_citations(entry: ChronicleEntry, components: list[dict[str, Any]] 
 
 def _observed_max_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> int | None:
     return max((count for _, count in _observed_citations(entry, components)), default=None)
+
+
+def observed_max_citations(entry: ChronicleEntry) -> int | None:
+    """Return the highest citation count actually observed for the entry.
+
+    ``None`` means no count was observed (unavailable, not zero); a zero is
+    returned only when it was observed for the entry's own source article.
+    """
+    return _observed_max_citations(entry, _recorded_score_components(entry))
 
 
 def _landmark_row(entry: ChronicleEntry) -> dict[str, Any]:
@@ -350,6 +371,8 @@ __all__ = [
     "analyze_milestones",
     "compare_chronicles",
     "entry_max_citations",
+    "landmark_citation_policy",
     "landmark_importance_score",
     "landmark_rank_key",
+    "observed_max_citations",
 ]

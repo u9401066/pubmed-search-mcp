@@ -44,6 +44,10 @@ _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
         "pubmed_search.presentation.mcp_server.tools.pipeline_tools",
         "register_pipeline_tools",
     ),
+    "register_pipeline_screening_tools": (
+        "pubmed_search.presentation.mcp_server.tools.pipeline_screening",
+        "register_pipeline_screening_tools",
+    ),
     "register_reference_verification_tools": (
         "pubmed_search.presentation.mcp_server.tools.reference_verification",
         "register_reference_verification_tools",
@@ -96,7 +100,7 @@ def register_all_tools(
     _load_registrar("register_discovery_tools")(mcp, searcher)
     _load_registrar("register_reference_verification_tools")(mcp, searcher)
     _load_registrar("register_research_workspace_tools")(mcp)
-    _load_registrar("register_export_tools")(mcp, searcher)
+    _load_registrar("register_export_tools")(mcp, searcher, pipeline_runtime=pipeline_runtime)
     _load_registrar("register_europe_pmc_tools")(mcp)
     _load_registrar("register_figure_tools")(mcp)
     _load_registrar("register_ncbi_extended_tools")(mcp)
@@ -107,6 +111,7 @@ def register_all_tools(
     _load_registrar("register_icd_tools")(mcp)
     _load_registrar("register_image_search_tools")(mcp, image_search_service)
     _load_registrar("register_pipeline_tools")(mcp, runtime=pipeline_runtime)
+    _load_registrar("register_pipeline_screening_tools")(mcp, runtime=pipeline_runtime)
 
 
 __all__ = [
@@ -122,6 +127,7 @@ __all__ = [
     "register_ncbi_extended_tools",
     "register_openurl_tools",
     "register_pico_tools",
+    "register_pipeline_screening_tools",
     "register_pipeline_tools",
     "register_reference_verification_tools",
     "register_research_workspace_tools",

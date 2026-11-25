@@ -1,5 +1,24 @@
 # Decision Log
 
+## [2026-11-25] v0.11.0 systematic-review and evidence-quality decisions
+
+- Deep strategy broadening stays a feature but is precision-first: exact tier gets
+  the full limit; deepen, then semantic, then broad only to fill a shortfall;
+  broadened records rank after exact ones and are always disclosed.
+- MeSH mapping is confirmed only on exact preferred/entry terms; no curated alias
+  table. Unresolvable headings are corrected from evidence: exact entry-term fix,
+  else original words as text words OR a related heading ranked by exact PubMed
+  recall/precision (F1). unified_search applies it (opt-out `no_mesh_correction`;
+  `no_relax` does not disable it); saved pipelines only record suggestions so a
+  PRISMA strategy is never silently rewritten.
+- Exhaustive pipeline retrieval refuses counts above the cap instead of truncating;
+  screening uses its own SQLite log (latest decision per PMID/stage, append-only);
+  deleting a pipeline with screening decisions requires `delete_screening_log=true`.
+- Fulltext does not scrape PMC HTML; publisher-restricted XML is reported as
+  `front_matter_only`.
+- Chronicle study-design labels come from PubMed publication types; heuristics are
+  a marked fallback; highlights are extractive with offsets pinned by SHA-256.
+
 ## [2026-10-20] v0.8.0 automation and release contracts
 
 - Keep Chronicle store fail-loud on a corrupt latest revision; only the bounded

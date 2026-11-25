@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .coverage import FulltextSkippedSource, FulltextSourceError, FulltextSourceNotice
 from .registry import (
     FulltextPolicyDefinition,
     FulltextPolicyKey,
@@ -7,7 +8,7 @@ from .registry import (
     FulltextSourceDefinition,
     get_fulltext_registry,
 )
-from .service import FulltextRequest, FulltextService, FulltextServiceResult, FulltextSourceError
+from .service import FulltextRequest, FulltextService, FulltextServiceResult
 
 __all__ = [
     "FulltextPolicyDefinition",
@@ -16,7 +17,9 @@ __all__ = [
     "FulltextRequest",
     "FulltextService",
     "FulltextServiceResult",
-    "FulltextSourceError",
+    "FulltextSkippedSource",
     "FulltextSourceDefinition",
+    "FulltextSourceError",
+    "FulltextSourceNotice",
     "get_fulltext_registry",
 ]

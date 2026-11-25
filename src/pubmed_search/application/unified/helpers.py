@@ -389,6 +389,7 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     "no_next": ("include_next_tools", False),
     "no_provenance": ("include_section_provenance", False),
     "no_relax": ("auto_relax", False),
+    "no_mesh_correction": ("mesh_correction", False),
     "shallow": ("deep_search", False),
 }
 _COMPACT_OPTION_DEFAULTS: dict[str, bool] = {
@@ -493,21 +494,101 @@ _STOP_WORDS = frozenset(
 
 @dataclass
 class StrategyResult:
-    """Result from executing one search strategy."""
+    """Result from executing (or deliberately skipping) one strategy attempt.
+
+    Precision-first deep search records one row per provider attempt. A
+    strategy that the tier policy did not need is a ``status="skipped"`` row
+    with a ``skip_reason``; it is never a failed or empty search.
+    """
 
     strategy_name: str
     query: str
     source: str
-    articles_count: int
+    articles_count: int  # items returned by the provider (after request clipping)
     expected_precision: float
     expected_recall: float
     execution_time_ms: float = 0.0
-    status: str = "ok"
-    allocated_limit: int = 0
+    status: str = "ok"  # ok | empty | partial | error | skipped
+    allocated_limit: int = 0  # provider request limit; 0 when skipped
     total_available: int | None = None
     physical_query: str | None = None
     query_executed: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    tier: str = "exact"
+    tier_rank: int = 0
+    phase: str = "exact"  # exact | deepen | broaden | skipped
+    new_unique: int = 0  # records not already held from an earlier attempt
+    contributed: int = 0  # new unique records added to the result pool
+    duplicates: int = 0
+    ineligible: int = 0  # new records failing exclude_seen / preprint policy
+    surplus_discarded: int = 0  # eligible new records beyond the remaining slots
+    skip_reason: str | None = None
+
+    @property
+    def executed(self) -> bool:
+        """Whether this row represents a provider attempt rather than a skip."""
+        return self.status != "skipped"
+
+    def disclosure(self) -> dict[str, Any]:
+        """Return the stable per-attempt broadening disclosure row."""
+        return {
+            "source": self.source,
+            "strategy": self.strategy_name,
+            "tier": self.tier,
+            "tier_rank": self.tier_rank,
+            "phase": self.phase,
+            "status": self.status,
+            "executed": self.executed,
+            "logical_query": self.query,
+            "physical_query": self.physical_query,
+            "requested": self.allocated_limit,
+            "total_available": self.total_available,
+            "returned": self.articles_count,
+            "new_unique": self.new_unique,
+            "contributed": self.contributed,
+            "duplicates": self.duplicates,
+            "ineligible": self.ineligible,
+            "surplus_discarded": self.surplus_discarded,
+            "skip_reason": self.skip_reason,
+        }
+
+
+@dataclass
+class DeepTierOutcome:
+    """Fill accounting for one precision-first deep search.
+
+    Counts are eligible unique records (after broker-level identity dedup and
+    the exclude_seen / detected-preprint eligibility policy) measured against
+    the requested limit.
+    """
+
+    requested_limit: int
+    exact_eligible_unique: int = 0  # after the exact tier, before deepening
+    eligible_unique: int = 0  # after every executed phase
+    deepened_records: int = 0  # extra exact-query records fetched to fill
+    broadened_records: int = 0  # records contributed by lower-precision tiers
+    broadening_needed: bool = False  # exact tier (incl. deepening) under-filled
+    broadening_enabled: bool = True
+    broadening_blocked_reason: str | None = None
+
+    @property
+    def filled(self) -> bool:
+        """Whether the eligible unique pool reached the requested limit."""
+        return self.eligible_unique >= self.requested_limit
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly fill summary."""
+        return {
+            "requested_limit": self.requested_limit,
+            "exact_eligible_unique": self.exact_eligible_unique,
+            "eligible_unique": self.eligible_unique,
+            "deepened_records": self.deepened_records,
+            "broadened_records": self.broadened_records,
+            "broadening_needed": self.broadening_needed,
+            "broadening_enabled": self.broadening_enabled,
+            "broadening_blocked_reason": self.broadening_blocked_reason,
+            "filled": self.filled,
+        }
 
 
 @dataclass
@@ -535,6 +616,9 @@ class SearchDepthMetrics:
 
     # Strategy Details
     strategy_results: list[StrategyResult] = field(default_factory=list)
+
+    # Precision-first fill accounting (None outside tiered deep search)
+    tier_outcome: DeepTierOutcome | None = None
 
     def calculate_depth_score(self) -> float:
         """
@@ -577,9 +661,14 @@ class SearchDepthMetrics:
                     "total_available": s.total_available,
                     "physical_query": s.physical_query,
                     "query_executed": s.query_executed,
+                    "tier": s.tier,
+                    "phase": s.phase,
+                    "contributed": s.contributed,
+                    "skip_reason": s.skip_reason,
                 }
                 for s in self.strategy_results
             ],
+            "tier_outcome": self.tier_outcome.to_dict() if self.tier_outcome is not None else None,
         }
 
     def summary(self) -> str:

@@ -16,8 +16,10 @@ from .analytics import (
     analyze_milestones,
     compare_chronicles,
     entry_max_citations,
+    landmark_citation_policy,
     landmark_importance_score,
     landmark_rank_key,
+    observed_max_citations,
 )
 from .assembler import assemble_chronicle, derive_chronicle_id
 from .audit import REQUIRED_ARTIFACT_FILES, audit_chronicle
@@ -64,6 +66,7 @@ __all__ = [
     "build_chronicle_graph",
     "compare_chronicles",
     "entry_max_citations",
+    "landmark_citation_policy",
     "chronology_key",
     "derive_chronicle_id",
     "diff_chronicles",
@@ -71,6 +74,7 @@ __all__ = [
     "mermaid_label",
     "landmark_importance_score",
     "landmark_rank_key",
+    "observed_max_citations",
     "project_chronicle_map",
     "project_evidence",
     "project_graph",

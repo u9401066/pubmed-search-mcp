@@ -131,3 +131,40 @@ class TestAppSettings:
         reset_settings_cache()
         assert get_settings().ncbi_email == "second@example.com"
         reset_settings_cache()
+
+
+class TestWorkspaceDirPrecedence:
+    """PUBMED_WORKSPACE_DIR wins; Claude Code's CLAUDE_PROJECT_DIR is the fallback."""
+
+    def test_claude_project_dir_is_used_when_workspace_dir_is_unset(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("PUBMED_WORKSPACE_DIR", raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", f" {tmp_path} ")
+
+        settings = load_settings()
+
+        assert settings.workspace_dir == str(tmp_path)
+        assert settings.workspace_dir_source == "CLAUDE_PROJECT_DIR"
+
+    def test_explicit_workspace_dir_takes_precedence_over_claude_project_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PUBMED_WORKSPACE_DIR", str(tmp_path / "explicit"))
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "claude"))
+
+        settings = load_settings()
+
+        assert settings.workspace_dir == str(tmp_path / "explicit")
+        assert settings.workspace_dir_source == "PUBMED_WORKSPACE_DIR"
+
+    def test_blank_workspace_dir_counts_as_unset(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PUBMED_WORKSPACE_DIR", "   ")
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+
+        assert load_settings().workspace_dir == str(tmp_path)
+
+    def test_no_workspace_without_either_variable(self, monkeypatch):
+        monkeypatch.delenv("PUBMED_WORKSPACE_DIR", raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", "  ")
+
+        settings = load_settings()
+
+        assert settings.workspace_dir is None
+        assert settings.workspace_dir_source is None

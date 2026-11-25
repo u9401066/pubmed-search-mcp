@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -103,6 +104,27 @@ class TestReferenceVerificationService:
     def test_rejects_nonfinite_deadline(self, timeout):
         with pytest.raises(ReferenceVerificationInputError):
             ReferenceVerificationService(self.searcher, total_timeout_seconds=timeout)
+
+    @pytest.mark.parametrize("unit", ["2000 ", "2000. ", "(2000) a ", "2000 Jan "])
+    def test_parsing_cost_is_linear_in_adversarial_entry_length(self, unit):
+        # Parsing runs synchronously on the event loop before any upstream call,
+        # and one request may carry 50 maximum-length entries. Year-dense input
+        # used to cost O(years x length): 4x the text took ~3x longer per
+        # character. Compare per-character cost instead of wall time so the
+        # check does not depend on machine speed.
+        def best_seconds(entry: str) -> float:
+            best = float("inf")
+            for _ in range(7):
+                started = time.perf_counter()
+                self.service.parse_reference(entry, index=1)
+                best = min(best, time.perf_counter() - started)
+            return best
+
+        long_entry = (unit * (MAX_REFERENCE_CHARS // len(unit)))[:MAX_REFERENCE_CHARS].strip()
+        short_entry = long_entry[: len(long_entry) // 4].strip()
+        ratio = best_seconds(long_entry) / (4 * best_seconds(short_entry))
+
+        assert ratio < 2.0, f"4x longer input cost {ratio:.1f}x more per character"
 
     def test_short_pmid_and_author_initial_block(self):
         parsed = self.service.parse_reference("Smith AB. Example. Science. 2024;12:1-9. PMID:123", index=1)
@@ -402,6 +424,8 @@ class TestReferenceVerificationService:
 
     @pytest.mark.asyncio
     async def test_partial_match_row_exposes_review_strategy(self):
+        # The exact-title search is year-tolerant: the same-titled record from
+        # another year is a partial match, not an unrelated "close" title.
         self.searcher.find_by_citation = AsyncMock(return_value=None)
         self.searcher.search_page = AsyncMock(
             return_value=_pubmed_page(
@@ -409,7 +433,7 @@ class TestReferenceVerificationService:
                     {
                         "pmid": "45678901",
                         "doi": "10.1000/example-doi",
-                        "title": "Close but not exact title",
+                        "title": "Original trial title",
                         "journal": "N Engl J Med",
                         "journal_abbrev": "N Engl J Med",
                         "year": "2022",
@@ -434,17 +458,18 @@ class TestReferenceVerificationService:
         assert any(item["label"] == "journal_year_author" for item in result["review_strategy"]["retry_queries"])
 
     @pytest.mark.asyncio
-    async def test_resolve_by_title_escapes_embedded_quotes(self):
-        parsed = self.service.parse_reference(
+    async def test_title_search_strips_embedded_quotes_without_year_filter(self):
+        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
+
+        await self.service.verify_reference(
             'Smith J. Alpha "beta" gamma trial results. N Engl J Med. 2024;390(1):12-18.',
             index=1,
         )
-        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
 
-        await self.service._resolve_by_title(parsed)
-
-        called_query = self.searcher.search_page.await_args.args[0]
-        assert called_query == '"Alpha beta gamma trial results"[Title]'
+        title_call = self.searcher.search_page.await_args_list[0]
+        assert title_call.args[0] == "alpha[ti] AND beta[ti] AND gamma[ti] AND trial[ti] AND results[ti]"
+        assert "min_year" not in title_call.kwargs
+        assert "max_year" not in title_call.kwargs
 
 
 class TestReferenceVerificationTool:

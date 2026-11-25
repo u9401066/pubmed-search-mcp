@@ -12,18 +12,32 @@ Single-purpose tools:
 
 from __future__ import annotations
 
+import json
 import logging
+import sqlite3
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Annotated, Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field
 
+from pubmed_search.application.pipeline.budgets import PIPELINE_RUN_RECORD_LIMIT
 from pubmed_search.application.pipeline.config_parser import (
     MAX_PIPELINE_CONFIG_CHARS,
     parse_pipeline_config_text,
 )
-from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
+from pubmed_search.application.pipeline.prisma_s import (
+    render_prisma_s_csv,
+    render_prisma_s_markdown,
+    strategy_fingerprint,
+)
+from pubmed_search.application.pipeline.store import (
+    PipelineDeletionError,
+    PipelineHistoryError,
+    ScreeningLogPresentError,
+    _config_to_dict,
+)
 from pubmed_search.application.pipeline.validator import (
     MAX_PIPELINE_TAGS,
     PIPELINE_NAME_PATTERN,
@@ -40,6 +54,7 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.pipeline.store import PipelineStore
+    from pubmed_search.domain.entities.pipeline import PipelineRun
     from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
 
 logger = logging.getLogger(__name__)
@@ -52,6 +67,9 @@ PipelineSource = Annotated[str, Field(min_length=1, max_length=4096)]
 SaveScope = Literal["auto", "workspace", "global"]
 ListScope = Literal["", "workspace", "global"]
 CronExpression = Annotated[str, Field(strict=True, min_length=1, max_length=200)]
+RunId = Annotated[str, Field(strict=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
+HistoryView = Literal["runs", "records", "run", "prisma_s"]
+MAX_PRISMA_S_RUNS = 20
 
 
 @dataclass(slots=True)
@@ -88,6 +106,22 @@ class PipelineToolRuntime:
                 scoped = base.rebased(root)
                 self._tenant_stores[tenant_id] = scoped
             return scoped
+
+
+def _shadowed_scopes(store: PipelineStore, name: str) -> list[str]:
+    """Scope names holding ``name`` when a workspace pipeline shadows a global one."""
+    scopes = store.shadowed_scopes(name)
+    return [scope.value for scope in scopes] if isinstance(scopes, list) else []
+
+
+def _shadow_warning(store: PipelineStore, name: str) -> str | None:
+    if not _shadowed_scopes(store, name):
+        return None
+    return (
+        f"⚠️ A pipeline named '{name}' also exists in the global scope. The workspace pipeline takes "
+        "precedence for unified_search, history, export and screening; the global one (and its runs and "
+        "screening log) is unchanged but not reachable by this name until one of them is renamed or deleted."
+    )
 
 
 def _store_unavailable(tool_name: str) -> str:
@@ -164,6 +198,9 @@ def _save_pipeline_impl(
         parts.append(f"  Steps: {meta.step_count} ({step_summary})")
     parts.append(f"  Config hash: {meta.config_hash}")
 
+    shadow = _shadow_warning(store, meta.name)
+    if shadow:
+        parts.extend(["", shadow])
     parts.append("")
     parts.append("💡 Usage:")
     parts.append(f'  • Execute: unified_search(pipeline="saved:{meta.name}")')
@@ -208,6 +245,7 @@ def _list_pipelines_impl(
         "|------|-------|-------------|------|------|",
     ]
 
+    shadowing: list[str] = []
     for pipeline in pipelines:
         tags_str = ", ".join(pipeline.tags) if pipeline.tags else "-"
         desc = (
@@ -215,7 +253,17 @@ def _list_pipelines_impl(
             if pipeline.description and len(pipeline.description) > 43
             else (pipeline.description or "-")
         )
-        parts.append(f"| {pipeline.name} | {pipeline.scope.value} | {desc} | {tags_str} | {pipeline.run_count} |")
+        scope_cell = pipeline.scope.value
+        if pipeline.scope.value == "workspace" and _shadowed_scopes(store, pipeline.name):
+            scope_cell = "workspace (shadows global)"
+            shadowing.append(pipeline.name)
+        parts.append(f"| {pipeline.name} | {scope_cell} | {desc} | {tags_str} | {pipeline.run_count} |")
+    if shadowing:
+        parts.append("")
+        parts.append(
+            f"⚠️ {', '.join(shadowing)} also exist in the global scope; the workspace pipeline is used by name. "
+            'Use list_pipelines(scope="global") to see the shadowed ones.'
+        )
 
     schedules = {entry.pipeline_name: entry for entry in store.list_schedules()}
     for pipeline in pipelines:
@@ -303,10 +351,68 @@ def _load_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, source:
     return "\n".join(parts)
 
 
-def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name: str) -> str:
+def _screening_decision_summary(store: PipelineStore, name: str) -> dict[str, int] | None:
+    """Count screening decisions without creating a log; ``None`` when there is no log."""
+    from .pipeline_screening import screening_service
+
+    db_path = store.screening_db_path(name)
+    if not isinstance(db_path, Path) or not db_path.is_file():
+        return None
+    return screening_service(store, name).decision_summary()
+
+
+def _counted(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _screening_loss(summary: dict[str, Any]) -> str:
+    return f"{_counted(summary['decisions'], 'decision')} on {_counted(summary['pmids'], 'PMID')}"
+
+
+def _screening_log_refusal(tool_name: str, name: str, summary: dict[str, Any]) -> str:
+    return ResponseFormatter.error(
+        f"Pipeline '{name}' was not deleted: its screening log holds {_screening_loss(summary)} "
+        f"from {_counted(summary['reviewers'], 'reviewer label')}, which deletion would permanently destroy. "
+        "Nothing was removed.",
+        suggestion=(
+            "Export the screening log first (page through pipeline_screening log; flow gives PRISMA counts), "
+            "then repeat with delete_screening_log=true to delete the pipeline together with its decisions"
+        ),
+        example=(
+            f'pipeline_screening(request={{"action": "log", "pipeline": "{name}", "offset": 0, "limit": 100}}); '
+            f'delete_pipeline(name="{name}", delete_screening_log=true)'
+        ),
+        tool_name=tool_name,
+    )
+
+
+def _delete_pipeline_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    name: str,
+    delete_screening_log: bool = False,
+) -> str:
     store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
+
+    # Screening decisions are human work: refuse early with counts. The store
+    # repeats the check atomically with the deletion, so a decision recorded
+    # after this pre-check still blocks it.
+    summary: dict[str, int] | None = None
+    if store.exists(name):
+        try:
+            summary = _screening_decision_summary(store, name)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            logger.warning("Pipeline screening log could not be inspected before deletion (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                f"Pipeline '{name}' was not deleted: its screening log could not be inspected. Nothing was removed.",
+                suggestion="Check data directory availability and retry",
+                tool_name=tool_name,
+            )
+        if summary is not None and summary["decisions"] > 0 and not delete_screening_log:
+            return _screening_log_refusal(tool_name, name, summary)
 
     scheduler = runtime.scheduler if current_tenant_id() == DEFAULT_TENANT_ID else None
     scheduled_entry = None
@@ -316,16 +422,40 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
         except Exception as exc:  # Schedule inspection must not block deletion.
             logger.warning("Unable to inspect pipeline schedule before deletion (%s)", type(exc).__name__)
 
+    from .pipeline_screening import screening_log_at
+
     try:
-        scope, run_count = store.delete(name)
+        # An empty (or opted-in) log goes with the pipeline; decisions without opt-in refuse.
+        deletion = store.delete(name, delete_screening_log=delete_screening_log, screening_log=screening_log_at)
     except FileNotFoundError:
         return ResponseFormatter.error(
             f"Pipeline '{name}' not found",
             suggestion="Use list_pipelines() to see available pipelines",
             tool_name=tool_name,
         )
+    except ScreeningLogPresentError as exc:
+        return _screening_log_refusal(
+            tool_name, name, exc.summary or summary or {"decisions": 0, "pmids": 0, "reviewers": 0}
+        )
+    except PipelineDeletionError as exc:
+        logger.warning("Pipeline deletion stopped early (%s)", type(exc.__cause__).__name__)
+        return ResponseFormatter.error(
+            str(exc),
+            suggestion="Retry delete_pipeline once other processes have released the files",
+            tool_name=tool_name,
+        )
+    except OSError as exc:
+        logger.warning("Pipeline deletion failed (%s)", type(exc).__name__)
+        return ResponseFormatter.error(
+            f"Pipeline '{name}' could not be fully deleted ({type(exc).__name__})",
+            suggestion="Check data directory availability, then retry delete_pipeline to finish",
+            tool_name=tool_name,
+        )
     except ValueError as exc:
         return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    removed_log = deletion.screening_log or summary
+    # Deleting a workspace pipeline can uncover a same-name global one.
+    uncovered_global = deletion.scope.value == "workspace" and store.exists(name) is True
 
     schedule_cleanup_failed = False
     if scheduler is not None:
@@ -336,8 +466,12 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
             logger.warning("Pipeline deleted but live schedule cleanup failed (%s)", type(exc).__name__)
 
     parts = [f'🗑️ Pipeline "{name}" deleted.']
-    parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
-    parts.append(f"  - {run_count} execution history record(s) permanently removed")
+    parts.append(f"  - Configuration permanently removed (from {deletion.scope.value} scope)")
+    parts.append(f"  - {deletion.run_count} execution history record(s) and run record sets permanently removed")
+    if removed_log is not None:
+        parts.append(f"  - Screening log permanently removed: {_screening_loss(removed_log)}")
+    if uncovered_global:
+        parts.append("  - Note: a same-name pipeline remains in the global scope and is now the one used by this name")
     if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:
@@ -345,46 +479,35 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
     return "\n".join(parts)
 
 
-def _get_pipeline_history_impl(
-    *,
-    runtime: PipelineToolRuntime,
-    tool_name: str,
-    name: str,
-    limit: int = 5,
-) -> str:
-    store = runtime.store_for_current_tenant()
-    if not store:
-        return _store_unavailable(tool_name)
+def _history_unavailable(tool_name: str) -> str:
+    return ResponseFormatter.error(
+        "Pipeline execution history is unavailable because a stored record is invalid",
+        suggestion="Repair or remove the invalid run record, then retry",
+        tool_name=tool_name,
+    )
 
-    if not store.exists(name):
-        return ResponseFormatter.error(
-            f"Pipeline '{name}' not found",
-            suggestion="Use list_pipelines() to see available pipelines",
-            tool_name=tool_name,
-        )
 
-    try:
-        runs = store.get_history(name, limit=limit)
-    except PipelineHistoryError as exc:
-        logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
-        return ResponseFormatter.error(
-            "Pipeline execution history is unavailable because a stored record is invalid",
-            suggestion="Repair or remove the invalid run record, then retry",
-            tool_name=tool_name,
-        )
+def _retrieval_cells(run: PipelineRun) -> tuple[str, str]:
+    """Return (mode, PubMed total) cells for one run row."""
+    retrieval = run.retrieval or {}
+    if retrieval.get("mode") in {"exhaustive", "mixed"}:
+        if retrieval.get("mode") == "mixed":
+            label = "mixed (not exhaustive)"
+        else:
+            label = "exhaustive" if retrieval.get("exhaustive") else "exhaustive (incomplete)"
+        total = retrieval.get("total_count")
+        return label, "-" if total is None else str(total)
+    if run.record_version >= 2:
+        return "bounded", "-"
+    return "legacy", "-"
 
-    if not runs:
-        return (
-            f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
-        )
 
-    total_runs = store.count_history(name)
-
+def _render_history_runs(name: str, runs: list[PipelineRun], total_runs: int) -> str:
     parts = [
         f'📊 Execution History for "{name}" (showing {len(runs)} of {total_runs}):',
         "",
-        "| # | Date | Articles | New | Removed | Status |",
-        "|---|------|----------|-----|---------|--------|",
+        "| # | Run ID | Date (UTC) | Records | Mode | PubMed total | New | Removed | Strategy | Status |",
+        "|---|--------|------------|---------|------|--------------|-----|---------|----------|--------|",
     ]
 
     for index, run in enumerate(runs):
@@ -393,7 +516,12 @@ def _get_pipeline_history_impl(
         new_str = f"+{len(run.new_pmids)}" if run.new_pmids else "+0"
         removed_str = f"-{len(run.removed_pmids)}" if run.removed_pmids else "-0"
         run_num = total_runs - index
-        parts.append(f"| {run_num} | {date_str} | {run.article_count} | {new_str} | {removed_str} | {status_icon} |")
+        mode, total = _retrieval_cells(run)
+        strategy = _strategy_cell(run)
+        parts.append(
+            f"| {run_num} | `{run.run_id}` | {date_str} | {run.article_count} | {mode} | {total} "
+            f"| {new_str} | {removed_str} | {strategy} | {status_icon} |"
+        )
 
     latest = runs[0]
     if latest.new_pmids:
@@ -411,8 +539,154 @@ def _get_pipeline_history_impl(
         parts.append("")
         pmid_str = ",".join(latest.new_pmids[:10])
         parts.append(f'💡 Full details: fetch_article_details(pmids="{pmid_str}")')
+    if latest.artifacts.get("records"):
+        parts.append(
+            f'💡 Page the full record set: get_pipeline_history(name="{name}", run_id="{latest.run_id}", '
+            'view="records", offset=0, limit=100)'
+        )
+        parts.append(f'💡 Export for screening: prepare_export(pipeline_run="{name}@{latest.run_id}", format="ris")')
+    if len({_strategy_cell(run) for run in runs if run.config_hash}) > 1:
+        parts.append("⚠️ These runs used different strategy versions (see the Strategy column).")
+    parts.append(f'💡 PRISMA-S search record: get_pipeline_history(name="{name}", view="prisma_s")')
 
     return "\n".join(parts)
+
+
+def _strategy_cell(run: PipelineRun) -> str:
+    """Config hash plus executed-query fingerprint distinguish strategy versions."""
+    if not run.config_hash:
+        return "—"
+    query_hash = strategy_fingerprint(run)
+    return f"`{run.config_hash}`" + (f" / q:`{query_hash[:8]}`" if query_hash else "")
+
+
+def _render_run_detail(run: PipelineRun) -> str:
+    """Return one run's provenance record as JSON (large PMID lists summarized)."""
+    payload = run.to_dict()
+    for key in ("pmids", "new_pmids", "removed_pmids"):
+        values = payload.pop(key)
+        payload[f"{key[:-1]}_count" if key == "pmids" else f"{key}_count"] = len(values)
+        payload[f"{key}_preview"] = values[:20]
+    payload["strategy_fingerprint"] = strategy_fingerprint(run)
+    payload["type"] = "pipeline_run"
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def _render_prisma_s(name: str, runs: list[PipelineRun], *, truncated: bool) -> str:
+    parts = [render_prisma_s_markdown(runs, title=name)]
+    if truncated:
+        parts.append(
+            f"\nShowing the {len(runs)} most recent runs (PRISMA-S view is capped at {MAX_PRISMA_S_RUNS}); "
+            "pass run_id for an older run."
+        )
+    parts.append("\n### CSV\n")
+    parts.append("```csv")
+    parts.append(render_prisma_s_csv(runs).rstrip("\n"))
+    parts.append("```")
+    return "\n".join(parts)
+
+
+def _render_run_records(
+    store: PipelineStore,
+    name: str,
+    run: PipelineRun,
+    *,
+    offset: int,
+    limit: int,
+) -> str:
+    """Return one bounded JSON page of a run's persisted record set."""
+    records = store.load_run_records(name, run.run_id) if run.artifacts.get("records") else []
+    if records:
+        rows = records[offset : offset + limit]
+        page = [
+            {
+                "pmid": str(row.get("pmid")),
+                "title": str(row.get("title") or "")[:300],
+                "year": str(row.get("year") or ""),
+                "journal": str(row.get("journal") or ""),
+                "doi": str(row.get("doi") or ""),
+                "metadata_missing": bool(row.get("metadata_missing")),
+            }
+            for row in rows
+        ]
+        total = len(records)
+    else:
+        page = [{"pmid": pmid} for pmid in run.pmids[offset : offset + limit]]
+        total = len(run.pmids)
+    next_offset = offset + limit if offset + limit < total else None
+    return json.dumps(
+        {
+            "type": "pipeline_run_records",
+            "pipeline": name,
+            "run_id": run.run_id,
+            "record_basis": run.record_basis,
+            "retrieval": run.retrieval,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "records": page,
+            "next_offset": next_offset,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _get_pipeline_history_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    name: str,
+    limit: int = 5,
+    run_id: str | None = None,
+    view: str = "runs",
+    offset: int = 0,
+) -> str:
+    store = runtime.store_for_current_tenant()
+    if not store:
+        return _store_unavailable(tool_name)
+
+    if not store.exists(name):
+        return ResponseFormatter.error(
+            f"Pipeline '{name}' not found",
+            suggestion="Use list_pipelines() to see available pipelines",
+            tool_name=tool_name,
+        )
+
+    if view in {"records", "run"} or (view == "prisma_s" and run_id is not None):
+        try:
+            run = store.get_run(name, run_id)
+        except FileNotFoundError:
+            return ResponseFormatter.error(
+                "Pipeline run was not found",
+                suggestion=f'Use get_pipeline_history(name="{name}") to list run IDs',
+                tool_name=tool_name,
+            )
+        except PipelineHistoryError as exc:
+            logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
+            return _history_unavailable(tool_name)
+        except ValueError as exc:
+            return ResponseFormatter.error(str(exc), tool_name=tool_name)
+        if view == "run":
+            return _render_run_detail(run)
+        if view == "prisma_s":
+            return _render_prisma_s(name, [run], truncated=False)
+        return _render_run_records(store, name, run, offset=offset, limit=limit)
+
+    history_limit = min(limit, MAX_PRISMA_S_RUNS) if view == "prisma_s" else limit
+    try:
+        runs = store.get_history(name, limit=history_limit)
+    except PipelineHistoryError as exc:
+        logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
+        return _history_unavailable(tool_name)
+
+    if runs and view == "prisma_s":
+        return _render_prisma_s(name, runs, truncated=limit > MAX_PRISMA_S_RUNS)
+    if not runs:
+        return (
+            f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
+        )
+
+    return _render_history_runs(name, runs, store.count_history(name))
 
 
 def _schedule_pipeline_impl(
@@ -555,9 +829,11 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
             config: Pipeline YAML/JSON string. Same format as unified_search pipeline param.
             tags: Bounded array of canonical tags (e.g., ["anesthesia", "sedation"]).
             description: Human-readable description of the pipeline's purpose.
-            scope: Storage scope - "workspace" (project-level, git-trackable),
-                   "global" (user-level, cross-project), or "auto" (workspace if
-                   available, otherwise global). Default: "auto".
+            scope: Storage scope - "workspace" (project-level
+                   <workspace>/.pubmed-search/; a newly created directory gets a
+                   .gitignore that ignores everything), "global" (user-level,
+                   cross-project), or "auto" (workspace if available, otherwise
+                   global). Default: "auto".
 
         Returns:
             Confirmation with pipeline metadata.
@@ -626,8 +902,18 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
     # ── Tool 4: delete_pipeline ──────────────────────────────────────────
 
     @mcp.tool()
-    def delete_pipeline(name: PipelineName) -> str:
-        """Permanently delete a saved pipeline configuration and execution history.
+    def delete_pipeline(name: PipelineName, delete_screening_log: bool = False) -> str:
+        """Permanently delete a saved pipeline and its execution history.
+
+        Run records and their record sets are removed with the pipeline. A
+        screening log that holds decisions is human work: deletion is refused
+        (nothing is removed) and reports how many decisions/PMIDs would be
+        lost, unless delete_screening_log=true. Export the log first with
+        pipeline_screening(request={"action":"log", ...}). A log without
+        decisions is removed with the pipeline. The decision check is atomic
+        with the deletion, so a decision recorded meanwhile still blocks it.
+        If a file is locked (for example by another process on Windows),
+        deletion stops with the pipeline intact and can simply be retried.
 
         For the default tenant, any process-level schedule is removed only
         after the stored pipeline deletion succeeds. Isolated tenants never
@@ -635,14 +921,17 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
 
         Args:
             name: Name of the saved pipeline to delete.
+            delete_screening_log: Also delete screening decisions recorded for
+                this pipeline (default false: refuse when decisions exist).
 
         Returns:
-            Confirmation of deletion.
+            Confirmation of deletion, or a refusal that removed nothing.
         """
         return _delete_pipeline_impl(
             runtime=runtime,
             tool_name="delete_pipeline",
             name=name,
+            delete_screening_log=delete_screening_log,
         )
 
     # ── Tool 5: get_pipeline_history ─────────────────────────────────────
@@ -651,24 +940,43 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
     def get_pipeline_history(
         name: PipelineName,
         limit: Annotated[int, Field(ge=1, le=100)] = 5,
+        run_id: RunId | None = None,
+        view: HistoryView = "runs",
+        offset: Annotated[int, Field(ge=0, le=PIPELINE_RUN_RECORD_LIMIT)] = 0,
     ) -> str:
-        """Get execution history for a saved pipeline.
+        """Get execution history, a run's search record, or its persisted record set.
 
-        Shows past execution results with diff analysis: which articles are new
-        compared to the previous run.
+        view="runs" (default) lists recent runs with run ID, record count,
+        retrieval mode, PubMed total, new/removed records versus the previous
+        comparable run, strategy hash (config hash / executed-query hash) and
+        status, so runs from different strategy versions are distinguishable.
+        view="run" returns one run's provenance as JSON: database/platform,
+        logical and executed queries, PubMed query translation, counts,
+        filters, UTC timestamps, server version and the immutable config
+        snapshot. view="prisma_s" renders a PRISMA-S search-strategy table
+        (Markdown + CSV) for run_id or the latest runs (at most 20).
+        view="records" returns one JSON page (offset/limit) of a run's complete
+        record set. run_id defaults to the latest run.
 
         Args:
             name: Name of the saved pipeline.
-            limit: Maximum number of history entries to return (default: 5).
+            limit: Runs to list, or records per page for view="records" (1-100).
+            run_id: Run to read (default: latest run).
+            view: "runs", "run", "prisma_s", or "records".
+            offset: Record offset for view="records" (merged exhaustive sets can
+                exceed 10,000 records; every page up to the run record cap is reachable).
 
         Returns:
-            Execution history with date, article count, new/removed articles, status.
+            Markdown history/PRISMA-S table, or JSON for view="run"/"records".
         """
         return _get_pipeline_history_impl(
             runtime=runtime,
             tool_name="get_pipeline_history",
             name=name,
             limit=limit,
+            run_id=run_id,
+            view=view,
+            offset=offset,
         )
 
     # ── Tool 6: schedule_pipeline ────────────────────────────────────────
