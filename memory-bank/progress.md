@@ -1,5 +1,14 @@
 # Progress (Updated: 2026-11-25)
 
+## 2026-11-25 — Agent harness evaluation R0 pilot
+
+- Done: headless Claude Code runner (isolated settings, strict MCP config,
+  structured output, stream-json transcripts) and a deterministic grader against
+  live E-utilities/iCite; 10 Haiku 5.5 runs (native vs MCP) graded.
+- Done: evaluation plan and pilot report; four server levers identified from
+  transcripts (error semantics, compact JSON, completion contract, validation).
+- Next: R1 benchmark build (suites S1–S6, arms A/B/C0/C1, Haiku and Sonnet).
+
 ## 2026-11-25 — v0.11.0 systematic-review records and evidence quality
 
 - Done: merged 7 feature/fix branches (see CHANGELOG 0.11.0), regenerated plugin,
