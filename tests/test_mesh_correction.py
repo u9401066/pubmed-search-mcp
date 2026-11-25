@@ -553,6 +553,36 @@ async def test_malformed_medline_degrades_to_text_words_with_a_warning(fake: Fak
     assert correction.tier == "text_words" and correction.replacement_mesh is None
     assert "[Mesh]" not in result.corrected_query and '"Post-Anesthesia Care Units"[tiab]' in result.corrected_query
     assert any("MEDLINE" in note for note in correction.notes)
+    assert correction.evidence_complete is False and correction.to_dict()["evidence_complete"] is False
+
+
+async def test_text_words_say_whether_mesh_was_actually_checked(fake: FakeEntrez):
+    # Completed evidence whose best heading scores too low: MeSH was checked and has no heading.
+    strict = await make_service(MeshCorrectionPolicy(min_score=0.9)).correct_query(PACU_QUERY)
+    (checked,) = strict.corrections
+    assert (checked.tier, checked.evidence_complete) == ("text_words", True)
+
+    # Not researched (max_terms), budget-skipped evidence, or a failed exact lookup are incomplete.
+    beyond = await make_service(MeshCorrectionPolicy(max_terms=1)).correct_query(
+        f'"Emergence Deliriums"[Mesh] AND {PACU}'
+    )
+    assert {item.original: item.evidence_complete for item in beyond.corrections} == {
+        '"Emergence Deliriums"[Mesh]': True,
+        PACU: False,
+    }
+    skipped = await make_service(MeshCorrectionPolicy(max_ncbi_requests=3)).correct_query(PACU_QUERY)
+    assert [(item.tier, item.evidence_complete) for item in skipped.corrections] == [("text_words", False)]
+
+    gateway = MagicMock()
+    gateway.lookup_exact = AsyncMock(side_effect=RuntimeError("down"))
+    gateway.sample = AsyncMock(return_value=None)
+    diagnostics = PubMedQueryDiagnostics(quoted_phrases_not_found=(PACU,))
+    no_lookup = await MeshCorrectionService(gateway).correct_query(
+        PACU_QUERY, diagnostics=diagnostics, measure_after=False
+    )
+    (unchecked,) = no_lookup.corrections
+    assert unchecked.evidence_complete is False
+    assert any("exact MeSH lookup was unavailable" in note for note in unchecked.notes)
 
 
 async def test_evidence_is_cached_across_calls(fake: FakeEntrez):

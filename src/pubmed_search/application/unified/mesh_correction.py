@@ -160,24 +160,39 @@ _TIER_LABELS = {
 }
 
 
+_COMPACT_CORRECTION_KEYS = (
+    "original",
+    "replacement",
+    "replacement_mesh",
+    "tier",
+    "confidence",
+    "evidence_complete",
+    "reason",
+)
+
+
+def _compact_corrections(items: Any) -> list[dict[str, Any]]:
+    return [{key: item.get(key) for key in _COMPACT_CORRECTION_KEYS} for item in items or [] if isinstance(item, dict)]
+
+
 def compact_mesh_correction(disclosure: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """Evidence-free projection for size-capped responses and artifact summaries."""
+    """Evidence-free projection for size-capped responses and artifact summaries.
+
+    Warnings, the re-run status and NOT-operand suggestions stay: they are
+    what tells a reader that a correction failed or was withheld.
+    """
     if not disclosure:
         return None
     return {
         "status": disclosure.get("status"),
         "applied": disclosure.get("applied"),
+        "rerun_status": disclosure.get("rerun_status"),
         "original_query": disclosure.get("original_query"),
         "corrected_query": disclosure.get("corrected_query"),
         "hit_counts": disclosure.get("hit_counts"),
-        "corrections": [
-            {
-                key: correction.get(key)
-                for key in ("original", "replacement", "replacement_mesh", "tier", "confidence", "reason")
-            }
-            for correction in disclosure.get("corrections") or []
-            if isinstance(correction, dict)
-        ],
+        "corrections": _compact_corrections(disclosure.get("corrections")),
+        "suggestions": _compact_corrections(disclosure.get("suggestions")),
+        "warnings": list(disclosure.get("warnings") or []),
         "opt_out": disclosure.get("opt_out"),
     }
 
@@ -192,9 +207,12 @@ def describe_correction(correction: Mapping[str, Any]) -> str:
         target = f'text words OR "{mesh}" (related heading)'
     else:
         target = "title/abstract text words"
+    label = _TIER_LABELS.get(tier, tier)
+    if tier == "text_words" and correction.get("evidence_complete") is False:
+        label = "MeSH evidence incomplete"  # an outage or skipped evidence is not "no heading found"
     return (
         f"{correction.get('original')} not found in MeSH → {target} "
-        f"({correction.get('confidence')} confidence, {_TIER_LABELS.get(tier, tier)})"
+        f"({correction.get('confidence')} confidence, {label})"
     )
 
 

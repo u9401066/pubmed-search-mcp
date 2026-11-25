@@ -247,7 +247,12 @@ class CooccurrenceReport:
 
 @dataclass(frozen=True)
 class TermCorrection:
-    """One rewritten clause and why."""
+    """One rewritten clause and why.
+
+    ``evidence_complete`` is False when the exact lookup or the co-occurrence
+    evidence was skipped, failed or unscored, so "no heading" means "not
+    established", not "MeSH has none".
+    """
 
     original: str
     term: str
@@ -259,6 +264,7 @@ class TermCorrection:
     confidence: Confidence
     evidence: Mapping[str, Any]
     notes: tuple[str, ...] = ()
+    evidence_complete: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -270,6 +276,7 @@ class TermCorrection:
             "replacement": self.replacement,
             "replacement_mesh": self.replacement_mesh,
             "confidence": self.confidence,
+            "evidence_complete": self.evidence_complete,
             "evidence": dict(self.evidence),
             "notes": list(self.notes),
         }
@@ -583,8 +590,11 @@ class MeshCorrectionService:
             budget.skipped.append(f"headings beyond max_terms={self._policy.max_terms} were not researched")
 
         # Keep one request for the after-count while researching.
+        lookup_checked = records_by_key is not None
         if records_by_key is None:
-            records_by_key = await self._lookup(list(researched.values()), budget, warnings, keep=1) or {}
+            looked_up = await self._lookup(list(researched.values()), budget, warnings, keep=1)
+            lookup_checked = looked_up is not None
+            records_by_key = looked_up or {}
         exact: dict[str, TermMatch] = {}
         ambiguous: dict[str, list[str]] = {}
         for key, descriptor in researched.items():
@@ -618,12 +628,21 @@ class MeshCorrectionService:
                 correction = self._cooccurrence_correction(term, reports[term.key], reason, ambiguous.get(term.key, []))
             else:
                 correction = self._text_word_correction(
-                    term, reason, ("Not researched: more distinct headings than max_terms.",), {}
+                    term, reason, ("Not researched: more distinct headings than max_terms.",), {}, complete=False
                 )
             if not correction.replacement:
                 warnings.append(f"{clause} was left unchanged: it has no searchable words.")
                 continue
             correction = replace(correction, occurrences=len(items))
+            if not lookup_checked and correction.tier != "exact":
+                correction = replace(
+                    correction,
+                    evidence_complete=False,
+                    notes=(
+                        *correction.notes,
+                        "The exact MeSH lookup was unavailable, so an equivalent heading may exist.",
+                    ),
+                )
             if negated and (correction.tier != "exact" or correction.evidence.get("dropped_restrictions")):
                 suggestions.append(replace(correction, notes=(*correction.notes, NOT_OPERAND_NOTE)))
                 warnings.append(
@@ -741,7 +760,20 @@ class MeshCorrectionService:
                     f"Best co-occurring heading {best.descriptor!r} scored below {self._policy.min_score}; "
                     "no heading was added."
                 )
-            return self._text_word_correction(term, reason, tuple(notes), report.evidence(), report.variants)
+            complete = report.status in {"completed", "no_records", "no_candidates", "too_common"}
+            if not complete or report.unscored:
+                notes.append(
+                    f"Co-occurrence evidence was not completed ({report.status}, {report.unscored} unscored "
+                    "candidates); a related heading may exist."
+                )
+            return self._text_word_correction(
+                term,
+                reason,
+                tuple(notes),
+                report.evidence(),
+                report.variants,
+                complete=complete and not report.unscored,
+            )
         heading = term.render(best.descriptor, keep_qualifier=False)
         if term.qualifier:
             notes.append(f"Qualifier /{term.qualifier} was not carried over to a related heading.")
@@ -774,6 +806,8 @@ class MeshCorrectionService:
         notes: Sequence[str],
         evidence: Mapping[str, Any],
         variants: Sequence[str] = (),
+        *,
+        complete: bool,
     ) -> TermCorrection:
         words = tuple(variants) or text_word_variants(term.descriptor)
         extra = ["No MeSH heading was added; the concept is kept as title/abstract text words."]
@@ -790,6 +824,7 @@ class MeshCorrectionService:
             confidence="low",
             evidence=dict(evidence),
             notes=(*notes, *extra),
+            evidence_complete=complete,
         )
 
     async def _cooccurrence(

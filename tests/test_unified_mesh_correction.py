@@ -21,6 +21,11 @@ from pubmed_search.application.search.mesh_correction import MeshCorrectionServi
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryComplexity, QueryIntent
 from pubmed_search.application.search.semantic_enhancer import SemanticEnhancer
 from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.application.unified.mesh_correction import (
+    PubMedMeshCorrector,
+    compact_mesh_correction,
+    describe_correction,
+)
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
 from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
@@ -266,11 +271,43 @@ async def test_evidence_outage_falls_back_to_text_words() -> None:
         pubmed, service=MeshCorrectionService(gateway), output_format="markdown", options="shallow,no_oa,no_relax"
     )
 
+    # Before: an outage was labeled "no MeSH heading found", as if MeSH had been checked.
     assert (
-        f"{PACU} not found in MeSH → title/abstract text words (low confidence, no MeSH heading found)"
+        f"{PACU} not found in MeSH → title/abstract text words (low confidence, MeSH evidence incomplete)"
         in markdown.replace("\\", "")
     )
+    assert "no MeSH heading found" not in markdown
     assert '"Post-Anesthesia Care Units"[tiab]' in pubmed.calls[1] and "[Mesh]" not in pubmed.calls[1]
+
+
+def test_completed_evidence_without_a_heading_keeps_the_no_heading_label() -> None:
+    base = {"original": PACU, "tier": "text_words", "confidence": "low"}
+    assert describe_correction({**base, "evidence_complete": True}).endswith("(low confidence, no MeSH heading found)")
+    assert describe_correction(base).endswith("no MeSH heading found)")  # disclosures written before the flag
+    assert describe_correction({**base, "evidence_complete": False}).endswith("MeSH evidence incomplete)")
+
+
+async def test_compact_disclosure_keeps_warnings_rerun_status_and_suggestions(fake_entrez: FakeEntrez) -> None:
+    corrector = PubMedMeshCorrector(make_service())
+    metadata = {"provider_metadata": {"query_diagnostics": FLAGGED.to_dict()}}
+    assert await corrector.propose(PACU_QUERY, metadata, 0)
+    corrector.record_rerun(status="error", total=None, metadata=None)
+
+    compact = compact_mesh_correction(corrector.disclosure())
+
+    assert compact is not None
+    assert compact["rerun_status"] == "error" and compact["applied"] is False
+    assert any("corrected query failed at PubMed" in warning for warning in compact["warnings"])
+    assert compact["suggestions"] == []
+
+    excluded = PubMedMeshCorrector(make_service())
+    query = f"delirium[tiab] NOT {PACU}"
+    flagged = PubMedQueryDiagnostics(query_translation=query, quoted_phrases_not_found=(PACU,))
+    assert await excluded.propose(query, {"provider_metadata": {"query_diagnostics": flagged.to_dict()}}, 9) is None
+    compact = compact_mesh_correction(excluded.disclosure())
+    assert compact is not None and compact["rerun_status"] is None
+    assert [item["original"] for item in compact["suggestions"]] == [PACU]
+    assert any("NOT operand" in warning for warning in compact["warnings"])
 
 
 async def test_unavailable_correction_surfaces_the_attempt() -> None:
