@@ -89,7 +89,7 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (canonical 43-tool Copilot Studio smoke)
+# Via run_copilot.py (canonical 44-tool Copilot Studio smoke)
 uv run python run_copilot.py --port 8765
 ```
 
@@ -259,7 +259,17 @@ whole query. JSON responses use `source_errors`; markdown responses include a
 `Source warnings` line. Semantic Scholar HTTP 429 warnings recommend setting
 `SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the
 source with `sources="auto,-semantic_scholar"` /
-`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
+`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`. A `source_errors[]` entry with
+`retryable: true` (also listed in `search_status.retryable_sources`) is a
+transient network, timeout or HTTP 429/5xx failure; repeat the identical call
+(`next_tools[0]`) before changing the query.
+
+JSON/TOON `articles` are summary records by default (identifiers, title, year,
+journal, first author and author count, publication types, a 400-character
+abstract snippet, rank, source and open-access flags). Integrations that store
+or import the article list, such as a reference manager, should request
+`options="full_records"` or read the artifact `results.json` to get complete
+records.
 
 ---
 
@@ -330,6 +340,10 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_FULLTEXT_PREFETCH_LIMIT` | No | Top-result window (0–3) for explicit `fulltext="prefetch"`; 0 disables background XML | `3` |
 | `PUBMED_FULLTEXT_DEADLINE_SECONDS` | No | Overall `get_fulltext` budget (10–600 s); sources not started in time are reported in `sources_skipped` | `90` |
 | `PUBMED_FULLTEXT_NCBI_PMC_FALLBACK` | No | Allow the NCBI E-utilities PMC fallback (`efetch db=pmc`, ESummary PMCID lookup) when Europe PMC cannot supply a body; uses the shared NCBI rate budget | `true` |
+| `PUBMED_FULLTEXT_PMC_HTML` | No | Read the public PMC article page (`pmc_html`) when an XML source fails, has no body or is front matter only. Only explicit single-article `get_fulltext` requests use it (never search prefetch or batch paths); needs `NCBI_EMAIL` (skipped as `not_configured` otherwise); one page per request, 1 request/s process-wide, hourly budgets, per-tenant cache, back-off on 429, 403 or a bot challenge | `true` |
+| `PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT` | No | Rolling hourly cap on PMC article-page fetches for the whole process (1–3600; cache hits do not count); exhausted reads report `rate_limited` | `60` |
+| `PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT` | No | Rolling hourly cap on PMC article-page fetches per tenant (1–3600) | `20` |
+| `PUBMED_FULLTEXT_INTAKE_ROOTS` | No | Extra local directories (OS path-separator list, e.g. Zotero storage) from which `register_fulltext` may read files, besides the workspace, the notes directory and the tenant fulltext intake folder (`<data>/fulltext/intake`); network shares and device paths are always refused, and remote authenticated callers can never register server files | empty |
 | `PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS` | No | End-to-end deadline shared by every step in one pipeline run (greater than 0, at most 3600 seconds) | `120` |
 | `PUBMED_PIPELINE_MAX_EXTERNAL_CALLS` | No | Aggregate external-call quota shared by sequential and parallel steps in one pipeline run (1–1000) | `40` |
 | `PUBMED_SCHEDULER_ENABLED` | No | Enable the saved-pipeline scheduler for a trusted local process; the authenticated service Compose profile forces it off | `true` |
@@ -772,7 +786,7 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](../../plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.11.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.12.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
@@ -817,7 +831,7 @@ Before PyPI upload, the tag workflow checks plugin drift and runs
 `mcp-publisher validate server.json` with a pinned, SHA-256-verified publisher.
 Release smoke verifies that registry/plugin metadata names the exact wheel,
 its METADATA contains the ownership marker, and its installed console script
-serves all 43 tools with only registry-declared application environment variables.
+serves all 44 tools with only registry-declared application environment variables.
 These are release checks, not proof that a release has already been published.
 
 ---
@@ -837,7 +851,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 43-tool primary MCP surface with an assigned ngrok dev/custom domain
+# Option A: Full 44-tool primary MCP surface with an assigned ngrok dev/custom domain
 export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -847,7 +861,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: canonical 43-tool local schema smoke (never tunnel this mode)
+# Option C: canonical 44-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -923,7 +937,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; a v0.11.0 server should enumerate 43 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; the v0.12.0 package and a server built from this checkout should enumerate 44 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.

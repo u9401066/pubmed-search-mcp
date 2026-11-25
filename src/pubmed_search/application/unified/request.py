@@ -37,6 +37,8 @@ _INPUT_CHAR_LIMITS = {
     "stop_at": MAX_UNIFIED_STOP_AT_CHARS,
 }
 
+RecordDetail = Literal["summary", "full", "compact"]
+
 
 def validate_unified_search_input_envelope(
     *,
@@ -150,6 +152,10 @@ class UnifiedSearchRequest:
     seen_pmids: frozenset[str] = frozenset()
     seen_dois: frozenset[str] = frozenset()
     seen_search_count: int | None = None
+    # Article detail in structured (JSON/TOON) responses: "summary" is the
+    # agent-sized default, "full" (options="full_records") the complete record
+    # and "compact" (options="compact") the minimal preview.
+    record_detail: RecordDetail = "summary"
 
     @property
     def retrieval_mode(self) -> Literal["auto", "semantic", "systematic"]:
@@ -221,6 +227,12 @@ def normalize_unified_search_request(
     if native_semantic and systematic_search:
         msg = "options 'native_semantic' and 'systematic' are mutually exclusive"
         raise ValueError(msg)
+    compact_output = parsed_options.get("compact_output", False)
+    full_records = parsed_options.get("full_records", False)
+    if compact_output and full_records:
+        msg = "options 'compact' and 'full_records' are mutually exclusive"
+        raise ValueError(msg)
+    record_detail: RecordDetail = "compact" if compact_output else "full" if full_records else "summary"
 
     # Explicit provider-native retrieval is already a complete retrieval plan;
     # do not silently multiply it through semantic-expansion strategies.
@@ -252,7 +264,7 @@ def normalize_unified_search_request(
         counts_first=parsed_options.get("counts_first", False),
         native_semantic=native_semantic,
         systematic_search=systematic_search,
-        compact_output=parsed_options.get("compact_output", False),
+        compact_output=compact_output,
         include_next_tools=parsed_options.get("include_next_tools", True),
         include_section_provenance=parsed_options.get("include_section_provenance", True),
         exclude_detected_preprints=not (
@@ -268,12 +280,14 @@ def normalize_unified_search_request(
         fulltext=fulltext,
         exclude_seen=parsed_options.get("exclude_seen", False),
         mesh_correction=parsed_options.get("mesh_correction", True),
+        record_detail=record_detail,
     )
 
 
 __all__ = [
     "MAX_UNIFIED_PIPELINE_CHARS",
     "MAX_UNIFIED_QUERY_CHARS",
+    "RecordDetail",
     "UnifiedSearchRequest",
     "normalize_unified_search_request",
     "validate_unified_search_input_envelope",

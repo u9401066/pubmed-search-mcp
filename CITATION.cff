@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this repository, please cite it using the metadata from this file."
 title: "PubMed Search MCP"
 type: software
-version: 0.11.0
+version: 0.12.0
 date-released: 2026-11-25
 license: Apache-2.0
 abstract: "MCP SDK v2 server for PubMed and multi-source biomedical literature research."
@@ -22,12 +22,12 @@ authors:
 preferred-citation:
   type: software
   title: "PubMed Search MCP"
-  version: 0.11.0
+  version: 0.12.0
   authors:
     - family-names: Gau
       given-names: Tz-Ping
       affiliation: Kaohsiung Medical University Hospital
       email: u9401066@gap.kmu.edu.tw
   repository-code: "https://github.com/u9401066/pubmed-search-mcp"
-  url: "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.11.0"
+  url: "https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.12.0"
   license: Apache-2.0

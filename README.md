@@ -14,7 +14,7 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.11.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.11.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
+| Published v0.12.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.12.0` as its argument. Set `NCBI_EMAIL` to your research contact. The package exposes **44 MCP Tools**, including a persistent research workspace and `register_fulltext`. |
 | Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
@@ -25,19 +25,21 @@ Select the generated directory in your agent's plugin installer. Keep the checko
 
 Four blinded review cases tested whether MeSH previews improve search decisions. [Methods, screening costs and results](docs/reports/mesh-preflight-2017/README.md)
 
-## What's new in v0.11.0
+## What's new in v0.12.0
 
-- **Systematic reviews**: saved pipelines retrieve the complete PubMed set (up to 10,000 records), keep PRISMA-S run records, export RIS/CSV/CSL-JSON, analyse concept-block contributions and log screening decisions (`pipeline_screening`).
-- **Precision-first search**: your query fills the requested limit first; automatic broadening only fills a shortfall and every broadened record is labelled.
-- **MeSH you can trust**: confirmed mappings require an exact preferred or entry term; a heading PubMed cannot resolve is corrected automatically in `unified_search` (with evidence) and suggested, never applied, in saved pipelines.
-- **Reference checks that correct citations**: mis-cited years and volumes are reported as field corrections instead of looking fabricated.
-- **Evidence-grounded Chronicles and clearer fulltext status**: study-design labels from PubMed publication types, quoted conclusion sentences, NCBI PMC fallback and typed source errors.
+- **Fulltext beyond PMC XML**: for an explicit single-article request, `get_fulltext` reads the public PMC article page when the publisher only allows front matter in PMC XML (for example JAMA). It is budgeted, identified and never used by search or batch paths.
+- **A plan when no fulltext is available**: `fulltext_plan` lists the next legal steps (host fetch, verified open-access PDF, institutional access, Zotero attachment, asking the user) with ready-made calls.
+- **`register_fulltext`**: register text the agent or user obtained, with required provenance. `get_fulltext`, notes and Chronicles reuse it, always labelled as supplied, never as provider-verified.
+- **Agent-friendly search responses**: JSON results are compact summary records by default (about 1.1 KB per record); transient upstream failures are retried and reported as retryable with a "repeat this call" suggestion.
+- **PubMed records carry article type, PMCID and open-access status**, which were previously always unknown; quality ranking, filters and badges now use them.
+
+**Upgrade note:** if you import `unified_search` JSON `articles` wholesale, add `options="full_records"`. v0.11.0 added saved-pipeline systematic-review records, precision-first search, MeSH correction and citation field corrections.
 
 Details: [CHANGELOG](CHANGELOG.md).
 
 ## Start with a research question
 
-For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 43 tool names.
+For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 44 tool names.
 
 | Research task | What the agent can do |
 | --- | --- |
@@ -62,7 +64,7 @@ The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true
 | --- | --- |
 | stdio or loopback HTTP | Trusted single-user deployment with a durable `default` tenant. The HTTP entry point is `pubmed-search-mcp-http --mode local --host 127.0.0.1`. |
 | Authenticated service | `--mode service` fails closed without a bearer principal. Authenticated callers cannot load `file:` pipelines or choose a server-host note path. The service Compose scheduler is disabled. [Deployment](DEPLOYMENT.md) |
-| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 43-tool strict registry. [Copilot integration](copilot-studio/README.md) |
+| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 44-tool strict registry. [Copilot integration](copilot-studio/README.md) |
 
 Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call `pubmed_search.api` directly. The optional `pubmed-browser-fetch-broker` runs on a machine with an authorized browser session. [Integration guide](docs/guides/INTEGRATIONS.md) · [Python facade](docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md)
 

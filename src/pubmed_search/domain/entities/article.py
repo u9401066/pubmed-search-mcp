@@ -610,6 +610,25 @@ class UnifiedArticle:
         }
 
     @property
+    def publication_types(self) -> list[str]:
+        """Return provider-indexed publication types (e.g. PubMed ``PublicationType``).
+
+        Values come from each contributing source's raw record, deduplicated in
+        order; empty when no provider indexed any. ``article_type`` carries the
+        normalized type. Publication type is indexing metadata, not an
+        evidence-quality grade.
+        """
+        values: list[str] = []
+        for source in self.sources:
+            raw = source.raw_data.get("publication_types") if isinstance(source.raw_data, dict) else None
+            candidates = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+            for candidate in candidates:
+                text = candidate.strip() if isinstance(candidate, str) else ""
+                if text and text not in values:
+                    values.append(text)
+        return values
+
+    @property
     def author_string(self) -> str:
         """Return formatted author string for display."""
         if not self.authors:

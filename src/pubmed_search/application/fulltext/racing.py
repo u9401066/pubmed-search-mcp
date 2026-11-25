@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 _CANCEL_GRACE_SECONDS = 1.0
+# Cancelled attempts still running after the grace period, held until they end.
 _ABANDONED_ATTEMPTS: set[asyncio.Future[Any]] = set()
-"""Cancelled attempts still running after the grace period, held until they end."""
 # Event-loop timers can fire a few milliseconds early (notably on Windows);
 # starting a source with less budget than this cannot produce an answer.
 MIN_USEFUL_BUDGET_SECONDS = 0.05
@@ -74,10 +74,17 @@ class FulltextDeadline:
 
 @dataclass(frozen=True)
 class HedgedAttempt(Generic[T]):
-    """One way to answer a question, identified by its stable source key."""
+    """One way to answer a question, identified by its stable source key.
+
+    ``start_on_hedge=False`` keeps an attempt from being started merely
+    because the hedge delay elapsed: it starts only after an earlier attempt
+    has failed or answered unusably. Use it for a fallback that should not add
+    load while the preferred sources are still working.
+    """
 
     source: str
     run: Callable[[], Awaitable[T]]
+    start_on_hedge: bool = True
 
 
 @dataclass
@@ -108,7 +115,8 @@ async def run_hedged(
     """Run attempts in order with hedging; return one outcome per attempt.
 
     The next attempt starts as soon as a running attempt answers unusably or
-    fails, or when ``hedge_after`` seconds pass without a usable answer.
+    fails, or when ``hedge_after`` seconds pass without a usable answer (unless
+    that attempt opted out with ``start_on_hedge=False``).
     The first usable answer cancels the rest (``stopped="superseded"``). When
     the deadline elapses, running attempts are cancelled
     (``stopped="deadline"``) and unstarted ones are ``skipped_by_deadline``.
@@ -137,7 +145,9 @@ async def run_hedged(
             can_hedge = next_index < len(attempts)
             # Only a hedge-bound wait may start the next source when it times
             # out; a deadline-bound wait that wakes early just re-checks time.
-            hedge_bound = can_hedge and (remaining is None or hedge_after < remaining)
+            hedge_bound = (
+                can_hedge and attempts[next_index].start_on_hedge and (remaining is None or hedge_after < remaining)
+            )
             timeout = hedge_after if hedge_bound else remaining
             done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
             for task in done:

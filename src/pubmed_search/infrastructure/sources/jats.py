@@ -21,6 +21,11 @@ from xml.etree.ElementTree import TreeBuilder
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
+from pubmed_search.domain.value_objects.article_identifiers import (
+    try_normalize_doi,
+    try_normalize_pmcid,
+    try_normalize_pmid,
+)
 from pubmed_search.shared.exceptions import ParseError
 
 if TYPE_CHECKING:
@@ -52,7 +57,8 @@ def parse_jats_article(
 
     Returns:
         Dict with ``title``, ``abstract``, body ``sections``, ``references``,
-        ``figures`` and ``license`` (``None`` when the article declares none),
+        ``figures``, ``license`` (``None`` when the article declares none) and
+        ``article_ids`` (the main article's declared ``pmid``/``pmcid``/``doi``),
         plus ``notice_found`` when ``notice_pattern`` is given.
 
     Raises:
@@ -106,6 +112,7 @@ def parse_jats_article(
 
         result["figures"] = _parse_figures(article)
         result["license"] = _parse_license(front_scope)
+        result["article_ids"] = _parse_article_ids(front_scope)
 
         ref_list = _first_in_main(article, "ref-list")
         if ref_list is not None:
@@ -209,6 +216,29 @@ def _parse_reference(ref_elem: Element) -> dict[str, Any] | None:
         "pmid": mixed_citation.findtext(".//pub-id[@pub-id-type='pmid']", ""),
         "doi": mixed_citation.findtext(".//pub-id[@pub-id-type='doi']", ""),
     }
+
+
+def _parse_article_ids(scope: Element) -> dict[str, str]:
+    """Identifiers the main article declares in ``<article-meta>``, normalized."""
+    article_meta = _first_in_main(scope, "article-meta")
+    if article_meta is None:
+        return {}
+    declared: dict[str, str] = {}
+    for article_id in article_meta.findall("article-id"):
+        kind = (article_id.get("pub-id-type") or "").strip().lower()
+        value = element_text(article_id)
+        if kind == "pmid" and "pmid" not in declared:
+            normalized = try_normalize_pmid(value)
+        elif kind in {"pmc", "pmcid"} and "pmcid" not in declared:
+            normalized = try_normalize_pmcid(value if value.upper().startswith("PMC") else f"PMC{value}")
+            kind = "pmcid"
+        elif kind == "doi" and "doi" not in declared:
+            normalized = try_normalize_doi(value)
+        else:
+            continue
+        if normalized:
+            declared[kind] = normalized
+    return declared
 
 
 def _parse_license(scope: Element) -> dict[str, str] | None:

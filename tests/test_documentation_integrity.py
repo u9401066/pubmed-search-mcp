@@ -362,7 +362,7 @@ def test_public_copilot_docs_require_service_auth_and_one_canonical_registry() -
     assert "same strict registry" in integrations
     assert "temporary ngrok URL" not in integrations
     assert "禁止放到 ngrok" in copilot
-    assert "同一套 43-tool strict registry" in copilot
+    assert "同一套 44-tool strict registry" in copilot
     assert "`validate_pico_plan`" in copilot
     assert "`read_session(request={...})`" in copilot
     assert "12 個 Copilot-friendly 工具" not in copilot

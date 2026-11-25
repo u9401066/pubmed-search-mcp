@@ -66,6 +66,7 @@ EXPECTED_TOOLS = frozenset(
         "get_citation_metrics",
         "verify_reference_list",
         "get_fulltext",
+        "register_fulltext",
         "get_text_mined_terms",
         "get_article_figures",
         "search_gene",
@@ -119,7 +120,7 @@ PNG_DATA_URI = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
-EXPECTED_PROTOCOL_CALLS_PER_RUN = 67
+EXPECTED_PROTOCOL_CALLS_PER_RUN = 69
 RETIRED_TOOLS = frozenset(
     {
         "analyze_figure_for_search",
@@ -366,7 +367,9 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
         },
         _expect_json(
             {
-                "articles.0.identifiers.pmid": SEARCH_PMID,
+                # Default structured records are agent-sized summaries.
+                "record_detail.level": "summary",
+                "articles.0.pmid": SEARCH_PMID,
                 "source_counts.0.source": "pubmed",
                 "source_counts.0.returned": 1,
                 "enrichment.fulltext_prefetch.articles.0.status": "scheduled",
@@ -558,6 +561,57 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
                 "pdf_links.0.type": "pdf",
                 "pdf_links.0.access": "open_access",
                 "source_errors": [],
+                "fulltext_plan": [],
+            }
+        ),
+    )
+    # Host-supplied text: registered once, then reused by get_fulltext without
+    # provider calls (the child server's network guard would fail otherwise).
+    await driver.call(
+        "register_fulltext",
+        {
+            "source": {"kind": "pmid", "value": SEARCH_PMID},
+            "content": "# Deterministic Acceptance Article\n\n## Results\nSupplied acceptance result 3 of 30.\n",
+            "content_format": "markdown",
+            "provenance": {
+                "retrieval_method": "host_fetch",
+                "source_url": "https://example.test/articles/acceptance",
+                "retrieved_at": "2026-11-25T08:00:00Z",
+                "license": "CC BY 4.0",
+            },
+            "supplied_by": "agent",
+            "output_format": "json",
+        },
+        _expect_json(
+            {
+                "tool": "register_fulltext",
+                "status": "registered",
+                "record.origin": "agent_supplied",
+                "record.provider_verified": False,
+                "record.identifiers.pmid": SEARCH_PMID,
+                "record.section_titles": ["Results"],
+                "provenance.retrieval_method": "host_fetch",
+                "provenance.license": "CC BY 4.0",
+            }
+        ),
+    )
+    await driver.call(
+        "get_fulltext",
+        {
+            "source": {"kind": "pmid", "value": SEARCH_PMID},
+            "sections": "results",
+            "output_format": "json",
+        },
+        _expect_json(
+            {
+                "tool": "get_fulltext",
+                "fulltext_available": True,
+                "fulltext_origin": "agent_supplied",
+                "sources_tried": ["registered_fulltext"],
+                "source_notices.0.code": "supplied_not_verified",
+                "fulltext_retrieval.provider_verified": False,
+                "fulltext_retrieval.source_url": "https://example.test/articles/acceptance",
+                "content_sections.0.content": "Supplied acceptance result 3 of 30.",
             }
         ),
     )
@@ -731,6 +785,8 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
         note_text = note_path.read_text(encoding="utf-8")
         assert "Deterministic Acceptance Article" in note_text
         assert f'pmid: "{SEARCH_PMID}"' in note_text
+        assert 'fulltext_state: "agent_supplied"' in note_text
+        assert "fulltext_provider_verified: false" in note_text
         csl_payload = json.loads((notes_dir / "references.csl.json").read_text(encoding="utf-8"))
         assert csl_payload[0]["PMID"] == SEARCH_PMID
         assert csl_payload[0]["title"] == "Deterministic Acceptance Article"

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pubmed_search.application.unified.clinical_trials import (
@@ -44,17 +45,20 @@ from .agent_output import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from pubmed_search.application.search.query_analyzer import AnalyzedQuery
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
     from pubmed_search.application.search.reproducibility import ReproducibilityScore
     from pubmed_search.application.search.result_aggregator import AggregationStats
     from pubmed_search.application.unified.helpers import RelaxationResult, SearchDepthMetrics
+    from pubmed_search.application.unified.request import RecordDetail
     from pubmed_search.domain.entities.article import UnifiedArticle
 
 logger = logging.getLogger(__name__)
 DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS = 500_000
+ABSTRACT_SNIPPET_CHARS = 400
+"""Abstract prefix kept in default summary records (about 1.2 KB per PubMed record)."""
 TINY_STRUCTURED_RESPONSE_CAP_CHARS = 100
 PRETRUNCATE_STRUCTURED_RESPONSE_CAP_CHARS = 1_000
 _TOOL_ARGUMENT_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -155,13 +159,59 @@ def _escape_tool_argument(value: str) -> str:
     return escaped.replace("\n", "\\n")
 
 
+_UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS: dict[str, Any] = {
+    "query": None,
+    "limit": 10,
+    "sources": None,
+    "ranking": "balanced",
+    "filters": None,
+    "options": None,
+    "fulltext": "off",
+    "output_format": "markdown",
+}
+
+
+def _unified_search_retry_command(arguments: Mapping[str, Any] | None) -> str | None:
+    """Render the caller's exact unified_search call (non-default arguments only)."""
+    if not arguments or not isinstance(arguments.get("query"), str) or not arguments["query"].strip():
+        return None
+    rendered: list[str] = []
+    for name, default in _UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS.items():
+        value = arguments.get(name)
+        if value is None or (name != "query" and value == default):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            return None
+        rendered.append(f"{name}={value}" if isinstance(value, int) else f'{name}="{_escape_tool_argument(value)}"')
+    return f"unified_search({', '.join(rendered)})"
+
+
+def _transient_failure_sources(source_errors: Sequence[Mapping[str, Any]] | None) -> list[str]:
+    return sorted(
+        {
+            str(error.get("source"))
+            for error in source_errors or ()
+            if isinstance(error, Mapping) and error.get("source") and error.get("retryable") is True
+        }
+    )
+
+
 def _build_next_actions(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
     source_rows: list[SourceCountRow],
     structured_output_format: Literal["json", "toon"] = "json",
+    *,
+    source_errors: Sequence[Mapping[str, Any]] | None = None,
+    retry_arguments: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Infer pragmatic next-tool suggestions from current result shape."""
+    """Infer pragmatic next-tool suggestions from current result shape.
+
+    A transient (retryable) source failure that left the result under-filled
+    is not evidence of a narrow query: the first suggestion is then the same
+    ``unified_search`` call, unchanged. Query rewriting is withheld while a
+    transient failure is the only reason nothing was returned.
+    """
     escaped_query = _escape_tool_argument(analysis.original_query)
     next_actions: list[dict[str, str]] = []
     seen_tools: set[str] = set()
@@ -171,6 +221,27 @@ def _build_next_actions(
             return
         next_actions.append(cast("dict[str, str]", dict(make_next_tool(tool, reason, example))))
         seen_tools.add(tool)
+
+    errors = [error for error in source_errors or () if isinstance(error, Mapping)]
+    transient_sources = _transient_failure_sources(errors)
+    raw_limit = (retry_arguments or {}).get("limit", _UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS["limit"])
+    requested_limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) else None
+    under_filled = requested_limit is None or len(articles) < requested_limit
+    retry_command = _unified_search_retry_command(retry_arguments)
+    transient_only_failure = (
+        bool(transient_sources) and not articles and all(e.get("retryable") is True for e in errors)
+    )
+    if transient_sources and under_filled and retry_command:
+        kinds = sorted({str(e.get("kind")) for e in errors if e.get("retryable") is True and e.get("kind")})
+        add_action(
+            "unified_search",
+            (
+                f"{', '.join(transient_sources)} failed with a transient, retryable "
+                f"{'/'.join(kinds) or 'upstream'} error. That says nothing about the query: "
+                "repeat this exact call unchanged before rewriting or broadening it."
+            ),
+            retry_command,
+        )
 
     if source_rows:
         high_yield = next(
@@ -196,7 +267,7 @@ def _build_next_actions(
             )
 
     intent_value = getattr(analysis.intent, "value", "")
-    if intent_value in {"comparison", "systematic"}:
+    if intent_value in {"comparison", "systematic"} and not transient_only_failure:
         add_action(
             "generate_search_queries",
             "This query looks like a comparison or review question; generate controlled-vocabulary variants before broadening the search.",
@@ -260,7 +331,7 @@ def _build_next_actions(
             'prepare_export(pmids="last", format="ris")',
         )
 
-    if not next_actions:
+    if not next_actions and not transient_only_failure:
         add_action(
             "generate_search_queries",
             "No obvious downstream pivot was detected; start by expanding controlled vocabulary and synonyms.",
@@ -980,14 +1051,88 @@ def _compact_article_payload(article: UnifiedArticle, *, include_rank_scores: bo
     return payload
 
 
+def _abstract_snippet(abstract: str | None, *, limit: int = ABSTRACT_SNIPPET_CHARS) -> tuple[str | None, bool]:
+    """Return a whitespace-normalized abstract prefix and whether it was cut."""
+    if not abstract:
+        return None, False
+    text = " ".join(abstract.split())
+    if len(text) <= limit:
+        return text, False
+    cut = text[:limit]
+    boundary = cut.rfind(" ")
+    if boundary >= limit * 0.6:
+        cut = cut[:boundary]
+    return cut.rstrip(" ,;:.") + "…", True
+
+
+def _summary_article_payload(article: UnifiedArticle, *, rank: int, include_rank_scores: bool) -> dict[str, Any]:
+    """Build the agent-sized default record for structured unified_search output.
+
+    Keeps identifiers, bibliographic anchors, the first author plus author
+    count, provider publication types, an abstract snippet, rank, source and
+    open-access flags. Full author lists, abstracts, MeSH terms, keywords, link
+    lists and rank internals stay in ``options="full_records"`` and in the
+    artifact ``results.json``. Distinct key names (``abstract_snippet``,
+    ``first_author``) keep a summary record from being mistaken for a full one.
+    """
+    best_oa_link = article.best_oa_link
+    snippet, truncated = _abstract_snippet(article.abstract)
+    payload: dict[str, Any] = {
+        "rank": rank,
+        "pmid": article.pmid,
+        "doi": article.doi,
+        "pmc": article.pmc,
+    }
+    for key in ("openalex_id", "s2_id", "core_id", "arxiv_id"):
+        value = getattr(article, key)
+        if value:
+            payload[key] = value
+    payload.update(
+        {
+            "title": article.title,
+            "year": article.year,
+            "journal": article.journal,
+            "first_author": article.authors[0].display_name if article.authors else None,
+            "author_count": len(article.authors),
+            "publication_types": article.publication_types,
+            "article_type": article.article_type.value,
+            "abstract_snippet": snippet,
+            "abstract_truncated": truncated,
+            "source": article.primary_source,
+            "sources": [source.source for source in article.sources],
+            "open_access": article.has_open_access,
+            "oa_status": article.oa_status.value,
+            "pdf_available": bool(best_oa_link and best_oa_link.is_pdf),
+        }
+    )
+    if include_rank_scores:
+        if article.ranking_score is not None:
+            payload["ranking_score"] = round(article.ranking_score, 4)
+        if article.rank_percentile is not None:
+            payload["rank_percentile"] = round(article.rank_percentile, 4)
+    best_retrieval = article.best_retrieval
+    if best_retrieval is not None:
+        # Always present when tiered: exact matches vs. broadened fill.
+        payload["retrieval"] = {
+            "tier": best_retrieval.tier,
+            "broadened": best_retrieval.broadened,
+            "strategy": best_retrieval.strategy,
+        }
+    return payload
+
+
 def _article_payload(
     article: UnifiedArticle,
     *,
     compact_output: bool,
     include_rank_scores: bool,
+    record_detail: RecordDetail = "full",
+    rank: int = 0,
 ) -> dict[str, Any]:
-    if compact_output:
+    if compact_output or record_detail == "compact":
         return _compact_article_payload(article, include_rank_scores=include_rank_scores)
+    if record_detail == "summary":
+        return _summary_article_payload(article, rank=rank, include_rank_scores=include_rank_scores)
 
     payload = article.to_dict()
     if not include_rank_scores:
@@ -1291,8 +1436,19 @@ def _format_as_json(
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
+    record_detail: RecordDetail = "full",
+    retry_arguments: Mapping[str, Any] | None = None,
 ) -> str:
-    """Format results as JSON or TOON for programmatic access."""
+    """Format results as JSON or TOON for programmatic access.
+
+    ``record_detail`` selects the article shape: ``"full"`` (complete
+    ``UnifiedArticle.to_dict()`` records; the artifact ``results.json``),
+    ``"summary"`` (the agent-sized ``unified_search`` default) or ``"compact"``.
+    ``retry_arguments`` are the caller's original tool arguments, used to
+    suggest repeating the identical call after a transient source failure.
+    """
+    if compact_output:
+        record_detail = "compact"
     source_rows = _serialize_source_counts(source_api_counts, stats)
     artifact_summary = _artifact_response_summary(artifact_manifest)
     search_status = _build_search_status(
@@ -1351,19 +1507,41 @@ def _format_as_json(
         )
 
     structured_output_format = preferred_structured_output_format(output_format)
-    next_actions = _build_next_actions(articles, analysis, source_rows, structured_output_format)
+    next_actions = _build_next_actions(
+        articles,
+        analysis,
+        source_rows,
+        structured_output_format,
+        source_errors=source_errors,
+        retry_arguments=retry_arguments,
+    )
     next_tools, next_commands = finalize_next_tools(next_actions)
     result = {
         "tool": "unified_search",
         "statistics": stats.to_dict(),
         "articles": [
-            _article_payload(a, compact_output=compact_output, include_rank_scores=include_rank_scores)
-            for a in articles
+            _article_payload(
+                a,
+                compact_output=compact_output,
+                include_rank_scores=include_rank_scores,
+                record_detail=record_detail,
+                rank=index,
+            )
+            for index, a in enumerate(articles, start=1)
         ],
         "source_counts": source_rows,
         "search_status": search_status,
         "result_filter_counts": dict(result_filter_counts or {}),
     }
+    if record_detail == "summary":
+        result["record_detail"] = {
+            "level": "summary",
+            "abstract_snippet_chars": ABSTRACT_SNIPPET_CHARS,
+            "full_records": (
+                'Repeat this call with options="full_records", or read the artifact results.json, for '
+                "complete records (all authors, full abstract, MeSH terms, keywords, links)."
+            ),
+        }
     if exclude_seen_message is not None:
         result["exclude_seen_message"] = exclude_seen_message
     if include_analysis:
@@ -1389,7 +1567,14 @@ def _format_as_json(
         result["clinical_trials"] = clinical_trials_payload
 
     if artifact_manifest:
-        result["artifact"] = artifact_manifest
+        # The manifest's embedded summary repeats source_metadata, source_errors
+        # and coverage blocks already at the top level; summary responses keep
+        # only the locator. The artifact files themselves are unchanged.
+        result["artifact"] = (
+            {key: value for key, value in artifact_manifest.items() if key != "summary"}
+            if record_detail == "summary"
+            else artifact_manifest
+        )
     if artifact_summary:
         result["artifact_summary"] = artifact_summary
     if search_run_handoff:

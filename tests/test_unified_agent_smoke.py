@@ -104,7 +104,7 @@ async def _assert_search_and_recovery(client: Client[Any]) -> None:
     result = await client.call_tool("unified_search", SEARCH_ARGUMENTS)
     assert result.is_error is False
     payload = json.loads(_result_text(result))
-    assert [article["identifiers"]["pmid"] for article in payload["articles"]] == ["42424242"]
+    assert [article["pmid"] for article in payload["articles"]] == ["42424242"]
     assert len(payload["source_errors"]) == 1
     source_error = payload["source_errors"][0]
     assert source_error["source"] == "semantic_scholar"

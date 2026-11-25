@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 43-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 44-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 43-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 43 tools use a shared input contract (metadata `contractVersion: 4`).
+All 44 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -113,7 +113,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Search entry | `unified_search` | The user wants papers, articles, or a first pass over a topic. |
 | Query intelligence | `analyze_search_query`, `validate_pico_plan`, `generate_search_queries` | The query needs MeSH, agent-provided PICO handoff, synonym expansion, or strategy planning. |
 | Discovery | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | The user has seed PMIDs and wants context, related work, or citation lineage. |
-| Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
+| Full text and figures | `get_fulltext`, `register_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
 | Persistence and sessions | `research_workspace`, `read_session` and the eight pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
@@ -292,6 +292,39 @@ separates `completed`, valid `empty`, `partial`, and all-source `failed`
 outcomes. It also reports returned count, attempted/successful/failed/retryable
 sources, continuation sources, and sources whose completeness is unknown.
 
+A source listed in `retryable_sources` failed transiently: its
+`source_errors[]` entry has `retryable: true`, a `kind` of `timeout`,
+`transport` (connection reset/refused, DNS, NCBI `URLError`), `http` or
+`retryable` (HTTP 408/425/429/5xx, NCBI "temporarily unavailable"), a message
+such as `Upstream transport failed (URLError)` and a `suggestion` to repeat
+the call. That is not evidence that the query is too narrow. When the result is
+under-filled, `next_tools[0]` is the same `unified_search` call with the same
+arguments; run it unchanged before rewriting the query. `kind: "unexpected"`
+with `retryable: false` is a non-transient failure and keeps the usual
+suggestions.
+
+JSON and TOON `articles` are **summary records** by default, sized for an agent
+context (about 1-1.5 KB per PubMed record):
+
+| Field | Content |
+| --- | --- |
+| `rank`, `pmid`, `doi`, `pmc` | Result position and identifiers (`openalex_id`, `s2_id`, `core_id`, `arxiv_id` when present) |
+| `title`, `year`, `journal` | Bibliographic anchors |
+| `first_author`, `author_count` | First author display name and total number of authors |
+| `publication_types`, `article_type` | Provider-indexed types (PubMed `PublicationType`) and the normalized type derived from them (a notice is `other`, a protocol is not typed as its trial); not a quality grade |
+| `abstract_snippet`, `abstract_truncated` | First 400 characters of the abstract (word boundary, `…` when cut) |
+| `source`, `sources` | Primary and contributing providers |
+| `open_access`, `oa_status`, `pdf_available` | Open-access flags; a PubMed record with a PMCID is `green` (free to read in PMC) |
+| `ranking_score`, `rank_percentile`, `retrieval` | Rank signals (hidden by `no_scores`) and exact/broadened provenance |
+
+The top-level `record_detail` block names the level. For complete records (all
+authors, full abstract, MeSH terms, keywords, link lists, rank details) repeat
+the call with `options="full_records"`, read the artifact `results.json`, or
+use `fetch_article_details` / `read_session` for selected PMIDs. Pass
+`full_records` when a downstream tool imports the `articles` list as-is (for
+example Zotero Keeper `import_articles`). `options="compact"` remains the
+smallest preview and cannot be combined with `full_records`.
+
 ClinicalTrials.gov is an explicit adjunct, not another literature-search leg.
 Use `options="clinical_trials"` only when related registry records are useful.
 The request is never made by default and does not affect article ranking or
@@ -383,6 +416,66 @@ in one corrected read; cached XML is reused. Empty filter entries are ignored,
 empty sections are excluded, and untitled body text is named `Body`. Abstract-only
 XML cannot establish fulltext availability; normal fallbacks still apply.
 Extended-source initialization or cleanup failures preserve successful content.
+
+#### When the server cannot read the body: `fulltext_plan` and `register_fulltext`
+
+`get_fulltext` serves text in this order: text previously registered for the
+article, Europe PMC JATS, NCBI PMC JATS, then the public PMC article page
+(`pmc_html`), then OA and institutional routes. The PMC article page is read
+only for an explicit single-article `get_fulltext` request and only after an XML
+source failed, had no body or reported `front_matter_only` (never just because XML
+is slow); if another XML source is still running, the first body wins and the other
+is reported as `superseded`. Search prefetch and batch paths never read it. It needs
+the operator's `NCBI_EMAIL` (otherwise it is skipped as `not_configured`; a placeholder
+address is never sent), is limited to 1 request/s plus hourly page budgets per process
+and per tenant (`PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT`, default 60;
+`PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT`, default 20), is cached per tenant,
+records `fulltext_retrieval` (URL, `retrieved_at`, displayed license text) and can be
+disabled with `PUBMED_FULLTEXT_PMC_HTML=false`. A CAPTCHA interstitial, a 403 or a spent
+budget is reported as `rate_limited` and the server backs off instead of retrying.
+
+When no usable body is returned, `fulltext_plan` lists ordered, applicable next
+steps with `why` and `legal` notes. Only steps that fit the record appear:
+
+| `step` | Applies when | Agent action |
+| --- | --- | --- |
+| `retry_later` | A source timed out, was rate-limited or skipped at the deadline | Re-read this one article after `retry_after_seconds` |
+| `host_fetch` | A PMCID is known, or an open landing page was found | Host WebFetch of that URL (verbatim text, not a summary), then `register_fulltext` |
+| `download_oa_pdf` | A PDF verified as open access was located | Download into an allowed folder; asset-aware-mcp `ingest_documents` for citation-ready spans; `register_fulltext(file_path=...)` |
+| `download_pdf` | A free-to-read (not necessarily open-licensed) or licensed PDF | As above, for the user's own research only |
+| `check_access` | A PDF of unknown access (for example a publisher link from CrossRef) | Confirm the user may use it before downloading |
+| `expand_discovery` | Extended discovery was not run | `get_fulltext(..., extended_sources=true)` |
+| `institutional` | OpenURL, EZproxy or the browser broker is configured | `get_institutional_link`, or the broker; only in the user's own session |
+| `zotero_attachment` | A DOI or PMID can be matched | Zotero Keeper `check_articles_owned`, then register the attachment |
+| `ask_user_for_pdf` | Always last | Ask for a copy the user is entitled to |
+
+`register_fulltext` stores host- or user-supplied text in the tenant fulltext
+store. Provenance is required (`retrieval_method`, `retrieved_at`, and a
+`source_url` or file); a declared license is kept verbatim under
+`fulltext_retrieval.license` (never as the article's license), and credentials or
+signed query values are removed from the URL. Send `content` (Markdown, text, JATS or
+HTML, up to 1,000,000 characters) or a `file_path` (`.pdf`, `.txt`, `.md`, `.html`,
+`.xml`) on a local drive inside the workspace, notes directory, the tenant fulltext
+intake folder (`<data>/fulltext/intake`) or `PUBMED_FULLTEXT_INTAKE_ROOTS`; network
+shares, device paths, `..` components and symlinks leaving those roots are rejected,
+and remote service callers may only send content. Content beyond the size, heading or
+HTML nesting limits, or a JATS/PMC page that declares another article than `source`,
+fails with `invalid_input`. A new registration replaces the text for every known
+identifier of the article. Later `get_fulltext` reads serve text with a body first, with
+`fulltext_origin: agent_supplied|user_supplied`, `fulltext_provenance: supplied`,
+`provider_verified: false` and a `supplied_not_verified` notice (pass
+`use_registered_fulltext=false` to re-query providers); a registration without body
+text is only reported (`supplied_no_body`, `supplied_fulltext`) and providers are
+queried as usual. Literature notes record `fulltext_state`, and Chronicle
+evidence rows reach the same text through `fulltext_lookup_source`. PDFs are
+text-extracted without page locators; ingest the same PDF with asset-aware-mcp
+for citation-ready evidence spans.
+
+Use these routes for individual reading in the user's own research. NCBI permits
+reading individual PMC articles but prohibits systematic or bulk downloading
+from the PMC website; use the PMC Open Access subset services for bulk reuse.
+Never loop host fetches over search results, bypass access controls or CAPTCHAs,
+or use unauthorized copies.
 
 Use `prepare_figure_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
 
@@ -585,7 +678,9 @@ institutional access terms.
 If a source fails but the search can continue, `unified_search` may return
 `source_errors` in JSON or `Source warnings` in markdown. Semantic Scholar HTTP
 429 warnings usually mean the workflow should set
-`SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source.
+`SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source. Other
+`retryable: true` failures are transient; repeat the same call before changing
+the query (see `search_status.retryable_sources` above).
 
 ## Local Wiki Note Export
 

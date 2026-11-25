@@ -35,7 +35,7 @@ Both groups have 6 backend searches and 120 document exposures. Check budget_sta
 Stop when further searches are unlikely to help or the budget is exhausted.
 """
 REPO_GUIDANCE = """Use unified_search with sources="pubmed", output_format="json", and
-options="shallow,no_oa,no_relax,no_analysis,no_scores,no_next" for this frozen-corpus profile.
+options="shallow,no_oa,no_relax,no_analysis,no_scores,no_next,full_records" for this frozen-corpus profile.
 Available session tools can recover cached search results. fetch_article_details reads corpus text.
 Do not use source/field/year filters: they are not supported by the common frozen backend.
 """

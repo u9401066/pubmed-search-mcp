@@ -56,37 +56,46 @@ DEFAULT_SOURCES: tuple[FulltextSourceDefinition, ...] = (
         capabilities=("structured", "official_host"),
     ),
     FulltextSourceDefinition(
+        key="pmc_html",
+        label="PMC article page (HTML)",
+        priority=3,
+        identifier_support=("pmcid",),
+        # Individual reading only: started for explicit single-article requests,
+        # never by search prefetch or batch paths (NCBI forbids bulk download).
+        capabilities=("structured", "official_host", "single_article_only"),
+    ),
+    FulltextSourceDefinition(
         key="unpaywall",
         label="Unpaywall",
-        priority=3,
+        priority=4,
         identifier_support=("doi",),
         capabilities=("pdf", "landing_page_resolution"),
     ),
     FulltextSourceDefinition(
         key="core",
         label="CORE",
-        priority=4,
+        priority=5,
         identifier_support=("doi",),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
     FulltextSourceDefinition(
         key="institutional",
         label="Institutional (direct/EZproxy)",
-        priority=5,
+        priority=6,
         identifier_support=("doi",),
         capabilities=("fulltext_text", "landing_page_resolution"),
     ),
     FulltextSourceDefinition(
         key="extended",
         label="Extended sources",
-        priority=6,
+        priority=7,
         identifier_support=("pmid", "pmcid", "doi"),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
     FulltextSourceDefinition(
         key="pdf_retrieval_fallback",
         label="PDF retrieval fallback",
-        priority=7,
+        priority=8,
         identifier_support=("pmid", "pmcid", "doi"),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
@@ -97,10 +106,13 @@ DEFAULT_POLICIES: tuple[FulltextPolicyDefinition, ...] = (
         key="structured_first",
         label="Structured first",
         # Europe PMC is preferred; NCBI PMC is hedged in when it fails, has no
-        # body, or is slow (see FulltextService._collect_structured).
+        # body, or is slow. The PMC article page joins the same race only for
+        # explicit single-article reads, and only after an XML source failed,
+        # had no body or was front matter only (see FulltextService._collect_structured).
         sources=(
             "europe_pmc",
             "ncbi_pmc",
+            "pmc_html",
             "unpaywall",
             "institutional",
             "core",

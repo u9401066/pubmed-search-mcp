@@ -140,8 +140,8 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "fulltext": {
         "name": "全文工具",
-        "description": "全文取得與文本挖掘",
-        "tools": ["get_fulltext", "get_text_mined_terms"],
+        "description": "全文取得、代理/使用者提供全文登錄與文本挖掘",
+        "tools": ["get_fulltext", "register_fulltext", "get_text_mined_terms"],
     },
     "figure": {
         "name": "圖表擷取",

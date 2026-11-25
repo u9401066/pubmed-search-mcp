@@ -150,7 +150,7 @@ async def test_search_prefetch_read_export_and_session_over_real_provider_http(
         )
         assert not search.is_error, _result_text(search)
         payload = _json_document(_result_text(search))
-        assert payload["articles"][0]["identifiers"]["pmid"] == ARTICLE["pmid"]
+        assert payload["articles"][0]["pmid"] == ARTICLE["pmid"]
         assert payload["source_counts"][0]["returned"] == 1
         read = payload["enrichment"]["fulltext_prefetch"]["articles"][0]["read_request"]
         fulltext = await client.call_tool(read["tool"], read["arguments"])

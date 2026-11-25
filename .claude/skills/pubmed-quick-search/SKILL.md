@@ -181,6 +181,10 @@ generate_search_queries(topic="remimazolam ICU sedation")
 3. 只有在 coverage 仍不足時，才針對 failed/retryable sources 補查。
 4. 需要重現或中斷續接時，透過 `read_session(request={"action":"search_runs"})` 找 run，再用 `read_session(request={"action":"replay_search","run_id":"..."})` 讀取 arguments；不要從 agent hook state 重建原始 query。
 
+`source_errors[]` 的 `retryable: true`（也列在 `search_status.retryable_sources`）代表暫時性的逾時、網路或 HTTP 429/5xx 失敗，不代表查詢太窄。結果不足時先照 `next_tools[0]` 以完全相同的參數重跑同一個 `unified_search`，再考慮改寫查詢；`kind: "unexpected"` 才是非暫時性失敗。
+
+JSON/TOON 的 `articles` 預設是摘要紀錄（`first_author`、`author_count`、400 字 `abstract_snippet` 等）。需要完整作者、摘要或 MeSH 時加 `options="full_records"`，或讀 artifact `results.json`。
+
 ---
 
 ## 什麼時候不要停在這個 skill

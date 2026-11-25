@@ -1,5 +1,9 @@
 # Research roadmap / 研究路線
 
+## Available in v0.12.0
+
+`get_fulltext` reaches past PMC XML for explicit single-article reads (the public PMC article page), returns a `fulltext_plan` of legal next steps when no body is available, and accepts host- or user-obtained text through `register_fulltext` with required provenance. Structured search output is agent-sized by default, transient upstream failures are retried and reported as retryable, and PubMed records carry their article type, PMCID and open-access status. Next: the R1 agent harness benchmark (Claude Code with Haiku and Sonnet, then Codex, Cline and OpenCode; [plan](docs/design/AGENT_HARNESS_EVAL.md)) and a withdraw path for registered fulltext.
+
 ## Available in v0.11.0
 
 Saved pipelines now serve systematic reviews end to end on the PubMed side: complete retrieval of the result set, PRISMA-S run records with the executed query and translation, RIS/CSV/CSL-JSON export, concept-block contribution analysis and a screening log with PRISMA 2020 counts. `unified_search` is precision-first and corrects MeSH headings PubMed cannot resolve, with disclosure. Next: an "other methods" PRISMA branch, grouping reports into studies, and AND-preserving broadening for expert queries.
@@ -16,7 +20,7 @@ The plugin can compare bounded PubMed concept combinations and open the evidence
 
 | 入口 | 目前可驗證的行為 | 下一步從哪裡接 |
 | --- | --- | --- |
-| Plugin 打包 | 產生器選入 12 個研究技能與 MCP 啟動設定。發行設定啟動 v0.11.0，開發設定啟動 checkout。 | 先讀已連線 server 的工具與輸入 schema，分清正式版與分支能力。[產生器](scripts/build_agent_plugin.py) · [重啟與安裝測試](tests/test_agent_plugin_package.py) |
+| Plugin 打包 | 產生器選入 12 個研究技能與 MCP 啟動設定。發行設定啟動 v0.12.0，開發設定啟動 checkout。 | 先讀已連線 server 的工具與輸入 schema，分清正式版與分支能力。[產生器](scripts/build_agent_plugin.py) · [重啟與安裝測試](tests/test_agent_plugin_package.py) |
 | 可執行的技能腳本 | 隨包的 `render_handoff.py` 可在離線環境把一頁 workspace JSON 轉成人可讀的交接，包含頁面缺口。 | 同一份受租戶保護的資料可供 agent、命令列與閱覽頁使用。[腳本正本](.claude/skills/pubmed-research-workspace/scripts/render_handoff.py) · [交接測試](tests/test_workspace_handoff_export.py) |
 | Copilot 工作區 hooks | 此 repo 的 Bash／PowerShell wrapper 已處理 session 開始、提問、工具前後及 session 結束。部分路徑相對於 checkout，目前這些 hook 隨工作區載入。 | 先選一個事件移植到安裝包，測安裝目錄、一般專案工作目錄與兩套 hook 同時存在時的行為。[現有 hook 合約](docs/development/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md) |
 | 研究服務 | MeSH 差集、workspace 分頁、未完成行動、Chronicle 修訂與來源定位都有既有入口。 | 排序、預算、授權、資料寫入與重試語意繼續由 application service 負責。宿主轉接程式只轉換事件和呈現回覆。[組合預查](src/pubmed_search/application/search/query_comparison.py) · [Workspace](src/pubmed_search/application/research_workspace.py) · [來源接手](src/pubmed_search/application/workspace_handoff.py) |

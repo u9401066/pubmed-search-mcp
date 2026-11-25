@@ -14,12 +14,13 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from functools import partial
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pubmed_search.domain.value_objects.article_identifiers import (
     IdentifierValidationError,
@@ -32,6 +33,7 @@ from pubmed_search.shared.exceptions import ParseError
 
 from .coverage import (
     FulltextSkippedSource,
+    FulltextSkipReason,
     FulltextSourceError,
     FulltextSourceNotice,
     FulltextSourceNoticeCode,
@@ -39,11 +41,18 @@ from .coverage import (
     classify_source_failure,
     deadline_exceeded,
     make_notice,
+    make_skipped,
     require_source_key,
 )
+from .plan import FulltextAccessContext, build_fulltext_plan
 from .racing import MIN_USEFUL_BUDGET_SECONDS, FulltextDeadline, HedgedAttempt, HedgedOutcome, run_hedged
 from .registry import FulltextRegistry, get_fulltext_registry
 from .sections import SectionSelection, select_sections
+
+if TYPE_CHECKING:
+    from .supplied import SuppliedFulltextRecord
+
+SuppliedFulltextLookup = Callable[[list[tuple[str, str]]], Awaitable["SuppliedFulltextRecord | None"]]
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +62,14 @@ LogCallback = Callable[[LogLevel, str], Awaitable[None]]
 
 # Mirrors shared.settings.DEFAULT_FULLTEXT_DEADLINE_SECONDS; importing settings here
 # would load pydantic-settings on every tool import (see tests/test_import_surface.py).
+# Overall get_fulltext budget; sources not started in time are reported as skipped.
 DEFAULT_FULLTEXT_DEADLINE_SECONDS = 90.0
-"""Overall get_fulltext budget; sources not started in time are reported as skipped."""
+# Wait this long for the preferred structured source before also asking the fallback.
 DEFAULT_STRUCTURED_HEDGE_SECONDS = 6.0
-"""Wait this long for the preferred structured source before also asking the fallback."""
+# Request budget kept back from the downloader so it can return and clean up in time.
 _DOWNLOADER_RESERVE_SECONDS = 1.0
-"""Request budget kept back from the downloader so it can return and clean up in time."""
-_STRUCTURED_SOURCES = frozenset({"europe_pmc", "ncbi_pmc"})
+_STRUCTURED_SOURCES = frozenset({"europe_pmc", "ncbi_pmc", "pmc_html"})
+_MAX_PAGE_DOCUMENT_CHARS = 8 * 1024 * 1024
 _METADATA_SOURCES = ("europe_pmc_metadata", "ncbi_metadata")
 
 
@@ -76,6 +86,15 @@ class FulltextRequest:
     extended_sources: bool = False
     allow_browser_session: bool | None = None
     include_pdf_links: bool = True
+    explicit_article_read: bool = False
+    """The caller explicitly asked to read this one article.
+
+    Only such a request may use per-article sources that must never run in
+    batch, search prefetch or other systematic retrieval (the public PMC
+    article page). Every other caller keeps the default ``False``.
+    """
+    use_registered_fulltext: bool = True
+    """Serve text registered with ``register_fulltext`` instead of re-querying providers."""
 
     def normalized(self) -> FulltextRequest:
         """Return a strict, canonical request with exactly one public identifier.
@@ -151,8 +170,16 @@ class FulltextServiceResult:
     figures: list[dict[str, Any]] = field(default_factory=list)
     fulltext_source_name: str | None = None
     fulltext_canonical_host: str | None = None
-    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
+    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed", "supplied"] | None = None
     fulltext_license: dict[str, str] | None = None
+    fulltext_retrieval: dict[str, Any] | None = None
+    """How the returned body was obtained (source, URL, retrieved_at, license text)."""
+    fulltext_origin: Literal["provider", "agent_supplied", "user_supplied"] | None = None
+    fulltext_plan: list[dict[str, Any]] = field(default_factory=list)
+    """Ordered next steps for the host agent when no usable body was obtained."""
+    fulltext_plan_reason: Literal["no_body", "unstructured_text"] | None = None
+    supplied_fulltext: dict[str, Any] | None = None
+    """A registration found for the article but not served (it has no body text)."""
     extended_sources_attempted: bool = False
     fallback_notice: FulltextDownloadNotice | None = None
     deadline_seconds: float | None = None
@@ -236,22 +263,38 @@ class FulltextServiceResult:
         if all(notice.source != source or notice.code != code for notice in self.source_notices):
             self.source_notices.append(make_notice(source, code))
 
-    def record_source_skipped(self, source: str) -> None:
-        """Record a policy source that was never started because time ran out."""
+    def record_source_skipped(self, source: str, reason: FulltextSkipReason = "deadline") -> None:
+        """Record a policy source that was never started (deadline, or not configured)."""
         source = require_source_key(source)
         if source in self.sources_tried:
             msg = "An attempted fulltext source cannot be skipped"
             raise ValueError(msg)
         if all(skipped.source != source for skipped in self.sources_skipped):
-            self.sources_skipped.append(FulltextSkippedSource(source=source))
+            self.sources_skipped.append(make_skipped(source, reason))
+
+
+def _request_identifiers(request: FulltextRequest) -> list[tuple[str, str]]:
+    return [(kind, str(value)) for kind in ("pmcid", "pmid", "doi") if (value := getattr(request, kind))]
+
+
+def _supplied_host(record: SuppliedFulltextRecord) -> str:
+    url = record.provenance.source_url
+    if url:
+        host = url.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
+        return f"{host} (via {record.origin})"
+    return f"Local file (via {record.origin})"
 
 
 @dataclass(frozen=True, slots=True)
 class _StructuredDocument:
-    """Parsed JATS from one structured source, before section selection."""
+    """Parsed JATS (or PMC page) from one structured source, before section selection."""
 
     parsed: dict[str, Any] | None
     restricted: bool = False
+    page: dict[str, str] | None = None
+    """PMC article-page facts: url, retrieved_at, pdf_url, courtesy_note."""
+    pdf_only: bool = False
+    """A PMC page that shows no body text, only a PDF (for example a scanned record)."""
 
     @property
     def has_body(self) -> bool:
@@ -275,6 +318,10 @@ class FulltextService:
         institutional_client_factory: Callable[[], Any] | None = None,
         structured_xml_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
         ncbi_pmc_client_factory: Callable[[], Any] | None = None,
+        article_page_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
+        article_page_unavailable: Literal["disabled", "not_configured"] | None = None,
+        supplied_fulltext_lookup: SuppliedFulltextLookup | None = None,
+        access_context: FulltextAccessContext | None = None,
         deadline_seconds: float | None = DEFAULT_FULLTEXT_DEADLINE_SECONDS,
         structured_hedge_seconds: float = DEFAULT_STRUCTURED_HEDGE_SECONDS,
         clock: Callable[[], float] = time.monotonic,
@@ -295,6 +342,12 @@ class FulltextService:
         self._institutional_client_factory = institutional_client_factory
         self._structured_xml_fetcher = structured_xml_fetcher
         self._ncbi_pmc_client_factory = ncbi_pmc_client_factory
+        self._article_page_fetcher = article_page_fetcher
+        self._article_page_unavailable = None if article_page_fetcher is not None else article_page_unavailable
+        self._supplied_lookup = supplied_fulltext_lookup
+        self._access_context = access_context or FulltextAccessContext(
+            article_page_enabled=article_page_fetcher is not None
+        )
         self._deadline_seconds = deadline_seconds
         self._hedge_seconds = float(structured_hedge_seconds)
         self._clock = clock
@@ -313,10 +366,39 @@ class FulltextService:
         link/PDF sources then run only while the overall deadline allows, and
         every source's fate (completed, failed with a typed reason, superseded,
         skipped at the deadline) is recorded for the agent.
+
+        Text registered earlier with ``register_fulltext`` for the same
+        article is served first (labelled as supplied and unverified) unless
+        the request opts out. A registration without body text never stops
+        the providers from being queried; it is reported as
+        ``supplied_fulltext`` with a ``supplied_no_body`` notice. When no
+        usable body is obtained, the result carries an ordered
+        ``fulltext_plan`` for the host agent.
         """
         request = request.normalized()
         deadline = FulltextDeadline(self._deadline_seconds, clock=self._clock)
+        supplied = await self._lookup_supplied(request, _request_identifiers(request))
+        if supplied is not None and supplied.has_body:
+            result = self._new_result(request, "registered_fulltext", deadline)
+            self._apply_supplied(supplied, request, result)
+            result.fulltext_plan, result.fulltext_plan_reason = build_fulltext_plan(
+                result, request, self._access_context
+            )
+            return result
+        noted = supplied
+        known = set(_request_identifiers(request))
         request, metadata_outcomes = await self._resolve_identifiers(request, log, deadline)
+        resolved = [pair for pair in _request_identifiers(request) if pair not in known]
+        supplied = await self._lookup_supplied(request, resolved) if resolved else None
+        if supplied is not None and supplied.has_body:
+            result = self._new_result(request, "registered_fulltext", deadline)
+            await self._record_hedged_outcomes(result, metadata_outcomes, log, deadline)
+            self._apply_supplied(supplied, request, result)
+            result.fulltext_plan, result.fulltext_plan_reason = build_fulltext_plan(
+                result, request, self._access_context
+            )
+            return result
+        noted = noted or supplied
         policy = self._registry.resolve_policy(
             pmcid=request.pmcid,
             pmid=request.pmid,
@@ -332,6 +414,11 @@ class FulltextService:
             deadline_seconds=deadline.seconds,
         )
         await self._record_hedged_outcomes(result, metadata_outcomes, log, deadline)
+        if noted is not None:
+            result.record_source_attempted("registered_fulltext")
+            result.record_source_completed("registered_fulltext")
+            result.record_source_notice("registered_fulltext", "supplied_no_body")
+            result.supplied_fulltext = noted.note_summary()
 
         structured_done = False
         for source in policy.sources:
@@ -392,7 +479,63 @@ class FulltextService:
             )
 
         result.pdf_links = self._deduplicate_link_rows(result.pdf_links)
+        result.fulltext_plan, result.fulltext_plan_reason = build_fulltext_plan(result, request, self._access_context)
         return result
+
+    @staticmethod
+    def _new_result(request: FulltextRequest, policy_key: str, deadline: FulltextDeadline) -> FulltextServiceResult:
+        return FulltextServiceResult(
+            identifier=request.identifier,
+            pmcid=request.pmcid,
+            pmid=request.pmid,
+            doi=request.doi,
+            policy_key=policy_key,
+            deadline_seconds=deadline.seconds,
+        )
+
+    async def _lookup_supplied(
+        self, request: FulltextRequest, identifiers: list[tuple[str, str]]
+    ) -> SuppliedFulltextRecord | None:
+        """Find text registered for this article; a store problem never fails the read."""
+        if self._supplied_lookup is None or not request.use_registered_fulltext or not identifiers:
+            return None
+        try:
+            return await self._supplied_lookup(identifiers)
+        except Exception as exc:
+            logger.warning("Supplied-fulltext lookup failed (%s)", type(exc).__name__)
+            return None
+
+    def _apply_supplied(
+        self,
+        record: SuppliedFulltextRecord,
+        request: FulltextRequest,
+        result: FulltextServiceResult,
+    ) -> None:
+        """Serve registered text with its provenance; never as provider-verified fulltext."""
+        source = "registered_fulltext"
+        result.record_source_attempted(source)
+        result.record_source_completed(source)
+        result.record_source_notice(source, "supplied_not_verified")
+        parsed = record.as_parsed_document()
+        result.section_selection = select_sections(parsed, request.sections)
+        result.content_sections = list(result.section_selection.sections)
+        result.fulltext_content = self._render_selected_sections(parsed, result.content_sections)
+        result.raw_fulltext_content = self._render_selected_sections(parsed, result.content_sections, truncate=False)
+        result.title = record.title or result.title
+        for kind in ("pmid", "pmcid", "doi"):
+            if not getattr(result, kind) and record.identifiers.get(kind):
+                setattr(result, kind, record.identifiers[kind])
+        if not result.section_selection.body_available:
+            return
+        who = "User" if record.origin == "user_supplied" else "Agent"
+        result.fulltext_source_name = f"{who}-supplied fulltext (unverified)"
+        result.fulltext_canonical_host = _supplied_host(record)
+        # Never "indirect": that is the Europe PMC mirror; supplied text is its own class.
+        result.fulltext_provenance = "supplied"
+        result.fulltext_origin = record.origin
+        # A license the supplier saw belongs to the copy's provenance, not the article.
+        result.fulltext_license = None
+        result.fulltext_retrieval = record.retrieval_summary()
 
     async def _run_bounded(
         self,
@@ -531,7 +674,16 @@ class FulltextService:
         log: LogCallback | None,
         deadline: FulltextDeadline,
     ) -> None:
-        """Race the PMC-family JATS sources and apply the first usable body."""
+        """Race the PMC-family structured sources and apply the first usable body.
+
+        The PMC article page is a last structured resort: it is added only for
+        an explicit single-article read, and it starts only after an XML
+        attempt has failed, had no body or was front matter only -- never
+        merely because the XML sources are slow. Another XML attempt may still
+        be running then (for example a slow Europe PMC after NCBI answered
+        front matter only); the first usable body wins and the slower attempt
+        is reported as superseded.
+        """
         pmcid = str(request.pmcid)
         attempts: list[HedgedAttempt[_StructuredDocument]] = []
         for source in policy_sources:
@@ -539,14 +691,24 @@ class FulltextService:
                 attempts.append(HedgedAttempt(source, partial(self._fetch_europe_pmc_document, pmcid)))
             elif source == "ncbi_pmc" and self._ncbi_pmc_client_factory is not None:
                 attempts.append(HedgedAttempt(source, partial(self._fetch_ncbi_pmc_document, pmcid)))
+            elif source == "pmc_html" and request.explicit_article_read and self._article_page_fetcher is not None:
+                attempts.append(
+                    HedgedAttempt(
+                        source,
+                        partial(self._fetch_pmc_page_document, pmcid, request.pmid),
+                        start_on_hedge=False,
+                    )
+                )
         if not attempts:
             return
 
         async def on_start(source: str) -> None:
             if source == "europe_pmc":
                 await self._report_progress(progress, 2, 6, "Trying Europe PMC fulltext...")
-            else:
+            elif source == "ncbi_pmc":
                 await self._report_progress(progress, 2.5, 6, "Trying NCBI PMC (E-utilities) fulltext...")
+            else:
+                await self._report_progress(progress, 2.75, 6, "Reading the public PMC article page...")
 
         outcomes = await run_hedged(
             attempts,
@@ -571,6 +733,9 @@ class FulltextService:
                 continue
             if document.restricted:
                 result.record_source_notice(outcome.source, "front_matter_only")
+            elif document.pdf_only and not document.has_body:
+                result.record_source_notice(outcome.source, "pdf_only")
+                self._add_page_pdf_link(document, result)
             elif not document.has_body:
                 result.record_source_notice(outcome.source, "no_body")
             # Prefer the first body; then a publisher restriction (it decides
@@ -581,6 +746,14 @@ class FulltextService:
                 chosen, chosen_rank = (outcome.source, document), rank
         if chosen is not None:
             self._apply_structured_document(chosen[0], chosen[1], request, result)
+        if (
+            self._article_page_unavailable == "not_configured"
+            and request.explicit_article_read
+            and "pmc_html" in policy_sources
+            and not result.has_retrieved_text
+        ):
+            # The page would have been read now, but no operator contact is set.
+            result.record_source_skipped("pmc_html", "not_configured")
 
     async def _fetch_europe_pmc_document(self, pmcid: str) -> _StructuredDocument:
         client = self._europe_pmc_client_factory()
@@ -610,6 +783,39 @@ class FulltextService:
             raise ParseError("Structured fulltext parser returned no mapping", source="NCBI PMC")
         return _StructuredDocument(parsed, restricted=bool(parsed.get("access_restricted")))
 
+    async def _fetch_pmc_page_document(self, pmcid: str, pmid: str | None = None) -> _StructuredDocument:
+        if self._article_page_fetcher is None:
+            return _StructuredDocument(None)
+        payload = await self._article_page_fetcher(pmcid)
+        if not payload:
+            return _StructuredDocument(None)
+        if not isinstance(payload, str) or len(payload) > _MAX_PAGE_DOCUMENT_CHARS:
+            raise ParseError("PMC article page document was not usable", source="PMC article page")
+        try:
+            parsed = json.loads(payload)
+        except ValueError:
+            raise ParseError("PMC article page document was not JSON", source="PMC article page") from None
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("sections"), list):
+            raise ParseError("PMC article page document had no section list", source="PMC article page")
+        declared_pmid = parsed.get("pmid")
+        if pmid and isinstance(declared_pmid, str) and declared_pmid.strip() and declared_pmid.strip() != pmid:
+            # The page says it is another PubMed record than the one requested.
+            raise ParseError("PMC article page declared a different article", source="PMC article page")
+        page = {
+            key: value
+            for key in ("url", "retrieved_at", "pdf_url", "courtesy_note")
+            if isinstance(value := parsed.get(key), str) and value
+        }
+        return _StructuredDocument(parsed, page=page, pdf_only=bool(parsed.get("pdf_only")))
+
+    @staticmethod
+    def _add_page_pdf_link(document: _StructuredDocument, result: FulltextServiceResult) -> None:
+        pdf_url = (document.page or {}).get("pdf_url")
+        if pdf_url and all(link.get("url") != pdf_url for link in result.pdf_links):
+            result.pdf_links.append(
+                {"source": "PubMed Central", "url": pdf_url, "type": "pdf", "access": "free_to_read"}
+            )
+
     def _apply_structured_document(
         self,
         source: str,
@@ -627,12 +833,21 @@ class FulltextService:
         if result.section_selection.body_available:
             result.fulltext_source_name = self._registry.label_for(source)
             result.fulltext_canonical_host = "PubMed Central"
-            # NCBI is PMC's canonical host; Europe PMC mirrors the same record.
-            result.fulltext_provenance = "direct" if source == "ncbi_pmc" else "indirect"
+            # NCBI is PMC's canonical host (its E-utilities and article pages);
+            # Europe PMC mirrors the same record.
+            result.fulltext_provenance = "direct" if source in {"ncbi_pmc", "pmc_html"} else "indirect"
+            result.fulltext_origin = "provider"
             license_info = parsed.get("license")
-            result.fulltext_license = dict(license_info) if isinstance(license_info, dict) else None
+            result.fulltext_license = (
+                {str(key): value for key, value in license_info.items() if isinstance(value, str)}
+                if isinstance(license_info, dict)
+                else None
+            )
 
         pmc_num = str(request.pmcid).replace("PMC", "")
+        if source == "pmc_html":
+            self._apply_page_provenance(document, result, pmc_num)
+            return
         if document.restricted:
             # Readable on the PMC site, but the publisher withholds XML reuse:
             # point the reader there rather than presenting front matter.
@@ -653,6 +868,35 @@ class FulltextService:
                 "access": "open_access",
             }
         )
+
+    @staticmethod
+    def _apply_page_provenance(document: _StructuredDocument, result: FulltextServiceResult, pmc_num: str) -> None:
+        """Record where a PMC page body came from and the links the page itself declares."""
+        page = document.page or {}
+        url = page.get("url") or f"https://pmc.ncbi.nlm.nih.gov/articles/PMC{pmc_num}/"
+        if result.section_selection is not None and result.section_selection.body_available:
+            result.fulltext_retrieval = {
+                "source": "pmc_html",
+                "method": "server_fetch",
+                "url": url,
+                "retrieved_at": page.get("retrieved_at"),
+                "license_text": (result.fulltext_license or {}).get("text"),
+                "courtesy_note": page.get("courtesy_note"),
+                "access": "free_to_read",
+                "usage": "individual_reading",
+            }
+        result.pdf_links.append(
+            {
+                "source": "PubMed Central (article page)",
+                "url": url,
+                "type": "landing_page",
+                "access": "free_to_read",
+            }
+        )
+        if page.get("pdf_url"):
+            result.pdf_links.append(
+                {"source": "PubMed Central", "url": page["pdf_url"], "type": "pdf", "access": "free_to_read"}
+            )
 
     async def _collect_unpaywall(
         self,
@@ -742,6 +986,7 @@ class FulltextService:
         result.fulltext_source_name = f"Institutional ({source_used})"
         result.fulltext_canonical_host = "Publisher (institutional access)"
         result.fulltext_provenance = "direct"
+        result.fulltext_origin = "provider"
 
         final_url = getattr(outcome, "final_url", None)
         if final_url:
@@ -778,6 +1023,7 @@ class FulltextService:
                 result.fulltext_source_name = self._registry.label_for("core")
                 result.fulltext_canonical_host = "Repository / OA host"
                 result.fulltext_provenance = "indirect"
+                result.fulltext_origin = "provider"
 
             if work.get("download_url"):
                 result.pdf_links.append(
@@ -870,6 +1116,7 @@ class FulltextService:
                 )
                 result.fulltext_canonical_host = result.fulltext_source_name
                 result.fulltext_provenance = "derived"
+                result.fulltext_origin = "provider"
 
             if not result.title and extended_result.title:
                 result.title = extended_result.title

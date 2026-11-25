@@ -378,6 +378,8 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     "clinical_trials": ("include_clinical_trials", True),
     "counts_first": ("counts_first", True),
     "exclude_seen": ("exclude_seen", True),
+    # Structured (JSON/TOON) responses carry summary records by default.
+    "full_records": ("full_records", True),
     # Provider-neutral retrieval policies.  These remain options on the one
     # unified_search facade; they never become provider-shaped MCP tools.
     "native_semantic": ("native_semantic", True),

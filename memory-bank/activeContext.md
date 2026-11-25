@@ -1,5 +1,40 @@
 # Active Context
 
+## Release record — v0.12.0 fulltext acquisition and agent-facing fixes (2026-11-25)
+
+Three branches merged into `release/v0.12.0`: fulltext acquisition (`pmc_html`
+page source for explicit single-article reads, `fulltext_plan`,
+`register_fulltext` → 44 tools / 16 categories), agent harness levers
+(retryable transient failures with a repeat-call suggestion, summary records in
+structured `unified_search` output with `options="full_records"`, PubMed
+publication type / PMCID / OA mapping), and the harness evaluation docs. An
+independent review of the fulltext branch found 1 high (event-loop DoS via
+super-linear parsers in `register_fulltext`) and 6 medium issues; all were
+fixed with failing-first tests before release. Deferred: a withdraw path for
+registrations (needs a 45th tool or a request union; re-registering corrects,
+`use_registered_fulltext=false` bypasses), placeholder `DEFAULT_EMAIL` still
+sent by the `ncbi_pmc` E-utilities fallback when `NCBI_EMAIL` is unset, and
+compact-mode records carrying no per-record detail marker. Downstream: Zotero
+Keeper must pass `options="full_records"` in the same release that moves its
+pin to 0.12.0 (prepared on its `feat/pubmed-summary-records` branch).
+
+## Agent harness evaluation — R0 pilot (2026-11-25, `feature/agent-harness-eval`)
+
+Goal: with this package, any agent host (Claude Code, Cline, OpenCode, Codex)
+must score better than the same host without it. Claude Code + Haiku 5.5 /
+Sonnet 5.5 comes first (headless `claude -p`, structured output, stream-json
+transcripts). Pilot (5 tasks, native vs MCP, Haiku 5.5, 0.11.0): equal quality
+(0.804 vs 0.807), zero hallucinated or ungrounded IDs in both arms, MCP arm 58%
+fewer tool calls at a third of the cost. Lever priority from transcripts: retryable
+error semantics (a transient NCBI failure was reported as non-retryable and the
+agent abandoned its boolean query), compact JSON output (165–254 KB for 30
+records), return-N completion contract (3 and 5 of 15 returned), validate
+strategies before answering, 0.12.0 full-text path. Tool discovery via
+ToolSearch was not a problem. Plan: [design](../docs/design/AGENT_HARNESS_EVAL.md);
+evidence: [pilot report](../docs/reports/claude_code_harness_pilot_2026-11-25.md).
+Next: R1 suites S1–S6 (harder, bilingual, train/test), arms A/B/C0/C1, cost
+estimate to the maintainer before the full matrix.
+
 ## Release record — v0.11.0 systematic-review records and evidence quality (2026-11-25)
 
 A field benchmark (PACU processed-EEG question; native agent with E-utilities vs

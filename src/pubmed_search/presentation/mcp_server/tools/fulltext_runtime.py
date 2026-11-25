@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects.article_identifiers import (
+    try_normalize_doi,
+    try_normalize_pmcid,
+    try_normalize_pmid,
+)
 from pubmed_search.infrastructure.sources.fulltext_prefetch import fetch_prefetch_xml
 from pubmed_search.infrastructure.sources.registry import get_source_registry
 from pubmed_search.shared.settings import load_settings
 from pubmed_search.shared.tenancy import current_tenant
 
-from .tool_session import get_tool_session_runtime
+from .tool_session import get_session_manager, get_tool_session_runtime
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pubmed_search.application.fulltext.cache import XMLFetcher
+    from pubmed_search.application.fulltext.cache import FulltextCache, XMLFetcher
+    from pubmed_search.application.fulltext.plan import FulltextAccessContext
+    from pubmed_search.application.fulltext.service import SuppliedFulltextLookup
+    from pubmed_search.application.fulltext.supplied import SuppliedFulltextRecord, SuppliedFulltextStore
     from pubmed_search.domain.entities.article import UnifiedArticle
+    from pubmed_search.shared.settings import AppSettings
 
 
 def prefetch_search_fulltext(articles: Sequence[UnifiedArticle]) -> dict[str, Any]:
@@ -56,13 +67,112 @@ def bind_cached_fulltext_fetcher(fetch: XMLFetcher) -> XMLFetcher:
     Fulltext sources may run in child tasks, which see a *copy* of the request
     context; resolving the cache here keeps every task on one shared cache.
     """
+    return _bind_cached(fetch, get_tool_session_runtime().fulltext_cache)
+
+
+def bind_cached_article_page_fetcher(fetch: XMLFetcher) -> XMLFetcher:
+    """Share parsed PMC article pages across explicit reads of one stable tenant.
+
+    Only ``get_fulltext`` binds this fetcher; search prefetch never does, so the
+    public article page is never read speculatively or in batch.
+    """
+    return _bind_cached(fetch, get_tool_session_runtime().article_page_cache)
+
+
+def _bind_cached(fetch: XMLFetcher, cache: FulltextCache) -> XMLFetcher:
     tenant = current_tenant()
     if not tenant.owns_durable_storage:
         return fetch
-    cache = get_tool_session_runtime().fulltext_cache
     tenant_id = tenant.tenant_id
 
     async def cached(pmcid: str) -> str | None:
         return await cache.get(pmcid, tenant=tenant_id, fetch=fetch)
 
     return cached
+
+
+def supplied_fulltext_store() -> SuppliedFulltextStore | None:
+    """Return the current tenant's store of registered (supplied) fulltext.
+
+    The store lives under the tenant's session data directory, beside its
+    artifacts. Callers that may not own durable data, or servers without a
+    persistent data directory, get ``None``.
+    """
+    from pubmed_search.application.fulltext.supplied import SuppliedFulltextStore
+
+    if not current_tenant().owns_durable_storage:
+        return None
+    manager = get_session_manager()
+    root = getattr(manager, "data_dir", None)  # tenant-ok: the session manager is already tenant-scoped
+    if not isinstance(root, (str, Path)):
+        return None
+    return SuppliedFulltextStore(Path(root) / "fulltext" / "supplied")
+
+
+def attach_registered_fulltext(articles: list[dict[str, Any]]) -> None:
+    """Mark note-export articles that have registered (supplied) fulltext.
+
+    Only facts are attached (origin, artifact URI, retrieval time), never the
+    text itself; the note records that unverified supplied text exists.
+    """
+    store = supplied_fulltext_store()
+    if store is None:
+        return
+    for article in articles:
+        identifiers = [
+            (kind, normalized)
+            for kind, key, normalize in (
+                ("pmid", "pmid", try_normalize_pmid),
+                ("pmcid", "pmc_id", try_normalize_pmcid),
+                ("doi", "doi", try_normalize_doi),
+            )
+            if article.get(key) and (normalized := normalize(str(article[key])))
+        ]
+        try:
+            record = store.find(identifiers) if identifiers else None
+        except Exception:
+            record = None
+        if record is not None:
+            article["registered_fulltext"] = {
+                "origin": record.origin,
+                "record_id": record.record_id,
+                "artifact_uri": record.artifact_uri or "",
+                "retrieved_at": record.provenance.retrieved_at,
+            }
+
+
+def bind_supplied_fulltext_lookup() -> SuppliedFulltextLookup | None:
+    """Capture this tenant's supplied-fulltext store for get_fulltext reads."""
+    store = supplied_fulltext_store()
+    if store is None:
+        return None
+
+    async def lookup(identifiers: list[tuple[str, str]]) -> SuppliedFulltextRecord | None:
+        return await asyncio.to_thread(store.find, identifiers)
+
+    return lookup
+
+
+def build_fulltext_access_context(settings: AppSettings, *, article_page_enabled: bool) -> FulltextAccessContext:
+    """Describe the configured access routes (never their secrets) and what this caller may do."""
+    from pubmed_search.application.fulltext.plan import FulltextAccessContext
+    from pubmed_search.infrastructure.sources.browser_session import get_browser_session_config
+    from pubmed_search.infrastructure.sources.openurl import get_openurl_config
+
+    try:
+        openurl_configured = get_openurl_config().get_builder() is not None
+    except Exception:
+        openurl_configured = False
+    try:
+        broker_configured = bool(get_browser_session_config().is_configured)
+    except Exception:
+        broker_configured = False
+    identity = current_tenant()
+    return FulltextAccessContext(
+        article_page_enabled=article_page_enabled,
+        registration_allowed=identity.owns_durable_storage and supplied_fulltext_store() is not None,
+        file_intake_allowed=not identity.is_authenticated,
+        openurl_configured=openurl_configured,
+        ezproxy_configured=bool(settings.ezproxy_enabled and settings.ezproxy_host),
+        browser_broker_configured=broker_configured,
+    )

@@ -28,6 +28,7 @@ from pubmed_search.domain.entities.article import (
     UnifiedArticle,
     _parse_pubmed_date,
 )
+from pubmed_search.domain.services.study_design import BASIS_PUBLICATION_TYPE, classify_study_design
 
 
 def _authors(value: Any) -> list[Author]:
@@ -37,6 +38,45 @@ def _authors(value: Any) -> list[Author]:
     if not isinstance(value, (list, tuple)):
         return []
     return [Author.from_dict(item) for item in value if isinstance(item, (str, dict)) and item]
+
+
+# PubMed publication types are classified with the study-design precedence
+# (notices and protocols outrank the design they carry). Designs without an
+# ArticleType counterpart fall back to "Journal Article" when indexed.
+_PUBMED_DESIGN_ARTICLE_TYPES: dict[str, ArticleType] = {
+    "systematic_review_meta_analysis": ArticleType.META_ANALYSIS,
+    "meta_analysis": ArticleType.META_ANALYSIS,
+    "systematic_review": ArticleType.SYSTEMATIC_REVIEW,
+    "rct": ArticleType.RANDOMIZED_CONTROLLED_TRIAL,
+    "clinical_trial": ArticleType.CLINICAL_TRIAL,
+    "case_report": ArticleType.CASE_REPORT,
+    "scoping_review": ArticleType.REVIEW,
+    "review": ArticleType.REVIEW,
+    "editorial": ArticleType.EDITORIAL,
+    "comment": ArticleType.COMMENT,
+    "letter": ArticleType.LETTER,
+    "preprint": ArticleType.PREPRINT,
+    "notice": ArticleType.OTHER,
+}
+
+
+def _pubmed_publication_types(data: dict[str, Any]) -> list[str]:
+    """Return the record's PubMed ``PublicationType`` values in order."""
+    raw = data.get("publication_types") or data.get("article_type")
+    values = [raw] if isinstance(raw, str) else raw if isinstance(raw, (list, tuple)) else []
+    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+
+
+def _pubmed_article_type(publication_types: list[str]) -> ArticleType:
+    """Map PubMed publication types onto the shared ArticleType vocabulary."""
+    if not publication_types:
+        return ArticleType.UNKNOWN
+    design = classify_study_design(publication_types)
+    if design.basis == BASIS_PUBLICATION_TYPE and design.key in _PUBMED_DESIGN_ARTICLE_TYPES:
+        return _PUBMED_DESIGN_ARTICLE_TYPES[design.key]
+    if any(value.casefold() == "journal article" for value in publication_types):
+        return ArticleType.JOURNAL_ARTICLE
+    return ArticleType.UNKNOWN
 
 
 def article_from_pubmed(data: dict[str, Any]) -> UnifiedArticle:
@@ -51,38 +91,21 @@ def article_from_pubmed(data: dict[str, Any]) -> UnifiedArticle:
         with contextlib.suppress(ValueError, TypeError):
             year = int(data["year"])
 
-    article_type = ArticleType.UNKNOWN
-    if data.get("article_type"):
-        type_map = {
-            "Meta-Analysis": ArticleType.META_ANALYSIS,
-            "Systematic Review": ArticleType.SYSTEMATIC_REVIEW,
-            "Randomized Controlled Trial": ArticleType.RANDOMIZED_CONTROLLED_TRIAL,
-            "Clinical Trial": ArticleType.CLINICAL_TRIAL,
-            "Case Reports": ArticleType.CASE_REPORT,
-            "Letter": ArticleType.LETTER,
-            "Editorial": ArticleType.EDITORIAL,
-            "Comment": ArticleType.COMMENT,
-            "Review": ArticleType.REVIEW,
-            "Journal Article": ArticleType.JOURNAL_ARTICLE,
-        }
-        pub_types = data["article_type"]
-        if isinstance(pub_types, str):
-            pub_types = [pub_types]
-        for pub_type, mapped_type in type_map.items():
-            if pub_type in pub_types:
-                article_type = mapped_type
-                break
+    # The NCBI parser emits ``publication_types`` and ``pmc_id``; ``article_type``
+    # and ``pmc`` are older/normalized spellings (Europe PMC sets ``pmc``).
+    article_type = _pubmed_article_type(_pubmed_publication_types(data))
+    pmc = _normalize_pmc_identifier(data.get("pmc") or data.get("pmc_id"))
 
     oa_status = OpenAccessStatus.UNKNOWN
     oa_links: list[OpenAccessLink] = []
     is_oa = False
-    if data.get("pmc"):
+    if pmc:
+        # A PMC copy is free to read: the established PubMed/Europe PMC convention.
         is_oa = True
         oa_status = OpenAccessStatus.GREEN
-        pmc_id = data["pmc"].replace("PMC", "")
         oa_links.append(
             OpenAccessLink(
-                url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
+                url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc}/",
                 version="publishedVersion",
                 host_type="repository",
                 is_best=True,
@@ -94,7 +117,7 @@ def article_from_pubmed(data: dict[str, Any]) -> UnifiedArticle:
         primary_source="pubmed",
         pmid=data.get("pmid") or data.get("uid"),
         doi=data.get("doi"),
-        pmc=data.get("pmc"),
+        pmc=pmc,
         authors=authors,
         abstract=data.get("abstract"),
         journal=data.get("journal") or data.get("fulljournalname"),

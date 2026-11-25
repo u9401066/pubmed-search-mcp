@@ -42,6 +42,11 @@ def _article_record(article: UnifiedArticle) -> dict[str, Any]:
     """Convert a non-PubMed-native article into an export-compatible record."""
     authors = [getattr(author, "display_name", None) or str(author) for author in (article.authors or [])]
     article_type = getattr(article.article_type, "value", article.article_type)
+    # Prefer the provider's indexed vocabulary (PubMed PublicationType) for
+    # exports and PRISMA records; "unknown" is not a publication type.
+    publication_types = article.publication_types or (
+        [str(article_type)] if article_type and article_type != "unknown" else []
+    )
     return {
         "pmid": article.pmid,
         "title": article.title or "",
@@ -51,7 +56,7 @@ def _article_record(article: UnifiedArticle) -> dict[str, Any]:
         "year": str(article.year) if article.year else "",
         "doi": article.doi or "",
         "pmc_id": article.pmc or "",
-        "publication_types": [str(article_type)] if article_type else [],
+        "publication_types": publication_types,
         "metadata_source": article.primary_source,
     }
 

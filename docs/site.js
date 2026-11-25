@@ -247,7 +247,7 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for all 43 MCP tools across 16 registry categories.",
+    blurb: "Fast lookup for all 44 MCP tools across 16 registry categories.",
     blurbByLang: { zh: "42 個 MCP tools 與 16 個 registry categories 的快速查找。" },
     keywords: "42 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
@@ -490,11 +490,23 @@ const MCP_TOOLS_DATA = [
     catName: { zh: "全文工具", en: "Full Text" },
     icon: "📄",
     summary: {
-      zh: "多來源全文擷取與結構化解析（Europe PMC XML、Unpaywall OA、機構 EZproxy/Direct、CORE、PDF 直連）。",
-      en: "Enhanced multi-source fulltext retrieval with section parsing and PDF fallback.",
+      zh: "多來源全文擷取與結構化解析（Europe PMC XML、NCBI PMC、單篇才讀的 PMC 文章頁、Unpaywall OA、機構 EZproxy/Direct、CORE、PDF 直連）；讀不到時回傳 fulltext_plan。",
+      en: "Multi-source fulltext retrieval with section parsing; returns an ordered fulltext_plan when no usable body is found.",
     },
     example: 'get_fulltext(source={"kind":"pmid","value":"32417976"}, sections="introduction,results")',
     docLink: "user-guide",
+  },
+  {
+    name: "register_fulltext",
+    cat: "fulltext",
+    catName: { zh: "全文工具", en: "Full Text" },
+    icon: "📄",
+    summary: {
+      zh: "以必填出處登錄 host agent 或使用者取得的全文（agent_supplied／user_supplied），供 get_fulltext、筆記與 Chronicle 重用；不視為 provider 驗證。",
+      en: "Register host- or user-supplied fulltext with mandatory provenance for reuse by get_fulltext, notes and Chronicle; never provider-verified.",
+    },
+    example: 'register_fulltext(source={"kind":"pmcid","value":"PMC6439616"}, content="Results: verbatim article text.", provenance={"retrieval_method":"host_fetch","source_url":"https://pmc.ncbi.nlm.nih.gov/articles/PMC6439616/","retrieved_at":"2026-11-25T08:00:00Z"})',
+    docLink: "tools-usage-guide",
   },
   {
     name: "get_text_mined_terms",
@@ -1703,12 +1715,12 @@ function renderNav(filter = "") {
 // ──────────────────────────────────────────────────────────────────────────
 
 const TOOL_CATEGORIES_LIST = [
-  { key: "all", labelZh: "全部 (43)", labelEn: "All (43)" },
+  { key: "all", labelZh: "全部 (44)", labelEn: "All (44)" },
   { key: "search", labelZh: "🔍 核心搜尋 (1)", labelEn: "🔍 Search (1)" },
   { key: "query_intelligence", labelZh: "🧠 查詢智能 (3)", labelEn: "🧠 Query Intel (3)" },
   { key: "discovery", labelZh: "📑 文章探索 (5)", labelEn: "📑 Discovery (5)" },
   { key: "reference_verification", labelZh: "🔬 引用驗證 (1)", labelEn: "🔬 Reference Check (1)" },
-  { key: "fulltext", labelZh: "📄 全文工具 (2)", labelEn: "📄 Full Text (2)" },
+  { key: "fulltext", labelZh: "📄 全文工具 (3)", labelEn: "📄 Full Text (3)" },
   { key: "figure", labelZh: "🖼️ 圖表擷取 (1)", labelEn: "🖼️ Figures (1)" },
   { key: "ncbi_extended", labelZh: "🧬 基因與化合物 (7)", labelEn: "🧬 Genes & Drugs (7)" },
   { key: "citation_network", labelZh: "🌳 引用網絡 (1)", labelEn: "🌳 Citations (1)" },

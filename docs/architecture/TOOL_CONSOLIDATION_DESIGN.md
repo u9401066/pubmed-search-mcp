@@ -222,7 +222,7 @@ Tool surface 的修改只有在以下項目全部同步後才算完成：
 
 1. Runtime registry 的 category、tool name、annotation 與 strict schema 一致。
 2. README、網站、agent instructions、skill references 與生成索引不含退役契約。
-3. Registry-driven 測試斷言 16 categories、43 tools，並逐一驗證 metadata。
+3. Registry-driven 測試斷言 16 categories、44 tools，並逐一驗證 metadata。
 4. Session 與 Chronicle 的 discriminated variants 有正反例 schema tests。
 5. Pipeline 七工具具有 persistence、schedule、unschedule 與 multi-server isolation tests。
 6. `unified_search` normal/pipeline boundary、typed source result 與 output budget 有契約測試。

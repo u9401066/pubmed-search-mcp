@@ -65,6 +65,7 @@ from pubmed_search.shared.source_contracts import (
     validate_source_adapter_mapping_result,
     validate_source_adapter_result,
 )
+from pubmed_search.shared.transient_errors import classify_transient_error
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -114,22 +115,26 @@ def _sanitized_search_exception(service: str, error: Exception) -> Exception:
 
     if isinstance(error, TimeoutError):
         return TimeoutError(f"{service} search timed out")
-    if isinstance(error, RetryableOperationError):
-        return RetryableOperationError(
-            f"{service} search failed",
-            retry_after=error.retry_after,
-            status_code=error.status_code,
-        )
-    if getattr(error, "retryable", False):
+    # Keep the transient class (timeout/transport/http) and the upstream
+    # exception *name* so agents learn the failure is worth repeating; the
+    # upstream message (URL, query, contact email, API key) is dropped.
+    transient = classify_transient_error(error)
+    retryable = isinstance(error, RetryableOperationError) or getattr(error, "retryable", False) is True
+    if retryable or transient is not None:
         raw_retry_after = getattr(error, "retry_after", None)
         raw_status_code = getattr(error, "status_code", None)
+        status_code = raw_status_code if isinstance(raw_status_code, int) else None
+        if status_code is None and transient is not None:
+            status_code = transient.status_code
         return RetryableOperationError(
             f"{service} search failed",
             retry_after=float(raw_retry_after) if isinstance(raw_retry_after, (int, float)) else None,
-            status_code=raw_status_code if isinstance(raw_status_code, int) else None,
+            status_code=status_code,
+            failure_kind=transient.kind if transient is not None else "retryable",
+            upstream_type=transient.upstream_type if transient is not None else type(error).__name__,
         )
     if isinstance(error, APIRequestError):
-        return APIRequestError(service, status_code=error.status_code)
+        return APIRequestError(service, status_code=error.status_code, reason=error.reason)
     return APIRequestError(service)
 
 
