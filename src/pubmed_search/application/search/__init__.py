@@ -49,6 +49,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "calculate_reproducibility": ("pubmed_search.application.search.reproducibility", "calculate_reproducibility"),
     # Provider-neutral source contract
     "SourceSearchPage": ("pubmed_search.application.search.source_models", "SourceSearchPage"),
+    # Disclosed MeSH correction
+    "MeshCorrectionService": ("pubmed_search.application.search.mesh_correction", "MeshCorrectionService"),
+    "MeshCorrectionPolicy": ("pubmed_search.application.search.mesh_correction", "MeshCorrectionPolicy"),
+    "MeshCorrectionResult": ("pubmed_search.application.search.mesh_correction", "MeshCorrectionResult"),
 }
 
 __all__ = list(_LAZY_EXPORTS)

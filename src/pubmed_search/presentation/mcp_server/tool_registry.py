@@ -325,6 +325,7 @@ def register_all_mcp_tools(
     source_runtime: SourceRuntime,
     strategy_generator: Any | None = None,
     session_registry: SessionManagerRegistry | None = None,
+    mesh_correction: Any | None = None,
 ) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
@@ -337,6 +338,7 @@ def register_all_mcp_tools(
         source_runtime: Explicit server-scoped provider dependencies.
         strategy_generator: Optional strategy generator
         session_registry: Optional request-time tenant router for session tools and resources.
+        mesh_correction: Optional MeshCorrectionService for disclosed MeSH corrections and candidates.
 
     Returns:
         Dict with category names and tool counts
@@ -355,6 +357,7 @@ def register_all_mcp_tools(
             session_manager=session_manager,
             session_registry=session_registry,
             strategy_generator=strategy_generator,
+            mesh_correction=mesh_correction,
             source_runtime=source_runtime,
         )
     )

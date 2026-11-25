@@ -274,6 +274,7 @@ def create_server(
 
     searcher = cast("LiteratureSearcher", container.searcher())
     strategy_generator = container.strategy_generator()
+    mesh_correction = container.mesh_correction()
     session_manager = cast("SessionManager", container.session_manager())
 
     logger.info("Strategy generator initialized (ESpell + MeSH)")
@@ -368,6 +369,7 @@ def create_server(
         searcher=searcher,
         session_manager=session_manager,
         strategy_generator=strategy_generator,
+        mesh_correction=mesh_correction,
         session_registry=tenant_registry,
         pipeline_runtime=pipeline_runtime,
         source_runtime=source_runtime,
