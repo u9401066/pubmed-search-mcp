@@ -107,6 +107,13 @@ When a server requests a wait longer than the local retry cap, fail the current
 operation and retain the full shared cooldown instead of retrying early.
 Bio.Entrez/urllib retryable HTTP errors are normalized with their status and
 Retry-After before reaching this kernel; the failed response handle is closed.
+Bio.Entrez runs with `max_tries=1`, so this kernel owns NCBI retries: stdlib
+network failures (`URLError` from DNS, refused or reset connections and socket
+timeouts, `RemoteDisconnected`, `IncompleteRead`, SSL EOF) are retried like
+httpx transport errors, within the same per-attempt and total-timeout budget.
+Programming errors (`ValueError`, `TypeError`, lookup errors) are never
+retried, even when their text mentions a timeout.
+`shared/transient_errors.py` is the single classifier for all of these.
 Cooldown updates are atomic on the owning loop and survive the initiating
 caller's expired budget. Cancelled Entrez work checks a propagated cancellation
 flag after acquiring the thread lock, so a queued request does not start later.
@@ -241,6 +248,30 @@ failed federation outcomes, while declaring `bounded=true` and
 failed/retryable source sets, continuation-capable sources, and sources whose
 completeness remains unknown. Source-scoped failures remain in `source_errors`;
 rendered response length is not an outcome signal.
+
+Each `source_errors[]` entry carries `kind` and `retryable`. Transient
+failures, where the identical request can succeed later, are `retryable: true`
+and listed in `retryable_sources`:
+
+| `kind` | Failure class |
+| --- | --- |
+| `timeout` | Per-attempt or budget timeout, socket timeout, `URLError(timed out)`, httpx timeouts |
+| `transport` | DNS failure, refused/reset/aborted connection, `RemoteDisconnected`, `IncompleteRead`, SSL EOF, httpx transport errors, sanitized `APIRequestError(reason="timeout"/"transport")` |
+| `http` | A retryable HTTP status (408, 425, 429, 5xx) seen directly |
+| `retryable` | Retries exhausted on a retryable status (`status_code` kept), or an upstream "temporarily unavailable"/backend-failed report |
+| `unexpected` | Everything else, including programming errors and malformed payloads; `retryable: false` |
+
+The message names only the class and upstream exception type, for example
+`Upstream transport failed (URLError)` or `Upstream request failed (HTTP 503)`;
+upstream messages, URLs, queries, contact emails and API keys are never copied.
+Retryable entries add a `suggestion` to repeat the call. When the result is
+under-filled, `next_tools[0]` is the caller's identical `unified_search` call,
+and query rewriting is withheld while a transient failure is the only reason
+nothing was returned.
+
+Structured `articles` are summary records unless the caller passes
+`options="full_records"`; the artifact `results.json` always holds complete
+records. See the [tool usage guide](../guides/TOOLS_USAGE_GUIDE.md) for fields.
 
 At the managed MCP boundary, every `unified_search` invocation gets a
 tenant-scoped `search-run/v1` envelope: normal retrieval, validation/planning

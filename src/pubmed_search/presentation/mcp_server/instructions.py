@@ -353,6 +353,14 @@ search_clinvar("BRCA1", limit=10)
 - `unified_search` returns a compact answer plus `artifact_summary` / `artifact`
   when durable artifacts were written. The response summary should be detailed
   enough to answer the user immediately.
+- JSON/TOON `articles` are summary records (identifiers, title, year, journal,
+  first author + author count, publication types, 400-character
+  `abstract_snippet`, rank, source, OA flags). Use `options="full_records"`,
+  the artifact `results.json` or `fetch_article_details` for complete records;
+  pass `full_records` when another tool imports the article list.
+- A `source_errors[]` entry with `retryable: true` (`search_status.retryable_sources`)
+  is a transient timeout/network/HTTP 429/5xx failure, not a narrow query:
+  repeat the same call (`next_tools[0]`) before rewriting the query.
 - The artifact locator includes `artifact_id`, `artifact_uri`,
   `primary_file`, `read_order`, audit status, file inventory, and
   `read_session(...)` retrieval hints.

@@ -292,6 +292,39 @@ separates `completed`, valid `empty`, `partial`, and all-source `failed`
 outcomes. It also reports returned count, attempted/successful/failed/retryable
 sources, continuation sources, and sources whose completeness is unknown.
 
+A source listed in `retryable_sources` failed transiently: its
+`source_errors[]` entry has `retryable: true`, a `kind` of `timeout`,
+`transport` (connection reset/refused, DNS, NCBI `URLError`), `http` or
+`retryable` (HTTP 408/425/429/5xx, NCBI "temporarily unavailable"), a message
+such as `Upstream transport failed (URLError)` and a `suggestion` to repeat
+the call. That is not evidence that the query is too narrow. When the result is
+under-filled, `next_tools[0]` is the same `unified_search` call with the same
+arguments; run it unchanged before rewriting the query. `kind: "unexpected"`
+with `retryable: false` is a non-transient failure and keeps the usual
+suggestions.
+
+JSON and TOON `articles` are **summary records** by default, sized for an agent
+context (about 1-1.5 KB per PubMed record):
+
+| Field | Content |
+| --- | --- |
+| `rank`, `pmid`, `doi`, `pmc` | Result position and identifiers (`openalex_id`, `s2_id`, `core_id`, `arxiv_id` when present) |
+| `title`, `year`, `journal` | Bibliographic anchors |
+| `first_author`, `author_count` | First author display name and total number of authors |
+| `publication_types`, `article_type` | Provider-indexed types (PubMed `PublicationType`); not a quality grade |
+| `abstract_snippet`, `abstract_truncated` | First 400 characters of the abstract (word boundary, `…` when cut) |
+| `source`, `sources` | Primary and contributing providers |
+| `open_access`, `oa_status`, `pdf_available` | Open-access flags |
+| `ranking_score`, `rank_percentile`, `retrieval` | Rank signals (hidden by `no_scores`) and exact/broadened provenance |
+
+The top-level `record_detail` block names the level. For complete records (all
+authors, full abstract, MeSH terms, keywords, link lists, rank details) repeat
+the call with `options="full_records"`, read the artifact `results.json`, or
+use `fetch_article_details` / `read_session` for selected PMIDs. Pass
+`full_records` when a downstream tool imports the `articles` list as-is (for
+example Zotero Keeper `import_articles`). `options="compact"` remains the
+smallest preview and cannot be combined with `full_records`.
+
 ClinicalTrials.gov is an explicit adjunct, not another literature-search leg.
 Use `options="clinical_trials"` only when related registry records are useful.
 The request is never made by default and does not affect article ranking or
@@ -585,7 +618,9 @@ institutional access terms.
 If a source fails but the search can continue, `unified_search` may return
 `source_errors` in JSON or `Source warnings` in markdown. Semantic Scholar HTTP
 429 warnings usually mean the workflow should set
-`SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source.
+`SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source. Other
+`retryable: true` failures are transient; repeat the same call before changing
+the query (see `search_status.retryable_sources` above).
 
 ## Local Wiki Note Export
 

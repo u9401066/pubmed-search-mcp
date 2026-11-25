@@ -191,7 +191,13 @@ def register_unified_search_tools(
                 - "impact": Prioritize high-citation papers
                 - "recency": Prioritize recent publications
                 - "quality": Prioritize publication-type heuristics (RCTs, meta-analyses); not a quality assessment
-            output_format: "markdown" (human-readable), "json", or "toon" (programmatic)
+            output_format: "markdown" (human-readable), "json", or "toon" (programmatic).
+                     JSON/TOON articles are summary records by default (about
+                     1-1.5 KB each): pmid/doi/pmc, title, year, journal,
+                     first_author + author_count, publication_types, a
+                     400-character abstract_snippet, rank, source and
+                     open-access flags. Use options="full_records" for complete
+                     records (all authors, full abstract, MeSH, keywords, links).
             fulltext: "off" (default) or "prefetch" for normal searches. Prefetch
                       prepares open-access XML for up to three top-ranked articles
                       with known PMCIDs in the background. Search does not wait.
@@ -232,7 +238,11 @@ def register_unified_search_tools(
                        no_oa          → skip Unpaywall OA link enrichment
                        no_analysis    → hide query analysis section in output
                        no_scores      → hide ranking scores and rank percentiles
-                       compact        → compact structured JSON/TOON output
+                       full_records   → complete JSON/TOON article records instead
+                                        of the default summary records
+                       compact        → minimal JSON/TOON previews (no abstract),
+                                        no analysis/next tools/provenance, shallow
+                                        search; exclusive with full_records
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
                        no_relax       → disable automatic broadening (deep fill tiers
@@ -361,6 +371,10 @@ def register_unified_search_tools(
               replacement, tier (exact / co_occurrence / text_words),
               evidence, confidence and before/after hits
             - Relaxation info (if auto_relax triggered)
+            - Source failures (`source_errors`, `search_status.retryable_sources`):
+              `retryable: true` (kind timeout / transport / http / retryable)
+              is transient, not a narrow query; when results are short,
+              `next_tools[0]` repeats the same call with the same arguments
             - Pipeline step summary (if pipeline mode)
         """
         return await run_unified_search(

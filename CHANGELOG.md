@@ -10,6 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Fixes for two agent-facing defects found by the 2026-11-25 Claude Code harness
+pilot (Haiku 5.5): a transient NCBI failure that the agent read as a query
+problem, and structured search responses too large for an agent context.
+
+### Changed
+
+- **`unified_search` JSON/TOON articles are summary records by default**
+  (1.1-1.2 KB per PubMed record on the pilot payloads instead of 4.0-6.5 KB;
+  the same live 30-record search fell from 190 KB to 59 KB): `rank`,
+  `pmid`/`doi`/`pmc` (plus other provider IDs when present), `title`, `year`, `journal`, `first_author`,
+  `author_count`, `publication_types`, a 400-character `abstract_snippet` with
+  `abstract_truncated`, `source`/`sources`, open-access flags, rank scores and
+  compact `retrieval` provenance. A top-level `record_detail` block says how to
+  get complete records, and the response's `artifact` locator no longer embeds
+  the artifact summary that repeats `source_metadata`. **Opt in to the previous
+  complete records with `options="full_records"`** (exclusive with `compact`);
+  the artifact `results.json`, Markdown output, pipeline mode and the Python
+  SDK are unchanged. Consumers that import `articles` wholesale (for example
+  Zotero Keeper `import_articles`) must add `options="full_records"`.
+- Transient source failures carry a short message naming the failure class and
+  upstream exception type (for example `Upstream transport failed (URLError)`,
+  `Upstream request failed (HTTP 503)`), never the upstream message or URL.
+
+### Fixed
+
+- **Transient NCBI failures are retried and reported as retryable.** Bio.Entrez
+  runs with `max_tries=1`, but the shared transport kernel only retried httpx
+  transport errors, so `URLError` (DNS failure, connection reset, socket
+  timeout), `RemoteDisconnected`, `IncompleteRead` and SSL EOF failed on the
+  first attempt and surfaced as `kind: "unexpected"`, `retryable: false`.
+  These are now retried within the existing total-timeout bounds and classified
+  as `timeout`/`transport` (HTTP 408/425/429/5xx as `http`/`retryable`, NCBI
+  "temporarily unavailable"/backend errors as `retryable`) with
+  `retryable: true`, listed in `search_status.retryable_sources`, and given a
+  `suggestion` to repeat the call. The same classification applies to httpx
+  providers on the broker path (Europe PMC, OpenAlex, Semantic Scholar, CORE,
+  Scopus, Web of Science), whose sanitized timeout/transport failures were
+  also reported as `unexpected`.
+- After a retryable failure that left the result under-filled, `next_tools[0]`
+  is the same `unified_search` call with the same arguments; query rewriting
+  (`generate_search_queries`) is no longer suggested when a transient failure is
+  the only reason nothing was returned. Programming errors (including a
+  `ValueError` whose text mentions "timeout") stay `unexpected` and are no
+  longer retried.
+
 ## [0.11.0] - 2026-11-25
 
 Systematic-review and evidence-quality release. A field benchmark on a PACU
