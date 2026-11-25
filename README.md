@@ -42,7 +42,7 @@ For each of the 16 registry categories, see the implementation evidence and rema
 
 ## Search limits and recovery
 
-Generic literature discovery uses exactly one MCP entry point, `unified_search`. A source's result budget is divided across that source's query strategies. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
+Generic literature discovery uses exactly one MCP entry point, `unified_search`. Deep search is precision-first: your query gets each source's full result budget, and lower-precision strategies only fill missing slots, disclosed in `broadening`. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
 
 The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true` pipeline execution. Use `read_session(request={"action":"replay_search","run_id":"..."})` to recover the original credential-free arguments. There is no public cursor-resume parameter yet. Submitting the recovered request starts a new search. A reply with `search_run.status="history_unavailable"` has no guaranteed durable replay. [Recovery and artifact formats](docs/guides/TOOLS_USAGE_GUIDE.md)
 

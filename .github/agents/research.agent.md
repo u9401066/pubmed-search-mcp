@@ -23,6 +23,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
    - `read_session(request={"action":"article","pmid":"12345678"})`
    - `read_session(request={"action":"summary"})`
    - When `unified_search` returns an `artifact_summary`, use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})`, then inspect `query_strategy.json` and complete `results.json` or `results.toon` as needed.
+   - Read `broadening.summary` before interpreting deep results; records with `retrieval.broadened=true` (Markdown 🔻) are lower-precision fill ranked after exact-query matches.
    - Treat `source_errors` plus non-empty articles as a partial success. Preserve successful evidence, read the artifact audit first, and retry only failed/retryable sources when broader coverage is still required.
    - For an interrupted or repeatable run, use `read_session(request={"action":"search_runs"})`, then `read_session(request={"action":"search_run","run_id":"..."})` or `read_session(request={"action":"replay_search","run_id":"..."})`; replay returns arguments and never executes a search implicitly.
 3. Check Zotero before importing:

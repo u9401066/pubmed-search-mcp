@@ -176,9 +176,27 @@ Input validation 會在 provider I/O 前嚴格執行。`limit` 必須是 `1..100
 filter token 必須使用支援的 `key:value`；year bounds 必須在 1000–2100 內且順序
 正確；未知 option、ranking mode 或 output format 會直接被拒絕，不會無聲忽略。
 Source identifier 必須是 `semantic_scholar`、`europe_pmc`、`web_of_science` 等完全相等的 canonical key；alias、大小寫變體、token 前後空白、空 token 與重複 token 均會被拒絕。Canonical filter keys 是 `year`、`age_group`、`sex`、`species`、`language` 與 `clinical_query`。
-一般 deep mode 中，公開 `limit` 是單一 source 所有 generated strategies 共用的
-**總額度**。Broker 會把額度分配到 strategies、裁切超額 adapter response，並套用
-有界的全域／每來源 concurrency 與 strategy deadline。
+一般 deep mode 採**精準優先（precision-first）**。使用者的查詢（`exact` tier）
+在每個規劃的 source 上使用該 source 完整的 `limit`；含欄位標籤或布林運算的專家查詢
+已足額時絕不會被稀釋。只有 exact tier 的 eligible unique 筆數（去重並套用
+`exclude_seen`／detected-preprint 過濾後）少於 `limit` 時，broker 才會先在同一個
+exact query 往下取，再依精準度遞減逐一執行 `semantic`、`broad` 策略，且每個策略只補
+剩餘名額。exact query 失敗的 source 不會被放寬；`options="no_relax"` 會同時關閉這個
+補足與零結果 auto-relaxation。有界的全域／每來源 concurrency、adapter clipping 與
+strategy deadline 仍然有效。
+
+解讀 deep 或 relaxed 結果前，先讀 `broadening` 物件（JSON/TOON、artifact
+`query_strategy.json` 與 Markdown 的 **Broadening** 行）：
+
+| 欄位 | 意義 |
+| --- | --- |
+| `needed` / `applied` | exact tier 是否不足 `limit`，以及是否真的執行了較低精準度查詢 |
+| `summary` | 一行原因，例如 `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` 或 `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | 每個策略的 `tier`、`phase`、實際查詢、`total_available`、`returned`、去重後 `contributed` 與 `skip_reason` |
+| `articles[].retrieval` | 紀錄層級 provenance；`broadened=true`（Markdown 🔻）代表只有較低精準度查詢找到該筆 |
+
+放寬取得的紀錄一律排在符合原始查詢的紀錄之後。零結果 auto-relaxation 也使用同一個
+物件，並標示 `mechanisms=["auto_relax"]` 與 `tier="relaxed"`。
 
 JSON/TOON 與 persistent artifact 會保存 `retrieval_mode` 及每來源
 `source_metadata`，包括 requested/provider mode、canonical 或 compiled query、

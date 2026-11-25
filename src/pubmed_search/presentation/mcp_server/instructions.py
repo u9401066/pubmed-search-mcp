@@ -359,6 +359,12 @@ search_clinvar("BRCA1", limit=10)
 - For `unified_search`, read `audit.json` first to check source-count and
   completeness warnings, then `query_strategy.json`, then `results.json` or
   `results.toon` for the full record list.
+- Deep search is precision-first: the original query runs first with the full
+  `limit`, and lower-precision strategies only fill missing slots. Read
+  `broadening.summary` (Markdown **Broadening** line) before interpreting
+  results; records with `retrieval.broadened=true` (Markdown 🔻) came only from
+  broadened or relaxed queries and are ranked after exact-query matches.
+  `options="no_relax"` disables all automatic broadening.
 - `read_session` redacts `local_path` and `manifest_path` by default. Set
   `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
   should receive server-local paths.
