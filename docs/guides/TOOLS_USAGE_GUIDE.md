@@ -187,7 +187,12 @@ NCBI's reason, the replacement, tier, evidence, confidence and the before/after 
 `broadening.mechanisms` starts with `mesh_correction`. The superseded original attempt stays in
 `broadening.attempts`; corrected records carry retrieval strategy `original:mesh_corrected`. Opt out
 with `options="no_mesh_correction"`; `no_relax` disables broadening only. Queries whose MeSH clauses
-PubMed resolves cost no extra request.
+PubMed resolves cost no extra request. Inside a NOT operand only an exact correction that keeps every
+restriction (qualifier, `[Majr]`, `:noexp`) is applied, in every tier; anything else is listed in
+`mesh_correction.suggestions` and the clause is left as written. A `/qualifier` is recognized only for real
+MeSH subheadings and is checked against the heading's allowable qualifiers. Operators follow PubMed: `or`
+and `not` work in lowercase, but a lowercase `and` is a stopword (before a tagged phrase it becomes part of
+the phrase), so write `AND`.
 
 Saved pipelines are never rewritten. A pipeline PubMed step (bounded, exhaustive or `block_analysis`)
 records a `mesh_correction` suggestion with `applied: false`, shown in the run's `warnings`, the Markdown
@@ -261,7 +266,8 @@ Markdown **Broadening** line) before interpreting a deep or relaxed result:
 
 | Field | Meaning |
 | --- | --- |
-| `needed` / `applied` | Whether the exact tier under-filled `limit`, and whether a lower-precision query actually ran |
+| `needed` / `applied` | Whether the exact tier under-filled `limit`, and whether an automatic query change (MeSH correction, deepening, broadening or relaxation) ran and was answered by the provider |
+| `failed_attempts` | Broadening or relaxation requests that failed or timed out; they are reported as failures, never as empty results |
 | `summary` | One-line reason, e.g. `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` or `no broadening needed (original total 45 ≥ limit 15)` |
 | `attempts[]` | Per strategy: `tier`, `phase`, executed query, `total_available`, `returned`, `contributed` after deduplication, and `skip_reason` |
 | `articles[].retrieval` | Record provenance; `broadened=true` (Markdown 🔻) means only a lower-precision query found the record |
@@ -311,7 +317,10 @@ Use `verify_reference_list` when a manuscript, bibliography, or generated answer
 
 `verified` confirms bibliographic consistency with the resolved PubMed record.
 A matching DOI or PMID does not override conflicting or unconfirmed supplied
-fields: these rows remain `partial_match` and enter the review queue. DOI
+fields. When a cited PMID/DOI disagrees with the other cited fields, resolution
+continues with ECitMatch and the year-tolerant searches; `identifier_assessment`
+reports it as `probably_wrong` (row `unresolved`) or `weakly_corroborated`
+(`partial_match` without corrections). DOI
 resolution requires an exact normalized DOI, and PMID lookup checks the returned
 record's identity. Individual lookup failures retain successful rows and report
 `source_unavailable`; they are not missing references. This check does not
@@ -326,8 +335,11 @@ title agrees and it does not conflict on both first author and journal (without 
 cited title, author, journal, volume and first page must all agree); the closest
 year, author order and locator agreement rank versions of the same work. Its row is
 `partial_match` with `corrections` such as
-`{"field": "year", "cited": "2018", "pubmed": "2019"}`. Corrections are withheld
-when the cited title conflicts with the record or several versions match equally.
+`{"field": "year", "cited": "2018", "pubmed": "2019"}`. Corrections are offered only
+when at least two independent cited fields agree with the record besides the title,
+locator or identifier that found it; otherwise the candidate is returned for review
+with `corrections_withheld_reason`. They are also withheld when the cited title
+conflicts with the record or several versions match equally.
 Confirm `matched_article` before applying them. An `unresolved` row lists
 `attempted_strategies`; it means PubMed returned no acceptable record, not that
 the reference is fabricated.
