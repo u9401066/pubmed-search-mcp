@@ -9,10 +9,12 @@ Design:
     record and in the run response, together with how to adopt it (save a
     new pipeline version with the corrected query).
 
-    Suggestion traffic is optional work: it runs only if its whole request
-    budget fits in the run's remaining external-call quota (unused requests
-    are returned) and within the remaining run deadline, and it never makes
-    the run fail.
+    Suggestion traffic is optional work: the executor computes suggestions
+    only after every pipeline step has finished (so reserving the whole
+    request budget up front can never starve required retrieval such as an
+    exhaustive step's metadata batches), only if that budget fits in the
+    run's remaining external-call quota (unused requests are returned) and
+    within the remaining run deadline, and it never makes the run fail.
 
 Maintenance:
     Keep this module free of provider I/O; NCBI calls go through the

@@ -5,13 +5,16 @@ Follows the research-workspace journal pattern: one transaction per command,
 opens serialize before the schema is installed), and a local database file
 that separate processes can share. Decisions are append-only; the latest
 decision per (PMID, stage) is the effective one, so a changed decision keeps
-its audit trail. Every write is idempotent through a stable key.
+its audit trail. A client ``decision_id`` makes a write idempotent; without
+one, only a repeat of the reviewer's latest decision for that PMID and stage
+is a replay, so returning to an earlier decision is always recorded.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,12 +23,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SCHEMA = (
     """CREATE TABLE runs (
         run_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE, database TEXT NOT NULL,
         identified_count INTEGER NOT NULL, new_count INTEGER NOT NULL, exhaustive INTEGER NOT NULL,
-        run_started TEXT, registered_at TEXT NOT NULL
+        run_started TEXT, registered_at TEXT NOT NULL, automation_removed INTEGER NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE records (
         pmid TEXT PRIMARY KEY, first_run_id TEXT NOT NULL REFERENCES runs(run_id), identified_at TEXT NOT NULL
@@ -38,6 +41,17 @@ _SCHEMA = (
     "CREATE INDEX decisions_by_stage ON decisions(stage, pmid, sequence)",
     "CREATE INDEX records_by_run ON records(first_run_id)",
 )
+# Version 1 counted only the records a run handed to screening; version 2 also
+# keeps how many identified records pipeline filters removed before screening.
+_MIGRATIONS = {1: ("ALTER TABLE runs ADD COLUMN automation_removed INTEGER NOT NULL DEFAULT 0",)}
+# A log whose pipeline is being deleted: reads still work, writes are refused,
+# so no decision can land between the deletion check and the file removal.
+_RETIRED_VERSION = -1
+
+
+class ScreeningLogRetiredError(ValueError):
+    """The screening log belongs to a pipeline that is being deleted."""
+
 
 _LATEST = """
     SELECT d.pmid, d.decision, d.reason FROM decisions d
@@ -85,6 +99,32 @@ def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
     return {**payload, "sequence": row["sequence"], "decided_at": row["decided_at"]}
 
 
+_DECISION_CONTENT = ("pmid", "stage", "decision", "reason", "reviewer", "note")
+
+
+def _content(decision: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(decision.get(key) for key in _DECISION_CONTENT)
+
+
+def _replayed_decision(db: sqlite3.Connection, decision: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the stored row this decision repeats, or ``None`` when it must be appended."""
+    client_id = decision.get("decision_id")
+    if client_id is not None:
+        existing = db.execute("SELECT * FROM decisions WHERE decision_id=?", (client_id,)).fetchone()
+        if existing is None:
+            return None
+        if _content(json.loads(existing["payload"])) != _content(decision):
+            raise ValueError(f"decision_id {client_id} already exists with different content")
+        return _decision_row(existing)
+    latest = db.execute(
+        "SELECT * FROM decisions WHERE stage=? AND pmid=? AND reviewer=? ORDER BY sequence DESC LIMIT 1",
+        (decision["stage"], decision["pmid"], decision["reviewer"]),
+    ).fetchone()
+    if latest is not None and _content(json.loads(latest["payload"])) == _content(decision):
+        return _decision_row(latest)
+    return None
+
+
 class SQLiteScreeningStore:
     """Screening records and decisions of one pipeline in one database file."""
 
@@ -99,18 +139,31 @@ class SQLiteScreeningStore:
         return self._path.is_file()
 
     @contextmanager
-    def _transaction(self, *, write: bool) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, write: bool, allow_retired: bool = False) -> Iterator[sqlite3.Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self._path, timeout=10, isolation_level=None)) as db:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
-            first_open = db.execute("PRAGMA user_version").fetchone()[0] == 0
+            # A first open or a migration writes the schema, so it takes the write lock.
+            needs_schema = db.execute("PRAGMA user_version").fetchone()[0] not in {_SCHEMA_VERSION, _RETIRED_VERSION}
             with db:
-                db.execute("BEGIN IMMEDIATE" if write or first_open else "BEGIN")
+                db.execute("BEGIN IMMEDIATE" if write or needs_schema else "BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version == 0:
+                if version == _RETIRED_VERSION:
+                    if write and not allow_retired:
+                        raise ScreeningLogRetiredError(
+                            "This pipeline's screening log is being deleted; no decision was recorded. "
+                            "Retry delete_pipeline to finish the deletion."
+                        )
+                elif version == 0:
                     for statement in _SCHEMA:
                         db.execute(statement)
+                    db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+                elif version in _MIGRATIONS:
+                    while version != _SCHEMA_VERSION:
+                        for statement in _MIGRATIONS[version]:
+                            db.execute(statement)
+                        version += 1
                     db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                 elif version != _SCHEMA_VERSION:
                     raise ValueError(f"Unsupported screening database version {version}")
@@ -127,6 +180,31 @@ class SQLiteScreeningStore:
             records = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
             return {"decisions": row[0], "pmids": row[1], "reviewers": row[2], "records": records}
 
+    def retire(self, *, allow_decisions: bool) -> dict[str, Any]:
+        """Atomically check the decision count and, if allowed, refuse all later writes.
+
+        Returns the log summary with ``retired``: false (nothing changed) when
+        decisions exist and ``allow_decisions`` is false. The check and the
+        retirement share one write transaction, so a concurrent decision is
+        either counted here or refused afterwards; it is never deleted unseen.
+        """
+        with self._transaction(write=True, allow_retired=True) as db:
+            row = db.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT pmid), COUNT(DISTINCT reviewer) FROM decisions"
+            ).fetchone()
+            records = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+            summary: dict[str, Any] = {"decisions": row[0], "pmids": row[1], "reviewers": row[2], "records": records}
+            if summary["decisions"] and not allow_decisions:
+                return {**summary, "retired": False}
+            db.execute(f"PRAGMA user_version={_RETIRED_VERSION}")
+            return {**summary, "retired": True}
+
+    def restore(self) -> None:
+        """Undo :meth:`retire` after the log file could not be removed."""
+        with self._transaction(write=True, allow_retired=True) as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == _RETIRED_VERSION:
+                db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+
     # ── Identification ──────────────────────────────────────────────────
 
     def register_run(
@@ -137,19 +215,30 @@ class SQLiteScreeningStore:
         pmids: list[str],
         run_started: str | None,
         exhaustive: bool,
+        identified_count: int | None = None,
     ) -> dict[str, Any]:
-        """Add one run's identified records; records first seen here become unscreened."""
+        """Add one run's records; records first seen here become unscreened.
+
+        ``pmids`` is the set handed to screening. ``identified_count`` is how
+        many records the run's searches identified before pipeline filters
+        (default: ``len(pmids)``); the difference is reported as records
+        marked ineligible by automation tools, not as duplicates.
+        """
+        identified = max(len(pmids), identified_count if identified_count is not None else len(pmids))
+        automation_removed = identified - len(pmids)
         with self._transaction(write=True) as db:
             existing = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if existing is not None:
-                if existing["identified_count"] != len(pmids):
+                if (existing["identified_count"], existing["automation_removed"]) != (identified, automation_removed):
                     raise ValueError("run_id is already registered with a different record set")
                 return {"run_id": run_id, **dict(existing), "replayed": True}
             sequence = db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM runs").fetchone()[0]
             now = _now()
             db.execute(
-                "INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)",
-                (run_id, sequence, database, len(pmids), 0, int(exhaustive), run_started, now),
+                """INSERT INTO runs(run_id, sequence, database, identified_count, new_count, exhaustive,
+                                    run_started, registered_at, automation_removed)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (run_id, sequence, database, identified, 0, int(exhaustive), run_started, now, automation_removed),
             )
             before = db.total_changes
             db.executemany(
@@ -175,18 +264,19 @@ class SQLiteScreeningStore:
     # ── Decisions ───────────────────────────────────────────────────────
 
     def record_decisions(self, decisions: list[dict[str, Any]]) -> dict[str, Any]:
-        """Append decisions all-or-nothing; a repeated decision_id is a replay."""
+        """Append decisions all-or-nothing.
+
+        A replay is a resent client ``decision_id`` or, without one, a repeat
+        of the same reviewer's latest decision for that PMID and stage. Every
+        other decision is appended under a fresh key and becomes effective.
+        """
         with self._transaction(write=True) as db:
             recorded: list[dict[str, Any]] = []
             replayed = 0
             for decision in decisions:
-                existing = db.execute(
-                    "SELECT * FROM decisions WHERE decision_id=?", (decision["decision_id"],)
-                ).fetchone()
+                existing = _replayed_decision(db, decision)
                 if existing is not None:
-                    if json.loads(existing["payload"]) != decision:
-                        raise ValueError(f"decision_id {decision['decision_id']} already exists with different content")
-                    recorded.append({**_decision_row(existing), "replayed": True})
+                    recorded.append({**existing, "replayed": True})
                     replayed += 1
                     continue
                 if db.execute("SELECT 1 FROM records WHERE pmid=?", (decision["pmid"],)).fetchone() is None:
@@ -201,22 +291,23 @@ class SQLiteScreeningStore:
                         raise ValueError(
                             f"PMID {decision['pmid']} needs a title/abstract include or maybe before full-text screening"
                         )
+                stored = {**decision, "decision_id": decision.get("decision_id") or f"d-{uuid.uuid4().hex}"}
                 now = _now()
                 cursor = db.execute(
                     """INSERT INTO decisions(decision_id,pmid,stage,decision,reason,reviewer,decided_at,payload)
                        VALUES(?,?,?,?,?,?,?,?)""",
                     (
-                        decision["decision_id"],
-                        decision["pmid"],
-                        decision["stage"],
-                        decision["decision"],
-                        decision.get("reason"),
-                        decision["reviewer"],
+                        stored["decision_id"],
+                        stored["pmid"],
+                        stored["stage"],
+                        stored["decision"],
+                        stored.get("reason"),
+                        stored["reviewer"],
                         now,
-                        json.dumps(decision, sort_keys=True),
+                        json.dumps(stored, sort_keys=True),
                     ),
                 )
-                recorded.append({**decision, "sequence": cursor.lastrowid, "decided_at": now, "replayed": False})
+                recorded.append({**stored, "sequence": cursor.lastrowid, "decided_at": now, "replayed": False})
             return {"decisions": recorded, "recorded": len(recorded) - replayed, "replayed": replayed}
 
     def decision_log(self, *, pmid: str | None, offset: int, limit: int) -> dict[str, Any]:
@@ -308,4 +399,4 @@ class SQLiteScreeningStore:
             }
 
 
-__all__ = ["SQLiteScreeningStore"]
+__all__ = ["SQLiteScreeningStore", "ScreeningLogRetiredError"]

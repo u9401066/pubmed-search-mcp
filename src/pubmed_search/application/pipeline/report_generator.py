@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.pipeline.executor import classify_pipeline_outcome
 from pubmed_search.application.pipeline.mesh_suggestions import ADOPT_INSTRUCTION, suggestion_note
+from pubmed_search.application.pipeline.record_lineage import final_record_set, retrieval_summary
 from pubmed_search.shared.markdown import (
     escape_markdown_block,
     escape_markdown_code,
@@ -212,6 +213,9 @@ def _section_exhaustive_retrieval(step_results: dict[str, StepResult]) -> str:
         )
     if not rows:
         return ""
+    _final_step, final_pmids = final_record_set(step_results)
+    summary = retrieval_summary(step_results, len(final_pmids))
+    complete = "yes" if summary.get("exhaustive") is True else "no"
     return "\n".join(
         [
             "## Exhaustive PubMed Retrieval\n",
@@ -219,7 +223,10 @@ def _section_exhaustive_retrieval(step_results: dict[str, StepResult]) -> str:
             "|------|--------------|-----------|------------|-----|----------|-------------------|",
             *rows,
             "",
-            "The complete record set is persisted with the saved run; the article list below is the ranked preview.",
+            f"Final record set: {escape_markdown_text(summary.get('mode'))} retrieval, complete record set {complete}.",
+            *(f"- ⚠️ {escape_markdown_text(warning)}" for warning in summary.get("warnings") or []),
+            "",
+            "The record set is persisted with the saved run; the article list below is the ranked preview.",
             "",
         ]
     )

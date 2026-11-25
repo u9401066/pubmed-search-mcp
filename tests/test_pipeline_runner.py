@@ -267,3 +267,114 @@ class TestStoredPipelineRunner:
         combined = f"{caplog.text}\n{error.value}\n{history[-1].error_message}"
         assert sentinel_query not in combined
         assert sentinel_secret not in combined
+
+
+async def test_scheduled_run_is_recorded_off_the_event_loop(pipeline_store: PipelineStore) -> None:
+    """Persisting a 10k-record run must not block other coroutines on the event loop."""
+    import asyncio
+
+    from pubmed_search.application.pipeline.run_recorder import PipelineRunRecorder
+
+    pipeline_store.save(
+        name="offloop",
+        config=PipelineConfig(steps=[PipelineStep(id="search", action="search", params={"query": "topic"})]),
+    )
+    original = PipelineRunRecorder.record
+    observed: list[bool] = []
+
+    def record(self: PipelineRunRecorder, **kwargs: object) -> object:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            observed.append(False)
+        else:
+            observed.append(True)
+        return original(self, **kwargs)  # type: ignore[arg-type]
+
+    runner = StoredPipelineRunner(store=pipeline_store, searcher=AsyncMock())
+    with (
+        patch("pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new_callable=AsyncMock) as execute,
+        patch.object(PipelineRunRecorder, "record", record),
+    ):
+        execute.return_value = ([UnifiedArticle(pmid="1", title="Paper", primary_source="pubmed")], {})
+        run = await runner.execute_saved_pipeline("offloop")
+
+    assert observed == [False]  # ran in a worker thread, not on the loop
+    assert pipeline_store.get_run("offloop", run.run_id).pmids == ["1"]
+
+
+def test_metadata_count_merges_collected_records_once(
+    pipeline_store: PipelineStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Counting metadata for N records must not rebuild the record map N times."""
+    from pubmed_search.application.pipeline import run_recorder
+    from pubmed_search.application.pipeline.record_lineage import FINAL_STEP_METADATA_KEY
+
+    pipeline_store.save(
+        name="quad",
+        config=PipelineConfig(steps=[PipelineStep(id="s", action="search", params={"query": "topic"})]),
+    )
+    pmids = [str(number) for number in range(1, 2001)]
+    step = StepResult(
+        step_id="s",
+        action="search",
+        pmids=pmids,
+        records={pmid: {"pmid": pmid, "title": f"Paper {pmid}"} for pmid in pmids[:1500]},
+        metadata={"retrieval": {"mode": "exhaustive", "exhaustive": True}, FINAL_STEP_METADATA_KEY: True},
+    )
+    calls: list[int] = []
+    original = run_recorder.collected_records
+
+    def counting(step_results: object) -> dict[str, dict[str, object]]:
+        calls.append(1)
+        return original(step_results)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_recorder, "collected_records", counting)
+
+    run = run_recorder.PipelineRunRecorder(pipeline_store).record(
+        pipeline_name="quad", articles=[], step_results={"s": step}, report="r", started=datetime.now(timezone.utc)
+    )
+
+    assert len(calls) == 1
+    assert run.artifacts["records"]["count"] == 2000
+    assert run.artifacts["records"]["metadata_count"] == 1500
+
+
+async def test_run_stays_in_the_scope_it_was_loaded_from(tmp_path: Path) -> None:
+    """A same-name workspace pipeline created mid-run must not capture the global run's artifacts."""
+    from pubmed_search.application.pipeline.record_lineage import FINAL_STEP_METADATA_KEY
+    from pubmed_search.domain.entities.pipeline import PipelineScope
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    config = PipelineConfig(steps=[PipelineStep(id="s", action="search", params={"query": "topic"})])
+    store.save("dup", config, scope="global")
+    pmids = ["1", "2"]
+    step = StepResult(
+        step_id="s",
+        action="search",
+        pmids=pmids,
+        records={pmid: {"pmid": pmid, "title": f"Paper {pmid}"} for pmid in pmids},
+        metadata={"retrieval": {"mode": "exhaustive", "exhaustive": True}, FINAL_STEP_METADATA_KEY: True},
+    )
+
+    async def execute_while_workspace_copy_appears(
+        _executor: object, _config: PipelineConfig, **_kwargs: object
+    ) -> tuple[list[UnifiedArticle], dict]:
+        store.save("dup", config, scope="workspace")
+        return [], {"s": step}
+
+    runner = StoredPipelineRunner(store=store, searcher=AsyncMock())
+    with patch(
+        "pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new=execute_while_workspace_copy_appears
+    ):
+        run = await runner.execute_saved_pipeline("dup")
+
+    global_store = store.pinned_to(PipelineScope.GLOBAL)
+    workspace_store = store.pinned_to(PipelineScope.WORKSPACE)
+    assert global_store.get_run("dup", run.run_id).pmids == pmids
+    assert [row["pmid"] for row in global_store.load_run_records("dup", run.run_id)] == pmids
+    assert run.artifacts["records"]["scope"] == "global"
+    assert workspace_store.count_history("dup") == 0
+    assert not (tmp_path / "workspace" / ".pubmed-search" / "pipeline_artifacts").exists()
+    assert not (tmp_path / "workspace" / ".pubmed-search" / "pipeline_reports").exists()
+    assert (tmp_path / "global" / "pipeline_reports" / "dup" / f"{run.run_id}.md").is_file()

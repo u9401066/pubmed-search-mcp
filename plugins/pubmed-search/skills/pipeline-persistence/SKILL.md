@@ -134,6 +134,8 @@ delete_pipeline(name="old_search")  # 刪除配置 + 歷史
 delete_pipeline(name="old_search", delete_screening_log=True)
 ```
 
+檢查與刪除是原子操作（期間新記錄的決策仍會阻止刪除）；檔案被鎖住時刪除會停止、pipeline 保持完整，可重試。
+
 ### get_pipeline_history — 查看執行歷史
 
 ```python
@@ -141,7 +143,7 @@ get_pipeline_history(name="weekly_remimazolam", limit=5)
 # 顯示：run ID、日期、紀錄數、取回模式、PubMed 總數、新增/移除、策略 hash、狀態
 get_pipeline_history(name="weekly_remimazolam", view="run")        # 單一 run 來源資訊（JSON）
 get_pipeline_history(name="weekly_remimazolam", view="prisma_s")   # PRISMA-S 表（Markdown + CSV）
-get_pipeline_history(name="weekly_remimazolam", view="records", offset=0, limit=100)  # 完整紀錄集分頁
+get_pipeline_history(name="weekly_remimazolam", view="records", offset=0, limit=100)  # 完整紀錄集分頁（可超過 10,000 筆）
 ```
 
 ### schedule_pipeline — 建立或更新排程
@@ -170,8 +172,11 @@ pipeline_screening(request={"action": "log", "pipeline": "my_review"})          
 pipeline_screening(request={"action": "register_run", "pipeline": "my_review"})  # 手動登記某次 run
 ```
 
-exhaustive run 會自動登記；更新檢索第一次出現的 PMID 自動進入標題／摘要待篩佇列。
-決策只追加、以最新決策計算、可冪等重送；全文排除必須附理由（取不到全文用 `not retrieved`）。
+完整識別（exhaustive）的 run 會自動登記；更新檢索第一次出現的 PMID 自動進入標題／摘要待篩佇列。
+決策只追加、以最新決策計算；未給 `decision_id` 時，只有與同一 reviewer 對該 PMID／階段的最新決策
+完全相同才算重送，回到先前的決策（include → exclude → include）一定會記錄並計入；要讓重送冪等請給穩定的
+`decision_id`。全文排除必須附理由（取不到全文用 `not retrieved`）。
+`flow` 的識別筆數是 `filter` step 之前的檢索結果，被 filter 移除的筆數列為「自動化工具判為不符」。
 
 ### prepare_export(pipeline_run=...) — 匯出完整紀錄集
 
@@ -179,6 +184,8 @@ exhaustive run 會自動登記；更新檢索第一次出現的 PMID 自動進�
 prepare_export(pipeline_run="my_review", format="ris")             # 最新 run
 prepare_export(pipeline_run="my_review@<run_id>", format="csv")    # 指定 run；另有 csl、bibtex、medline、json
 ```
+
+匯出摘要標明 `record_basis`、`retrieval_mode`、`complete_record_set`；排序預覽、mixed 或不完整的 run 會附警告。
 
 ---
 
@@ -277,7 +284,7 @@ template_params:
 | `references` | 參考文獻 | `pmid` 或 `inputs` + `seed_limit`，`limit` |
 | `metrics` | iCite 引用指標 | （從 inputs 取得） |
 | `merge` | 合併結果 | `method`: `union` / `intersection` / `rrf` |
-| `filter` | 過濾結果 | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` |
+| `filter` | 過濾結果（無 metadata 的紀錄一律保留並回報 `metadata_missing`） | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` |
 | `block_analysis` | MeSH／概念區塊與詞彙獨特貢獻（僅計數） | `query` 或一個 input search step，`max_count_queries` |
 
 ---
@@ -287,8 +294,8 @@ template_params:
 ```
 Workspace scope (.pubmed-search/pipelines/)
 ├── 每個專案獨立
-├── 可納入 git 追蹤
-└── 團隊共享
+├── 新建立的 .pubmed-search/ 會寫入忽略全部的 .gitignore（紀錄集含摘要、篩選決策）
+└── 要團隊共享 YAML：改寫該 .gitignore（檔內有只保留 pipelines/*.yaml 的範例）
 
 Global scope (~/.pubmed-search-mcp/pipelines/)
 ├── 跨專案共用
@@ -296,7 +303,7 @@ Global scope (~/.pubmed-search-mcp/pipelines/)
 └── 通用模板
 ```
 
-**解析順序：** workspace 優先 → global fallback
+**解析順序：** workspace 優先 → global fallback（同名時 workspace 遮蔽 global，`list_pipelines` 會標示；每次 run 留在載入它的 scope）
 
 ---
 
@@ -402,12 +409,14 @@ output:
 執行 `unified_search(pipeline="saved:<name>")` 後，回應只是有界摘要；用 `get_pipeline_history(view="prisma_s")`
 產生 PRISMA-S 表、`prepare_export(pipeline_run=...)` 匯出完整集合、`pipeline_screening` 篩選並計算 PRISMA 2020 流程。
 策略必須先保存；修改 YAML 後的 run 會以不同 config hash 顯示。
+只有餵入最終紀錄集的每個檢索都是完整 exhaustive 時，run 才標為 `exhaustive: true`；
+與有界搜尋合併會是 `mode: "mixed"`（不完整、不自動登記篩選）。metadata 被 deadline 中斷時 PMID 集合仍完整並標示 `metadata_error`。
 
 保存的策略絕不會被自動改寫。若 PubMed 回報某個 MeSH 子句找不到（例如 `"Post-Anesthesia Care Units"[Mesh]`），
 該步驟只會記錄 `mesh_correction` 建議（`mode: "suggestion"`、`applied: false`、`unresolved_clauses`、`corrected_query`、
 前後命中數），也會出現在回應的 `warnings`、Markdown 報告與 `get_pipeline_history(view="prisma_s")` 的 notes。
 要採用時，用 `save_pipeline` 保存 `corrected_query` 成為新版本再執行；PRISMA-S 會以新的 config hash 記錄。
-建議最多用 18 個請求，且只在 run 的 external-call 配額與期限足夠時執行，從不讓 run 失敗。
+建議最多用 18 個請求，在所有 step 完成後才執行（不占用必要取回的配額），且只在剩餘配額與期限足夠時執行，從不讓 run 失敗。
 `block_analysis` 會把 PubMed 找不到的詞標成 `pubmed_not_found`（`contribution_meaningful: false`）、列在
 `unresolved_terms`，不再當成「零獨特貢獻」的冗餘詞，並附上同樣的建議。
 

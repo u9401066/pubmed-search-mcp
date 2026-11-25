@@ -28,7 +28,13 @@ _RUN_REF_RE = re.compile(r"^(?P<name>[a-z0-9][a-z0-9_-]{0,63})(?:@(?P<run>[A-Za-
 
 @dataclass
 class RunExport:
-    """Formatted export plus completeness disclosure."""
+    """Formatted export plus completeness disclosure.
+
+    ``complete_record_set`` is true only for a run that persisted its full
+    final-step set (``record_basis == "final_step_full"``) from exhaustive
+    retrieval; a ranked preview, a mixed or an incomplete run is exported
+    with ``warnings`` saying why it is not the systematic-review record set.
+    """
 
     pipeline_name: str
     run_id: str
@@ -38,18 +44,52 @@ class RunExport:
     metadata_missing: list[str] = field(default_factory=list)
     backfilled: int = 0
     backfill_error: str | None = None
+    record_basis: str = "ranked_output"
+    retrieval_mode: str | None = None
+    exhaustive: bool = False
+    run_status: str | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def complete_record_set(self) -> bool:
+        return self.record_basis == "final_step_full" and self.exhaustive
 
     def summary(self) -> dict[str, Any]:
         return {
             "pipeline": self.pipeline_name,
             "run_id": self.run_id,
+            "run_status": self.run_status,
             "record_count": self.record_count,
+            "record_basis": self.record_basis,
+            "retrieval_mode": self.retrieval_mode,
+            "exhaustive": self.exhaustive,
+            "complete_record_set": self.complete_record_set,
+            "warnings": list(self.warnings),
             "records_with_metadata": self.record_count - len(self.metadata_missing),
             "metadata_missing_count": len(self.metadata_missing),
             "metadata_missing_preview": self.metadata_missing[:20],
             "metadata_backfilled": self.backfilled,
             "metadata_backfill_error": self.backfill_error,
         }
+
+
+def _completeness_warnings(run: PipelineRun) -> list[str]:
+    """Explain why a run's persisted records are not a complete record set."""
+    retrieval = run.retrieval or {}
+    if run.record_basis != "final_step_full":
+        return [
+            f"This run persisted only its ranked preview ({len(run.pmids)} records, record_basis "
+            f"{run.record_basis}); it is not the complete search result. Use a saved pipeline with "
+            "retrieval: exhaustive for a complete record set."
+        ]
+    if retrieval.get("exhaustive") is True:
+        return []
+    detail = list(retrieval.get("warnings") or [])
+    return [
+        f"This run's record set is not complete (retrieval mode {retrieval.get('mode') or 'unknown'}); "
+        "do not report it as the complete search result.",
+        *detail,
+    ]
 
 
 def parse_pipeline_run_ref(reference: str) -> tuple[str, str | None]:
@@ -123,6 +163,7 @@ async def export_pipeline_run(
         if fmt == "csl"
         else export_articles(export_rows, fmt=fmt, include_abstract=include_abstract)
     )
+    retrieval = run.retrieval or {}
     return RunExport(
         pipeline_name=name,
         run_id=run.run_id,
@@ -132,6 +173,11 @@ async def export_pipeline_run(
         metadata_missing=missing,
         backfilled=backfilled,
         backfill_error=backfill_error,
+        record_basis=run.record_basis,
+        retrieval_mode=retrieval.get("mode") if isinstance(retrieval.get("mode"), str) else None,
+        exhaustive=retrieval.get("exhaustive") is True,
+        run_status=run.status,
+        warnings=_completeness_warnings(run),
     )
 
 

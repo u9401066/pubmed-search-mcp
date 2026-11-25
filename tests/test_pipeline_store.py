@@ -170,6 +170,42 @@ class TestStoreInit:
         PipelineStore(global_data_dir=global_dir)
         assert not (workspace_dir / ".pubmed-search").exists()
 
+    def test_new_workspace_data_dir_is_git_ignored(self, global_dir: Path, workspace_dir: Path):
+        """Record sets (abstracts) and the screening log must not be committed by accident."""
+        import shutil
+        import subprocess
+
+        git = shutil.which("git")
+        if git is None:
+            pytest.skip("git is not installed")
+        store = PipelineStore(global_data_dir=global_dir, workspace_dir=workspace_dir)
+        store.save("ignored", PipelineConfig(steps=[PipelineStep(id="s", action="search", params={"query": "q"})]))
+        store.save_report("ignored", "run_001", "# private report")
+
+        gitignore = workspace_dir / ".pubmed-search" / ".gitignore"
+        assert gitignore.is_file()
+        assert "*" in gitignore.read_text(encoding="utf-8").splitlines()
+        subprocess.run([git, "init", "-q", str(workspace_dir)], check=True)
+        status = subprocess.run(
+            [git, "-C", str(workspace_dir), "status", "--porcelain", "--untracked-files=all"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == ""
+
+    def test_existing_workspace_data_dir_and_gitignore_are_left_alone(self, global_dir: Path, workspace_dir: Path):
+        tracked = workspace_dir / ".pubmed-search"
+        (tracked / "pipelines").mkdir(parents=True)
+        PipelineStore(global_data_dir=global_dir, workspace_dir=workspace_dir)
+        assert not (tracked / ".gitignore").exists()  # an existing (possibly git-tracked) directory is not changed
+
+        custom = workspace_dir / "other"
+        (custom / ".pubmed-search").mkdir(parents=True)
+        (custom / ".pubmed-search" / ".gitignore").write_text("records/\n", encoding="utf-8")
+        PipelineStore(global_data_dir=global_dir, workspace_dir=custom)
+        assert (custom / ".pubmed-search" / ".gitignore").read_text(encoding="utf-8") == "records/\n"
+
 
 # =========================================================================
 # Save
@@ -476,9 +512,10 @@ class TestStoreDelete:
 
     def test_delete_returns_scope_and_count(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         store_dual.save("counted", simple_config)
-        scope, count = store_dual.delete("counted")
-        assert scope == PipelineScope.WORKSPACE
-        assert count == 0  # no runs yet
+        deletion = store_dual.delete("counted")
+        assert deletion.scope == PipelineScope.WORKSPACE
+        assert deletion.run_count == 0  # no runs yet
+        assert deletion.screening_log is None
 
 
 # =========================================================================
@@ -576,8 +613,7 @@ class TestStoreRunHistory:
         store_dual.save_run("with_runs", self._make_run("with_runs", "run_001"))
         store_dual.save_run("with_runs", self._make_run("with_runs", "run_002"))
 
-        scope, run_count = store_dual.delete("with_runs")
-        assert run_count == 2
+        assert store_dual.delete("with_runs").run_count == 2
 
     def test_history_empty_for_nonexistent_dir(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         """get_history when run dir doesn't exist should return empty."""
@@ -737,3 +773,44 @@ class TestScopeResolution:
     def test_global_always_global(self, store_dual: PipelineStore):
         scope = store_dual._resolve_scope("global")
         assert scope == PipelineScope.GLOBAL
+
+
+class TestSameNameScopes:
+    """A workspace pipeline shadows a same-name global one; operations never cross scopes."""
+
+    def test_pruning_a_pinned_scope_never_touches_the_other_scope(
+        self, store_dual: PipelineStore, simple_config: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from pubmed_search.application.pipeline import store as store_module
+
+        monkeypatch.setattr(store_module, "_MAX_HISTORY", 2)
+        store_dual.save("dup", simple_config, scope="global")
+        store_dual.save("dup", simple_config, scope="workspace")
+        global_store = store_dual.pinned_to(PipelineScope.GLOBAL)
+        workspace_store = store_dual.pinned_to(PipelineScope.WORKSPACE)
+        for store in (global_store, workspace_store):
+            for index in range(3):
+                run = PipelineRun(run_id=f"run_{index}", pipeline_name="dup", pmids=[str(index + 1)])
+                run.artifacts["records"] = store.save_run_records("dup", run.run_id, [{"pmid": str(index + 1)}])
+                store.save_run("dup", run)
+
+        for store in (global_store, workspace_store):
+            assert [run.run_id for run in store.get_history("dup", limit=10)] == ["run_2", "run_1"]
+            assert store.load_run_records("dup", "run_0") == []  # pruned together with its run
+            assert store.load_run_records("dup", "run_1") == [{"pmid": "2"}]
+        # Unpinned name lookups resolve to the workspace pipeline, like load().
+        assert store_dual.load("dup")[1].scope == PipelineScope.WORKSPACE
+        assert store_dual.get_run("dup", "run_2").pmids == ["3"]
+
+    def test_pinned_view_reads_and_deletes_only_its_scope(
+        self, store_dual: PipelineStore, simple_config: PipelineConfig
+    ) -> None:
+        store_dual.save("dup", simple_config, scope="global")
+        store_dual.save("dup", simple_config, scope="workspace")
+        global_store = store_dual.pinned_to(PipelineScope.GLOBAL)
+
+        assert global_store.load("dup")[1].scope == PipelineScope.GLOBAL
+        assert global_store.delete("dup").scope == PipelineScope.GLOBAL
+        assert not global_store.exists("dup")
+        assert store_dual.exists("dup")
+        assert store_dual.load("dup")[1].scope == PipelineScope.WORKSPACE

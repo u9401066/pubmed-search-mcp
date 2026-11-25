@@ -8,6 +8,7 @@ instance, and the response-size bound for a 10,000-record run.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -361,6 +362,64 @@ async def test_metadata_failure_keeps_identifier_set_complete_and_partial() -> N
     assert "upstream exploded" not in json.dumps(step.metadata)
 
 
+class _StallingMetadataSearcher(FakeHistorySearcher):
+    """Metadata batches after the first never finish, as when EFetch hangs at the run deadline."""
+
+    def __init__(self, pmids: list[str], *, fast_batches: int) -> None:
+        super().__init__(pmids)
+        self.fast_batches = fast_batches
+        self.cancelled = 0
+
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        if self.fast_batches > 0:
+            self.fast_batches -= 1
+            return await super().fetch_details(pmids)
+        self.calls.append(("details", len(pmids)))
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        raise AssertionError("unreachable")
+
+
+@pytest.mark.parametrize(("run_timeout", "fast_batches", "expected_metadata"), [(2.6, 1, 200), (1.0, 0, 0)])
+async def test_run_deadline_during_metadata_keeps_the_complete_pmid_set(
+    run_timeout: float, fast_batches: int, expected_metadata: int
+) -> None:
+    pmids = [str(5000 + index) for index in range(1000)]
+    searcher = _StallingMetadataSearcher(pmids, fast_batches=fast_batches)
+    executor = PipelineExecutor(
+        searcher=searcher,
+        exhaustive_page_size=500,
+        exhaustive_metadata_batch_size=200,
+        execution_policy=PipelineExecutionPolicy(run_timeout_seconds=run_timeout),
+    )
+
+    articles, results = await executor.execute(_exhaustive_config())
+
+    step = results["pubmed"]
+    assert step.ok, step.error
+    assert step.pmids == pmids
+    assert final_record_set(results) == ("pubmed", pmids)
+    assert len(articles) == 100
+    retrieval = step.metadata["retrieval"]
+    assert retrieval["exhaustive"] is True
+    assert retrieval["retrieved_count"] == 1000
+    assert retrieval["metadata_count"] == expected_metadata
+    assert retrieval["metadata_complete"] is False
+    assert retrieval["metadata_error"] == {
+        "kind": "deadline",
+        "terminal_reason": "deadline_exhausted",
+        "retryable": True,
+    }
+    assert step.metadata["source_errors"][0]["status"] == "metadata_incomplete"
+    assert step.metadata["source_errors"][0]["kind"] == "deadline"
+    assert "PMID set is complete" in retrieval["warnings"][0]
+    # An in-flight metadata batch is cancelled rather than left running.
+    assert searcher.cancelled == (1 if expected_metadata else 0)
+
+
 # ---------------------------------------------------------------------------
 # Saved-pipeline persistence and response bounds
 # ---------------------------------------------------------------------------
@@ -490,3 +549,307 @@ def test_history_records_view_pages_the_persisted_set(store: PipelineStore) -> N
     assert [row["pmid"] for row in page["records"]][:2] == ["201", "202"]
     assert len(page["records"]) == 50
     assert page["next_offset"] is None
+
+
+# ---------------------------------------------------------------------------
+# Completeness claims cover every search feeding the final record set
+# ---------------------------------------------------------------------------
+
+
+class _MixedSearcher(FakeHistorySearcher):
+    """Exhaustive history paging plus a bounded relevance window (PubMed counts 5000, returns limit)."""
+
+    async def search_page(self, *, query: str, limit: int, **kwargs: Any) -> Any:
+        from pubmed_search.application.search.source_models import SourceSearchPage
+
+        rows = [_pubmed_row(str(900_000 + index)) for index in range(limit)]
+        return SourceSearchPage(source="pubmed", items=rows, total=5000, query=query)
+
+
+def _config(steps: list[dict[str, Any]]) -> PipelineConfig:
+    result = parse_and_validate_config({"steps": steps, "output": {"format": "json", "limit": 20}})
+    assert result.valid and result.config is not None, result.errors
+    return result.config
+
+
+_EXHAUSTIVE_STEP = {"id": "ex", "action": "search", "params": {"query": QUERY, "retrieval": "exhaustive"}}
+_BOUNDED_STEP = {"id": "bd", "action": "search", "params": {"query": "other topic", "sources": ["pubmed"], "limit": 10}}
+
+
+async def test_bounded_search_feeding_the_final_set_is_never_claimed_exhaustive(store: PipelineStore) -> None:
+    from pubmed_search.application.pipeline.screening import run_is_complete_identification
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    store.save(
+        "mixed",
+        _config(
+            [
+                _EXHAUSTIVE_STEP,
+                _BOUNDED_STEP,
+                {"id": "m", "action": "merge", "inputs": ["ex", "bd"], "params": {"method": "union"}},
+            ]
+        ),
+        scope="workspace",
+    )
+    searcher = _MixedSearcher([str(5000 + index) for index in range(30)])
+
+    outcome = await _execute_pipeline_mode_outcome("saved:mixed", "json", searcher, pipeline_store=store)
+
+    payload = json.loads(outcome.response)
+    assert outcome.exhaustive is False
+    retrieval = payload["retrieval"]
+    assert (retrieval["mode"], retrieval["exhaustive"]) == ("mixed", False)
+    assert [row["step_id"] for row in retrieval["steps"]] == ["ex"]
+    assert [row["step_id"] for row in retrieval["bounded_steps"]] == ["bd"]
+    assert retrieval["bounded_steps"][0]["total_count"] == 5000
+    assert any("bounded" in warning and "not a complete record set" in warning for warning in payload["warnings"])
+    run = store.get_run("mixed")
+    assert run.retrieval["exhaustive"] is False
+    assert len(run.pmids) == 40
+    assert run_is_complete_identification(run) is False
+    assert not store.screening_db_path("mixed").exists()  # never auto-registered as complete identification
+    markdown = await _execute_pipeline_mode_outcome("saved:mixed", "markdown", searcher, pipeline_store=store)
+    assert "mixed" in markdown.response and "not a complete record set" in markdown.response
+
+
+async def test_bounded_search_outside_the_final_record_flow_keeps_the_exhaustive_claim() -> None:
+    from pubmed_search.application.pipeline.run_recorder import retrieval_summary
+
+    executor = PipelineExecutor(searcher=_MixedSearcher([str(5000 + index) for index in range(30)]))
+    _articles, results = await executor.execute(
+        _config([_BOUNDED_STEP, _EXHAUSTIVE_STEP, {"id": "blocks", "action": "block_analysis", "inputs": ["ex"]}])
+    )
+
+    _step, pmids = final_record_set(results)
+    summary = retrieval_summary(results, len(pmids))
+    assert (summary["mode"], summary["exhaustive"]) == ("exhaustive", True)
+    assert summary["identified_count"] == 30
+    assert "bounded_steps" not in summary
+
+
+async def test_filters_keep_metadata_less_records_and_report_them() -> None:
+    from pubmed_search.application.pipeline.run_recorder import retrieval_summary
+
+    executor = PipelineExecutor(searcher=FakeHistorySearcher([str(5000 + index) for index in range(30)]))
+    steps = [
+        {**_EXHAUSTIVE_STEP, "params": {**_EXHAUSTIVE_STEP["params"], "fetch_metadata": False}},
+        {"id": "years", "action": "filter", "inputs": ["ex"], "params": {"min_year": 2010, "max_year": 2020}},
+        {
+            "id": "types",
+            "action": "filter",
+            "inputs": ["years"],
+            "params": {"article_types": ["randomized-controlled-trial"]},
+        },
+        {"id": "rest", "action": "filter", "inputs": ["types"], "params": {"has_abstract": True, "min_citations": 5}},
+    ]
+
+    _articles, results = await executor.execute(_config(steps))
+
+    _final, pmids = final_record_set(results)
+    assert len(pmids) == 30
+    for step_id in ("years", "types", "rest"):
+        metadata = results[step_id].metadata
+        assert metadata["removal_reasons"] == {}
+        assert metadata["metadata_missing"]["count"] == 30
+        assert len(metadata["metadata_missing"]["pmid_preview"]) == 20
+        assert "without metadata" in metadata["warning"]
+    summary = retrieval_summary(results, len(pmids))
+    assert summary["exhaustive"] is True
+    assert (summary["identified_count"], summary["removed_by_filters"]) == (30, 0)
+    assert any("without metadata" in warning for warning in summary["warnings"])
+
+
+class _MixedYearSearcher(FakeHistorySearcher):
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        rows = await super().fetch_details(pmids)
+        for row in rows:
+            row["year"] = "2010" if int(row["pmid"]) % 2 else "2024"
+        return rows
+
+
+async def test_identification_counts_records_before_pipeline_filters(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    from pubmed_search.application.pipeline.run_recorder import PipelineRunRecorder
+    from pubmed_search.application.pipeline.screening import ScreeningService
+    from pubmed_search.infrastructure.pipeline_screening import SQLiteScreeningStore
+
+    store = PipelineStore(global_data_dir=tmp_path / "global")
+    config = _config(
+        [_EXHAUSTIVE_STEP, {"id": "recent", "action": "filter", "inputs": ["ex"], "params": {"min_year": 2020}}]
+    )
+    store.save("filtered", config)
+    _articles, results = await PipelineExecutor(
+        searcher=_MixedYearSearcher([str(5000 + index) for index in range(30)])
+    ).execute(config)
+
+    run = PipelineRunRecorder(store).record(
+        pipeline_name="filtered",
+        articles=_articles,
+        step_results=results,
+        report="r",
+        started=datetime.now(timezone.utc),
+        executed_config=config,
+    )
+
+    assert len(run.pmids) == 15
+    assert run.retrieval["exhaustive"] is True
+    assert (run.retrieval["identified_count"], run.retrieval["removed_by_filters"]) == (30, 15)
+    service = ScreeningService(SQLiteScreeningStore(store.screening_db_path("filtered")))
+    service.register_run(run)
+    identification = service.flow()["identification"]
+    assert identification["records_identified"] == 30
+    assert identification["records_marked_ineligible_by_automation"] == 15
+    assert identification["duplicate_records_removed"] == 0
+    assert identification["records_after_duplicates_removed"] == 15
+
+
+# ---------------------------------------------------------------------------
+# Persistence and export disclose what the run record actually is
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("output_format", ["json", "markdown"])
+async def test_failed_run_persistence_is_disclosed_not_reported_as_saved(
+    store: PipelineStore, monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    _save_exhaustive_pipeline(store, output_format=output_format)
+
+    def disk_full(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save_run_records", disk_full)
+
+    outcome = await _execute_pipeline_mode_outcome(
+        "saved:pacu_ma",
+        output_format,
+        FakeHistorySearcher([str(5000 + index) for index in range(30)]),
+        pipeline_store=store,
+    )
+
+    assert outcome.exhaustive is False
+    assert store.get_history("pacu_ma", limit=5) == []
+    if output_format == "json":
+        payload = json.loads(outcome.response)
+        assert payload["run"] is None
+        assert payload["persistence"] == {"saved": False, "error_type": "OSError"}
+        assert payload["summary"]["record_count"] == 30
+        assert payload["next"] == {}
+        assert any("could not be saved" in warning for warning in payload["warnings"])
+    else:
+        assert "could not be saved" in outcome.response
+        assert "30 records" in outcome.response
+
+
+async def test_bounded_saved_pipeline_persistence_failure_is_disclosed(
+    store: PipelineStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    store.save("bounded", _config([_BOUNDED_STEP]), scope="workspace")
+
+    def disk_full(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save_run", disk_full)
+
+    outcome = await _execute_pipeline_mode_outcome("saved:bounded", "json", _MixedSearcher([]), pipeline_store=store)
+
+    payload = json.loads(outcome.response)
+    assert any("could not be saved" in warning for warning in payload["warnings"])
+    assert payload["persistence"] == {"saved": False, "error_type": "OSError"}
+
+
+async def test_export_summary_discloses_whether_the_run_is_a_complete_record_set(store: PipelineStore) -> None:
+    from pubmed_search.application.pipeline.run_export import export_pipeline_run
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    _save_exhaustive_pipeline(store)
+    searcher = _MixedSearcher([str(5000 + index) for index in range(5)])
+    await _execute_pipeline_mode_outcome("saved:pacu_ma", "json", searcher, pipeline_store=store)
+    store.save(
+        "mixed",
+        _config(
+            [
+                _EXHAUSTIVE_STEP,
+                _BOUNDED_STEP,
+                {"id": "m", "action": "merge", "inputs": ["ex", "bd"], "params": {"method": "union"}},
+            ]
+        ),
+        scope="workspace",
+    )
+    await _execute_pipeline_mode_outcome("saved:mixed", "json", searcher, pipeline_store=store)
+    store.save("bounded", _config([_BOUNDED_STEP]), scope="workspace")
+    await _execute_pipeline_mode_outcome("saved:bounded", "json", searcher, pipeline_store=store)
+
+    complete = (await export_pipeline_run(store, "pacu_ma", fmt="ris", include_abstract=False, searcher=None)).summary()
+    mixed = (await export_pipeline_run(store, "mixed", fmt="ris", include_abstract=False, searcher=None)).summary()
+    bounded = (await export_pipeline_run(store, "bounded", fmt="ris", include_abstract=False, searcher=None)).summary()
+
+    assert (complete["record_basis"], complete["retrieval_mode"], complete["complete_record_set"]) == (
+        "final_step_full",
+        "exhaustive",
+        True,
+    )
+    assert complete["warnings"] == []
+    assert (mixed["record_basis"], mixed["retrieval_mode"], mixed["complete_record_set"]) == (
+        "final_step_full",
+        "mixed",
+        False,
+    )
+    assert any("bounded" in warning for warning in mixed["warnings"])
+    assert (bounded["record_basis"], bounded["retrieval_mode"], bounded["complete_record_set"]) == (
+        "ranked_output",
+        "bounded",
+        False,
+    )
+    assert any("ranked preview" in warning for warning in bounded["warnings"])
+
+
+async def test_records_view_pages_merged_sets_beyond_10000(store: PipelineStore) -> None:
+    """Two merged exhaustive steps can persist up to 2 x 10,000 records; every page must be reachable."""
+    from datetime import datetime, timezone
+
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from pubmed_search.application.pipeline.budgets import PIPELINE_RUN_RECORD_LIMIT
+    from pubmed_search.domain.entities.pipeline import PipelineRun
+    from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
+        PipelineToolRuntime,
+        register_pipeline_tools,
+    )
+
+    _save_exhaustive_pipeline(store)
+    pmids = [str(index) for index in range(1, 10_051)]
+    run = PipelineRun(
+        run_id="20260101_000000_000000_big",
+        pipeline_name="pacu_ma",
+        started=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        pmids=pmids,
+        article_count=len(pmids),
+        record_version=2,
+        record_basis="final_step_full",
+        retrieval={"mode": "exhaustive", "exhaustive": True},
+    )
+    run.artifacts["records"] = store.save_run_records("pacu_ma", run.run_id, [{"pmid": pmid} for pmid in pmids])
+    store.save_run("pacu_ma", run)
+    server = MCPServer("records-paging-test")
+    register_pipeline_tools(server, runtime=PipelineToolRuntime(base_store=store))
+
+    page = await server.call_tool(
+        "get_pipeline_history", {"name": "pacu_ma", "view": "records", "offset": 10_025, "limit": 100}
+    )
+
+    assert not page.is_error
+    payload = json.loads(page.content[0].text)
+    assert [row["pmid"] for row in payload["records"]] == pmids[10_025:]
+    assert payload["next_offset"] is None
+    assert PIPELINE_RUN_RECORD_LIMIT >= 2 * 10_000
+    with pytest.raises(ToolError, match="less than or equal"):
+        await server.call_tool(
+            "get_pipeline_history",
+            {"name": "pacu_ma", "view": "records", "offset": PIPELINE_RUN_RECORD_LIMIT + 1, "limit": 100},
+        )

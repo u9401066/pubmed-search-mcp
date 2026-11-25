@@ -24,12 +24,15 @@ from pubmed_search.application.pipeline.screening import (
 )
 from pubmed_search.application.pipeline.store import PipelineHistoryError
 from pubmed_search.application.pipeline.validator import PIPELINE_NAME_PATTERN
+from pubmed_search.domain.entities.pipeline import PipelineScope
 from pubmed_search.infrastructure.pipeline_screening import SQLiteScreeningStore
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 
 from .tool_response import ResponseFormatter
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.pipeline.run_recorder import RunObserver
@@ -66,7 +69,11 @@ class ScreeningDecision(_Request):
         default=None, description="Reviewer label (default reviewer_1); different labels expose conflicts."
     )
     decision_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")] | None = Field(
-        default=None, description="Optional retry key; omitted keys are derived from the decision content."
+        default=None,
+        description=(
+            "Optional idempotency key: resending it is always a replay. Without it, only an exact repeat of "
+            "this reviewer's latest decision for the PMID and stage is a replay; any other decision is recorded."
+        ),
     )
     note: Annotated[str, Field(min_length=1, max_length=2000)] | None = None
 
@@ -118,11 +125,21 @@ def screening_service(store: PipelineStore, name: str) -> ScreeningService:
     return ScreeningService(SQLiteScreeningStore(store.screening_db_path(name)))
 
 
+def screening_log_at(path: Path) -> SQLiteScreeningStore:
+    """Open the screening log at ``path`` (deletion retires it atomically)."""
+    return SQLiteScreeningStore(path)
+
+
 def screening_run_observer(store: PipelineStore) -> RunObserver:
     """Return a run observer that queues new records of complete runs for screening."""
 
     def observe(name: str, run: PipelineRun) -> None:
-        screening_service(store, name).register_if_complete(run)
+        # The record artifact names the scope the run was persisted to; register
+        # into that scope's log even if a same-name pipeline exists elsewhere.
+        artifact = run.artifacts.get("records")
+        scope = artifact.get("scope") if isinstance(artifact, dict) else None
+        target = store.pinned_to(PipelineScope(scope)) if scope in {"workspace", "global"} else store
+        screening_service(target, name).register_if_complete(run)
 
     return observe
 
@@ -193,7 +210,12 @@ def register_pipeline_screening_tools(mcp: MCPServer, *, runtime: PipelineToolRu
         - record: append decisions (pmid, stage title_abstract|full_text,
           decision include|exclude|maybe, reason, reviewer). Full-text
           exclusions need a reason; full-text screening needs a prior
-          title/abstract include or maybe. Retries are idempotent.
+          title/abstract include or maybe. Without decision_id, a decision is a
+          replay only when it repeats the same reviewer's latest decision for
+          that PMID and stage (same decision, reason and note); every other
+          decision, including a return to an earlier one, is recorded and
+          counted. Pass a stable decision_id to make retries idempotent even
+          after later decisions; reusing one for different content is an error.
         - queue: page records awaiting a decision at a stage (optionally only
           those first identified by run_id), with titles from the run artifact.
         - flow: PRISMA 2020 counts (identified per run/database, duplicates
@@ -223,7 +245,10 @@ def register_pipeline_screening_tools(mcp: MCPServer, *, runtime: PipelineToolRu
             logger.warning("Pipeline screening storage failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
                 "Could not access pipeline screening storage",
-                suggestion="Check data directory availability and retry with the same decision IDs.",
+                suggestion=(
+                    "Check data directory availability and retry; pass decision_id values to make a retried "
+                    "batch idempotent."
+                ),
                 tool_name=TOOL_NAME,
                 output_format="json",
             )
@@ -233,6 +258,7 @@ __all__ = [
     "ScreeningDecision",
     "ScreeningRequest",
     "register_pipeline_screening_tools",
+    "screening_log_at",
     "screening_run_observer",
     "screening_service",
 ]

@@ -57,6 +57,31 @@ class PipelineModeOutcome:
     exhaustive: bool = False
 
 
+@dataclass(frozen=True)
+class RunPersistence:
+    """Whether a saved pipeline's run record (and record set) reached storage."""
+
+    run: PipelineRun | None = None
+    expected: bool = False
+    error_type: str | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.expected and self.run is None
+
+    def disclosure(self) -> dict[str, Any] | None:
+        return {"saved": False, "error_type": self.error_type} if self.failed else None
+
+    def warning(self, *, record_count: int | None = None) -> str | None:
+        if not self.failed:
+            return None
+        records = f" and its {record_count} records" if record_count is not None else ""
+        return (
+            f"The run record{records} could not be saved ({self.error_type or 'storage error'}); this run is not "
+            "in get_pipeline_history and cannot be exported or screened. Fix the data directory and rerun."
+        )
+
+
 def _pipeline_failure(
     error: str,
     *,
@@ -98,11 +123,12 @@ async def _execute_pipeline_mode_outcome(
     from pubmed_search.application.pipeline.executor import PipelineExecutor
     from pubmed_search.application.pipeline.templates import materialize_pipeline_config
     from pubmed_search.application.pipeline.validator import parse_and_validate_config
-    from pubmed_search.domain.entities.pipeline import PipelineConfig
+    from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineScope
     from pubmed_search.shared.settings import load_settings
 
     pipeline_name_override: str | None = None
     saved_config: PipelineConfig | None = None
+    saved_scope: PipelineScope | None = None
 
     if contains_credential_material(pipeline_text):
         return _pipeline_failure(
@@ -131,6 +157,7 @@ async def _execute_pipeline_mode_outcome(
             config, _meta = pipeline_store.load(pipeline_name)
             pipeline_name_override = _meta.name
             saved_config = config
+            saved_scope = getattr(_meta, "scope", None)
         except FileNotFoundError:
             return _pipeline_failure(
                 "Saved pipeline was not found",
@@ -238,20 +265,28 @@ async def _execute_pipeline_mode_outcome(
     exhaustive_run = not dry_run and run_uses_exhaustive_retrieval(step_results)
 
     # ── Auto-save report to workspace/global ─────────────────────────────
-    recorded_run = None
+    persistence = RunPersistence()
     if not dry_run:
-        recorded_run = await asyncio.to_thread(
-            _auto_save_pipeline_report,
+        # The run's record, record set, report and screening stay in the scope
+        # the saved pipeline was loaded from.
+        run_store = (
+            pipeline_store.pinned_to(saved_scope)
+            if pipeline_store is not None and saved_scope is not None
+            else pipeline_store
+        )
+        persistence = await asyncio.to_thread(
+            _persist_pipeline_run,
             prepared_config,
             articles,
             report,
-            pipeline_store=pipeline_store,
+            pipeline_store=run_store,
             status=status,
             pipeline_name_override=pipeline_name_override,
             started_at=started_at,
             step_results=step_results,
             saved_config=saved_config,
         )
+    recorded_run = persistence.run
 
     wants_json = output_format in {"json", "toon"} or prepared_config.output.format == "json"
     response_format: Literal["markdown", "json"] = "json" if wants_json else "markdown"
@@ -263,6 +298,7 @@ async def _execute_pipeline_mode_outcome(
                 config=prepared_config,
                 run=recorded_run,
                 status=status,
+                persistence=persistence,
             )
             if wants_json
             else _format_exhaustive_pipeline_markdown(
@@ -271,6 +307,7 @@ async def _execute_pipeline_mode_outcome(
                 config=prepared_config,
                 run=recorded_run,
                 status=status,
+                persistence=persistence,
             )
         )
     elif wants_json:
@@ -280,9 +317,11 @@ async def _execute_pipeline_mode_outcome(
             config=prepared_config,
             dry_run=dry_run,
             stop_at=stop_at_step,
+            persistence=persistence,
         )
     else:
-        response = report
+        warning = persistence.warning()
+        response = report + (f"\n\n> ⚠️ {warning}\n" if warning else "")
 
     return PipelineModeOutcome(
         response=response,
@@ -314,6 +353,7 @@ def _format_pipeline_json(
     config: Any,
     dry_run: bool = False,
     stop_at: str | None = None,
+    persistence: RunPersistence | None = None,
 ) -> str:
     """Return structured pipeline output for agent clients."""
     import json
@@ -368,7 +408,10 @@ def _format_pipeline_json(
         "steps": steps,
         "articles": [_article_to_json(article) for article in articles],
     }
-    warnings = mesh_correction_warnings(step_results)
+    persistence_warning = persistence.warning() if persistence is not None else None
+    if persistence is not None and persistence.failed:
+        data["persistence"] = persistence.disclosure()
+    warnings = [*([persistence_warning] if persistence_warning else []), *mesh_correction_warnings(step_results)]
     if warnings:
         data["warnings"] = warnings
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
@@ -424,9 +467,36 @@ def _auto_save_pipeline_report(
 
     Returns the persisted run for saved pipelines, otherwise ``None``.
     """
-    if not pipeline_store:
-        return None
+    return _persist_pipeline_run(
+        config,
+        articles,
+        report,
+        pipeline_store=pipeline_store,
+        status=status,
+        pipeline_name_override=pipeline_name_override,
+        started_at=started_at,
+        step_results=step_results,
+        saved_config=saved_config,
+    ).run
 
+
+def _persist_pipeline_run(
+    config: Any,
+    articles: list,
+    report: str,
+    *,
+    pipeline_store: PipelineStore | None,
+    status: PipelineOutcomeStatus = "completed",
+    pipeline_name_override: str | None = None,
+    started_at: datetime | None = None,
+    step_results: dict[str, Any] | None = None,
+    saved_config: Any = None,
+) -> RunPersistence:
+    """Save the report and run record; a failure is returned for disclosure, never raised."""
+    if not pipeline_store:
+        return RunPersistence()
+
+    persist_run = False
     try:
         from pubmed_search.application.pipeline.run_recorder import PipelineRunRecorder
 
@@ -446,13 +516,13 @@ def _auto_save_pipeline_report(
             saved_config=saved_config,
         )
         logger.info("Pipeline report saved")
-        return run if persist_run else None
+        return RunPersistence(run=run if persist_run else None, expected=persist_run)
     except Exception as exc:
         # Pipeline errors can contain provider URLs or the original biomedical
         # query.  Operational logs only need the failure class; durable run
         # metadata carries a separately sanitized diagnostic.
         logger.warning("Failed to auto-save pipeline report (%s)", type(exc).__name__)
-        return None
+        return RunPersistence(expected=persist_run, error_type=type(exc).__name__)
 
 
 def _screening_observer(pipeline_store: PipelineStore) -> Any:
@@ -569,12 +639,15 @@ def _format_exhaustive_pipeline_json(
     config: Any,
     run: Any,
     status: PipelineOutcomeStatus,
+    persistence: RunPersistence | None = None,
 ) -> str:
     """Return a bounded summary; the complete record set stays in the run artifact."""
-    from pubmed_search.application.pipeline.run_recorder import retrieval_summary
+    from pubmed_search.application.pipeline.record_lineage import final_record_set, retrieval_summary
 
     preview = min(config.output.limit, PIPELINE_EXHAUSTIVE_PREVIEW)
-    final_pmids = run.pmids if run is not None else []
+    final_pmids = run.pmids if run is not None else final_record_set(step_results)[1]
+    retrieval = run.retrieval if run is not None else retrieval_summary(step_results, len(final_pmids))
+    persistence_warning = persistence.warning(record_count=len(final_pmids)) if persistence is not None else None
     data: dict[str, Any] = {
         "type": "pipeline_result",
         "status": status,
@@ -588,7 +661,7 @@ def _format_exhaustive_pipeline_json(
                 "ranking": config.output.ranking,
             },
         },
-        "retrieval": run.retrieval if run is not None else retrieval_summary(step_results, len(final_pmids)),
+        "retrieval": retrieval,
         "run": None
         if run is None
         else {
@@ -616,7 +689,13 @@ def _format_exhaustive_pipeline_json(
         },
         "next": _exhaustive_next_steps(run),
     }
-    warnings = mesh_correction_warnings(step_results)
+    if persistence is not None and persistence.failed:
+        data["persistence"] = persistence.disclosure()
+    warnings = [
+        *([persistence_warning] if persistence_warning else []),
+        *(retrieval.get("warnings") or []),
+        *mesh_correction_warnings(step_results),
+    ]
     if warnings:
         data["warnings"] = warnings
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
@@ -629,29 +708,41 @@ def _format_exhaustive_pipeline_markdown(
     config: Any,
     run: Any,
     status: PipelineOutcomeStatus,
+    persistence: RunPersistence | None = None,
 ) -> str:
     """Render the same bounded summary as Markdown."""
+    from pubmed_search.application.pipeline.record_lineage import final_record_set, retrieval_summary
     from pubmed_search.shared.markdown import escape_markdown_text
 
     preview = min(config.output.limit, PIPELINE_EXHAUSTIVE_PREVIEW)
     title = escape_markdown_text(config.name or "pipeline")
+    final_count = len(run.pmids) if run is not None else len(final_record_set(step_results)[1])
+    retrieval = run.retrieval if run is not None else retrieval_summary(step_results, final_count)
+    persistence_warning = persistence.warning(record_count=final_count) if persistence is not None else None
     parts = [f"# Exhaustive PubMed retrieval: {title}", ""]
     parts.append(f"- Status: {status}")
+    if persistence_warning:
+        parts.append(f"- ⚠️ {escape_markdown_text(persistence_warning)}")
+    parts.append(
+        f"- Record set: {retrieval.get('mode')} retrieval, complete record set "
+        f"{'yes' if retrieval.get('exhaustive') is True else 'no'}"
+    )
+    parts.extend(f"- ⚠️ {escape_markdown_text(warning)}" for warning in retrieval.get("warnings") or [])
     for step in config.steps:
         result = step_results.get(step.id)
         if result is None or not is_exhaustive_step(result):
             continue
-        retrieval = dict(result.metadata.get("retrieval") or {})
-        exhaustive_label = "yes" if retrieval.get("exhaustive") else "no"
+        step_retrieval = dict(result.metadata.get("retrieval") or {})
+        exhaustive_label = "yes" if step_retrieval.get("exhaustive") else "no"
         parts.append(
-            f"- Step `{step.id}`: PubMed count {retrieval.get('total_count')}, retrieved "
-            f"{retrieval.get('retrieved_count')}, exhaustive {exhaustive_label} "
-            f"(cap {retrieval.get('cap')}), metadata {retrieval.get('metadata_count', 0)}"
+            f"- Step `{step.id}`: PubMed count {step_retrieval.get('total_count')}, retrieved "
+            f"{step_retrieval.get('retrieved_count')}, exhaustive {exhaustive_label} "
+            f"(cap {step_retrieval.get('cap')}), metadata {step_retrieval.get('metadata_count', 0)}"
         )
         if result.error:
             parts.append(f"  - Warning: {escape_markdown_text(result.error)}")
     parts.extend(f"- ⚠️ {escape_markdown_text(warning)}" for warning in mesh_correction_warnings(step_results))
-    record_count = len(run.pmids) if run is not None else 0
+    record_count = final_count
     if run is not None:
         parts.append(
             f"- Run `{run.run_id}`: {record_count} records persisted "

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
+from pubmed_search.domain.entities.pipeline import MAX_PIPELINE_STEPS
 from pubmed_search.shared.settings import (
     DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS,
     DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS,
@@ -37,12 +38,19 @@ PIPELINE_SEED_LIMIT = LimitBudget(default=5, maximum=10)
 # beyond 10,000 records, so the disclosed safety cap can never exceed it. A
 # search whose total count is above the cap is refused rather than truncated.
 PIPELINE_EXHAUSTIVE_RECORD_LIMIT = LimitBudget(default=10_000, maximum=10_000)
+# Largest record set one run can persist: every step of a maximal pipeline
+# merged from exhaustive searches at the cap. Record-set paging covers it all.
+PIPELINE_RUN_RECORD_LIMIT = MAX_PIPELINE_STEPS * PIPELINE_EXHAUSTIVE_RECORD_LIMIT.maximum
 # PMIDs requested per History Server page (one provider operation each).
 PIPELINE_EXHAUSTIVE_PAGE_SIZE = 5_000
 # Records per EFetch metadata batch (one provider operation each, HTTP POST).
 PIPELINE_EXHAUSTIVE_METADATA_BATCH = 500
 # Number of records shown inline when a run is exhaustive; the rest stay on disk.
 PIPELINE_EXHAUSTIVE_PREVIEW = 20
+# Seconds of the run deadline kept free once an exhaustive step holds its complete
+# PMID set: metadata batches stop (or are cut off) this early so the step can
+# return the identifier set before the scheduler cancels unfinished work.
+PIPELINE_EXHAUSTIVE_FINALIZE_SECONDS = 2.0
 PIPELINE_ACTION_LIMITS: Mapping[str, LimitBudget] = MappingProxyType(
     {
         "search": LimitBudget(default=50, maximum=100),
@@ -250,9 +258,11 @@ __all__ = [
     "DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS",
     "PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT",
     "PIPELINE_EXHAUSTIVE_METADATA_BATCH",
+    "PIPELINE_EXHAUSTIVE_FINALIZE_SECONDS",
     "PIPELINE_EXHAUSTIVE_PAGE_SIZE",
     "PIPELINE_EXHAUSTIVE_PREVIEW",
     "PIPELINE_EXHAUSTIVE_RECORD_LIMIT",
+    "PIPELINE_RUN_RECORD_LIMIT",
     "PIPELINE_OUTPUT_LIMIT",
     "PIPELINE_SEED_LIMIT",
     "PIPELINE_TEMPLATE_LIMITS",

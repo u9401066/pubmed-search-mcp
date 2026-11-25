@@ -398,12 +398,22 @@ JSON array of at most 20 strict strings; CSV text is rejected.
 
 `scope` behavior:
 
-- local `workspace`: saved under `.pubmed-search/pipelines/` inside the project
+- local `workspace`: saved under `.pubmed-search/pipelines/` inside the project.
+  When the server creates `.pubmed-search/` it also writes a `.gitignore` there
+  that ignores everything (run record sets carry titles and abstracts, and the
+  screening log holds reviewers' decisions); an existing directory or
+  `.gitignore` is never changed. To share saved pipelines through git, replace
+  that file; it contains a recipe that keeps only `pipelines/*.yaml`.
 - local `global`: saved under the user data directory `~/.pubmed-search-mcp/pipelines/`
 - local `auto`: save to workspace when available, otherwise global
 - authenticated service: the tenant-derived store deliberately has no
   process-wide workspace root; `auto` resolves to that principal's isolated
   data root and `workspace` is unavailable
+
+A workspace pipeline shadows a global pipeline of the same name: running,
+history, export and screening by that name use the workspace one, and
+`save_pipeline`/`list_pipelines`/`delete_pipeline` say so. A run always stays
+in the scope its pipeline was loaded from.
 
 ### Load
 
@@ -566,6 +576,20 @@ unified_search(pipeline="saved:pacu_peeg_ma")
 - If paging stops early (deadline or quota), the step fails as incomplete; no
   partial set is reported as exhaustive. If only metadata batches run out, the
   PMID set stays complete and export fetches the missing metadata on demand.
+  The run deadline is handled the same way: metadata stops two seconds before
+  it and the step keeps its complete PMID set, with
+  `metadata_error: {"kind": "deadline"}`.
+- `retrieval.exhaustive` describes the run's final record set: it is true only
+  when every search feeding that set is exhaustive and complete. Merging an
+  exhaustive step with a bounded search (or `related`, `citing`, `references`,
+  `details`) gives `mode: "mixed"`, `exhaustive: false`, the `bounded_steps`
+  and a warning, and the run is not registered as complete identification. A
+  bounded search that does not feed the final set does not change the claim.
+- `filter` cannot judge records without metadata (`fetch_metadata: false` or
+  interrupted metadata). Every filter type keeps them and reports
+  `metadata_missing` (count and PMID preview) instead of dropping them.
+- MeSH correction suggestions run only after every step has finished, so they
+  never take provider calls that required retrieval still needs.
 - `limit` and other sources are rejected with `retrieval: exhaustive`; the
   strategy must be saved first (`dry_run=True` still validates inline configs).
 - The response is a bounded summary: total and retrieved counts, the
@@ -592,7 +616,12 @@ prepare_export(pipeline_run="pacu_peeg_ma@<run_id>", format="csv")
 
 Run exports go through the same export layer as `prepare_export(pmids=...)` and
 preserve PMIDs (RIS `AN`, CSV `PMID`, CSL-JSON `PMID` and `id: pmid:<PMID>`) for
-Rayyan, Covidence or Zotero import.
+Rayyan, Covidence or Zotero import. The export's `pipeline_run` summary states
+`record_basis`, `retrieval_mode` and `complete_record_set`; a ranked preview, a
+mixed or an incomplete run is exported with a warning. `view="records"` pages
+every persisted record, including merged sets above 10,000 records. If a run
+record cannot be saved, the `unified_search` response says so
+(`persistence.saved: false`) instead of showing an empty record set.
 
 ### Strategy block analysis
 
@@ -632,20 +661,29 @@ pipeline_screening(request={"action": "flow", "pipeline": "pacu_peeg_ma"})   # M
 - Decisions are append-only; the latest decision per PMID and stage counts and
   earlier ones remain in `{"action": "log"}`. Different reviewer labels that
   disagree are reported as conflicts.
-- Retrying a request is idempotent (pass `decision_id`, or it is derived from
-  the decision content). A batch is all-or-nothing.
+- Without `decision_id`, a decision is a replay only when it repeats the same
+  reviewer's latest decision for that PMID and stage (same decision, reason and
+  note). Anything else, including a return to an earlier decision
+  (include → exclude → include), is recorded and counted. Pass a stable
+  `decision_id` to make a retried request idempotent even after later
+  decisions. A batch is all-or-nothing.
 - Full-text exclusions need a reason; use `not retrieved` for reports that
   could not be obtained. Full-text screening needs a prior title/abstract
   `include` or `maybe`.
-- `flow` reports records identified per run and database, duplicates removed
-  across runs, screened, excluded, reports sought, not retrieved, assessed,
-  excluded with reasons, and included, plus new unscreened records per run.
+- `flow` reports records identified per run and database (the search result
+  before pipeline `filter` steps), records marked ineligible by automation tools
+  (removed by those filters), duplicates removed across runs, screened,
+  excluded, reports sought, not retrieved, assessed, excluded with reasons, and
+  included, plus new unscreened records per run.
 - Use `{"action": "register_run"}` to add an older or bounded run explicitly;
   the flow then warns that identification is incomplete.
 - `delete_pipeline` removes the run history and record sets. If the screening log holds
   decisions it refuses and removes nothing, reporting how many decisions and PMIDs would be
   lost; export them with `{"action": "log"}` first, then pass `delete_screening_log=true`.
-  A log without decisions is removed with the pipeline.
+  A log without decisions is removed with the pipeline. The check is atomic with
+  the deletion, so a decision recorded meanwhile still blocks it; if a file is
+  locked (for example on Windows), deletion stops with the pipeline intact and
+  can be retried.
 
 ## Validation and exact bounds
 

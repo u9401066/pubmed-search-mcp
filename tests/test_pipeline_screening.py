@@ -79,6 +79,50 @@ def test_decisions_are_idempotent_atomic_and_survive_restart(tmp_path: Path) -> 
     assert [item["pmid"] for item in reopened.queue(stage="full_text")["items"]] == ["1"]
 
 
+def test_returning_to_an_earlier_decision_is_recorded_and_counted(tmp_path: Path) -> None:
+    """include → exclude → include is a reversal, not a replay of the first include."""
+    service = _service(tmp_path)
+    service.register_run(_run("run1", ["111"]))
+
+    outcomes = [service.record([_decide("111", decision)]) for decision in ("include", "exclude", "include")]
+
+    assert [(result["recorded"], result["replayed"]) for result in outcomes] == [(1, 0), (1, 0), (1, 0)]
+    assert len({result["decisions"][0]["decision_id"] for result in outcomes}) == 3
+    flow = _service(tmp_path).flow()["screening"]
+    assert flow["records_excluded"] == 0
+    assert flow["reports_sought_for_retrieval"] == 1
+    assert [row["decision"] for row in service.log(pmid="111")["decisions"]] == ["include", "exclude", "include"]
+
+    # A retry of the latest decision (same reviewer, same content) is still a replay...
+    retry = service.record([_decide("111", "include")])
+    assert (retry["recorded"], retry["replayed"]) == (0, 1)
+    assert retry["decisions"][0]["decision_id"] == outcomes[2]["decisions"][0]["decision_id"]
+    # ...and so is a duplicate inside one batch, while a changed note is a new decision.
+    batch = service.record([_decide("111", "exclude"), _decide("111", "exclude")])
+    assert (batch["recorded"], batch["replayed"]) == (1, 1)
+    noted = service.record([_decide("111", "exclude", note="second look")])
+    assert (noted["recorded"], noted["replayed"]) == (1, 0)
+    # Another reviewer's identical decision is that reviewer's own first decision.
+    other = service.record([_decide("111", "exclude", note="second look", reviewer="reviewer_2")])
+    assert (other["recorded"], other["replayed"]) == (1, 0)
+    assert service.log(pmid="111")["total"] == 6
+
+
+def test_client_decision_id_keeps_a_retry_idempotent_after_later_decisions(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.register_run(_run("run1", ["7"]))
+    service.record([_decide("7", "include", decision_id="ta-7-a")])
+    service.record([_decide("7", "exclude", decision_id="ta-7-b")])
+
+    late_retry = service.record([_decide("7", "include", decision_id="ta-7-a")])
+
+    assert (late_retry["recorded"], late_retry["replayed"]) == (0, 1)
+    assert service.flow()["screening"]["records_excluded"] == 1
+    # An explicit new key records a new decision even when it repeats the latest one.
+    repeat = service.record([_decide("7", "exclude", decision_id="ta-7-c")])
+    assert (repeat["recorded"], repeat["replayed"]) == (1, 0)
+
+
 def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) -> None:
     service = _service(tmp_path)
     service.register_run(_run("run1", ["1", "2", "3", "4", "5"]))
@@ -105,6 +149,7 @@ def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) ->
     assert flow["identification"] == {
         "records_identified": 10,
         "records_identified_by_database": {"PubMed": 10},
+        "records_marked_ineligible_by_automation": 0,
         "duplicate_records_removed": 3,
         "records_after_duplicates_removed": 7,
     }
@@ -124,6 +169,61 @@ def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) ->
     assert "Records identified from databases: 10 (PubMed: 10)" in markdown
     assert "Duplicate records removed (across runs): 3" in markdown
     assert "  - wrong comparator: 1" in markdown
+
+
+def test_identification_counts_records_removed_by_pipeline_filters(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    run = _run("run1", ["1", "2"])
+    run.retrieval.update({"identified_count": 5, "removed_by_filters": 3})
+    assert service.register_run(run)["identified_count"] == 5
+    assert service.register_run(run)["replayed"] is True
+    service.register_run(_run("run2", ["2", "3"]))
+
+    flow = service.flow()
+
+    assert flow["identification"] == {
+        "records_identified": 7,
+        "records_identified_by_database": {"PubMed": 7},
+        "records_marked_ineligible_by_automation": 3,
+        "duplicate_records_removed": 1,
+        "records_after_duplicates_removed": 3,
+    }
+    assert [run["records_marked_ineligible_by_automation"] for run in flow["runs"]] == [3, 0]
+    markdown = render_prisma_flow_markdown("review", flow)
+    assert "Records marked ineligible by automation tools (pipeline filter steps): 3" in markdown
+
+
+def test_version_1_screening_log_is_migrated_in_place(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "review.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE runs (run_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE, database TEXT NOT NULL,
+                identified_count INTEGER NOT NULL, new_count INTEGER NOT NULL, exhaustive INTEGER NOT NULL,
+                run_started TEXT, registered_at TEXT NOT NULL);
+            CREATE TABLE records (pmid TEXT PRIMARY KEY, first_run_id TEXT NOT NULL REFERENCES runs(run_id),
+                identified_at TEXT NOT NULL);
+            CREATE TABLE decisions (sequence INTEGER PRIMARY KEY AUTOINCREMENT, decision_id TEXT NOT NULL UNIQUE,
+                pmid TEXT NOT NULL REFERENCES records(pmid), stage TEXT NOT NULL, decision TEXT NOT NULL,
+                reason TEXT, reviewer TEXT NOT NULL, decided_at TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE INDEX decisions_by_stage ON decisions(stage, pmid, sequence);
+            CREATE INDEX records_by_run ON records(first_run_id);
+            INSERT INTO runs VALUES ('run1', 1, 'PubMed', 2, 2, 1, NULL, '2026-01-01T00:00:00Z');
+            INSERT INTO records VALUES ('1', 'run1', '2026-01-01T00:00:00Z'), ('2', 'run1', '2026-01-01T00:00:00Z');
+            PRAGMA user_version=1;
+            """
+        )
+    service = ScreeningService(SQLiteScreeningStore(path))
+
+    service.record([_decide("1", "exclude")])
+
+    flow = service.flow()
+    assert flow["identification"]["records_identified"] == 2
+    assert flow["identification"]["records_marked_ineligible_by_automation"] == 0
+    assert flow["screening"]["records_excluded"] == 1
+    assert service.register_run(_run("run1", ["1", "2"]))["replayed"] is True
 
 
 def test_bounded_runs_are_not_auto_registered(tmp_path: Path) -> None:
@@ -296,8 +396,95 @@ def test_store_delete_fails_closed_when_a_log_exists_without_opt_in(tmp_path: Pa
     assert store.exists("review")
     assert store.screening_db_path("review").is_file()
     assert store.count_history("review") == 1
-    assert store.delete("review", delete_screening_log=True)[1] == 1
+    assert store.delete("review", delete_screening_log=True).run_count == 1
     assert not store.screening_db_path("review").exists()
+
+
+def test_decision_recorded_after_the_tool_precheck_still_blocks_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decision check and the deletion are atomic: a concurrent decision is never deleted silently."""
+    from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    _service_for(store).register_run(_run("run1", ["1", "2"]))
+    store.save_run("review", _run("20260101_000000_000000_abc", ["1", "2"]))
+    precheck = pipeline_tools._screening_decision_summary
+
+    def precheck_then_concurrent_decision(store_arg: PipelineStore, name: str) -> dict[str, int] | None:
+        summary = precheck(store_arg, name)
+        _service_for(store).record([_decide("1", "include", reviewer="racer")])  # lands after the check
+        return summary
+
+    monkeypatch.setattr(pipeline_tools, "_screening_decision_summary", precheck_then_concurrent_decision)
+
+    refused = _tools(store)["delete_pipeline"](name="review")
+
+    assert "was not deleted" in refused
+    assert "1 decision on 1 PMID" in refused
+    assert store.exists("review")
+    assert store.count_history("review") == 1
+    assert _service_for(store).log()["total"] == 1
+    _service_for(store).record([_decide("2", "exclude")])  # the log is still writable
+
+
+def test_locked_screening_log_leaves_a_consistent_retryable_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Windows-style unlink failure on the log removes nothing and can be retried."""
+    from pathlib import Path as RealPath
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    _service_for(store).register_run(_run("run1", ["1"]))
+    _service_for(store).record([_decide("1", "include")])
+    store.save_run("review", _run("20260101_000000_000000_abc", ["1"]))
+    db_path = store.screening_db_path("review")
+    real_unlink = RealPath.unlink
+
+    def locked_unlink(self: RealPath, missing_ok: bool = False) -> None:
+        if self.name == db_path.name:
+            raise PermissionError(32, "The process cannot access the file because it is being used")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(RealPath, "unlink", locked_unlink)
+    failed = _tools(store)["delete_pipeline"](name="review", delete_screening_log=True)
+
+    assert "was not deleted" in failed
+    assert "in use" in failed
+    assert store.exists("review")
+    assert [meta.name for meta in store.list_pipelines()] == ["review"]
+    assert store.count_history("review") == 1
+    assert db_path.is_file()
+    _service_for(store).record([_decide("1", "exclude")])  # restored: still a working log
+    assert _service_for(store).log()["total"] == 2
+
+    monkeypatch.setattr(RealPath, "unlink", real_unlink)
+    deleted = _tools(store)["delete_pipeline"](name="review", delete_screening_log=True)
+
+    assert 'Pipeline "review" deleted' in deleted
+    assert "Screening log permanently removed: 2 decisions on 1 PMID" in deleted
+    assert not db_path.exists()
+    assert not store.exists("review")
+    assert store.list_pipelines() == []
+
+
+def test_retired_screening_log_refuses_writes_until_deleted(tmp_path: Path) -> None:
+    log = SQLiteScreeningStore(tmp_path / "review.sqlite3")
+    ScreeningService(log).register_run(_run("run1", ["1"]))
+    ScreeningService(log).record([_decide("1", "include")])
+
+    assert log.retire(allow_decisions=False)["retired"] is False
+    ScreeningService(log).record([_decide("1", "exclude")])  # refusal left the log untouched
+    summary = log.retire(allow_decisions=True)
+
+    assert (summary["retired"], summary["decisions"]) == (True, 2)
+    with pytest.raises(ValueError, match="being deleted"):
+        ScreeningService(log).record([_decide("1", "maybe")])
+    assert ScreeningService(log).flow()["screening"]["records_excluded"] == 1  # reads still work
+    log.restore()
+    ScreeningService(log).record([_decide("1", "maybe")])
 
 
 async def test_unknown_pipeline_and_invalid_decisions_are_structured_errors(tmp_path: Path) -> None:
