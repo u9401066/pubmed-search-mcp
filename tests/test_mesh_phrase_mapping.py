@@ -161,7 +161,7 @@ class FakeNCBI:
         self.fail_summary = False
         self.fail_translation = False
 
-    def esearch(self, *, db: str, term: str, retmax: int, **_: Any) -> _Handle:
+    def esearch(self, *, db: str, term: str, retmax: int, retstart: int = 0, **_: Any) -> _Handle:
         self.calls.append(("esearch", db, term))
         if db == "pubmed":
             if self.fail_translation:
@@ -188,7 +188,7 @@ class FakeNCBI:
                 if any(term.casefold() == phrase.casefold() for term in doc["DS_MeshTerms"]):
                     hits.append(uid)
         unique = list(dict.fromkeys(hits))
-        return _Handle({"Count": str(len(unique)), "IdList": unique[:retmax]})
+        return _Handle({"Count": str(len(unique)), "IdList": unique[retstart : retstart + retmax]})
 
     def esummary(self, *, db: str, id: str, **_: Any) -> _Handle:  # noqa: A002 - Entrez keyword
         assert db == "mesh"
@@ -447,6 +447,44 @@ def test_summary_parser_keeps_a_descriptors_allowable_qualifiers():
     assert unlisted is not None and unlisted.allowed_qualifiers == ()  # unknown, not "none allowed"
 
 
+def test_drug_descriptor_with_pharmacological_actions_stays_a_descriptor():
+    # Live ESummary 2026-11-25: drug descriptors list their actions in DS_PaPx and leave DS_PaList
+    # empty; only pharmacological-action records (82xxxxxx) fill DS_PaList.
+    drug = _mesh_record_from_summary(
+        _doc(
+            "68020927",
+            "Dexmedetomidine",
+            "MPV-1440",
+            trees=("D03.383.129.539.250",),
+            DS_PaList=[],
+            DS_PaPx=["Hypnotics and Sedatives", "Adrenergic alpha-2 Receptor Agonists", "Analgesics, Non-Narcotic"],
+        )
+    )
+    assert drug is not None and (drug.record_type, drug.preferred) == ("descriptor", "Dexmedetomidine")
+
+
+@pytest.mark.parametrize(
+    ("phrase", "term"),
+    [
+        ("new", "News"),  # "news" used to fold to "new"
+        ("lens", "Len"),
+        ("patients care", "Patient Care"),  # an inner plural is never searched, so never matched
+        ("care units intensive", "Care Unit Intensive"),
+    ],
+)
+def test_a_plural_fold_never_matches_a_form_the_phrase_lookup_would_not_search(phrase: str, term: str):
+    assert term_key(phrase) != term_key(term) or match_term(phrase, MeshRecord(uid="1", preferred=term)) is None
+    assert not any(variant.casefold() == term.casefold() for variant in lookup_variants(phrase))
+
+
+@pytest.mark.parametrize(
+    ("phrase", "term"),
+    [("units", "Unit"), ("unit", "Units"), ("therapies", "Therapy"), ("Emergence Deliriums", "Emergence Delirium")],
+)
+def test_last_word_plural_folding_still_matches_both_ways(phrase: str, term: str):
+    assert match_term(phrase, MeshRecord(uid="1", preferred=term)) is not None
+
+
 # ---------------------------------------------------------------------------
 # generate_strategies through the fake Entrez boundary
 # ---------------------------------------------------------------------------
@@ -589,6 +627,85 @@ async def test_mesh_lookups_are_cached_including_misses():
     assert fake.count("esearch", "mesh") + fake.count("esummary", "mesh") == lookups
     assert first["mesh_terms"] == second["mesh_terms"]
     assert first["unmapped_phrases"] == second["unmapped_phrases"]
+
+
+NEWS = _doc("68016433", "News", "Newspaper Article", trees=("V02.680",))
+ANTICOAGULANTS = _doc("68000925", "Anticoagulants", "Anticoagulant", trees=("D27.505.954.502.119",))
+
+
+@pytest.mark.parametrize("looked_up_first", [None, "news", "News"])
+async def test_mapping_does_not_depend_on_what_was_looked_up_before(looked_up_first: str | None):
+    # Before: after "news" was looked up, the cache key "new" held the News record, so
+    # "new oral anticoagulants" confirmed new -> News[pt]; without the prior lookup it did not.
+    generator = SearchStrategyGenerator(email="test@example.com")
+    fake = FakeNCBI([NEWS, ANTICOAGULANTS])
+    if looked_up_first:
+        with ExitStack() as stack:
+            fake.install(stack)
+            assert (await generator.get_mesh_info(looked_up_first) or {}).get("preferred_term") == "News"
+
+    result = await _generate(fake, "new oral anticoagulants", generator)
+
+    assert [(mesh["input"], mesh["preferred"]) for mesh in result["mesh_terms"]] == [
+        ("anticoagulants", "Anticoagulants")
+    ]
+
+
+async def test_one_batch_never_lends_a_folded_records_to_another_phrase():
+    generator = SearchStrategyGenerator(email="test@example.com")
+    fake = FakeNCBI([NEWS])
+    with ExitStack() as stack:
+        fake.install(stack)
+        records = await generator.lookup_mesh_records(["new", "news"])
+
+    assert {record.preferred for record in records.get(term_key("news"), ())} == {"News"}
+    assert records.get(term_key("new"), ()) == ()
+
+
+async def test_cache_entries_are_per_searched_form_not_per_folded_key():
+    # Only the closed spelling is an entry term. Before: the space-separated phrase cached an
+    # empty result under the shared key, and the hyphenated phrase then reused it unsearched.
+    record = _doc("68011997", "Recovery Room", "Postanesthesia Care Unit", trees=("N02.278.388.493.592",))
+    generator = SearchStrategyGenerator(email="test@example.com")
+    fake = FakeNCBI([record])
+    with ExitStack() as stack:
+        fake.install(stack)
+        spaced = await generator.lookup_mesh_records(["post anesthesia care unit"])
+        hyphenated = await generator.lookup_mesh_records(["post-anesthesia care unit"])
+        again = await generator.lookup_mesh_records(["post-anesthesia care unit"])
+
+    assert spaced == {term_key("post anesthesia care unit"): ()}
+    assert [item.preferred for item in hyphenated[term_key("post-anesthesia care unit")]] == ["Recovery Room"]
+    assert again == hyphenated
+    assert fake.count("esearch", "mesh") == 2  # the repeat was served from the cache
+
+
+async def test_truncated_mesh_search_is_paged_and_never_cached_incomplete():
+    cold = [
+        _doc("1", "Common Cold", "Cold", trees=("C01.925",)),
+        _doc("2", "Cold Temperature", "Cold", trees=("G01.358",)),
+    ]
+    fake = FakeNCBI(cold)
+    generator = SearchStrategyGenerator(email="test@example.com")
+    with ExitStack() as stack, patch(f"{STRATEGY}.MESH_LOOKUP_RETMAX", 1):
+        fake.install(stack)
+        records = await generator.lookup_mesh_records(["cold"])
+    assert {record.uid for record in records[term_key("cold")]} == {"1", "2"}  # Count 2 > retmax 1: paged
+
+    fresh = SearchStrategyGenerator(email="test@example.com")
+    with (
+        ExitStack() as stack,
+        patch(f"{STRATEGY}.MESH_LOOKUP_RETMAX", 1),
+        patch(f"{STRATEGY}.MESH_LOOKUP_MAX_PAGES", 1),
+        patch(f"{STRATEGY}.MAX_RETRIES", 1),
+    ):
+        fake.install(stack)
+        with pytest.raises(NCBIInfrastructureError):
+            await fresh.lookup_mesh_records(["cold"])
+    with ExitStack() as stack:
+        fake.install(stack)
+        records = await fresh.lookup_mesh_records(["cold"])
+    assert {record.uid for record in records[term_key("cold")]} == {"1", "2"}  # nothing incomplete was cached
 
 
 async def test_summary_outage_fails_closed_without_mappings():

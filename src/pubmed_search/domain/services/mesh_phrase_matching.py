@@ -8,8 +8,9 @@ Design:
     term with a comma at the same place, so a comma list never merges into
     one concept. Candidates are tried longest first, and a vocabulary record
     is accepted only when the normalized phrase equals its preferred term or
-    one of its entry terms. Normalization covers case, punctuation/hyphen
-    spacing and simple plurals; it never widens a phrase into a related
+    one of its entry terms. Normalization covers case, Unicode dashes,
+    punctuation/hyphen spacing and a simple plural of the last word (exactly
+    the forms the lookup searches); it never widens a phrase into a related
     concept. Anything weaker is a candidate for review, not a mapping.
 
 Maintenance:
@@ -313,18 +314,32 @@ def parse_topic(
 
 
 def _singular(token: str) -> str:
-    if not token.isalpha() or len(token) < _MIN_PLURAL_CHARS:
+    """Singular of a simple plural when both forms have ``_MIN_PLURAL_CHARS`` letters ("news" stays).
+
+    Exactly the pairs :func:`_toggle_plural` produces, so a phrase never
+    shares a key with a form its own lookup would not search.
+    """
+    if not token.isalpha():
         return token
-    if token.endswith("ies") and len(token) > _MIN_PLURAL_CHARS:
-        return token[:-3] + "y"
-    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+    if token.endswith("ies"):
+        return token[:-3] + "y" if len(token) - 2 >= _MIN_PLURAL_CHARS else token
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")) and len(token) - 1 >= _MIN_PLURAL_CHARS:
         return token[:-1]
     return token
 
 
-def _key_tokens(text: str) -> tuple[str, ...]:
+def _words(text: str) -> list[str]:
     folded = normalize_term(text).casefold().replace("’", "'")
-    return tuple(_singular(token) for token in _KEY_TOKEN.findall(_POSSESSIVE.sub("", folded)))
+    return _KEY_TOKEN.findall(_POSSESSIVE.sub("", folded))
+
+
+def _key_tokens(text: str) -> tuple[str, ...]:
+    return tuple(_singular(token) for token in _words(text))
+
+
+def _surface_key(text: str) -> str:
+    """Like :func:`term_key` but without plural folding (case, punctuation and hyphen spacing only)."""
+    return "".join(_words(text))
 
 
 def term_key(text: str) -> str:
@@ -345,14 +360,14 @@ def _toggle_plural(word: str) -> str | None:
     if not word.isalpha() or len(word) < _MIN_PLURAL_CHARS:
         return None
     lower = word.casefold()
-    if lower.endswith("ies") and len(word) > _MIN_PLURAL_CHARS:
-        return word[:-3] + "y"
-    if lower.endswith("s") and not lower.endswith(("ss", "us", "is")):
-        return word[:-1]
-    if lower.endswith("y") and lower[-2] not in "aeiou":
-        return word[:-1] + "ies"
+    if lower.endswith("ies"):
+        return word[:-3] + "y" if len(word) - 2 >= _MIN_PLURAL_CHARS else None
     if lower.endswith(("ss", "us", "is")):
         return None
+    if lower.endswith("s"):
+        return word[:-1] if len(word) - 1 >= _MIN_PLURAL_CHARS else None
+    if lower.endswith("y") and lower[-2] not in "aeiou":
+        return word[:-1] + "ies"
     return word + "s"
 
 
@@ -398,9 +413,13 @@ def _comma_parts(text: str) -> tuple[str, ...]:
 def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
     """Accept only a preferred-term or entry-term equality; literal equality wins over normalization.
 
-    A phrase containing a comma only matches a term with commas at the same
-    word boundaries ("diabetes mellitus, type 2" = "Diabetes Mellitus, Type
-    2"), so "anxiety, depression" never matches "Anxiety Depression".
+    A plural is folded only where :func:`lookup_variants` searches it (the
+    last word), so a record found through another phrase can never confirm
+    a form this phrase would not have searched ("patients care" never
+    matches "Patient Care"). A phrase containing a comma only matches a term
+    with commas at the same word boundaries ("diabetes mellitus, type 2" =
+    "Diabetes Mellitus, Type 2"), so "anxiety, depression" never matches
+    "Anxiety Depression".
     """
     terms = record.terms
     literal = exact_form(phrase)
@@ -410,9 +429,12 @@ def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
     key = term_key(phrase)
     if not key:
         return None
+    searched = {_surface_key(variant) for variant in lookup_variants(phrase)}
     parts = _comma_parts(phrase) if "," in phrase else None
     for index, term in enumerate(terms):
-        if term_key(term) == key and (parts is None or _comma_parts(term) == parts):
+        if term_key(term) != key or _surface_key(term) not in searched:
+            continue
+        if parts is None or _comma_parts(term) == parts:
             return TermMatch(record, "preferred" if index == 0 else "entry_term", term)
     return None
 

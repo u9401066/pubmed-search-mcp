@@ -157,7 +157,13 @@ class NCBIMeshEvidenceGateway:
             raise_ncbi_infrastructure_error("mesh_correction_probe", exc)
 
     async def lookup_exact(self, phrases: Sequence[str]) -> Mapping[str, tuple[MeshRecord, ...]]:
-        """Exact MeSH records by ``term_key``. At most two requests (batched ESearch + ESummary), cached."""
+        """Exact MeSH records by ``term_key``: batched ESearch + ESummary (two requests for a correction's
+        few headings), cached per searched form.
+
+        Only if one ESearch batch matches more than 500 records is it paged (a
+        few more requests); a result that stays truncated raises and is not
+        cached.
+        """
         return await self._vocabulary.lookup_mesh_records(phrases)
 
     async def sample(self, query: str, *, limit: int, sort: str) -> EvidenceSample:
