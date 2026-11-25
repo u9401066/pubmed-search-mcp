@@ -12,7 +12,7 @@ PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`�
 
 | 使用情境 | 安裝方式 |
 | --- | --- |
-| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **43 個 MCP 工具**，包含持久研究工作區。 |
+| 正式版 v0.11.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.11.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **43 個 MCP 工具**，包含持久研究工作區。 |
 | 開發工作區 | 在 checkout 執行下方指令，以安裝可測試本機變更的 plugin。 |
 
 ```sh
@@ -23,6 +23,16 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 四個回顧主題的盲測記錄了 agent 看過 MeSH 預查後的選擇、找回的已知納入篇目與新增待篩筆數。[方法與逐題結果](docs/reports/mesh-preflight-2017/README.md)
 
+## v0.11.0 新功能
+
+- **系統性回顧**：保存的 pipeline 可完整取回 PubMed 結果集（上限 10,000 筆），保留 PRISMA-S 執行紀錄，匯出 RIS/CSV/CSL-JSON，分析各概念區塊的貢獻，並記錄篩選決定（`pipeline_screening`）。
+- **精確優先搜尋**：先以你的查詢填滿要求筆數；只有不足時才自動放寬，且每筆放寬結果都有標示。
+- **可信的 MeSH**：只有完全符合主要詞或 entry term 才算確認對應；PubMed 無法解析的 MeSH 會在 `unified_search` 自動更正並附證據，保存的 pipeline 只提出建議、不改寫。
+- **能更正引用的文獻核對**：年份、卷號引錯的文獻會列出欄位更正，不再被當成疑似捏造。
+- **有證據支撐的 Chronicle 與更清楚的全文狀態**：依 PubMed publication type 標示研究設計、引用結論原句、NCBI PMC fallback 與明確的來源錯誤代碼。
+
+詳見 [CHANGELOG](CHANGELOG.md)。
+
 ## 從研究問題開始
 
 可請 agent「追查早期人工耳蝸的技術分歧，並留下一篇讓同事接手閱讀的文章」。要理解這 43 個工具，可以先選研究任務。
@@ -32,7 +42,7 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 | 定義範疇 | 擴展 MeSH 與同義詞，驗證 agent 提出的 PICO，實測哪個布林條件排除了哪些篇目。[組合預查範例](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md#比較-pubmed-概念組合) |
 | 搜尋與追索 | 跨來源搜尋，檢查各來源失敗或截斷的情形，再追查相關文獻、參考文獻及後續引用。[使用者指南](docs/guides/USER_GUIDE.zh-TW.md) |
 | 閱讀與核對 | 檢視摘要、可取得的全文段落、圖表或書目比對。可用 `diagnose_institutional_access` 診斷已設定的機構存取。[工具指南](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md) |
-| 重用回顧策略 | 保存 PICO 或引文擴展 pipeline，再次執行並比較歷史。研究團隊負責適格性篩選與統計合併。[Pipeline 教學](docs/guides/PIPELINE_MODE_TUTORIAL.md) |
+| 重用回顧策略 | 保存 PICO 或引文擴展 pipeline，完整取回 PubMed 結果集，匯出 PRISMA-S 紀錄與 RIS/CSV，分析各概念區塊的貢獻，並記錄篩選決定以產生 PRISMA 2020 計數。適格性判斷與統計合併仍由研究團隊負責。[Pipeline 教學](docs/guides/PIPELINE_MODE_TUTORIAL.md) |
 | 追溯研究史 | 從 Chronicle 查閱分支、關鍵文章、早期替代解釋與版次差異。[歷史案例與研究交接](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) |
 | 交付研究 | 匯出引文或筆記、記錄來源與待辦。Host 可另用獲授權的 Zotero 本機書庫比對。[功能與驗證證據](docs/README.md#capability-inventory) |
 

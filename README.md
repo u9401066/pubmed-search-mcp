@@ -14,7 +14,7 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
+| Published v0.11.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.11.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
 | Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
@@ -25,6 +25,16 @@ Select the generated directory in your agent's plugin installer. Keep the checko
 
 Four blinded review cases tested whether MeSH previews improve search decisions. [Methods, screening costs and results](docs/reports/mesh-preflight-2017/README.md)
 
+## What's new in v0.11.0
+
+- **Systematic reviews**: saved pipelines retrieve the complete PubMed set (up to 10,000 records), keep PRISMA-S run records, export RIS/CSV/CSL-JSON, analyse concept-block contributions and log screening decisions (`pipeline_screening`).
+- **Precision-first search**: your query fills the requested limit first; automatic broadening only fills a shortfall and every broadened record is labelled.
+- **MeSH you can trust**: confirmed mappings require an exact preferred or entry term; a heading PubMed cannot resolve is corrected automatically in `unified_search` (with evidence) and suggested, never applied, in saved pipelines.
+- **Reference checks that correct citations**: mis-cited years and volumes are reported as field corrections instead of looking fabricated.
+- **Evidence-grounded Chronicles and clearer fulltext status**: study-design labels from PubMed publication types, quoted conclusion sentences, NCBI PMC fallback and typed source errors.
+
+Details: [CHANGELOG](CHANGELOG.md).
+
 ## Start with a research question
 
 For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 43 tool names.
@@ -34,7 +44,7 @@ For example, ask the agent to trace the early development of cochlear implants a
 | Define the scope | Expand MeSH and synonyms, validate agent-supplied PICO, or compare which papers a Boolean condition excludes. [PubMed combination example](docs/guides/TOOLS_USAGE_GUIDE.md#compare-pubmed-concept-blocks) |
 | Search and extend | Search several providers, inspect per-source failures, then follow related papers, references or citing articles. [User guide](docs/guides/USER_GUIDE.md) |
 | Read and verify | Inspect an abstract, an available full-text passage, figures or bibliography matches. Use `diagnose_institutional_access` for a configured resolver. Record the source and what was actually read. [Tool guide](docs/guides/TOOLS_USAGE_GUIDE.md) |
-| Reuse a review strategy | Save a PICO or citation-expansion pipeline, run it again and inspect its history. Eligibility screening and statistical pooling remain researcher tasks. [Pipeline tutorial](docs/guides/PIPELINE_MODE_TUTORIAL.en.md) |
+| Reuse a review strategy | Save a PICO or citation-expansion pipeline, retrieve the complete PubMed set, export PRISMA-S records and RIS/CSV, analyse each concept block's contribution and log screening decisions for PRISMA 2020 counts. Eligibility judgements and statistical pooling remain researcher tasks. [Pipeline tutorial](docs/guides/PIPELINE_MODE_TUTORIAL.en.md) |
 | Explore research history | Review dated Chronicle branches, landmarks, earlier alternatives and revision differences. [Historical case and workspace handoff](docs/guides/ADVANCED_RESEARCH_WORKFLOWS.md) |
 | Share results | Export citations or notes, record source identifiers and leave an open action. The host can cross-check an authorized local Zotero library. [Capability inventory and evidence](docs/README.md#capability-inventory) |
 
