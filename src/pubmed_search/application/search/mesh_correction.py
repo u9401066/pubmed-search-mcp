@@ -72,7 +72,7 @@ from pubmed_search.domain.services.mesh_correction import (
     text_word_clauses,
     text_word_variants,
 )
-from pubmed_search.domain.services.mesh_phrase_matching import exact_form, matches_for, resolve_matches
+from pubmed_search.domain.services.mesh_phrase_matching import matches_for, resolve_matches
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -663,7 +663,8 @@ class MeshCorrectionService:
             if dropped:
                 notes.append(f"Dropped {', '.join(dropped)}, which do not apply to this record type.")
         else:
-            same_heading = exact_form(term.descriptor) == exact_form(record.preferred)
+            # PubMed ignores case and spacing, not the characters themselves (a U+2011 hyphen differs).
+            same_heading = " ".join(term.descriptor.casefold().split()) == " ".join(record.preferred.casefold().split())
             qualifier, qualifier_notes, qualifier_check = self._checked_qualifier(term, record, same_heading)
             if same_heading and qualifier == term.qualifier:
                 return None  # PubMed flagged the clause, but no rewrite would change it

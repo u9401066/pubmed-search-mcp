@@ -39,7 +39,7 @@ from itertools import pairwise
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
-from .mesh_phrase_matching import lookup_variants, term_key
+from .mesh_phrase_matching import lookup_variants, normalize_term, term_key
 from .pubmed_boolean import boolean_operator, resembles_operator
 
 if TYPE_CHECKING:
@@ -638,7 +638,7 @@ def pubmed_text_key(text: str) -> str:
     (its translation shows both as ``"post anesthesia ..."[Title/Abstract]``)
     and ignores case, so hyphens and spaces are folded together.
     """
-    return " ".join(re.split(r"[\s\-]+", text.casefold())).strip()
+    return " ".join(re.split(r"[\s\-]+", normalize_term(text).casefold())).strip()
 
 
 def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tuple[str, ...]:
@@ -646,9 +646,9 @@ def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tupl
 
     Forms PubMed treats as identical (hyphen vs. space, case) are emitted
     once, and closed compounds use a canonical casing (``Postanesthesia``,
-    never ``PostAnesthesia``).
+    never ``PostAnesthesia``). Unicode dashes are written as ASCII hyphens.
     """
-    cleaned = " ".join(phrase.replace('"', " ").split())
+    cleaned = " ".join(normalize_term(phrase).replace('"', " ").split())
     if not cleaned:
         return ()
     canonical: dict[str, str] = {}

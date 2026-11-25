@@ -261,6 +261,50 @@ def test_long_topics_are_bounded_and_flagged():
     assert len(phrases.tokens) == 48 and phrases.truncated
 
 
+HYPHEN_LIKE = {
+    "hyphen": "\u2010",
+    "non-breaking hyphen": "\u2011",
+    "figure dash": "\u2012",
+    "en dash": "\u2013",
+    "minus sign": "\u2212",
+    "small hyphen-minus": "\ufe63",
+    "full-width hyphen-minus": "\uff0d",
+}
+
+
+@pytest.mark.parametrize("dash", HYPHEN_LIKE.values(), ids=HYPHEN_LIKE.keys())
+def test_unicode_hyphens_keep_a_compound_whole(dash: str):
+    phrases = parse_topic(f"pre{dash}eclampsia in twins")
+    assert "pre-eclampsia" in phrases.tokens and "eclampsia" not in phrases.tokens
+    assert lookup_variants(f"pre{dash}eclampsia") == lookup_variants("pre-eclampsia")
+    assert {"pre-eclampsia", "pre eclampsia", "preeclampsia"} <= set(lookup_variants(f"pre{dash}eclampsia"))
+    match = match_term(f"Pre{dash}Eclampsia", MeshRecord(uid="1", preferred="Pre-Eclampsia"))
+    assert match is not None and match.matched_on == "preferred"
+
+
+def test_a_soft_hyphen_vanishes_and_a_long_dash_still_separates():
+    assert "preeclampsia" in parse_topic("pre\u00adeclampsia").tokens
+    texts = {candidate.text for candidate in parse_topic("delirium\u2014a review").candidates}
+    assert "delirium" in texts and not any("-" in text for text in texts)
+    # Inside one heading every dash is a hyphen.
+    assert lookup_variants("Pre\u2014Eclampsia")[0] == "Pre-Eclampsia"
+
+
+async def test_unicode_hyphenated_topic_maps_to_the_compound_heading_not_its_last_word():
+    # Before: U+2011 split "pre-eclampsia" into two segments and "eclampsia" mapped to Eclampsia.
+    fake = FakeNCBI(
+        [
+            _doc("68011225", "Pre-Eclampsia", "Pre Eclampsia", "Preeclampsia", "EPH Gestosis", trees=("C12.050.703",)),
+            _doc("68004461", "Eclampsia", trees=("C12.050.703.395.249",)),
+        ]
+    )
+
+    result = await _generate(fake, "pre\u2011eclampsia in twins")
+
+    assert [(mesh["input"], mesh["preferred"]) for mesh in result["mesh_terms"]] == [("pre-eclampsia", "Pre-Eclampsia")]
+    assert "Eclampsia" not in {mesh["preferred"] for mesh in result["mesh_terms"]}
+
+
 @pytest.mark.parametrize(
     ("phrase", "term"),
     [

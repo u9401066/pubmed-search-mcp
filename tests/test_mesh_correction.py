@@ -42,6 +42,7 @@ from pubmed_search.domain.services.mesh_correction import (
     descriptor_shares,
     find_mesh_terms,
     flag_unresolved_terms,
+    pubmed_text_key,
     rank_descriptors,
     score_descriptor,
     text_word_variants,
@@ -293,6 +294,20 @@ async def test_plural_hyphen_and_noexp_variants_are_fixed_by_exact_lookup(fake: 
     assert by_original['"Recovery Rooms"[mesh:noexp]']["matched_on"] == "entry_term"
     assert fake.count("efetch") == 0  # exact matches need no co-occurrence evidence
     assert result.after_count == 412
+
+
+async def test_unicode_hyphen_in_a_heading_is_searched_as_a_hyphen(fake: FakeEntrez):
+    # Before: the U+2011 form was looked up verbatim, found nothing, and fell to co-occurrence.
+    result = await make_service().correct_query('"Pre\u2011Eclampsia"[Mesh] AND twins[tiab]')
+
+    (correction,) = result.corrections
+    assert result.corrected_query == '"Pre-Eclampsia"[Mesh] AND twins[tiab]'
+    assert (correction.tier, correction.confidence) == ("exact", "high")
+    assert fake.count("efetch") == 0
+    assert not any("\u2011" in term for _, db, term in fake.calls if db == "mesh")  # Substance Name too
+    assert text_word_variants("Pre\u2011Eclampsia") == text_word_variants("Pre-Eclampsia")
+    assert text_word_variants("Pre\u2011Eclampsia")[0] == "Pre-Eclampsia"
+    assert pubmed_text_key("pre\u2013eclampsia") == pubmed_text_key("pre eclampsia")
 
 
 async def test_slashed_heading_is_corrected_as_one_concept_not_truncated(fake: FakeEntrez):

@@ -107,6 +107,26 @@ _SEARCH_FIELDS: dict[RecordType, str] = {
     "publication_type": "Publication Type",
 }
 
+# Hyphen-like characters that join a compound (pre-eclampsia pasted with U+2011, Guillain-Barre
+# typeset with an en dash): hyphen, non-breaking hyphen, figure dash, en dash, hyphen bullet,
+# minus sign, small and full-width hyphen-minus. A soft hyphen (U+00AD) is an invisible break.
+_HYPHENS = "\u2010\u2011\u2012\u2013\u2043\u2212\ufe63\uff0d"
+_HYPHEN_TABLE = {**dict.fromkeys(map(ord, _HYPHENS), "-"), 0x00AD: None}
+# Long dashes (em dash, horizontal bar, two/three-em dash, small and vertical em dashes) separate
+# clauses in running text, but inside a single heading or lookup phrase they stand for a hyphen.
+_LONG_DASHES = "\u2014\u2015\u2e3a\u2e3b\ufe31\ufe32\ufe58"
+_TERM_DASH_TABLE = {**_HYPHEN_TABLE, **dict.fromkeys(map(ord, _LONG_DASHES), "-")}
+
+
+def normalize_hyphens(text: str) -> str:
+    """Unicode compatibility form with hyphen-like characters as ``-``; long dashes still separate."""
+    return unicodedata.normalize("NFKC", text).translate(_HYPHEN_TABLE)
+
+
+def normalize_term(text: str) -> str:
+    """Unicode compatibility form of one heading or phrase, with every dash variant as ``-``."""
+    return unicodedata.normalize("NFKC", text).translate(_TERM_DASH_TABLE)
+
 
 @dataclass(frozen=True)
 class PhraseCandidate:
@@ -210,9 +230,10 @@ def _segments(topic: str) -> list[list[str]]:
     """Split on punctuation, quotes, field tags and PubMed operators; keep hyphenated words.
 
     PubMed operators include lowercase ``or``/``not`` but not ``and``, which
-    may occur inside a heading ("Head and Neck Neoplasms").
+    may occur inside a heading ("Head and Neck Neoplasms"). Unicode hyphens
+    join a compound like ``-`` does; long dashes separate.
     """
-    text = _FIELD_TAG.sub(" | ", unicodedata.normalize("NFKC", topic))
+    text = _FIELD_TAG.sub(" | ", normalize_hyphens(topic))
     segments: list[list[str]] = [[]]
     last_end = 0
     for match in _TOKEN.finditer(text):
@@ -273,7 +294,7 @@ def _singular(token: str) -> str:
 
 
 def _key_tokens(text: str) -> tuple[str, ...]:
-    folded = unicodedata.normalize("NFKC", text).casefold().replace("’", "'")
+    folded = normalize_term(text).casefold().replace("’", "'")
     return tuple(_singular(token) for token in _KEY_TOKEN.findall(_POSSESSIVE.sub("", folded)))
 
 
@@ -311,8 +332,10 @@ def lookup_variants(phrase: str) -> tuple[str, ...]:
 
     A slash between words is also searched as a hyphen: MeSH spells such
     compounds with hyphens ("Ischemia-Reperfusion Injury"), and db=mesh finds
-    no record for the slashed form.
+    no record for the slashed form. Every Unicode dash variant is searched as
+    an ASCII hyphen.
     """
+    phrase = normalize_term(phrase)
     forms = [phrase]
     if "/" in phrase:
         forms.append(phrase.replace("/", "-"))
@@ -335,8 +358,8 @@ def lookup_variants(phrase: str) -> tuple[str, ...]:
 
 
 def exact_form(text: str) -> str:
-    """Literal comparison form: Unicode compatibility, case and whitespace folded, nothing else."""
-    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+    """Literal comparison form: Unicode compatibility, dash variants, case and whitespace folded."""
+    return " ".join(normalize_term(text).casefold().split())
 
 
 def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:

@@ -219,9 +219,10 @@ class SearchStrategyGenerator:
             clauses: list[str] = []
             for group in requested.values():
                 for phrase in dict.fromkeys(group):
-                    clauses.extend(f'"{variant}"[MeSH Terms]' for variant in lookup_variants(phrase))
+                    variants = lookup_variants(phrase)
+                    clauses.extend(f'"{variant}"[MeSH Terms]' for variant in variants)
                     if len(phrase.split()) <= MESH_SUBSTANCE_MAX_TOKENS:
-                        clauses.append(f'"{phrase}"[Substance Name]')
+                        clauses.append(f'"{variants[0]}"[Substance Name]')  # as written, dashes normalized
             unique_clauses = list(dict.fromkeys(clauses))
             uids: list[str] = []
             for offset in range(0, len(unique_clauses), MESH_LOOKUP_MAX_CLAUSES):

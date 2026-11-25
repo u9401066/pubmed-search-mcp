@@ -174,6 +174,8 @@ MESH_DOCS = [
         trees=("C14.907.725", "C23.550.767.877"),
     ),
     _doc("68007511", "Ischemia", trees=("C14.907.553", "C23.550.513")),
+    _doc("68011225", "Pre-Eclampsia", "Pre Eclampsia", "Preeclampsia", "EPH Gestosis", trees=("C12.050.703",)),
+    _doc("68004461", "Eclampsia", trees=("C12.050.703.395.249",)),
 ]
 
 
@@ -211,6 +213,7 @@ class FakeEntrez:
             '"recovery rooms"[mesh:noexp]',
             '"remimazolam"[mesh]',
             '"remimazolam"[majr]',
+            '"pre\u2011eclampsia"[mesh]',  # non-breaking hyphen, as pasted from formatted text
             '"post-operative deliriums"[majr]',
             '"postanesthesia recovery wards"[mesh]',
             '"ischemia/reperfusion injury"[mesh]',
