@@ -40,6 +40,7 @@ class StoredPipelineRunner:
         execution_policy: PipelineExecutionPolicy | None = None,
         execution_context: Callable[[], AbstractContextManager[None]] | None = None,
         run_observer: RunObserver | None = None,
+        mesh_correction: Any = None,
     ) -> None:
         self._store = store
         self._searcher = searcher
@@ -48,6 +49,7 @@ class StoredPipelineRunner:
         self._execution_policy = execution_policy
         self._execution_context = execution_context or nullcontext
         self._run_observer = run_observer
+        self._mesh_correction = mesh_correction
 
     async def execute_saved_pipeline(self, name: str, *, diff_mode: bool = False) -> PipelineRun:
         """Execute one saved pipeline and persist report plus run history.
@@ -64,6 +66,7 @@ class StoredPipelineRunner:
             alternate_search_adapter=self._alternate_search_adapter,
             semantic_enhancer_factory=self._semantic_enhancer_factory,
             execution_policy=self._execution_policy,
+            mesh_correction=self._mesh_correction,
         )
         recorder = PipelineRunRecorder(self._store, on_recorded=self._run_observer)
 

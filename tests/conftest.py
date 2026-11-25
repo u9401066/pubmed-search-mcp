@@ -30,6 +30,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--container-image", help="Opt into real HTTP smoke of this locally built Docker image")
 
 
+@pytest.fixture(autouse=True)
+def _no_inherited_claude_project_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a developer's Claude Code project from becoming every test's workspace root."""
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+
 @pytest.fixture
 def git_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Initialize a test-owned repository even when pytest is invoked from a Git hook."""

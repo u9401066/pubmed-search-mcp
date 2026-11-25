@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
-from pubmed_search.application.search.query_materials import build_fallback_query_materials
+from pubmed_search.application.search.query_materials import (
+    attach_cooccurrence_candidates,
+    build_fallback_query_materials,
+)
 
-from ._common import InputNormalizer, ResponseFormatter, get_strategy_generator
+from ._common import InputNormalizer, ResponseFormatter, get_mesh_correction_service, get_strategy_generator
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -94,6 +97,14 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
           maps only when it equals a record's preferred term or an entry term
           (ignoring case, hyphen spacing and simple plurals)
         - Synonym expansion from confirmed MeSH records
+        - Data-driven MeSH candidates for up to 2 unmapped phrases (multi-word
+          first): MeSH headings most often indexed on MEDLINE records that use
+          the phrase in title/abstract (check tags such as Humans, Male,
+          Adult and study-design headings removed) nominate candidates, which
+          are ranked by the F1 of exact recall and precision from PubMed
+          counts. Bounded NCBI traffic: one search, one MEDLINE fetch and up
+          to 6 x 2 heading counts per phrase, at most 20 requests per call;
+          see coverage.mesh_cooccurrence.
         - **Query analysis**: Shows how PubMed actually interprets each query
           (Agent's understanding vs PubMed's actual interpretation)
 
@@ -115,7 +126,13 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
               "entry_term"), matched_term and pubmed_atm (whether PubMed's own
               automatic term mapping agrees, differs or does not map the phrase)
             - mesh_candidates: Unconfirmed links with a reason
-              ("pubmed_atm_only", "ambiguous_exact_term"); review before use
+              ("pubmed_atm_only", "ambiguous_exact_term", "co_occurrence");
+              review before use. co_occurrence entries list candidates with
+              preferred, search_clause, share, records, background_count,
+              joint_count, recall, precision and score, plus evidence (query, sort,
+              retrieved_at, evidence_total, sample_size, excluded headings).
+              They are related concepts, not equivalents, and never appear
+              in mesh_terms or suggested_queries
             - unmapped_phrases: Topic phrases without a confirmed MeSH term;
               cover them with free-text [Title/Abstract] terms
             - all_synonyms: Flattened synonyms of confirmed mappings
@@ -163,11 +180,16 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                     include_suggestions=include_suggestions,
                     analyze_queries=True,  # Enable PubMed query analysis
                 )
+                result = await attach_cooccurrence_candidates(result, get_mesh_correction_service())
 
                 # Add usage hint (Agent can ignore)
                 result["_hint"] = {
                     "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
-                    "mesh_review": "mesh_terms are exact preferred/entry-term matches; verify mesh_candidates and cover unmapped_phrases with text words",
+                    "mesh_review": (
+                        "mesh_terms are exact preferred/entry-term matches; verify mesh_candidates "
+                        "(co_occurrence ones are related headings, not equivalents) and cover "
+                        "unmapped_phrases with text words"
+                    ),
                     "example_mesh_query": '"{preferred}"[{search_field}]',
                     "example_synonym_query": "({synonym})[Title/Abstract]",
                     "note": 'Check pubmed_translation. To preview combined blocks use analyze_search_query(query=fixed_scope, comparison={"blocks": named_clauses}).',

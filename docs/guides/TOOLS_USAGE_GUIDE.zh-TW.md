@@ -133,6 +133,45 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
+#### PubMed 無法解析的 MeSH 標目
+
+PubMed 會在 ESearch 的 WarningList 與 ErrorList 回報無法解析的子句，例如
+`"Post-Anesthesia Care Units"[Mesh]` 會列為 `QuotedPhraseNotFound`。這種子句不會比對到任何紀錄，
+所以 `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` 得到 0 筆。PubMed 搜尋結果會在
+`query_diagnostics` 保留 PubMed 的轉譯與這兩份清單，`unified_search` 也會把每個問題列在
+`source_metadata.pubmed.warnings`。
+
+若沒有任何 MeSH 紀錄以主題片語為 preferred 或 entry term，`generate_search_queries` 會替最多兩個
+`unmapped_phrases`（多字片語優先）加上 `reason: "co_occurrence"` 的 `mesh_candidates`。做法是在
+MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的 MeSH 標目並排除 check tags
+（Humans、Male、Adult…）與研究設計標目。樣本只用來提名出現最多的六個標目，再以兩次 PubMed 計數精確評分：
+`recall = joint_count / evidence_total`、`precision = joint_count / background_count`，其中 `joint_count`
+是同時被該標目索引的證據紀錄數，候選依 F1（`score`）排序。每個片語需一次搜尋、一次 MEDLINE 擷取與最多
+十二次計數，每次呼叫最多 20 個請求；實際執行內容見 `coverage.mesh_cooccurrence`。
+
+2026-11-25 實測 "Post-Anesthesia Care Units" 各變體共命中 3,717 筆 MEDLINE 紀錄。Anesthesia Recovery Period
+得分 0.137（其 6,140 筆紀錄中 673 筆使用該片語：recall 0.181、precision 0.110），Recovery Room 0.110
+（1,394 筆中 282 筆：recall 0.076、precision 0.202）。Postoperative Pain 共現次數相近，但有 57,605 筆紀錄
+使用該標目，precision 不可能超過 3,717 / 57,605 = 0.065。必須用精確計數：若用樣本推估 precision，
+一個近年才新增、只有 531 筆紀錄的標目會被排到第一。
+候選標目是相關概念而非同義詞，不會進入 `mesh_terms` 或 `suggested_queries`。採用時保留原詞：
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`。
+以片語各拼寫變體的 `[tiab]` 自由詞 OR 該標目，再 `AND delirium[tiab]`，得到 518 筆；原查詢為 0 筆。
+
+`unified_search` 會自動套用。PubMed exact tier 的搜尋若回報某 MeSH 子句找不到，會以校正後查詢重跑 exact tier，
+之後的 deepening、broadening 與 relaxation 都依校正後結果判斷。依序嘗試三個 tier：`exact`（忽略大小寫、連字號間距與
+複數後等於 preferred 或 entry term；`"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`）、`co_occurrence`
+（原詞的 `[tiab]` 自由詞 OR 最佳相關標目，絕不只換成標目）與 `text_words`。回應的 `mesh_correction`（Markdown
+**MeSH correction** 行）列出 NCBI 原因、替換內容、tier、證據、信心與 PubMed 前後總數，`broadening.mechanisms`
+以 `mesh_correction` 開頭。被取代的原查詢仍保留在 `broadening.attempts`，校正後的紀錄其 retrieval strategy 為
+`original:mesh_corrected`。可用 `options="no_mesh_correction"` 關閉；`no_relax` 只關閉 broadening。PubMed 能解析
+其 MeSH 子句的查詢不會多花任何請求。
+
+保存的 pipeline 不會被改寫。pipeline 的 PubMed 步驟（bounded、exhaustive 或 `block_analysis`）只記錄
+`applied: false` 的 `mesh_correction` 建議，顯示在 run 的 `warnings`、Markdown 報告與
+`get_pipeline_history(view="prisma_s")`。要採用請保存成新的 pipeline 版本。`block_analysis` 會標示 PubMed 找不到的詞
+（`pubmed_not_found`、`contribution_meaningful: false`），不再當成零獨特貢獻的詞。
+
 #### 比較 PubMed 概念組合
 
 PubMed 標記有問題的詞時，`warning_examples` 最多顯示兩段警告，可先核對保存的翻譯再修正式子。系統性搜尋 skill 隨附離線腳本，可列出差集樣本 PMID、選定的搜尋式和理由。[四題盲測與用法](../reports/mesh-preflight-2017/README.md)
@@ -494,7 +533,7 @@ save_literature_notes(pmids="last", note_format="wiki")
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references`（未設定時，若由 Claude Code 啟動則改用 `CLAUDE_PROJECT_DIR/references`）
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 

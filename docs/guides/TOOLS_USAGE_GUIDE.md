@@ -147,6 +147,54 @@ Each feature family has a workflow diagram so users and developers can see where
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
+#### MeSH headings PubMed cannot resolve
+
+PubMed reports clauses it could not resolve in ESearch's WarningList and ErrorList, for example
+`"Post-Anesthesia Care Units"[Mesh]` as `QuotedPhraseNotFound`. Such a clause matches nothing,
+so `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` returns 0. PubMed search pages keep
+PubMed's translation and both lists in `query_diagnostics`, and `unified_search` lists each issue in
+`source_metadata.pubmed.warnings`.
+
+When no MeSH record has a topic phrase as a preferred or entry term, `generate_search_queries` adds
+`mesh_candidates` with `reason: "co_occurrence"` for up to two `unmapped_phrases` (multi-word first).
+It searches the phrase as `[tiab]` in MEDLINE-indexed records and counts the MeSH headings of a
+150-record sample, dropping check tags (Humans, Male, Adult...) and study-design headings. The sample
+only nominates the six most frequent headings; each is then scored exactly from two PubMed counts:
+`recall = joint_count / evidence_total` and `precision = joint_count / background_count`, where
+`joint_count` is the evidence records indexed with the heading. Candidates rank by their F1 (`score`).
+Each phrase costs one search, one MEDLINE fetch and up to twelve counts, at most 20 requests per call;
+`coverage.mesh_cooccurrence` lists what ran.
+
+On 2026-11-25 the variants of "Post-Anesthesia Care Units" matched 3,717 MEDLINE records. Anesthesia
+Recovery Period scored 0.137 (673 of its 6,140 records use the phrase: recall 0.181, precision 0.110)
+and Recovery Room 0.110 (282 of 1,394: recall 0.076, precision 0.202). Postoperative Pain co-occurs
+about as often, but 57,605 records carry it, so its precision cannot exceed 3,717 / 57,605 = 0.065.
+Exact counts matter: a sample-based precision estimate let a recently introduced heading with 531
+records rank first.
+Candidates are related concepts, not synonyms; they never enter `mesh_terms` or
+`suggested_queries`. Keep the words when using one:
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`.
+With the phrase's spelling variants as `[tiab]` words OR that heading, `AND delirium[tiab]` returned
+518 records where the original query returned 0.
+
+`unified_search` applies this automatically. When the PubMed exact-tier search reports a MeSH clause as
+not found, the exact tier is re-run with a corrected query, and deepening, broadening and relaxation
+decide on the corrected results. Three tiers are tried: `exact` (a preferred or entry term after
+folding case, hyphen spacing and plurals; `"Emergence Deliriums"[Mesh]` → `"Emergence Delirium"[Mesh]`),
+`co_occurrence` (the words as `[tiab]` text words OR the best related heading, never the heading alone)
+and `text_words`. The response carries `mesh_correction` (Markdown **MeSH correction** line) with
+NCBI's reason, the replacement, tier, evidence, confidence and the before/after PubMed totals, and
+`broadening.mechanisms` starts with `mesh_correction`. The superseded original attempt stays in
+`broadening.attempts`; corrected records carry retrieval strategy `original:mesh_corrected`. Opt out
+with `options="no_mesh_correction"`; `no_relax` disables broadening only. Queries whose MeSH clauses
+PubMed resolves cost no extra request.
+
+Saved pipelines are never rewritten. A pipeline PubMed step (bounded, exhaustive or `block_analysis`)
+records a `mesh_correction` suggestion with `applied: false`, shown in the run's `warnings`, the Markdown
+report and `get_pipeline_history(view="prisma_s")`. Adopt it by saving a new pipeline version.
+`block_analysis` marks terms PubMed did not find (`pubmed_not_found`, `contribution_meaningful: false`)
+instead of reporting them as zero-contribution terms.
+
 #### Compare PubMed concept blocks
 
 If PubMed flags a term, `warning_examples` shows up to two short excerpts. Inspect the stored translation before editing the clause. For offline peer review, the systematic-search skill can render the saved plan, differences, sample PMIDs and chosen query. [Four-review evaluation and usage](../reports/mesh-preflight-2017/README.md)
@@ -571,7 +619,7 @@ Local-mode directory resolution:
 
 1. `output_dir`, if provided
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references` (falls back to `CLAUDE_PROJECT_DIR/references` when Claude Code launched the server)
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 

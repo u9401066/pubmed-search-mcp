@@ -1,6 +1,6 @@
 ---
 name: pipeline-persistence
-description: "Pipeline persistence — save, load, and reuse structured search plans. Triggers: pipeline, 管道, search plan, 搜尋計畫, 重複搜尋, saved search, 排程, schedule, workflow, DAG"
+description: "Pipeline persistence — save, load, and reuse structured search plans, including exhaustive systematic-review searches with PRISMA-S records, full-set export and screening. Triggers: pipeline, 管道, search plan, 搜尋計畫, 重複搜尋, saved search, 排程, schedule, workflow, DAG, systematic review, meta-analysis, 統合分析, PRISMA, screening, 篩選"
 ---
 
 # Pipeline 持久化 — 結構化搜尋計畫管理
@@ -11,12 +11,14 @@ description: "Pipeline persistence — save, load, and reuse structured search p
 - 自訂 DAG（有向無環圖）多步驟管道
 - 雙層儲存（workspace + global）
 - Schema-exact 驗證 + 有限度的安全 normalization
+- 系統性回顧：`retrieval: exhaustive` 完整 PubMed 集合、PRISMA-S run 紀錄、完整集合匯出、MeSH 區塊分析、篩選與 PRISMA 2020 流程
 
 ## 觸發條件
 - 「把這個搜尋存起來」、「建立搜尋計畫」
 - 「每週跑一次這個搜尋」、「保存這個 pipeline」
 - 「列出我的管道」、「上次的搜尋可以再跑嗎」
 - 「把剛才的搜尋轉成 search plan」
+- 「做系統性回顧／統合分析的檢索」、「PRISMA 流程圖」、「匯出給 Rayyan／Covidence」、「篩選紀錄」
 
 ---
 
@@ -88,7 +90,7 @@ output:
 
 ---
 
-## 7 個 MCP 工具
+## 8 個 MCP 工具
 
 ### save_pipeline — 保存管道
 
@@ -127,13 +129,19 @@ load_pipeline(source="file:path/to/pipeline.yaml")    # 從檔案
 
 ```python
 delete_pipeline(name="old_search")  # 刪除配置 + 歷史
+# 篩選紀錄已有決策時會拒絕（不刪任何東西）並回報決策／PMID 數；
+# 先 pipeline_screening(request={"action":"log",...}) 匯出，再明確同意：
+delete_pipeline(name="old_search", delete_screening_log=True)
 ```
 
 ### get_pipeline_history — 查看執行歷史
 
 ```python
 get_pipeline_history(name="weekly_remimazolam", limit=5)
-# 顯示：日期、文章數、新增/移除文章、狀態
+# 顯示：run ID、日期、紀錄數、取回模式、PubMed 總數、新增/移除、策略 hash、狀態
+get_pipeline_history(name="weekly_remimazolam", view="run")        # 單一 run 來源資訊（JSON）
+get_pipeline_history(name="weekly_remimazolam", view="prisma_s")   # PRISMA-S 表（Markdown + CSV）
+get_pipeline_history(name="weekly_remimazolam", view="records", offset=0, limit=100)  # 完整紀錄集分頁
 ```
 
 ### schedule_pipeline — 建立或更新排程
@@ -149,6 +157,27 @@ schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 
 ```python
 unschedule_pipeline(name="weekly_remimazolam")
+```
+
+### pipeline_screening — 篩選紀錄與 PRISMA 2020 流程
+
+```python
+pipeline_screening(request={"action": "queue", "pipeline": "my_review", "include_abstract": True})
+pipeline_screening(request={"action": "record", "pipeline": "my_review", "decisions": [
+    {"pmid": "12345678", "stage": "title_abstract", "decision": "include", "reviewer": "ak"}]})
+pipeline_screening(request={"action": "flow", "pipeline": "my_review"})          # PRISMA 2020 計數
+pipeline_screening(request={"action": "log", "pipeline": "my_review"})           # 決策稽核紀錄
+pipeline_screening(request={"action": "register_run", "pipeline": "my_review"})  # 手動登記某次 run
+```
+
+exhaustive run 會自動登記；更新檢索第一次出現的 PMID 自動進入標題／摘要待篩佇列。
+決策只追加、以最新決策計算、可冪等重送；全文排除必須附理由（取不到全文用 `not retrieved`）。
+
+### prepare_export(pipeline_run=...) — 匯出完整紀錄集
+
+```python
+prepare_export(pipeline_run="my_review", format="ris")             # 最新 run
+prepare_export(pipeline_run="my_review@<run_id>", format="csv")    # 指定 run；另有 csl、bibtex、medline、json
 ```
 
 ---
@@ -235,11 +264,11 @@ template_params:
 `related`／`citing`／`references` 也可透過 `inputs` 搭配 `seed_limit`，但不可同時給 `pmid`。
 依輸入順序取前幾個不重複 PMID，每個 seed 消耗一次外部呼叫預算；合併去重後排除 seeds，並以 `limit` 截斷該 action 的結果。
 
-## 10 個可用 Action
+## 11 個可用 Action
 
 | Action | 說明 | 主要參數 |
 |--------|------|----------|
-| `search` | 文獻搜尋 | `query`, `sources`, `limit`, `min_year`, `max_year` |
+| `search` | 文獻搜尋 | `query`, `sources`, `limit`, `min_year`, `max_year`；系統性檢索用 `retrieval: exhaustive`, `max_records`, `fetch_metadata` |
 | `pico` | Agent-provided PICO handoff search | `P`, `I`, optional `C`, recommended `O` |
 | `expand` | MeSH/同義詞擴展 | `topic` |
 | `details` | 取得文章詳情 | `pmids` |
@@ -249,6 +278,7 @@ template_params:
 | `metrics` | iCite 引用指標 | （從 inputs 取得） |
 | `merge` | 合併結果 | `method`: `union` / `intersection` / `rrf` |
 | `filter` | 過濾結果 | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` |
+| `block_analysis` | MeSH／概念區塊與詞彙獨特貢獻（僅計數） | `query` 或一個 input search step，`max_count_queries` |
 
 ---
 
@@ -349,7 +379,39 @@ output:
   ranking: impact
 ```
 
-### 範例 3: 系統性文獻回顧 — SGLT2 + 心衰竭
+### 範例 3: 系統性回顧／統合分析的完整檢索（PRISMA）
+
+```yaml
+steps:
+  - id: pubmed
+    action: search
+    params:
+      query: >-
+        ("Sodium-Glucose Transporter 2 Inhibitors"[Mesh] OR SGLT2[tiab] OR empagliflozin[tiab])
+        AND ("Heart Failure"[Mesh] OR "heart failure"[tiab])
+      sources: [pubmed]
+      retrieval: exhaustive   # 完整 PMID 集合；不可同時給 limit；max_records ≤ 10000，超過拒絕不截斷
+  - id: blocks
+    action: block_analysis    # 各區塊、累積 AND、每個詞彙的獨特貢獻
+    inputs: [pubmed]
+output:
+  format: json
+  limit: 20                   # 只是預覽筆數
+```
+
+執行 `unified_search(pipeline="saved:<name>")` 後，回應只是有界摘要；用 `get_pipeline_history(view="prisma_s")`
+產生 PRISMA-S 表、`prepare_export(pipeline_run=...)` 匯出完整集合、`pipeline_screening` 篩選並計算 PRISMA 2020 流程。
+策略必須先保存；修改 YAML 後的 run 會以不同 config hash 顯示。
+
+保存的策略絕不會被自動改寫。若 PubMed 回報某個 MeSH 子句找不到（例如 `"Post-Anesthesia Care Units"[Mesh]`），
+該步驟只會記錄 `mesh_correction` 建議（`mode: "suggestion"`、`applied: false`、`unresolved_clauses`、`corrected_query`、
+前後命中數），也會出現在回應的 `warnings`、Markdown 報告與 `get_pipeline_history(view="prisma_s")` 的 notes。
+要採用時，用 `save_pipeline` 保存 `corrected_query` 成為新版本再執行；PRISMA-S 會以新的 config hash 記錄。
+建議最多用 18 個請求，且只在 run 的 external-call 配額與期限足夠時執行，從不讓 run 失敗。
+`block_analysis` 會把 PubMed 找不到的詞標成 `pubmed_not_found`（`contribution_meaningful: false`）、列在
+`unresolved_terms`，不再當成「零獨特貢獻」的冗餘詞，並附上同樣的建議。
+
+### 範例 4: 多來源探索 — SGLT2 + 心衰竭（有界、非系統性）
 
 ```yaml
 name: sglt2_heart_failure_review
@@ -464,3 +526,4 @@ output:
 | 已知重要論文 | `exploration` | 三方向探索（related/citing/refs） |
 | 基因/藥物研究 | `gene_drug` | 詞彙擴展 + 多源 |
 | 複雜工作流 | 自訂 DAG | 完全控制每個步驟 |
+| 系統性回顧／統合分析 | 自訂 DAG + `retrieval: exhaustive` | 完整集合、PRISMA-S、匯出、篩選 |

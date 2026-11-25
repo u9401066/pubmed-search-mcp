@@ -134,7 +134,7 @@ Boundary rules:
 - `save_literature_notes` is for local note workflows.
 - Local note defaults use wiki-note semantics.
 - Foam-compatible wikilinks, MedPaper-style layouts, CSL JSON, and user templates are export profiles, not presentation-only behavior.
-- Directory resolution must stay documented: `output_dir`, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
+- Directory resolution must stay documented: `output_dir`, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references` (else `CLAUDE_PROJECT_DIR/references`), `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
 - That directory/template resolution is local-only. Authenticated service tools
   must reject caller-selected `output_dir` and `template_file`, then write built-in
   formats below the installed tenant session root.

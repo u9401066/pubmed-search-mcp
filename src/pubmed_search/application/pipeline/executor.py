@@ -28,7 +28,7 @@ from pubmed_search.application.pipeline.action_contracts import (
     validate_pipeline_details_pmids,
     validate_pipeline_discovery_pmid,
 )
-from pubmed_search.application.pipeline.block_analysis import analyze_strategy_blocks
+from pubmed_search.application.pipeline.block_analysis import analyze_strategy_blocks, annotate_unresolved_terms
 from pubmed_search.application.pipeline.budgets import (
     PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT,
     PIPELINE_EXHAUSTIVE_METADATA_BATCH,
@@ -47,6 +47,11 @@ from pubmed_search.application.pipeline.exhaustive import (
     ExhaustiveRetrievalIncompleteError,
     retrieve_pubmed_exhaustive,
     search_filters,
+)
+from pubmed_search.application.pipeline.mesh_suggestions import (
+    diagnostics_from_provenance,
+    diagnostics_from_snapshot,
+    suggest_mesh_correction,
 )
 from pubmed_search.application.pipeline.scheduling import run_ready_steps
 from pubmed_search.application.search.query_validator import pubmed_field_tags
@@ -218,10 +223,17 @@ class PipelineExecutor:
         *,
         exhaustive_page_size: int = PIPELINE_EXHAUSTIVE_PAGE_SIZE,
         exhaustive_metadata_batch_size: int = PIPELINE_EXHAUSTIVE_METADATA_BATCH,
+        mesh_correction: Any = None,
     ) -> None:
-        """Create an executor with one validated provider-adapter seam."""
+        """Create an executor with one validated provider-adapter seam.
+
+        ``mesh_correction`` (a ``MeshCorrectionService``) only *suggests*
+        corrections for MeSH clauses PubMed reports as not found; saved
+        strategies are never rewritten.
+        """
 
         self._searcher = searcher
+        self._mesh_correction = mesh_correction
         self._alternate_search_adapter = alternate_search_adapter
         self._execution_policy = execution_policy or PipelineExecutionPolicy()
         self._semantic_enhancer_factory = semantic_enhancer_factory
@@ -401,6 +413,35 @@ class PipelineExecutor:
         budget = self._run_budget.get()
         if budget is not None:
             await budget.reserve_count_query()
+
+    async def _suggest_mesh_correction(
+        self,
+        query: str,
+        *,
+        diagnostics: Any,
+        observed_count: int | None,
+        physical_query: str | None,
+    ) -> dict[str, Any] | None:
+        """Suggest-only MeSH correction bounded by the run's quota and deadline."""
+        budget = self._run_budget.get()
+
+        async def reserve(count: int) -> bool:
+            return True if budget is None else await budget.try_reserve_external_calls(count)
+
+        async def release(count: int) -> None:
+            if budget is not None:
+                await budget.release_external_calls(count)
+
+        return await suggest_mesh_correction(
+            self._mesh_correction,
+            query,
+            diagnostics=diagnostics,
+            observed_count=observed_count,
+            physical_query=physical_query,
+            reserve=reserve,
+            release=release,
+            remaining_seconds=None if budget is None else budget.remaining_seconds(),
+        )
 
     def dry_run(
         self,
@@ -814,21 +855,33 @@ class PipelineExecutor:
 
         pmids = [a.pmid for a in all_articles if a.pmid]
         all_sources_failed = bool(source_order) and len(failed_sources) == len(source_order)
+        metadata: dict[str, Any] = {
+            "query": query,
+            "source_queries": source_queries,
+            "source_api_counts": source_api_counts,
+            "source_errors": source_errors,
+            "source_results": source_results,
+            "filters": search_filters(step.params),
+            "retrieval": {"mode": "bounded", "exhaustive": False, "limit": limit},
+            "executed_at": executed_at,
+        }
+        pubmed_result = source_results.get("pubmed")
+        if pubmed_result is not None and pubmed_result.get("status") != "error":
+            provenance = pubmed_result.get("provenance") or {}
+            suggestion = await self._suggest_mesh_correction(
+                str(source_queries.get("pubmed") or query),
+                diagnostics=diagnostics_from_provenance(provenance),
+                observed_count=pubmed_result.get("total_count"),
+                physical_query=provenance.get("physical_query"),
+            )
+            if suggestion is not None:
+                metadata["mesh_correction"] = suggestion
         return StepResult(
             step_id=step.id,
             action="search",
             articles=all_articles,
             pmids=pmids,
-            metadata={
-                "query": query,
-                "source_queries": source_queries,
-                "source_api_counts": source_api_counts,
-                "source_errors": source_errors,
-                "source_results": source_results,
-                "filters": search_filters(step.params),
-                "retrieval": {"mode": "bounded", "exhaustive": False, "limit": limit},
-                "executed_at": executed_at,
-            },
+            metadata=metadata,
             error="All selected search sources failed" if all_sources_failed else None,
         )
 
@@ -957,6 +1010,14 @@ class PipelineExecutor:
                 }
             )
         snapshot = retrieval.snapshot
+        suggestion = await self._suggest_mesh_correction(
+            query,
+            diagnostics=diagnostics_from_snapshot(snapshot),
+            observed_count=retrieval.total_count,
+            physical_query=snapshot.get("physical_query"),
+        )
+        if suggestion is not None:
+            base_metadata["mesh_correction"] = suggestion
         return StepResult(
             step_id=step.id,
             action="search",
@@ -1028,6 +1089,7 @@ class PipelineExecutor:
             return StepResult(step_id=step.id, action="block_analysis", error=str(exc))
 
         searcher = self._searcher
+        snapshots: dict[str, dict[str, Any]] = {}
 
         async def count(candidate: str) -> int:
             await self._reserve_count_query()
@@ -1035,9 +1097,22 @@ class PipelineExecutor:
             value = snapshot.get("count") if isinstance(snapshot, dict) else None
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise TypeError("PubMed count response is invalid")
+            snapshots[candidate] = snapshot
             return value
 
         analysis = await analyze_strategy_blocks(str(query), count=count, max_count_queries=max_queries)
+        full_snapshot = snapshots.get(str(query).strip())
+        full_diagnostics = diagnostics_from_snapshot(full_snapshot)
+        annotate_unresolved_terms(analysis, full_diagnostics)
+        if full_snapshot is not None:
+            suggestion = await self._suggest_mesh_correction(
+                str(query),
+                diagnostics=full_diagnostics,
+                observed_count=analysis.get("full_count"),
+                physical_query=full_snapshot.get("physical_query"),
+            )
+            if suggestion is not None:
+                analysis["mesh_correction"] = suggestion
         analysis.update(
             {"step_id": step.id, "source_step": source_step, "filters": filters, "executed_at": executed_at}
         )

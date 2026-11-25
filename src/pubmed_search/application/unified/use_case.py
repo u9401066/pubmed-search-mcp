@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from pubmed_search.application.search.mesh_correction import MeshCorrectionService
     from pubmed_search.application.search.query_analyzer import QueryAnalyzer
     from pubmed_search.domain.entities.article import UnifiedArticle
 
@@ -146,6 +147,7 @@ class UnifiedSearchExecutorPort(Protocol):
         source_broker: SourceBrokerPort,
         enrichment: EnrichmentPort,
         source_registry: Any,
+        mesh_correction: MeshCorrectionService | None = None,
     ) -> UnifiedSearchExecutionResult:
         """Return typed execution state without formatting or persistence."""
 
@@ -173,6 +175,7 @@ class UnifiedSearchUseCase:
         enhancer_factory: Callable[[], Any],
         source_registry_factory: Callable[[], Any],
         fulltext_prefetch: Callable[[Sequence[UnifiedArticle]], dict[str, Any]] | None = None,
+        mesh_correction: MeshCorrectionService | None = None,
     ) -> None:
         self._planner = planner
         self._executor = executor
@@ -182,6 +185,7 @@ class UnifiedSearchUseCase:
         self._enhancer_factory = enhancer_factory
         self._source_registry_factory = source_registry_factory
         self._fulltext_prefetch = fulltext_prefetch
+        self._mesh_correction = mesh_correction
 
     async def execute(
         self,
@@ -201,12 +205,15 @@ class UnifiedSearchUseCase:
         )
         if plan_observer is not None:
             await plan_observer(plan)
+        # Passed only when configured so executors without the option keep working.
+        mesh_kwargs = {"mesh_correction": self._mesh_correction} if self._mesh_correction is not None else {}
         execution = await self._executor(
             plan,
             progress=progress,
             source_broker=self._source_broker,
             enrichment=self._enrichment,
             source_registry=registry,
+            **mesh_kwargs,
         )
         if request.fulltext == "prefetch" and self._fulltext_prefetch is not None:
             try:

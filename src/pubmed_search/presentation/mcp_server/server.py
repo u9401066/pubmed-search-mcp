@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import os
 import sys
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -239,7 +238,9 @@ def create_server(
         disable_security: Disable DNS rebinding protection in local development only.
         data_dir: Directory for session data persistence. Default: ~/.pubmed-search-mcp
         workspace_dir: Explicit workspace root for workspace-scoped pipeline storage.
-            When omitted, workspace-scoped pipeline persistence is disabled.
+            When omitted, the settings value applies (``PUBMED_WORKSPACE_DIR``,
+            then ``CLAUDE_PROJECT_DIR``); with neither set, workspace-scoped
+            pipeline persistence is disabled.
         json_response: Use JSON responses instead of SSE (for Copilot Studio compatibility).
         stateless_http: Use stateless HTTP mode (no session management, for Copilot Studio).
         mode: ``"local"`` for stdio/loopback single-user use or ``"service"``
@@ -273,6 +274,7 @@ def create_server(
 
     searcher = cast("LiteratureSearcher", container.searcher())
     strategy_generator = container.strategy_generator()
+    mesh_correction = container.mesh_correction()
     session_manager = cast("SessionManager", container.session_manager())
 
     logger.info("Strategy generator initialized (ESpell + MeSH)")
@@ -334,6 +336,7 @@ def create_server(
         workspace_dir=workspace_dir,
         settings=settings,
         source_runtime=source_runtime,
+        mesh_correction=mesh_correction,
     )
 
     # ── Create MCP server with lifespan ─────────────────────────────────
@@ -367,6 +370,7 @@ def create_server(
         searcher=searcher,
         session_manager=session_manager,
         strategy_generator=strategy_generator,
+        mesh_correction=mesh_correction,
         session_registry=tenant_registry,
         pipeline_runtime=pipeline_runtime,
         source_runtime=source_runtime,
@@ -445,11 +449,11 @@ def main():
     # Get API key: CLI arg → settings/env
     api_key = sys.argv[2] if len(sys.argv) > 2 else (settings.ncbi_api_key or None)
 
-    # Create server
-    configured_workspace_dir = getattr(settings, "workspace_dir", None)
-    workspace_dir = str(configured_workspace_dir).strip() if configured_workspace_dir else None
-    if not workspace_dir:
-        workspace_dir = os.environ.get("PUBMED_WORKSPACE_DIR", "").strip() or None
+    # Create server. Workspace precedence: PUBMED_WORKSPACE_DIR, then the
+    # CLAUDE_PROJECT_DIR that Claude Code exports to MCP servers it launches.
+    workspace_dir = settings.workspace_dir
+    if workspace_dir:
+        logger.info("Workspace-scoped persistence enabled from %s", settings.workspace_dir_source)
 
     server = create_server(
         email=email,

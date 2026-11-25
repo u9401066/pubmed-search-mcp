@@ -28,9 +28,10 @@ from pubmed_search.application.pipeline.executor import (
     pipeline_outcome_message,
     run_uses_exhaustive_retrieval,
 )
+from pubmed_search.application.pipeline.report_generator import mesh_correction_warnings
 from pubmed_search.shared.credential_sanitizer import contains_credential_material
 
-from ._common import ResponseFormatter
+from ._common import ResponseFormatter, get_mesh_correction_service
 
 if TYPE_CHECKING:
     from pubmed_search.application.pipeline.store import PipelineStore
@@ -193,6 +194,7 @@ async def _execute_pipeline_mode_outcome(
             run_timeout_seconds=settings.pipeline_run_timeout_seconds,
             max_external_calls=settings.pipeline_max_external_calls,
         ),
+        mesh_correction=get_mesh_correction_service(),
     )
     prepared_config = config
     prepare_config = getattr(executor, "prepare_config", None)
@@ -337,7 +339,7 @@ def _format_pipeline_json(
             }
         )
 
-    data = {
+    data: dict[str, Any] = {
         "type": "pipeline_result",
         "status": classify_pipeline_outcome(articles, step_results),
         "pipeline": {
@@ -366,6 +368,9 @@ def _format_pipeline_json(
         "steps": steps,
         "articles": [_article_to_json(article) for article in articles],
     }
+    warnings = mesh_correction_warnings(step_results)
+    if warnings:
+        data["warnings"] = warnings
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
 
 
@@ -524,6 +529,16 @@ def _compact_step(step: Any, result: Any, preview: int) -> dict[str, Any]:
             }
             for term in analysis.get("terms") or []
         ]
+    if isinstance(analysis, dict) and analysis.get("unresolved_terms"):
+        compact["block_analysis"]["unresolved_terms"] = analysis["unresolved_terms"]
+    suggestion = metadata.get("mesh_correction")
+    if not isinstance(suggestion, dict) and isinstance(analysis, dict):
+        suggestion = analysis.get("mesh_correction")
+    if isinstance(suggestion, dict):
+        compact["mesh_correction"] = {
+            key: suggestion.get(key)
+            for key in ("mode", "status", "unresolved_clauses", "corrected_query", "hit_counts", "adopt")
+        }
     if metadata.get("source_errors"):
         compact["source_errors"] = list(metadata["source_errors"])[:5]
     return compact
@@ -560,7 +575,7 @@ def _format_exhaustive_pipeline_json(
 
     preview = min(config.output.limit, PIPELINE_EXHAUSTIVE_PREVIEW)
     final_pmids = run.pmids if run is not None else []
-    data = {
+    data: dict[str, Any] = {
         "type": "pipeline_result",
         "status": status,
         "pipeline": {
@@ -601,6 +616,9 @@ def _format_exhaustive_pipeline_json(
         },
         "next": _exhaustive_next_steps(run),
     }
+    warnings = mesh_correction_warnings(step_results)
+    if warnings:
+        data["warnings"] = warnings
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
 
 
@@ -632,6 +650,7 @@ def _format_exhaustive_pipeline_markdown(
         )
         if result.error:
             parts.append(f"  - Warning: {escape_markdown_text(result.error)}")
+    parts.extend(f"- ⚠️ {escape_markdown_text(warning)}" for warning in mesh_correction_warnings(step_results))
     record_count = len(run.pmids) if run is not None else 0
     if run is not None:
         parts.append(

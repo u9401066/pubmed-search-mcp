@@ -53,6 +53,8 @@ class UnifiedSearchResult:
     result_filter_counts: dict[str, int]
     broadening: dict[str, Any] | None = None
     """Precision-first ``search-broadening/v1`` disclosure; ``None`` when no tiering/relaxation ran."""
+    mesh_correction: dict[str, Any] | None = None
+    """Automatic PubMed MeSH correction disclosure; ``None`` when PubMed flagged no MeSH clause."""
 
     @classmethod
     def from_outcome(cls, outcome: Any) -> UnifiedSearchResult:
@@ -75,6 +77,7 @@ class UnifiedSearchResult:
             source_errors=tuple(dict(error) for error in execution.source_errors),
             result_filter_counts=dict(execution.result_filter_counts),
             broadening=getattr(execution, "broadening", None),
+            mesh_correction=getattr(execution, "mesh_correction", None),
         )
 
 
@@ -177,10 +180,12 @@ class PubMedSearchClient:
 
     def _get_unified_search_use_case(self) -> UnifiedSearchUseCase:
         if self._unified_search_use_case is None:
+            from pubmed_search.application.search.mesh_correction import MeshCorrectionService
             from pubmed_search.application.search.query_analyzer import QueryAnalyzer
             from pubmed_search.application.unified.execution import execute_unified_search
             from pubmed_search.application.unified.planning import build_unified_search_plan
             from pubmed_search.application.unified.use_case import UnifiedSearchUseCase
+            from pubmed_search.infrastructure.ncbi.mesh_evidence import NCBIMeshEvidenceGateway
             from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
             from pubmed_search.infrastructure.sources.registry import get_source_registry
             from pubmed_search.infrastructure.sources.unified_broker import UnifiedSourceBroker
@@ -194,6 +199,9 @@ class PubMedSearchClient:
                 analyzer_factory=QueryAnalyzer,
                 enhancer_factory=get_semantic_enhancer,
                 source_registry_factory=get_source_registry,
+                mesh_correction=MeshCorrectionService(
+                    NCBIMeshEvidenceGateway(email=self.config.email, api_key=self.config.api_key)
+                ),
             )
         return self._unified_search_use_case
 

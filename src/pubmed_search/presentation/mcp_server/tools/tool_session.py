@@ -22,6 +22,7 @@ from .tool_runtime import HostCallbackRuntime
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pubmed_search.application.search.mesh_correction import MeshCorrectionService
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.application.session.registry import SessionManagerRegistry
     from pubmed_search.infrastructure.sources.runtime import SourceRuntime
@@ -36,6 +37,7 @@ class ToolSessionRuntime:
     session_manager: SessionManager | None = None
     session_registry: SessionManagerRegistry | None = None
     strategy_generator: Any | None = None
+    mesh_correction: MeshCorrectionService | None = None
     source_runtime: SourceRuntime | None = None
     host_callbacks: HostCallbackRuntime = field(default_factory=HostCallbackRuntime)
     citation_tasks: CitationTaskSupervisor = field(default_factory=CitationTaskSupervisor)
@@ -124,6 +126,11 @@ def get_session_manager() -> Any:
 def get_strategy_generator():
     """Get the current strategy generator."""
     return get_tool_session_runtime().strategy_generator
+
+
+def get_mesh_correction_service() -> MeshCorrectionService | None:
+    """Get the server's MeSH correction service, if one is installed."""
+    return get_tool_session_runtime().mesh_correction
 
 
 def check_cache(query: str, limit: int | None = None) -> list[dict] | None:

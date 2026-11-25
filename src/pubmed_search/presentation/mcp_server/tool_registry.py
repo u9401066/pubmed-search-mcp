@@ -239,8 +239,13 @@ def build_pipeline_runtime(
     source_runtime: SourceRuntime,
     workspace_dir: str | None = None,
     settings: AppSettings | None = None,
+    mesh_correction: Any | None = None,
 ) -> PipelineToolRuntime:
-    """Build one isolated pipeline runtime for one MCP server instance."""
+    """Build one isolated pipeline runtime for one MCP server instance.
+
+    ``mesh_correction`` lets scheduled and saved runs record suggest-only MeSH
+    corrections; it never rewrites a saved strategy.
+    """
     from pathlib import Path
 
     from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
@@ -294,6 +299,7 @@ def build_pipeline_runtime(
             max_external_calls=resolved_settings.pipeline_max_external_calls,
         ),
         execution_context=_bind_pipeline_execution_runtime,
+        mesh_correction=mesh_correction,
     )
     pipeline_scheduler = APSPipelineScheduler(
         store=pipeline_store,
@@ -328,6 +334,7 @@ def register_all_mcp_tools(
     source_runtime: SourceRuntime,
     strategy_generator: Any | None = None,
     session_registry: SessionManagerRegistry | None = None,
+    mesh_correction: Any | None = None,
 ) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
@@ -340,6 +347,7 @@ def register_all_mcp_tools(
         source_runtime: Explicit server-scoped provider dependencies.
         strategy_generator: Optional strategy generator
         session_registry: Optional request-time tenant router for session tools and resources.
+        mesh_correction: Optional MeshCorrectionService for disclosed MeSH corrections and candidates.
 
     Returns:
         Dict with category names and tool counts
@@ -358,6 +366,7 @@ def register_all_mcp_tools(
             session_manager=session_manager,
             session_registry=session_registry,
             strategy_generator=strategy_generator,
+            mesh_correction=mesh_correction,
             source_runtime=source_runtime,
         )
     )

@@ -255,7 +255,7 @@ arguments、選擇內建 `note_format`，由 server 寫入該 principal 隔離�
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references`（未設定時，若由 Claude Code 啟動則改用 `CLAUDE_PROJECT_DIR/references`）
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 

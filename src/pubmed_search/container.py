@@ -129,6 +129,15 @@ def _create_strategy_generator(email: str, api_key: str | None) -> object:
     return SearchStrategyGenerator(email=email, api_key=api_key or None)
 
 
+def _create_mesh_correction(email: str, api_key: str | None, strategy_generator: Any) -> object:
+    """Lazy factory for MeshCorrectionService sharing the strategy generator's MeSH cache."""
+    from pubmed_search.application.search.mesh_correction import MeshCorrectionService
+    from pubmed_search.infrastructure.ncbi.mesh_evidence import NCBIMeshEvidenceGateway
+
+    vocabulary = strategy_generator if hasattr(strategy_generator, "lookup_mesh_records") else None
+    return MeshCorrectionService(NCBIMeshEvidenceGateway(email=email, api_key=api_key or None, vocabulary=vocabulary))
+
+
 def _create_article_cache(data_dir: str) -> object:
     """Lazy factory for the shared article cache."""
     from pubmed_search.application.session.manager import ArticleCache
@@ -149,6 +158,7 @@ class ApplicationContainer:
     Creates shared core services during server setup:
     - ``searcher``: NCBI Entrez literature search
     - ``strategy_generator``: MeSH / ESpell query intelligence
+    - ``mesh_correction``: disclosed correction of unresolved MeSH terms
     - ``session_manager``: Session cache and persistence
 
     Configure before first resolution. Changes to configuration do not rebuild
@@ -166,6 +176,12 @@ class ApplicationContainer:
             _create_strategy_generator,
             email=self.config.email,
             api_key=self.config.api_key,
+        )
+        self.mesh_correction: _SingletonProvider[object] = _SingletonProvider(
+            _create_mesh_correction,
+            email=self.config.email,
+            api_key=self.config.api_key,
+            strategy_generator=self.strategy_generator,
         )
         self.article_cache: _SingletonProvider[object] = _SingletonProvider(
             _create_article_cache,

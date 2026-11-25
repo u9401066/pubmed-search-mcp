@@ -131,7 +131,7 @@ Export layer 屬於 `application/export/`。Presentation tools 不應手動組 R
 - `save_literature_notes` 負責 local note workflows。
 - Local note defaults 使用 wiki-note semantics。
 - Foam-compatible wikilinks、MedPaper-style layouts、CSL JSON 與 user templates 是 export profiles，不是 presentation-only behavior。
-- 輸出目錄解析順序必須保持文件化：`output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`、`PUBMED_DATA_DIR/references`、`~/.pubmed-search-mcp/references`。
+- 輸出目錄解析順序必須保持文件化：`output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`（未設定時為 `CLAUDE_PROJECT_DIR/references`）、`PUBMED_DATA_DIR/references`、`~/.pubmed-search-mcp/references`。
 - 這套 directory/template resolution 只屬於本機模式。Authenticated service tools 必須拒絕
   caller-selected `output_dir` 與 `template_file`，並將內建 format 寫到 installed tenant
   session root 之下。

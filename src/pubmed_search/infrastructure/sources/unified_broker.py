@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, cast
 
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.unified.helpers import (
@@ -22,14 +22,18 @@ from pubmed_search.application.unified.helpers import (
     StrategyResult,
     _generate_relaxation_steps,
 )
+from pubmed_search.application.unified.mesh_correction import MESH_CORRECTED_SUFFIX
 from pubmed_search.application.unified.tiering import (
     BLOCKED_NO_BROADER_STRATEGY,
     DEEP_FILL_MAX_REQUEST,
+    PHASE_MESH_CORRECTION_FAILED,
+    PHASE_SUPERSEDED,
     SKIP_BROADENING_DISABLED,
     SKIP_DEADLINE_EXHAUSTED,
     SKIP_EXACT_TIER_FAILED,
     SKIP_LIMIT_FILLED,
     SKIP_NARROWS_EXACT_QUERY,
+    UNADMITTED_PHASES,
     DeepFillTracker,
     FillAdmission,
     precision_first_order,
@@ -253,6 +257,22 @@ def build_default_search_functions(searcher: LiteratureSearcher) -> dict[str, An
     return runners
 
 
+class ExactQueryCorrector(Protocol):
+    """Application hook that may replace a PubMed exact-tier query (MeSH correction).
+
+    ``propose`` sees the exact attempt's query, adapter metadata and total and
+    returns a corrected query or ``None``. The broker re-runs the exact tier
+    with it and reports the outcome through ``record_rerun``; ``rewrite``
+    applies the accepted correction to lower-precision PubMed fill queries.
+    """
+
+    async def propose(self, query: str, metadata: Mapping[str, Any] | None, total: int | None) -> str | None: ...
+
+    def record_rerun(self, *, status: str, total: int | None, metadata: Mapping[str, Any] | None) -> None: ...
+
+    def rewrite(self, query: str) -> str: ...
+
+
 @dataclass(slots=True)
 class UnifiedSourceBroker:
     """Canonical source-runner adapter for :class:`UnifiedSearchUseCase`."""
@@ -277,6 +297,7 @@ class UnifiedSourceBroker:
         strategies: list[SearchPlan],
         eligibility: Callable[[UnifiedArticle], bool] | None = None,
         allow_broadening: bool = True,
+        exact_query_corrector: ExactQueryCorrector | None = None,
     ) -> tuple[
         list[list[UnifiedArticle]],
         SearchDepthMetrics,
@@ -296,6 +317,7 @@ class UnifiedSourceBroker:
             search_functions=self.build_search_functions(),
             eligibility=eligibility,
             allow_broadening=allow_broadening,
+            exact_query_corrector=exact_query_corrector,
         )
 
     async def auto_relax(
@@ -370,6 +392,7 @@ async def _execute_deep_search(
     total_timeout: float | None = None,
     eligibility: Callable[[UnifiedArticle], bool] | None = None,
     allow_broadening: bool = True,
+    exact_query_corrector: ExactQueryCorrector | None = None,
 ) -> tuple[
     list[list[UnifiedArticle]],
     SearchDepthMetrics,
@@ -384,6 +407,10 @@ async def _execute_deep_search(
 
     1. **exact** -- every exact-tier strategy (the caller's query for each
        planned source) runs concurrently with the full per-source ``limit``.
+       When ``exact_query_corrector`` proposes a corrected PubMed query (a
+       MeSH clause PubMed could not resolve), the exact tier is re-run with it
+       and the re-run replaces the original attempt, which stays visible as a
+       ``superseded`` row; later phases decide on the corrected results.
     2. **deepen** -- if eligible unique records are still fewer than ``limit``
        (e.g. after exclude_seen), re-request an exact query whose provider
        total exceeds what was requested; only new eligible records are kept.
@@ -612,9 +639,50 @@ async def _execute_deep_search(
             )
         )
 
+    def record_unadmitted(attempt: _DeepAttempt, phase: str) -> None:
+        """Keep an attempt whose records never entered the pool (superseded or failed re-run)."""
+        provenance = provenance_for(attempt.strategy)
+        row = attempt.result
+        row.tier = provenance.tier
+        row.tier_rank = provenance.tier_rank
+        row.phase = phase
+        metrics.strategy_results.append(row)
+
     def fill_timeout() -> float:
         """Per-attempt timeout for sequential fill phases, bounded by the deadline."""
         return min(strategy_timeout, deadline - loop.time())
+
+    async def correct_exact_attempts(attempts: list[_DeepAttempt]) -> list[_DeepAttempt]:
+        """Re-run a PubMed exact attempt whose MeSH clause PubMed could not resolve."""
+        if exact_query_corrector is None:
+            return attempts
+        corrected_attempts = list(attempts)
+        for index, attempt in enumerate(attempts):
+            if attempt.strategy.source != "pubmed" or attempt.result.status == "error":
+                continue
+            corrected_query = await exact_query_corrector.propose(
+                attempt.strategy.query, attempt.result.metadata, attempt.result.total_available
+            )
+            if not corrected_query or corrected_query == attempt.strategy.query:
+                continue
+            corrected_strategy = replace(
+                attempt.strategy,
+                query=corrected_query,
+                name=f"{attempt.strategy.name}{MESH_CORRECTED_SUFFIX}",
+            )
+            (rerun,) = await run_attempts([(corrected_strategy, limit, "exact")], timeout=strategy_timeout)
+            exact_query_corrector.record_rerun(
+                status=rerun.result.status,
+                total=rerun.result.total_available,
+                metadata=rerun.result.metadata,
+            )
+            if rerun.result.status == "error":
+                record_unadmitted(rerun, PHASE_MESH_CORRECTION_FAILED)
+                continue
+            rerun.result.metadata["mesh_correction"] = {"original_query": attempt.strategy.query}
+            record_unadmitted(attempt, PHASE_SUPERSEDED)
+            corrected_attempts[index] = rerun
+        return corrected_attempts
 
     # Phase 1: the caller's query on every planned source, full budget each.
     exact_strategies = [strategy for strategy in ordered if strategy_tier(strategy) == "exact"]
@@ -622,6 +690,10 @@ async def _execute_deep_search(
         [(strategy, limit, "exact") for strategy in exact_strategies],
         timeout=strategy_timeout,
     )
+    correction_started = loop.time()
+    exact_attempts = await correct_exact_attempts(exact_attempts)
+    # MeSH correction belongs to the exact tier; it must not consume the fill deadline.
+    deadline += loop.time() - correction_started
     for attempt in exact_attempts:
         record_attempt(attempt, tracker.admit_exact(attempt.articles, provenance_for(attempt.strategy)))
     outcome.exact_eligible_unique = tracker.eligible_unique
@@ -665,11 +737,15 @@ async def _execute_deep_search(
             if skip_reason not in {SKIP_NARROWS_EXACT_QUERY, SKIP_LIMIT_FILLED}:
                 outcome.broadening_blocked_reason = outcome.broadening_blocked_reason or skip_reason
             continue
+        fill_strategy = strategy
+        if exact_query_corrector is not None and strategy.source == "pubmed":
+            # A fill query carrying the same unresolved MeSH clause would also match nothing.
+            fill_strategy = replace(strategy, query=exact_query_corrector.rewrite(strategy.query))
         (broader,) = await run_attempts(
-            [(strategy, tracker.fill_request_limit(), "broaden")],
+            [(fill_strategy, tracker.fill_request_limit(), "broaden")],
             timeout=fill_timeout(),
         )
-        admission = tracker.admit_fill(broader.articles, provenance_for(strategy))
+        admission = tracker.admit_fill(broader.articles, provenance_for(fill_strategy))
         record_attempt(broader, admission)
         outcome.broadened_records += len(admission.accepted)
         broadened_any = True
@@ -719,7 +795,11 @@ async def _execute_deep_search(
     # only when every executed attempt for a source ran the same query.
     source_api_counts: dict[str, tuple[int, int | None]] = {}
     for source in dict.fromkeys(strategy.source for strategy in ordered):
-        source_rows = [row for row in metrics.strategy_results if row.source == source and row.executed]
+        source_rows = [
+            row
+            for row in metrics.strategy_results
+            if row.source == source and row.executed and row.phase not in UNADMITTED_PHASES
+        ]
         queries = {row.query for row in source_rows}
         totals = [row.total_available for row in source_rows if row.total_available is not None]
         total_available = totals[-1] if len(queries) == 1 and totals else None

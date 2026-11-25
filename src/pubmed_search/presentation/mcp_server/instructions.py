@@ -368,6 +368,13 @@ search_clinvar("BRCA1", limit=10)
   results; records with `retrieval.broadened=true` (Markdown 🔻) came only from
   broadened or relaxed queries and are ranked after exact-query matches.
   `options="no_relax"` disables all automatic broadening.
+- If PubMed reports that a MeSH clause of the query matched nothing (for example
+  `"Post-Anesthesia Care Units"[Mesh]`), unified_search re-runs the PubMed exact
+  tier with a corrected query and discloses it in `mesh_correction` (Markdown
+  **MeSH correction** line): the NCBI reason, the replacement (exact MeSH term,
+  or the original words as text words OR a related heading from MEDLINE
+  co-occurrence evidence), confidence and before/after hits. Tell the user about
+  it; `options="no_mesh_correction"` keeps the original query.
 - `read_session` redacts `local_path` and `manifest_path` by default. Set
   `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
   should receive server-local paths.
