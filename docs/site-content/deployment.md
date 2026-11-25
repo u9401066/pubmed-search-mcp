@@ -249,7 +249,7 @@ pubmed-search-mcp-http --mode local --transport streamable-http \
 
 這條路線的用途是：
 
-- 保留完整 43-tool primary MCP surface
+- 保留完整 44-tool primary MCP surface
 - 啟用 Copilot 所需的 JSON response/HTTP compatibility，不改變安全合約
 - 與本機 Copilot smoke 共用同一套 strict tool schemas
 
@@ -445,7 +445,7 @@ uv run python scripts/build_docs_site.py
 3. Service 未帶 bearer 的 `POST /mcp`、`/api/*`、`/exports` 回傳 401/403
 4. 有效 bearer 可直接完成現代 MCP `tools/list` 與一次 `unified_search`；2026-07-28 transport 不再送 `initialize` 或 `Mcp-Session-Id`
 5. 用兩個 principal 建立同名研究工作區，確認記錄各自獨立；一併核對 session、artifact、export、chronicle 與 pipeline 的隔離。
-6. 若是 Copilot Studio，確認 43-tool primary surface 正確被發現
+6. 若是 Copilot Studio，確認 44-tool primary surface 正確被發現
 
 ## 相關文件
 

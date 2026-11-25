@@ -4,7 +4,7 @@
 
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 43-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 44-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](#/tools-usage-guide-zh)
 
@@ -17,7 +17,7 @@ Capability-first guide for using the 43-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 43 tools use a shared input contract (metadata `contractVersion: 4`).
+All 44 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -117,7 +117,7 @@ Implementation phases and verification: [agent input contract](design/AGENT_INPU
 | Search entry | `unified_search` | The user wants papers, articles, or a first pass over a topic. |
 | Query intelligence | `analyze_search_query`, `validate_pico_plan`, `generate_search_queries` | The query needs MeSH, agent-provided PICO handoff, synonym expansion, or strategy planning. |
 | Discovery | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | The user has seed PMIDs and wants context, related work, or citation lineage. |
-| Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
+| Full text and figures | `get_fulltext`, `register_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
 | Persistence and sessions | `research_workspace`, `read_session` and the eight pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
@@ -387,6 +387,52 @@ in one corrected read; cached XML is reused. Empty filter entries are ignored,
 empty sections are excluded, and untitled body text is named `Body`. Abstract-only
 XML cannot establish fulltext availability; normal fallbacks still apply.
 Extended-source initialization or cleanup failures preserve successful content.
+
+#### When the server cannot read the body: `fulltext_plan` and `register_fulltext`
+
+`get_fulltext` serves text in this order: text previously registered for the
+article, Europe PMC JATS, NCBI PMC JATS, then the public PMC article page
+(`pmc_html`), then OA and institutional routes. The PMC article page is read
+only for an explicit single-article `get_fulltext` request and only after the XML
+sources failed, had no body or reported `front_matter_only`; search prefetch and
+batch paths never read it. It is rate-limited process-wide, cached per tenant,
+records `fulltext_retrieval` (URL, `retrieved_at`, displayed license text) and
+can be disabled with `PUBMED_FULLTEXT_PMC_HTML=false`. A CAPTCHA interstitial is
+reported as `rate_limited` and the server backs off instead of retrying.
+
+When no usable body is returned, `fulltext_plan` lists ordered, applicable next
+steps with `why` and `legal` notes. Only steps that fit the record appear:
+
+| `step` | Applies when | Agent action |
+| --- | --- | --- |
+| `retry_later` | A source timed out, was rate-limited or skipped at the deadline | Re-read this one article after `retry_after_seconds` |
+| `host_fetch` | A PMCID is known, or an open landing page was found | Host WebFetch of that URL (verbatim text, not a summary), then `register_fulltext` |
+| `download_oa_pdf` | An open PDF was located | Download into an allowed folder; asset-aware-mcp `ingest_documents` for citation-ready spans; `register_fulltext(file_path=...)` |
+| `expand_discovery` | Extended discovery was not run | `get_fulltext(..., extended_sources=true)` |
+| `institutional` | OpenURL, EZproxy or the browser broker is configured | `get_institutional_link`, or the broker; only in the user's own session |
+| `zotero_attachment` | A DOI or PMID can be matched | Zotero Keeper `check_articles_owned`, then register the attachment |
+| `ask_user_for_pdf` | Always last | Ask for a copy the user is entitled to |
+
+`register_fulltext` stores host- or user-supplied text in the tenant fulltext
+store. Provenance is required (`retrieval_method`, `retrieved_at`, and a
+`source_url` or file); a declared license is kept verbatim. Send `content`
+(Markdown, text, JATS or HTML, up to 1,000,000 characters) or a `file_path`
+(`.pdf`, `.txt`, `.md`, `.html`, `.xml`) inside the workspace, notes directory,
+tenant data directory or `PUBMED_FULLTEXT_INTAKE_ROOTS`; `..` components and
+symlinks leaving those roots are rejected, and remote service callers may only
+send content. Later `get_fulltext` reads serve it first with
+`fulltext_origin: agent_supplied|user_supplied`, `provider_verified: false` and
+a `supplied_not_verified` notice (pass `use_registered_fulltext=false` to
+re-query providers). Literature notes record `fulltext_state`, and Chronicle
+evidence rows reach the same text through `fulltext_lookup_source`. PDFs are
+text-extracted without page locators; ingest the same PDF with asset-aware-mcp
+for citation-ready evidence spans.
+
+Use these routes for individual reading in the user's own research. NCBI permits
+reading individual PMC articles but prohibits systematic or bulk downloading
+from the PMC website; use the PMC Open Access subset services for bulk reuse.
+Never loop host fetches over search results, bypass access controls or CAPTCHAs,
+or use unauthorized copies.
 
 Use `prepare_figure_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
 
