@@ -93,6 +93,8 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 
 多種子探索可用 pipeline 模板 snowball：query 必填、seed_limit 1–10（預設 5）、limit 預設 20；search → citing + references → union merge。
 
+系統性回顧／統合分析：save_pipeline 一個 PubMed search step 設 retrieval: exhaustive（不可同時給 limit；max_records ≤ 10000，超過會拒絕而非截斷），以 unified_search(pipeline="saved:<name>") 執行。回應只是有界預覽；完整紀錄集用 get_pipeline_history(view="records")，PRISMA-S 檢索紀錄用 view="prisma_s"，匯出用 prepare_export(pipeline_run="<name>[@<run_id>]")，篩選與 PRISMA 2020 流程用 pipeline_screening。加一個 block_analysis step（inputs: [search step]）可計算各概念區塊、累積 AND 與每個詞彙的獨特貢獻。
+
 ## 情境 5️⃣: 預印本搜尋 (用戶想找最新尚未同行審查的研究)
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "最新研究", "preprint", "預印本", "arXiv", "medRxiv", "bioRxiv",
@@ -444,10 +446,11 @@ search_clinvar("BRCA1", limit=10)
 - save_pipeline: Save a pipeline configuration for later reuse.
 - list_pipelines: List all saved pipeline configurations.
 - load_pipeline: Load a pipeline configuration for review or editing.
-- delete_pipeline: Permanently delete a saved pipeline configuration and execution history.
-- get_pipeline_history: Get execution history for a saved pipeline.
+- delete_pipeline: Permanently delete a saved pipeline, its execution history and screening log.
+- get_pipeline_history: Get execution history, a run's search record, or its persisted record set.
 - schedule_pipeline: Schedule a saved pipeline for periodic execution.
 - unschedule_pipeline: Remove the active schedule for a saved pipeline.
+- pipeline_screening: Screen a saved pipeline's records and report PRISMA 2020 flow counts.
 
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 

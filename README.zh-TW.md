@@ -12,7 +12,7 @@ PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`�
 
 | 使用情境 | 安裝方式 |
 | --- | --- |
-| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **42 個 MCP 工具**，包含持久研究工作區。 |
+| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **43 個 MCP 工具**，包含持久研究工作區。 |
 | 開發工作區 | 在 checkout 執行下方指令，以安裝可測試本機變更的 plugin。 |
 
 ```sh
@@ -25,7 +25,7 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 ## 從研究問題開始
 
-可請 agent「追查早期人工耳蝸的技術分歧，並留下一篇讓同事接手閱讀的文章」。要理解這 42 個工具，可以先選研究任務。
+可請 agent「追查早期人工耳蝸的技術分歧，並留下一篇讓同事接手閱讀的文章」。要理解這 43 個工具，可以先選研究任務。
 
 | 研究任務 | 可以取得的結果 |
 | --- | --- |

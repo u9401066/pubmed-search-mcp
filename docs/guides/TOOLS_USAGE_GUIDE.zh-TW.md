@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 42 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 43 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 
@@ -13,7 +13,7 @@
 
 ## 輸入格式與防呆
 
-全部 42 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+全部 43 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
 可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
 `tools/list.inputSchema` 也會列出可接受的替代表示法。
 

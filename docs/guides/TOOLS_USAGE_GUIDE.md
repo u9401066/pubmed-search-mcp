@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 42-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 43-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 42-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 42 tools use a shared input contract (metadata `contractVersion: 4`).
+All 43 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
