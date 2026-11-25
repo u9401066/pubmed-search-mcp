@@ -30,6 +30,8 @@ from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 from .tool_response import ResponseFormatter
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.pipeline.run_recorder import RunObserver
@@ -120,6 +122,11 @@ ScreeningRequest = Annotated[
 def screening_service(store: PipelineStore, name: str) -> ScreeningService:
     """Bind the screening service to one pipeline's log in its owning scope."""
     return ScreeningService(SQLiteScreeningStore(store.screening_db_path(name)))
+
+
+def screening_log_at(path: Path) -> SQLiteScreeningStore:
+    """Open the screening log at ``path`` (deletion retires it atomically)."""
+    return SQLiteScreeningStore(path)
 
 
 def screening_run_observer(store: PipelineStore) -> RunObserver:
@@ -245,6 +252,7 @@ __all__ = [
     "ScreeningDecision",
     "ScreeningRequest",
     "register_pipeline_screening_tools",
+    "screening_log_at",
     "screening_run_observer",
     "screening_service",
 ]

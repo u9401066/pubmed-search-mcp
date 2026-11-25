@@ -18,7 +18,7 @@ import sqlite3
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field
 
@@ -31,7 +31,12 @@ from pubmed_search.application.pipeline.prisma_s import (
     render_prisma_s_markdown,
     strategy_fingerprint,
 )
-from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
+from pubmed_search.application.pipeline.store import (
+    PipelineDeletionError,
+    PipelineHistoryError,
+    ScreeningLogPresentError,
+    _config_to_dict,
+)
 from pubmed_search.application.pipeline.validator import (
     MAX_PIPELINE_TAGS,
     PIPELINE_NAME_PATTERN,
@@ -329,11 +334,11 @@ def _counted(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def _screening_loss(summary: dict[str, int]) -> str:
+def _screening_loss(summary: dict[str, Any]) -> str:
     return f"{_counted(summary['decisions'], 'decision')} on {_counted(summary['pmids'], 'PMID')}"
 
 
-def _screening_log_refusal(tool_name: str, name: str, summary: dict[str, int]) -> str:
+def _screening_log_refusal(tool_name: str, name: str, summary: dict[str, Any]) -> str:
     return ResponseFormatter.error(
         f"Pipeline '{name}' was not deleted: its screening log holds {_screening_loss(summary)} "
         f"from {_counted(summary['reviewers'], 'reviewer label')}, which deletion would permanently destroy. "
@@ -361,7 +366,9 @@ def _delete_pipeline_impl(
     if not store:
         return _store_unavailable(tool_name)
 
-    # Screening decisions are human work: check before touching anything.
+    # Screening decisions are human work: refuse early with counts. The store
+    # repeats the check atomically with the deletion, so a decision recorded
+    # after this pre-check still blocks it.
     summary: dict[str, int] | None = None
     if store.exists(name):
         try:
@@ -384,17 +391,38 @@ def _delete_pipeline_impl(
         except Exception as exc:  # Schedule inspection must not block deletion.
             logger.warning("Unable to inspect pipeline schedule before deletion (%s)", type(exc).__name__)
 
+    from .pipeline_screening import screening_log_at
+
     try:
-        # Past the guard, an empty (or opted-in) log goes with the pipeline.
-        scope, run_count = store.delete(name, delete_screening_log=True)
+        # An empty (or opted-in) log goes with the pipeline; decisions without opt-in refuse.
+        deletion = store.delete(name, delete_screening_log=delete_screening_log, screening_log=screening_log_at)
     except FileNotFoundError:
         return ResponseFormatter.error(
             f"Pipeline '{name}' not found",
             suggestion="Use list_pipelines() to see available pipelines",
             tool_name=tool_name,
         )
+    except ScreeningLogPresentError as exc:
+        return _screening_log_refusal(
+            tool_name, name, exc.summary or summary or {"decisions": 0, "pmids": 0, "reviewers": 0}
+        )
+    except PipelineDeletionError as exc:
+        logger.warning("Pipeline deletion stopped early (%s)", type(exc.__cause__).__name__)
+        return ResponseFormatter.error(
+            str(exc),
+            suggestion="Retry delete_pipeline once other processes have released the files",
+            tool_name=tool_name,
+        )
+    except OSError as exc:
+        logger.warning("Pipeline deletion failed (%s)", type(exc).__name__)
+        return ResponseFormatter.error(
+            f"Pipeline '{name}' could not be fully deleted ({type(exc).__name__})",
+            suggestion="Check data directory availability, then retry delete_pipeline to finish",
+            tool_name=tool_name,
+        )
     except ValueError as exc:
         return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    removed_log = deletion.screening_log or summary
 
     schedule_cleanup_failed = False
     if scheduler is not None:
@@ -405,10 +433,10 @@ def _delete_pipeline_impl(
             logger.warning("Pipeline deleted but live schedule cleanup failed (%s)", type(exc).__name__)
 
     parts = [f'🗑️ Pipeline "{name}" deleted.']
-    parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
-    parts.append(f"  - {run_count} execution history record(s) and run record sets permanently removed")
-    if summary is not None:
-        parts.append(f"  - Screening log permanently removed: {_screening_loss(summary)}")
+    parts.append(f"  - Configuration permanently removed (from {deletion.scope.value} scope)")
+    parts.append(f"  - {deletion.run_count} execution history record(s) and run record sets permanently removed")
+    if removed_log is not None:
+        parts.append(f"  - Screening log permanently removed: {_screening_loss(removed_log)}")
     if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:
@@ -845,7 +873,10 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
         (nothing is removed) and reports how many decisions/PMIDs would be
         lost, unless delete_screening_log=true. Export the log first with
         pipeline_screening(request={"action":"log", ...}). A log without
-        decisions is removed with the pipeline.
+        decisions is removed with the pipeline. The decision check is atomic
+        with the deletion, so a decision recorded meanwhile still blocks it.
+        If a file is locked (for example by another process on Windows),
+        deletion stops with the pipeline intact and can simply be retried.
 
         For the default tenant, any process-level schedule is removed only
         after the stored pipeline deletion succeeds. Isolated tenants never

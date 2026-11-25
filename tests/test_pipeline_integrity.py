@@ -23,7 +23,7 @@ from pubmed_search.application.pipeline.config_parser import (
     parse_pipeline_config_text,
 )
 from pubmed_search.application.pipeline.executor import PipelineExecutor
-from pubmed_search.application.pipeline.store import PipelineStore
+from pubmed_search.application.pipeline.store import PipelineDeletion, PipelineStore
 from pubmed_search.application.pipeline.templates import build_pipeline_from_template
 from pubmed_search.application.pipeline.validator import parse_and_validate_config
 from pubmed_search.application.search.source_models import SourceSearchPage
@@ -329,7 +329,9 @@ class TestTenantSafePipelineDeletion:
         events: list[str] = []
         store = MagicMock()
         store.global_data_dir = tmp_path
-        store.delete.side_effect = lambda _name, **_kwargs: events.append("delete") or (PipelineScope.GLOBAL, 2)
+        store.delete.side_effect = lambda _name, **_kwargs: events.append("delete") or PipelineDeletion(
+            scope=PipelineScope.GLOBAL, run_count=2
+        )
         scheduler = MagicMock()
         scheduler.get_schedule.return_value = ScheduleEntry(pipeline_name="shared", cron="0 9 * * 1")
         scheduler.unschedule.side_effect = lambda _name: events.append("unschedule")
@@ -345,7 +347,7 @@ class TestTenantSafePipelineDeletion:
         base_store = MagicMock()
         base_store.global_data_dir = tmp_path
         tenant_store = MagicMock()
-        tenant_store.delete.return_value = (PipelineScope.GLOBAL, 0)
+        tenant_store.delete.return_value = PipelineDeletion(scope=PipelineScope.GLOBAL, run_count=0)
         base_store.rebased.return_value = tenant_store
         scheduler = MagicMock()
         identity = TenantIdentity.for_principal("research-team")
@@ -355,7 +357,12 @@ class TestTenantSafePipelineDeletion:
                 name="shared"
             )
 
-        tenant_store.delete.assert_called_once_with("shared", delete_screening_log=True)
+        from pubmed_search.presentation.mcp_server.tools.pipeline_screening import screening_log_at
+
+        # The caller's opt-in is passed through; the store re-checks decisions atomically.
+        tenant_store.delete.assert_called_once_with(
+            "shared", delete_screening_log=False, screening_log=screening_log_at
+        )
         scheduler.get_schedule.assert_not_called()
         scheduler.unschedule.assert_not_called()
         assert "permanently removed" in output
@@ -376,7 +383,7 @@ class TestTenantSafePipelineDeletion:
     def test_delete_reports_live_schedule_cleanup_failure_truthfully(self, tmp_path: Path):
         store = MagicMock()
         store.global_data_dir = tmp_path
-        store.delete.return_value = (PipelineScope.GLOBAL, 0)
+        store.delete.return_value = PipelineDeletion(scope=PipelineScope.GLOBAL, run_count=0)
         scheduler = MagicMock()
         scheduler.get_schedule.return_value = ScheduleEntry(pipeline_name="shared", cron="0 9 * * 1")
         scheduler.unschedule.side_effect = RuntimeError("private detail")

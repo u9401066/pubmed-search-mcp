@@ -44,6 +44,14 @@ _SCHEMA = (
 # Version 1 counted only the records a run handed to screening; version 2 also
 # keeps how many identified records pipeline filters removed before screening.
 _MIGRATIONS = {1: ("ALTER TABLE runs ADD COLUMN automation_removed INTEGER NOT NULL DEFAULT 0",)}
+# A log whose pipeline is being deleted: reads still work, writes are refused,
+# so no decision can land between the deletion check and the file removal.
+_RETIRED_VERSION = -1
+
+
+class ScreeningLogRetiredError(ValueError):
+    """The screening log belongs to a pipeline that is being deleted."""
+
 
 _LATEST = """
     SELECT d.pmid, d.decision, d.reason FROM decisions d
@@ -131,17 +139,23 @@ class SQLiteScreeningStore:
         return self._path.is_file()
 
     @contextmanager
-    def _transaction(self, *, write: bool) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, write: bool, allow_retired: bool = False) -> Iterator[sqlite3.Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self._path, timeout=10, isolation_level=None)) as db:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
             # A first open or a migration writes the schema, so it takes the write lock.
-            needs_schema = db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION
+            needs_schema = db.execute("PRAGMA user_version").fetchone()[0] not in {_SCHEMA_VERSION, _RETIRED_VERSION}
             with db:
                 db.execute("BEGIN IMMEDIATE" if write or needs_schema else "BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version == 0:
+                if version == _RETIRED_VERSION:
+                    if write and not allow_retired:
+                        raise ScreeningLogRetiredError(
+                            "This pipeline's screening log is being deleted; no decision was recorded. "
+                            "Retry delete_pipeline to finish the deletion."
+                        )
+                elif version == 0:
                     for statement in _SCHEMA:
                         db.execute(statement)
                     db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
@@ -165,6 +179,31 @@ class SQLiteScreeningStore:
             ).fetchone()
             records = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
             return {"decisions": row[0], "pmids": row[1], "reviewers": row[2], "records": records}
+
+    def retire(self, *, allow_decisions: bool) -> dict[str, Any]:
+        """Atomically check the decision count and, if allowed, refuse all later writes.
+
+        Returns the log summary with ``retired``: false (nothing changed) when
+        decisions exist and ``allow_decisions`` is false. The check and the
+        retirement share one write transaction, so a concurrent decision is
+        either counted here or refused afterwards; it is never deleted unseen.
+        """
+        with self._transaction(write=True, allow_retired=True) as db:
+            row = db.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT pmid), COUNT(DISTINCT reviewer) FROM decisions"
+            ).fetchone()
+            records = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+            summary: dict[str, Any] = {"decisions": row[0], "pmids": row[1], "reviewers": row[2], "records": records}
+            if summary["decisions"] and not allow_decisions:
+                return {**summary, "retired": False}
+            db.execute(f"PRAGMA user_version={_RETIRED_VERSION}")
+            return {**summary, "retired": True}
+
+    def restore(self) -> None:
+        """Undo :meth:`retire` after the log file could not be removed."""
+        with self._transaction(write=True, allow_retired=True) as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == _RETIRED_VERSION:
+                db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
 
     # ── Identification ──────────────────────────────────────────────────
 
@@ -360,4 +399,4 @@ class SQLiteScreeningStore:
             }
 
 
-__all__ = ["SQLiteScreeningStore"]
+__all__ = ["SQLiteScreeningStore", "ScreeningLogRetiredError"]

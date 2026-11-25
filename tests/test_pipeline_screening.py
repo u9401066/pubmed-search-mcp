@@ -396,8 +396,95 @@ def test_store_delete_fails_closed_when_a_log_exists_without_opt_in(tmp_path: Pa
     assert store.exists("review")
     assert store.screening_db_path("review").is_file()
     assert store.count_history("review") == 1
-    assert store.delete("review", delete_screening_log=True)[1] == 1
+    assert store.delete("review", delete_screening_log=True).run_count == 1
     assert not store.screening_db_path("review").exists()
+
+
+def test_decision_recorded_after_the_tool_precheck_still_blocks_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decision check and the deletion are atomic: a concurrent decision is never deleted silently."""
+    from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    _service_for(store).register_run(_run("run1", ["1", "2"]))
+    store.save_run("review", _run("20260101_000000_000000_abc", ["1", "2"]))
+    precheck = pipeline_tools._screening_decision_summary
+
+    def precheck_then_concurrent_decision(store_arg: PipelineStore, name: str) -> dict[str, int] | None:
+        summary = precheck(store_arg, name)
+        _service_for(store).record([_decide("1", "include", reviewer="racer")])  # lands after the check
+        return summary
+
+    monkeypatch.setattr(pipeline_tools, "_screening_decision_summary", precheck_then_concurrent_decision)
+
+    refused = _tools(store)["delete_pipeline"](name="review")
+
+    assert "was not deleted" in refused
+    assert "1 decision on 1 PMID" in refused
+    assert store.exists("review")
+    assert store.count_history("review") == 1
+    assert _service_for(store).log()["total"] == 1
+    _service_for(store).record([_decide("2", "exclude")])  # the log is still writable
+
+
+def test_locked_screening_log_leaves_a_consistent_retryable_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Windows-style unlink failure on the log removes nothing and can be retried."""
+    from pathlib import Path as RealPath
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    _save_review(store)
+    _service_for(store).register_run(_run("run1", ["1"]))
+    _service_for(store).record([_decide("1", "include")])
+    store.save_run("review", _run("20260101_000000_000000_abc", ["1"]))
+    db_path = store.screening_db_path("review")
+    real_unlink = RealPath.unlink
+
+    def locked_unlink(self: RealPath, missing_ok: bool = False) -> None:
+        if self.name == db_path.name:
+            raise PermissionError(32, "The process cannot access the file because it is being used")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(RealPath, "unlink", locked_unlink)
+    failed = _tools(store)["delete_pipeline"](name="review", delete_screening_log=True)
+
+    assert "was not deleted" in failed
+    assert "in use" in failed
+    assert store.exists("review")
+    assert [meta.name for meta in store.list_pipelines()] == ["review"]
+    assert store.count_history("review") == 1
+    assert db_path.is_file()
+    _service_for(store).record([_decide("1", "exclude")])  # restored: still a working log
+    assert _service_for(store).log()["total"] == 2
+
+    monkeypatch.setattr(RealPath, "unlink", real_unlink)
+    deleted = _tools(store)["delete_pipeline"](name="review", delete_screening_log=True)
+
+    assert 'Pipeline "review" deleted' in deleted
+    assert "Screening log permanently removed: 2 decisions on 1 PMID" in deleted
+    assert not db_path.exists()
+    assert not store.exists("review")
+    assert store.list_pipelines() == []
+
+
+def test_retired_screening_log_refuses_writes_until_deleted(tmp_path: Path) -> None:
+    log = SQLiteScreeningStore(tmp_path / "review.sqlite3")
+    ScreeningService(log).register_run(_run("run1", ["1"]))
+    ScreeningService(log).record([_decide("1", "include")])
+
+    assert log.retire(allow_decisions=False)["retired"] is False
+    ScreeningService(log).record([_decide("1", "exclude")])  # refusal left the log untouched
+    summary = log.retire(allow_decisions=True)
+
+    assert (summary["retired"], summary["decisions"]) == (True, 2)
+    with pytest.raises(ValueError, match="being deleted"):
+        ScreeningService(log).record([_decide("1", "maybe")])
+    assert ScreeningService(log).flow()["screening"]["records_excluded"] == 1  # reads still work
+    log.restore()
+    ScreeningService(log).record([_decide("1", "maybe")])
 
 
 async def test_unknown_pipeline_and_invalid_decisions_are_structured_errors(tmp_path: Path) -> None:

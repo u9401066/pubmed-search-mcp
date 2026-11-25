@@ -26,7 +26,7 @@ from pubmed_search.application.pipeline import (
     ValidationResult,
 )
 from pubmed_search.application.pipeline.runner import StoredPipelineRunner
-from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
+from pubmed_search.application.pipeline.store import PipelineDeletion, PipelineHistoryError, _config_to_dict
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
 from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
@@ -419,7 +419,7 @@ class TestDeletePipeline:
     """Tests for delete_pipeline tool."""
 
     def test_delete_success(self, mcp, mock_store):
-        mock_store.delete.return_value = (PipelineScope.WORKSPACE, 3)
+        mock_store.delete.return_value = PipelineDeletion(scope=PipelineScope.WORKSPACE, run_count=3)
         output = mcp["delete_pipeline"](name="deleteme")
         assert "🗑️" in output
         assert "deleteme" in output

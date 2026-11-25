@@ -476,9 +476,10 @@ class TestStoreDelete:
 
     def test_delete_returns_scope_and_count(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         store_dual.save("counted", simple_config)
-        scope, count = store_dual.delete("counted")
-        assert scope == PipelineScope.WORKSPACE
-        assert count == 0  # no runs yet
+        deletion = store_dual.delete("counted")
+        assert deletion.scope == PipelineScope.WORKSPACE
+        assert deletion.run_count == 0  # no runs yet
+        assert deletion.screening_log is None
 
 
 # =========================================================================
@@ -576,8 +577,7 @@ class TestStoreRunHistory:
         store_dual.save_run("with_runs", self._make_run("with_runs", "run_001"))
         store_dual.save_run("with_runs", self._make_run("with_runs", "run_002"))
 
-        scope, run_count = store_dual.delete("with_runs")
-        assert run_count == 2
+        assert store_dual.delete("with_runs").run_count == 2
 
     def test_history_empty_for_nonexistent_dir(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         """get_history when run dir doesn't exist should return empty."""
