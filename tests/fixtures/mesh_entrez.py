@@ -25,6 +25,11 @@ Fixture provenance (2026-11-25):
   Anesthesia, General and Pain Measurement backgrounds are synthetic.
 - Joint counts (evidence AND heading) are synthetic, sized like the shares
   above over the 3717 evidence records.
+- ``"Ischemia/Reperfusion Injury"[Mesh]`` came back as ``QuotedPhraseNotFound``
+  and so did the same phrase as a quoted db=mesh ``[MeSH Terms]`` clause, while
+  ``"Ischemia-Reperfusion Injury"[MeSH Terms]`` found D015427 (Reperfusion
+  Injury), whose live ESummary lists that hyphenated entry term. The Ischemia
+  record is reduced to its preferred term.
 """
 
 from __future__ import annotations
@@ -90,13 +95,56 @@ JOINT_COUNTS = {
 }
 
 
-def _doc(uid: str, *terms: str, trees: tuple[str, ...] = ("X00",), scr: bool = False) -> dict[str, Any]:
+# Live DS_Subheading of Emergence Delirium (2016453), ESummary 2026-11-25.
+EMERGENCE_DELIRIUM_QUALIFIERS = (
+    "blood",
+    "cerebrospinal fluid",
+    "chemically induced",
+    "classification",
+    "complications",
+    "diagnosis",
+    "diagnostic imaging",
+    "diet therapy",
+    "drug therapy",
+    "economics",
+    "enzymology",
+    "epidemiology",
+    "ethnology",
+    "etiology",
+    "genetics",
+    "history",
+    "immunology",
+    "metabolism",
+    "microbiology",
+    "mortality",
+    "nursing",
+    "parasitology",
+    "pathology",
+    "physiopathology",
+    "prevention and control",
+    "psychology",
+    "rehabilitation",
+    "surgery",
+    "therapy",
+    "urine",
+    "virology",
+)
+
+
+def _doc(
+    uid: str,
+    *terms: str,
+    trees: tuple[str, ...] = ("X00",),
+    scr: bool = False,
+    qualifiers: tuple[str, ...] = (),
+) -> dict[str, Any]:
     return {
         "Id": uid,
         "DS_MeshTerms": list(terms),
         "DS_IdxLinks": [{"TreeNum": tree} for tree in trees],
         "DS_HeadingMappedToList": [68001569] if scr else [],
         "DS_PaList": [],
+        "DS_Subheading": list(qualifiers),
     }
 
 
@@ -109,11 +157,25 @@ MESH_DOCS = [
         "Postoperative Delirium",
         "Post-Operative Delirium",
         trees=("C10.597.606.337.500.500",),
+        qualifiers=EMERGENCE_DELIRIUM_QUALIFIERS,
     ),
     _doc("68003693", "Delirium", "Deliriums", trees=("F01.700.250.500",)),
     _doc("68011997", "Recovery Room", "Recovery Rooms", "Hospital Recovery Room", trees=("N02.278.388.493.592",)),
     _doc("68019990", "Anesthesia Recovery Period", "Recovery Period, Anesthesia", trees=("E03.155.086",)),
     _doc("67522201", "remimazolam", "CNS 7056", trees=("@167407",), scr=True),
+    _doc(
+        "68015427",
+        "Reperfusion Injury",
+        "Reperfusion Injuries",
+        "Injury, Ischemia-Reperfusion",
+        "Ischemia-Reperfusion Injury",
+        "Ischemia Reperfusion Injury",
+        "Reperfusion Damage",
+        trees=("C14.907.725", "C23.550.767.877"),
+    ),
+    _doc("68007511", "Ischemia", trees=("C14.907.553", "C23.550.513")),
+    _doc("68011225", "Pre-Eclampsia", "Pre Eclampsia", "Preeclampsia", "EPH Gestosis", trees=("C12.050.703",)),
+    _doc("68004461", "Eclampsia", trees=("C12.050.703.395.249",)),
 ]
 
 
@@ -150,8 +212,19 @@ class FakeEntrez:
             '"emergence deliriums"[mesh]',
             '"recovery rooms"[mesh:noexp]',
             '"remimazolam"[mesh]',
+            '"remimazolam"[majr]',
+            '"pre\u2011eclampsia"[mesh]',  # non-breaking hyphen, as pasted from formatted text
             '"post-operative deliriums"[majr]',
             '"postanesthesia recovery wards"[mesh]',
+            '"ischemia/reperfusion injury"[mesh]',
+            # PubMed rejects quoted qualifier abbreviations (live: "Neoplasms/dh"[mh]) and
+            # qualifiers a heading does not allow.
+            '"emergence delirium/dt"[mesh]',
+            '"emergence deliriums/dt"[mesh]',
+            '"emergence deliriums/pharmacokinetics"[mesh]',
+            '"emergence delirium/pharmacokinetics"[mesh]',
+            '"recovery rooms/methods"[mesh]',
+            '"emergence delirium/therapy"[mesh]',
         }
         self.bad_bare = {"pacu": "PACU", "units": "units"}
         self.headings = _pacu_headings()

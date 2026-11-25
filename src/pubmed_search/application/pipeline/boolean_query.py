@@ -15,8 +15,10 @@ a recombined query never rewrites a term.
 PubMed evaluates Boolean operators strictly left to right with no precedence.
 A top level that mixes ``OR`` with ``AND``/``NOT`` therefore has no unambiguous
 block structure and is reported as not decomposable instead of being guessed.
-Only upper-case ``AND``/``OR``/``NOT`` are operators; lower-case words stay part
-of a term, matching PubMed.
+Operators are spelled as PubMed reads them (``pubmed_boolean``): ``AND``,
+``OR``/``or`` and ``NOT``/``not``; lowercase ``and`` and mixed-case words stay
+part of a term. Parsed operators are recorded in upper case; text spans stay
+verbatim.
 """
 
 from __future__ import annotations
@@ -24,12 +26,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from pubmed_search.domain.services.pubmed_boolean import boolean_operator
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 MAX_QUERY_CHARS = 20_000
 MAX_NESTING_DEPTH = 50
-_OPERATORS = frozenset({"AND", "OR", "NOT"})
 _WORD_BREAKS = frozenset('()"[')
 
 TokenKind = Literal["lparen", "rparen", "op", "term"]
@@ -141,7 +144,8 @@ def _tokenize(query: str) -> list[_Token]:
                 raise QueryDecompositionError("Unbalanced field tag bracket")
             end += 1
         word = query[index:end]
-        tokens.append(_Token("op" if word in _OPERATORS else "term", index, end, word))
+        operator = boolean_operator(word)
+        tokens.append(_Token("op", index, end, operator) if operator else _Token("term", index, end, word))
         index = end
 
     # Adjacent term fragments (words, phrases, tags) form one verbatim term.

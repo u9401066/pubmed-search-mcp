@@ -461,10 +461,12 @@ async def test_evidence_outage_falls_back_to_text_words() -> None:
         pubmed, service=MeshCorrectionService(gateway), output_format="markdown", options="shallow,no_oa,no_relax"
     )
 
+    # Before: an outage was labeled "no MeSH heading found", as if MeSH had been checked.
     assert (
-        f"{PACU} not found in MeSH → title/abstract text words (low confidence, no MeSH heading found)"
+        f"{PACU} not found in MeSH → title/abstract text words (low confidence, MeSH evidence incomplete)"
         in markdown.replace("\\", "")
     )
+    assert "no MeSH heading found" not in markdown
     assert '"Post-Anesthesia Care Units"[tiab]' in pubmed.calls[1] and "[Mesh]" not in pubmed.calls[1]
 
 

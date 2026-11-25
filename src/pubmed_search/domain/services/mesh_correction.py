@@ -36,9 +36,11 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from itertools import pairwise
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
-from .mesh_phrase_matching import lookup_variants, term_key
+from .mesh_phrase_matching import lookup_variants, normalize_term, term_key
+from .pubmed_boolean import boolean_operator, resembles_operator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -52,13 +54,154 @@ MAX_TEXT_WORD_VARIANTS = 6
 TEXT_WORD_FIELD = "tiab"
 MEDLINE_SUBSET = "medline[sb]"
 
-_BOOLEAN = frozenset({"AND", "OR", "NOT"})
 _MESH_TAG = re.compile(
     r"\[\s*(?P<field>mesh\s+terms|mesh\s+major\s+topic|mesh|mh|majr)(?P<noexp>\s*:\s*noexp)?\s*\]",
     re.IGNORECASE,
 )
 _DELIMITERS = '()"[]'
 _WORD = re.compile(r"\S+")
+# Query tokens for NOT scoping: quoted phrase, field tag, parenthesis or bare word.
+_SCAN_TOKEN = re.compile(r'"[^"]*"?|\[[^\]]*\]?|[()]|[^\s()"\[]+')
+
+# The 76 MeSH qualifiers (subheadings) and their two-letter abbreviations, as
+# listed by NLM's "Qualifiers - Scope Notes" (checked 2026-11-25). PubMed
+# attaches at most one directly to a heading ("Neoplasms/diet therapy",
+# "neoplasms/dh"); any other slash belongs to the heading text itself.
+MESH_QUALIFIERS: Mapping[str, str] = MappingProxyType(
+    {
+        "abnormalities": "AB",
+        "administration & dosage": "AD",
+        "adverse effects": "AE",
+        "agonists": "AG",
+        "analogs & derivatives": "AA",
+        "analysis": "AN",
+        "anatomy & histology": "AH",
+        "antagonists & inhibitors": "AI",
+        "biosynthesis": "BI",
+        "blood": "BL",
+        "blood supply": "BS",
+        "cerebrospinal fluid": "CF",
+        "chemical synthesis": "CS",
+        "chemically induced": "CI",
+        "chemistry": "CH",
+        "classification": "CL",
+        "complications": "CO",
+        "congenital": "CN",
+        "cytology": "CY",
+        "deficiency": "DF",
+        "diagnosis": "DI",
+        "diagnostic imaging": "DG",
+        "diet therapy": "DH",
+        "drug effects": "DE",
+        "drug therapy": "DT",
+        "economics": "EC",
+        "education": "ED",
+        "embryology": "EM",
+        "enzymology": "EN",
+        "epidemiology": "EP",
+        "ethics": "ES",
+        "ethnology": "EH",
+        "etiology": "ET",
+        "genetics": "GE",
+        "growth & development": "GD",
+        "history": "HI",
+        "immunology": "IM",
+        "injuries": "IN",
+        "innervation": "IR",
+        "instrumentation": "IS",
+        "isolation & purification": "IP",
+        "legislation & jurisprudence": "LJ",
+        "metabolism": "ME",
+        "methods": "MT",
+        "microbiology": "MI",
+        "mortality": "MO",
+        "nursing": "NU",
+        "organization & administration": "OG",
+        "parasitology": "PS",
+        "pathogenicity": "PY",
+        "pathology": "PA",
+        "pharmacokinetics": "PK",
+        "pharmacology": "PD",
+        "physiology": "PH",
+        "physiopathology": "PP",
+        "poisoning": "PO",
+        "prevention & control": "PC",
+        "psychology": "PX",
+        "radiation effects": "RE",
+        "radiotherapy": "RT",
+        "rehabilitation": "RH",
+        "secondary": "SC",
+        "standards": "ST",
+        "statistics & numerical data": "SN",
+        "supply & distribution": "SD",
+        "surgery": "SU",
+        "therapeutic use": "TU",
+        "therapy": "TH",
+        "toxicity": "TO",
+        "transmission": "TM",
+        "transplantation": "TR",
+        "trends": "TD",
+        "ultrastructure": "UL",
+        "urine": "UR",
+        "veterinary": "VE",
+        "virology": "VI",
+    }
+)
+
+
+def qualifier_form(text: str) -> str:
+    """Comparison form of a qualifier: case, ``&``/``and`` and spacing folded (ESummary writes ``and``)."""
+    return " ".join(text.casefold().replace("&", " and ").split())
+
+
+_QUALIFIER_BY_FORM = {qualifier_form(name): name for name in MESH_QUALIFIERS} | {
+    abbreviation.casefold(): name for name, abbreviation in MESH_QUALIFIERS.items()
+}
+
+
+def canonical_qualifier(text: str) -> str | None:
+    """Full MeSH qualifier name for a written name or two-letter abbreviation; None if it is not one."""
+    return _QUALIFIER_BY_FORM.get(qualifier_form(text))
+
+
+def qualifier_spelling(written: str) -> str:
+    """The qualifier as written, or its full name when written as a two-letter abbreviation.
+
+    PubMed resolves abbreviations only in unquoted clauses (live 2026-11-25:
+    ``neoplasms/dh[mh]`` finds records, ``"Neoplasms/dh"[mh]`` is not found).
+    """
+    stripped = written.strip()
+    name = canonical_qualifier(stripped)
+    if name is not None and stripped.casefold() == MESH_QUALIFIERS[name].casefold():
+        return name
+    return stripped
+
+
+def qualifier_allowed(written: str, allowed: Sequence[str]) -> bool | None:
+    """Whether MeSH allows the qualifier with a heading; None when the allowed list is unknown (empty)."""
+    if not allowed:
+        return None
+    name = canonical_qualifier(written)
+    return name is not None and qualifier_form(name) in {qualifier_form(item) for item in allowed}
+
+
+def split_qualifier(text: str) -> tuple[str, str | None]:
+    """``(heading, qualifier)`` of a MeSH clause text; only a real MeSH subheading is a qualifier.
+
+    ``Ischemia/Reperfusion Injury`` stays one heading because "Reperfusion
+    Injury" is not a subheading; ``Neoplasms/dh`` is Neoplasms with the diet
+    therapy qualifier. A trailing slash is dropped.
+    """
+    stripped = text.strip()
+    head, slash, tail = stripped.rpartition("/")
+    if not slash:
+        return stripped, None
+    if not tail.strip():
+        return head.strip(), None
+    if canonical_qualifier(tail) is not None:
+        return head.strip(), tail.strip()
+    return stripped, None
+
 
 # MEDLINE check tags: population, sex and organism descriptors added to most records.
 CHECK_TAG_DESCRIPTORS = frozenset(
@@ -133,7 +276,12 @@ STUDY_DESIGN_DESCRIPTORS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class TaggedMeshTerm:
-    """One MeSH-tagged clause located in a query string."""
+    """One MeSH-tagged clause located in a query string.
+
+    ``negated`` marks a clause inside a NOT operand (see
+    :func:`negated_spans`): records it matches are excluded, so any rewrite
+    that is not an equivalent heading would change what is excluded.
+    """
 
     clause: str
     start: int
@@ -145,15 +293,21 @@ class TaggedMeshTerm:
     major: bool
     noexp: bool
     quoted: bool
+    negated: bool = False
 
     @property
     def key(self) -> str:
         """Normalized descriptor key shared by spelling, hyphen and plural variants."""
         return term_key(self.descriptor)
 
-    def render(self, descriptor: str, *, keep_qualifier: bool = True) -> str:
-        """The same clause with another heading, keeping the agent's field tag."""
-        text = f"{descriptor}/{self.qualifier}" if keep_qualifier and self.qualifier else descriptor
+    def render(self, descriptor: str, *, keep_qualifier: bool = True, qualifier: str | None = None) -> str:
+        """The same clause with another heading, keeping the agent's field tag.
+
+        ``qualifier`` replaces the written qualifier (for example its full
+        name instead of an abbreviation); ``keep_qualifier=False`` drops it.
+        """
+        chosen = (qualifier or self.qualifier) if keep_qualifier else None
+        text = f"{descriptor}/{chosen}" if chosen else descriptor
         return f'"{text}"[{self.tag}]'
 
 
@@ -233,14 +387,59 @@ def _quote_balance_is_even(text: str) -> bool:
 
 
 def _bare_term_start(query: str, end: int) -> int | None:
-    """Start of the unquoted words that a field tag at ``end`` applies to."""
+    """Start of the unquoted words that a field tag at ``end`` applies to.
+
+    The words stop at a PubMed operator (``AND``, ``OR``/``or``, ``NOT``/``not``).
+    A leading ``and`` (a stopword PubMed glues onto the phrase) or a
+    mixed-case ``Not``/``Or`` is not part of the heading: PubMed itself then
+    reports the heading words (``... and pacu[mh]`` -> PhraseNotFound
+    ``pacu``). An inner ``and`` stays (``Delirium/prevention and control``).
+    """
     boundary = max(query.rfind(char, 0, end) for char in _DELIMITERS) + 1
-    start: int | None = None
+    words: list[re.Match[str]] = []
     for match in reversed(list(_WORD.finditer(query, boundary, end))):
-        if match.group() in _BOOLEAN:
+        if boolean_operator(match.group()) is not None:
             break
-        start = match.start()
-    return start
+        words.append(match)
+    words.reverse()
+    while words and resembles_operator(words[0].group()):
+        words.pop(0)
+    return words[0].start() if words else None
+
+
+def negated_spans(query: str) -> tuple[tuple[int, int], ...]:
+    """``[start, end)`` spans of the query tokens whose records a NOT excludes.
+
+    PubMed applies operators left to right with no precedence, so a NOT
+    excludes exactly its next operand: one parenthesized group, or the term
+    words up to the next operator or parenthesis (``a NOT b OR c`` excludes
+    only ``b``). Any spelling of "not" counts, including a mixed-case ``Not``
+    that PubMed searches as a word, so that ambiguity can only make the
+    correction more cautious. A clause nested in two NOTs is still negated.
+    """
+    spans: list[tuple[int, int]] = []
+    groups = [False]  # whether each open parenthesis group is inside a NOT operand
+    pending = False  # a NOT was just read
+    in_operand = False  # inside the term words of a NOT operand
+    for match in _SCAN_TOKEN.finditer(query):
+        piece = match.group()
+        if piece.casefold() == "not":
+            pending, in_operand = True, False
+        elif boolean_operator(piece) is not None:
+            pending = in_operand = False
+        elif piece == "(":
+            groups.append(groups[-1] or pending or in_operand)
+            pending = in_operand = False
+        elif piece == ")":
+            if len(groups) > 1:
+                groups.pop()
+            pending = in_operand = False
+        else:
+            in_operand = in_operand or pending
+            pending = False
+            if groups[-1] or in_operand:
+                spans.append((match.start(), match.end()))
+    return tuple(spans)
 
 
 def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
@@ -248,9 +447,12 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
 
     Recognizes ``[Mesh]``, ``[MeSH Terms]``, ``[mh]``, ``[Majr]``, ``[MeSH Major
     Topic]`` and their ``:noexp`` forms, quoted or bare, with an optional
-    ``/qualifier``. Tags inside a quoted phrase are ignored.
+    ``/qualifier`` (a real MeSH subheading, see :func:`split_qualifier`). Tags
+    inside a quoted phrase are ignored. Clauses inside a NOT operand are
+    marked ``negated``.
     """
     terms: list[TaggedMeshTerm] = []
+    excluded = negated_spans(query)
     for match in _MESH_TAG.finditer(query):
         if not _quote_balance_is_even(query[: match.start()]):
             continue
@@ -267,8 +469,8 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
             if bare_start is None:
                 continue
             start, text, quoted = bare_start, query[bare_start:end_of_term], False
-        descriptor, _, qualifier = text.partition("/")
-        if not descriptor.strip():
+        descriptor, qualifier = split_qualifier(text)
+        if not descriptor:
             continue
         tag = " ".join(match.group(0)[1:-1].split())
         field_name = " ".join(match.group("field").lower().split())
@@ -278,12 +480,13 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
                 start=start,
                 end=match.end(),
                 text=text.strip(),
-                descriptor=descriptor.strip(),
-                qualifier=qualifier.strip() or None,
+                descriptor=descriptor,
+                qualifier=qualifier,
                 tag=tag.replace(" :", ":").replace(": ", ":"),
                 major=field_name in {"majr", "mesh major topic"},
                 noexp=match.group("noexp") is not None,
                 quoted=quoted,
+                negated=any(low <= start < high for low, high in excluded),
             )
         )
     return tuple(terms)
@@ -435,7 +638,7 @@ def pubmed_text_key(text: str) -> str:
     (its translation shows both as ``"post anesthesia ..."[Title/Abstract]``)
     and ignores case, so hyphens and spaces are folded together.
     """
-    return " ".join(re.split(r"[\s\-]+", text.casefold())).strip()
+    return " ".join(re.split(r"[\s\-]+", normalize_term(text).casefold())).strip()
 
 
 def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tuple[str, ...]:
@@ -443,14 +646,15 @@ def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tupl
 
     Forms PubMed treats as identical (hyphen vs. space, case) are emitted
     once, and closed compounds use a canonical casing (``Postanesthesia``,
-    never ``PostAnesthesia``).
+    never ``PostAnesthesia``). Unicode dashes are written as ASCII hyphens.
     """
-    cleaned = " ".join(phrase.replace('"', " ").split())
+    cleaned = " ".join(normalize_term(phrase).replace('"', " ").split())
     if not cleaned:
         return ()
     canonical: dict[str, str] = {}
-    if "-" in cleaned:
-        canonical = {variant.casefold(): variant for variant in lookup_variants(_closed_compound(cleaned))}
+    if "-" in cleaned or "/" in cleaned:
+        closed = _closed_compound(cleaned.replace("/", "-"))
+        canonical = {variant.casefold(): variant for variant in lookup_variants(closed)}
     variants: dict[str, str] = {}
     for raw in lookup_variants(cleaned):
         variant = canonical.get(raw.casefold(), raw)
@@ -506,6 +710,7 @@ def phrase_priority(phrases: Sequence[str], limit: int) -> list[str]:
 
 __all__ = [
     "CHECK_TAG_DESCRIPTORS",
+    "MESH_QUALIFIERS",
     "STUDY_DESIGN_DESCRIPTORS",
     "Confidence",
     "DescriptorShare",
@@ -515,6 +720,7 @@ __all__ = [
     "ShareTable",
     "TaggedMeshTerm",
     "apply_replacements",
+    "canonical_qualifier",
     "cooccurrence_confidence",
     "descriptor_clause",
     "descriptor_shares",
@@ -524,13 +730,18 @@ __all__ = [
     "find_mesh_terms",
     "flag_unresolved_terms",
     "joint_query",
+    "negated_spans",
     "normalize_heading",
     "not_found_clauses",
     "or_block",
     "phrase_priority",
     "pubmed_text_key",
+    "qualifier_allowed",
+    "qualifier_form",
+    "qualifier_spelling",
     "rank_descriptors",
     "score_descriptor",
+    "split_qualifier",
     "text_word_block",
     "text_word_clauses",
     "text_word_variants",

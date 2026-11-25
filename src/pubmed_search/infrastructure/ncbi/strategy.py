@@ -22,6 +22,7 @@ from pubmed_search.domain.services.mesh_phrase_matching import (
     RecordType,
     contains_phrase,
     lookup_variants,
+    match_term,
     matches_for,
     parse_topic,
     resolve_matches,
@@ -46,9 +47,12 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
 
-# Exact MeSH lookups: one ESearch per batch of quoted term clauses, one ESummary.
+# Exact MeSH lookups: one ESearch per batch of quoted term clauses, one ESummary. A batch
+# matching more than MESH_LOOKUP_RETMAX records is paged; beyond MESH_LOOKUP_MAX_PAGES the
+# lookup fails closed instead of caching a truncated result.
 MESH_LOOKUP_MAX_CLAUSES = 200
 MESH_LOOKUP_RETMAX = 500
+MESH_LOOKUP_MAX_PAGES = 4
 MESH_SUBSTANCE_MAX_TOKENS = 3
 MESH_CACHE_TTL = 6 * 60 * 60
 MESH_CACHE_SIZE = 4096
@@ -56,12 +60,22 @@ MESH_CACHE_SIZE = 4096
 _ATM_VOCABULARY_TERM = re.compile(r'"([^"]+)"\[(?:MeSH Terms|Supplementary Concept)(?::noexp)?\]', re.IGNORECASE)
 
 
-def _mesh_uids(result: Any) -> list[str]:
-    """Validated UIDs from a db=mesh ESearch record; they are later comma-joined into ESummary."""
+def _mesh_page(result: Any) -> tuple[int, list[str]]:
+    """``(Count, validated UIDs)`` of a db=mesh ESearch page; UIDs are later comma-joined into ESummary."""
+    count = int(str(result["Count"]))
     uids = [str(uid) for uid in result.get("IdList", [])]
-    if any(not uid.isascii() or not uid.isdecimal() for uid in uids):
+    if count < 0 or any(not uid.isascii() or not uid.isdecimal() for uid in uids):
         raise ValueError("Invalid MeSH identifiers")
-    return uids
+    return count, uids
+
+
+def _lookup_clauses(phrase: str) -> tuple[str, ...]:
+    """The exact db=mesh clauses searched for one phrase; also its cache identity."""
+    variants = lookup_variants(phrase)
+    clauses = [f'"{variant}"[MeSH Terms]' for variant in variants]
+    if variants and len(phrase.split()) <= MESH_SUBSTANCE_MAX_TOKENS:
+        clauses.append(f'"{variants[0]}"[Substance Name]')  # as written, dashes normalized
+    return tuple(clauses)
 
 
 def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
@@ -69,9 +83,11 @@ def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
 
     Qualifier (subheading) and pharmacological-action records are skipped:
     they are not standalone PubMed MeSH Terms and would shadow descriptors.
+    ``DS_Subheading`` lists the qualifiers allowed with a descriptor.
     """
     uid = str(summary["Id"])
     terms = [str(term).strip() for term in summary["DS_MeshTerms"] if str(term).strip()]
+    qualifiers = [str(name).strip() for name in summary.get("DS_Subheading") or [] if str(name).strip()]
     if not uid.isascii() or not uid.isdecimal():
         raise ValueError("Invalid MeSH identifier")
     if not terms:
@@ -92,6 +108,7 @@ def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
         entry_terms=tuple(dict.fromkeys(term for term in terms[1:] if term != terms[0])),
         tree_numbers=tuple(tree for tree in trees if not tree.startswith("@")),
         record_type=record_type,
+        allowed_qualifiers=tuple(dict.fromkeys(qualifiers)) if record_type == "descriptor" else (),
     )
 
 
@@ -144,8 +161,12 @@ class SearchStrategyGenerator:
         self._email = email
         self._api_key = api_key
         self._tool = DEFAULT_ENTREZ_TOOL
-        # Public vocabulary only; keyed by term_key, negative results included.
-        self._mesh_cache: TTLCache[str, tuple[MeshRecord, ...]] = TTLCache(maxsize=MESH_CACHE_SIZE, ttl=MESH_CACHE_TTL)
+        # Public vocabulary only, negative results included. Keyed by the exact clauses a phrase
+        # searches (never by the folded term_key), so a phrase only reuses a result it would
+        # have obtained itself.
+        self._mesh_cache: TTLCache[frozenset[str], tuple[MeshRecord, ...]] = TTLCache(
+            maxsize=MESH_CACHE_SIZE, ttl=MESH_CACHE_TTL
+        )
 
     async def _execute_entrez(self, operation, *, service_name: str, timeout: float = 45.0):
         return await execute_entrez_operation(
@@ -201,36 +222,57 @@ class SearchStrategyGenerator:
 
         Each phrase is searched only as quoted MeSH Terms (descriptor headings and
         entry terms) plus, for short phrases, Substance Name; free-text MeSH
-        searches are never issued because they match scope notes. Results,
-        including empty ones, are cached per normalized key. All uncached
+        searches are never issued because they match scope notes. All uncached
         phrases share batched ESearch requests and one ESummary request.
-        """
-        phrases = list(phrases)
-        requested: dict[str, list[str]] = {}
-        for phrase in phrases:
-            key = term_key(phrase)
-            if key and key not in self._mesh_cache:
-                requested.setdefault(key, []).append(phrase)
 
-        if requested:
-            clauses: list[str] = []
-            for group in requested.values():
-                for phrase in dict.fromkeys(group):
-                    clauses.extend(f'"{variant}"[MeSH Terms]' for variant in lookup_variants(phrase))
-                    if len(phrase.split()) <= MESH_SUBSTANCE_MAX_TOKENS:
-                        clauses.append(f'"{phrase}"[Substance Name]')
-            unique_clauses = list(dict.fromkeys(clauses))
+        A phrase keeps only records that ``match_term`` accepts for it, and
+        results (empty ones included) are cached by the exact clauses the
+        phrase searched, not by its folded key. So "news" being looked up
+        first can never make "new" match the News record, and a spelling
+        whose own lookup searches other forms is looked up itself. A
+        truncated ESearch result raises and is not cached.
+        """
+        phrases = [phrase for phrase in phrases if term_key(phrase)]
+        plans = {phrase: _lookup_clauses(phrase) for phrase in dict.fromkeys(phrases)}
+        identity = {phrase: frozenset(clause.casefold() for clause in clauses) for phrase, clauses in plans.items()}
+        missing = {phrase: clauses for phrase, clauses in plans.items() if identity[phrase] not in self._mesh_cache}
+
+        if missing:
+            unique_clauses = list(dict.fromkeys(clause for clauses in missing.values() for clause in clauses))
             uids: list[str] = []
             for offset in range(0, len(unique_clauses), MESH_LOOKUP_MAX_CLAUSES):
                 batch = unique_clauses[offset : offset + MESH_LOOKUP_MAX_CLAUSES]
                 uids.extend(await self._search_mesh_uids(" OR ".join(batch)))
             records = await self._fetch_mesh_records(list(dict.fromkeys(uids))) if uids else []
-            for key in requested:
-                self._mesh_cache[key] = tuple(record for record in records if key in record.term_keys)
+            for phrase in missing:
+                self._mesh_cache[identity[phrase]] = tuple(
+                    record for record in records if match_term(phrase, record) is not None
+                )
 
-        return {key: self._mesh_cache.get(key, ()) for key in (term_key(phrase) for phrase in phrases) if key}
+        found: dict[str, dict[str, MeshRecord]] = {}
+        for phrase in phrases:
+            bucket = found.setdefault(term_key(phrase), {})
+            for record in self._mesh_cache.get(identity[phrase], ()):
+                bucket.setdefault(record.uid, record)
+        return {key: tuple(bucket.values()) for key, bucket in found.items()}
 
     async def _search_mesh_uids(self, term: str) -> list[str]:
+        """Every UID db=mesh matches for ``term``, paged past ``MESH_LOOKUP_RETMAX``; truncation fails closed."""
+        uids: list[str] = []
+        complete = False
+        for _ in range(MESH_LOOKUP_MAX_PAGES):
+            count, page = await self._search_mesh_page(term, retstart=len(uids))
+            uids.extend(page)
+            complete = len(uids) >= count
+            if complete or not page:
+                break
+        if not complete:
+            raise_ncbi_infrastructure_error(
+                "strategy MeSH search response", ValueError("MeSH search result was truncated; it was not cached")
+            )
+        return list(dict.fromkeys(uids))
+
+    async def _search_mesh_page(self, term: str, *, retstart: int) -> tuple[int, list[str]]:
         async def _do_search() -> Any:
             handle = await asyncio.to_thread(
                 run_entrez_callable,
@@ -239,6 +281,7 @@ class SearchStrategyGenerator:
                 db="mesh",
                 term=term,
                 retmax=MESH_LOOKUP_RETMAX,
+                retstart=retstart,
                 email=self._email,
                 api_key=self._api_key,
                 tool=self._tool,
@@ -250,8 +293,8 @@ class SearchStrategyGenerator:
         except Exception as exc:
             raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
         try:
-            return _mesh_uids(result)
-        except (AttributeError, TypeError, ValueError) as exc:
+            return _mesh_page(result)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise_ncbi_infrastructure_error("strategy MeSH search response", exc)
 
     async def _fetch_mesh_records(self, uids: list[str]) -> list[MeshRecord]:

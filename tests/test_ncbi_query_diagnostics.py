@@ -8,8 +8,10 @@ unknown term is reported under ``ErrorList.PhraseNotFound`` without it.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
+import pickle
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
@@ -134,6 +136,18 @@ async def test_search_page_returns_diagnostics_and_warnings_while_ids_still_unpa
     assert page.warnings == [
         'PubMed did not find quoted phrase "Post-Anesthesia Care Units"[Mesh]; that clause matched nothing.'
     ]
+
+
+def test_esearch_id_list_survives_copy_deepcopy_and_pickle() -> None:
+    # Before: tuple's default reduction re-called __new__ without the keyword-only diagnostics.
+    diagnostics = PubMedQueryDiagnostics(quoted_phrases_not_found=('"X"[Mesh]',), output_messages=("No items found.",))
+    original = ESearchIdList(["1", "2"], 2, "WE", "1", diagnostics=diagnostics)
+
+    pickled = pickle.loads(pickle.dumps(original))  # noqa: S301 - round trip of bytes this test just produced
+    for clone in (copy.copy(original), copy.deepcopy(original), pickled):
+        assert type(clone) is ESearchIdList
+        assert clone == (["1", "2"], 2, "WE", "1")
+        assert clone.diagnostics == diagnostics
 
 
 async def test_clean_search_has_diagnostics_without_warnings() -> None:

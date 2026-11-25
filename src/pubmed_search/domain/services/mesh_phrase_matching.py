@@ -3,11 +3,15 @@
 Design:
     Topic text is split into phrase candidates that never start or end with a
     function word or preposition and that keep hyphenated compounds intact.
-    Candidates are tried longest first, and a vocabulary record is accepted
-    only when the normalized phrase equals its preferred term or one of its
-    entry terms. Normalization covers case, punctuation/hyphen spacing and
-    simple plurals; it never widens a phrase into a related concept. Anything
-    weaker is a candidate for review, not a mapping.
+    A lone comma may sit inside a candidate so inverted headings such as
+    "Diabetes Mellitus, Type 2" stay whole; such a candidate only matches a
+    term with a comma at the same place, so a comma list never merges into
+    one concept. Candidates are tried longest first, and a vocabulary record
+    is accepted only when the normalized phrase equals its preferred term or
+    one of its entry terms. Normalization covers case, Unicode dashes,
+    punctuation/hyphen spacing and a simple plural of the last word (exactly
+    the forms the lookup searches); it never widens a phrase into a related
+    concept. Anything weaker is a candidate for review, not a mapping.
 
 Maintenance:
     Keep this module free of network access and provider payload shapes. NCBI
@@ -23,20 +27,24 @@ import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from .pubmed_boolean import boolean_operator
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 MAX_PHRASE_TOKENS = 6
 MAX_TOPIC_TOKENS = 48
+# Inverted headings: at most two commas ("Leukemia, Myeloid, Acute"), each followed by a
+# short modifier ("Type 2", "Low Birth Weight").
+MAX_INVERTED_COMMAS = 2
+MAX_INVERTED_PART_TOKENS = 3
 _MIN_SINGLE_TOKEN_CHARS = 2
-# Plural folding only touches alphabetic words longer than this ("gas", "bus" stay intact).
+# Plural folding needs both the singular and the plural to have at least this many letters
+# ("gas", "bus" and "news" stay intact, so "new" never shares a key with "news").
 _MIN_PLURAL_CHARS = 4
 
 RecordType = Literal["descriptor", "supplementary_concept", "publication_type"]
 MatchedOn = Literal["preferred", "entry_term"]
-
-# Case-sensitive PubMed Boolean operators split a topic into independent segments.
-_BOOLEAN_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
 # Words that may occur inside a MeSH term ("Length of Stay", "Head and Neck
 # Neoplasms") but never begin or end one.
@@ -108,6 +116,26 @@ _SEARCH_FIELDS: dict[RecordType, str] = {
     "publication_type": "Publication Type",
 }
 
+# Hyphen-like characters that join a compound (pre-eclampsia pasted with U+2011, Guillain-Barre
+# typeset with an en dash): hyphen, non-breaking hyphen, figure dash, en dash, hyphen bullet,
+# minus sign, small and full-width hyphen-minus. A soft hyphen (U+00AD) is an invisible break.
+_HYPHENS = "\u2010\u2011\u2012\u2013\u2043\u2212\ufe63\uff0d"
+_HYPHEN_TABLE = {**dict.fromkeys(map(ord, _HYPHENS), "-"), 0x00AD: None}
+# Long dashes (em dash, horizontal bar, two/three-em dash, small and vertical em dashes) separate
+# clauses in running text, but inside a single heading or lookup phrase they stand for a hyphen.
+_LONG_DASHES = "\u2014\u2015\u2e3a\u2e3b\ufe31\ufe32\ufe58"
+_TERM_DASH_TABLE = {**_HYPHEN_TABLE, **dict.fromkeys(map(ord, _LONG_DASHES), "-")}
+
+
+def normalize_hyphens(text: str) -> str:
+    """Unicode compatibility form with hyphen-like characters as ``-``; long dashes still separate."""
+    return unicodedata.normalize("NFKC", text).translate(_HYPHEN_TABLE)
+
+
+def normalize_term(text: str) -> str:
+    """Unicode compatibility form of one heading or phrase, with every dash variant as ``-``."""
+    return unicodedata.normalize("NFKC", text).translate(_TERM_DASH_TABLE)
+
 
 @dataclass(frozen=True)
 class PhraseCandidate:
@@ -137,13 +165,19 @@ class TopicPhrases:
 
 @dataclass(frozen=True)
 class MeshRecord:
-    """Vocabulary record reduced to the fields needed for exact matching."""
+    """Vocabulary record reduced to the fields needed for exact matching.
+
+    ``allowed_qualifiers`` are the subheadings MeSH allows with the heading
+    (ESummary ``DS_Subheading``, written with ``and`` for ``&``); empty means
+    unknown, not "none allowed".
+    """
 
     uid: str
     preferred: str
     entry_terms: tuple[str, ...] = ()
     tree_numbers: tuple[str, ...] = ()
     record_type: RecordType = "descriptor"
+    allowed_qualifiers: tuple[str, ...] = ()
 
     @property
     def terms(self) -> tuple[str, ...]:
@@ -201,20 +235,28 @@ def _has_letter(token: str) -> bool:
     return any(character.isalpha() for character in token)
 
 
-def _segments(topic: str) -> list[list[str]]:
-    """Split on punctuation, quotes, field tags and Boolean operators; keep hyphenated words."""
-    text = _FIELD_TAG.sub(" | ", unicodedata.normalize("NFKC", topic))
-    segments: list[list[str]] = [[]]
+def _segments(topic: str) -> list[tuple[list[str], bool]]:
+    """Split on punctuation, quotes, field tags and PubMed operators; keep hyphenated words.
+
+    Each segment says whether a lone comma separates it from the previous
+    one (a possible inverted heading). PubMed operators include lowercase
+    ``or``/``not`` but not ``and``, which may occur inside a heading ("Head
+    and Neck Neoplasms"). Unicode hyphens join a compound like ``-`` does;
+    long dashes separate.
+    """
+    text = _FIELD_TAG.sub(" | ", normalize_hyphens(topic))
+    segments: list[tuple[list[str], bool]] = [([], False)]
     last_end = 0
     for match in _TOKEN.finditer(text):
         gap = text[last_end : match.start()]
         last_end = match.end()
         token = match.group()
-        if (gap.strip() or token in _BOOLEAN_OPERATORS) and segments[-1]:
-            segments.append([])
-        if token not in _BOOLEAN_OPERATORS:
-            segments[-1].append(token)
-    return [segment for segment in segments if segment]
+        operator = boolean_operator(token) is not None
+        if (gap.strip() or operator) and segments[-1][0]:
+            segments.append(([], not operator and gap.strip() == ","))
+        if not operator:
+            segments[-1][0].append(token)
+    return [(segment, comma) for segment, comma in segments if segment]
 
 
 def parse_topic(
@@ -223,15 +265,23 @@ def parse_topic(
     max_phrase_tokens: int = MAX_PHRASE_TOKENS,
     max_topic_tokens: int = MAX_TOPIC_TOKENS,
 ) -> TopicPhrases:
-    """Return stopword-bounded phrase candidates ordered longest first, then left to right."""
+    """Return stopword-bounded phrase candidates ordered longest first, then left to right.
+
+    A candidate may cross up to ``MAX_INVERTED_COMMAS`` lone commas, each
+    followed by at most ``MAX_INVERTED_PART_TOKENS`` words, and keeps the
+    commas in its text ("diabetes mellitus, type 2").
+    """
     tokens: list[str] = []
     segment_ids: list[int] = []
+    comma_starts: set[int] = set()
     truncated = False
-    for segment_id, segment in enumerate(_segments(topic)):
-        for token in segment:
+    for segment_id, (segment, comma) in enumerate(_segments(topic)):
+        for position, token in enumerate(segment):
             if len(tokens) >= max_topic_tokens:
                 truncated = True
                 break
+            if comma and position == 0 and tokens:
+                comma_starts.add(len(tokens))
             tokens.append(token)
             segment_ids.append(segment_id)
 
@@ -239,32 +289,58 @@ def parse_topic(
     for start, first in enumerate(tokens):
         if _is_edge_word(first):
             continue
+        commas = part = 0
         for end in range(start + 1, min(start + max_phrase_tokens, len(tokens)) + 1):
-            if segment_ids[end - 1] != segment_ids[start]:
+            last = end - 1
+            if last > start and segment_ids[last] != segment_ids[last - 1]:
+                inverted = last in comma_starts and commas < MAX_INVERTED_COMMAS
+                if not inverted or _is_edge_word(tokens[last - 1]) or _is_edge_word(tokens[last]):
+                    break
+                commas, part = commas + 1, 0
+            part += 1
+            if commas and part > MAX_INVERTED_PART_TOKENS:
                 break
             span = tokens[start:end]
             if _is_edge_word(span[-1]) or not any(_has_letter(token) for token in span):
                 continue
             if len(span) == 1 and len(first) < _MIN_SINGLE_TOKEN_CHARS:
                 continue
-            candidates.append(PhraseCandidate(" ".join(span), start, end))
+            text = "".join(
+                (", " if index in comma_starts else " ") + token if index > start else token
+                for index, token in enumerate(span, start=start)
+            )
+            candidates.append(PhraseCandidate(text, start, end))
     candidates.sort(key=lambda candidate: (-candidate.size, candidate.start))
     return TopicPhrases(tuple(tokens), tuple(segment_ids), tuple(candidates), truncated)
 
 
 def _singular(token: str) -> str:
-    if not token.isalpha() or len(token) < _MIN_PLURAL_CHARS:
+    """Singular of a simple plural when both forms have ``_MIN_PLURAL_CHARS`` letters ("news" stays).
+
+    Exactly the pairs :func:`_toggle_plural` produces, so a phrase never
+    shares a key with a form its own lookup would not search.
+    """
+    if not token.isalpha():
         return token
-    if token.endswith("ies") and len(token) > _MIN_PLURAL_CHARS:
-        return token[:-3] + "y"
-    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+    if token.endswith("ies"):
+        return token[:-3] + "y" if len(token) - 2 >= _MIN_PLURAL_CHARS else token
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")) and len(token) - 1 >= _MIN_PLURAL_CHARS:
         return token[:-1]
     return token
 
 
+def _words(text: str) -> list[str]:
+    folded = normalize_term(text).casefold().replace("’", "'")
+    return _KEY_TOKEN.findall(_POSSESSIVE.sub("", folded))
+
+
 def _key_tokens(text: str) -> tuple[str, ...]:
-    folded = unicodedata.normalize("NFKC", text).casefold().replace("’", "'")
-    return tuple(_singular(token) for token in _KEY_TOKEN.findall(_POSSESSIVE.sub("", folded)))
+    return tuple(_singular(token) for token in _words(text))
+
+
+def _surface_key(text: str) -> str:
+    """Like :func:`term_key` but without plural folding (case, punctuation and hyphen spacing only)."""
+    return "".join(_words(text))
 
 
 def term_key(text: str) -> str:
@@ -285,22 +361,32 @@ def _toggle_plural(word: str) -> str | None:
     if not word.isalpha() or len(word) < _MIN_PLURAL_CHARS:
         return None
     lower = word.casefold()
-    if lower.endswith("ies") and len(word) > _MIN_PLURAL_CHARS:
-        return word[:-3] + "y"
-    if lower.endswith("s") and not lower.endswith(("ss", "us", "is")):
-        return word[:-1]
-    if lower.endswith("y") and lower[-2] not in "aeiou":
-        return word[:-1] + "ies"
+    if lower.endswith("ies"):
+        return word[:-3] + "y" if len(word) - 2 >= _MIN_PLURAL_CHARS else None
     if lower.endswith(("ss", "us", "is")):
         return None
+    if lower.endswith("s"):
+        return word[:-1] if len(word) - 1 >= _MIN_PLURAL_CHARS else None
+    if lower.endswith("y") and lower[-2] not in "aeiou":
+        return word[:-1] + "ies"
     return word + "s"
 
 
 def lookup_variants(phrase: str) -> tuple[str, ...]:
-    """Surface forms to search exactly: as written, hyphen spaced/closed, last-word plural toggled."""
+    """Surface forms to search exactly: as written, hyphen spaced/closed, last-word plural toggled.
+
+    A slash between words is also searched as a hyphen: MeSH spells such
+    compounds with hyphens ("Ischemia-Reperfusion Injury"), and db=mesh finds
+    no record for the slashed form. Every Unicode dash variant is searched as
+    an ASCII hyphen.
+    """
+    phrase = normalize_term(phrase)
     forms = [phrase]
-    if "-" in phrase:
-        forms.extend([phrase.replace("-", " "), phrase.replace("-", "")])
+    if "/" in phrase:
+        forms.append(phrase.replace("/", "-"))
+    for form in list(forms):
+        if "-" in form:
+            forms.extend([form.replace("-", " "), form.replace("-", "")])
     variants: list[str] = []
     for form in forms:
         variants.append(form)
@@ -316,22 +402,40 @@ def lookup_variants(phrase: str) -> tuple[str, ...]:
     return tuple(unique.values())
 
 
-def _exact(text: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+def exact_form(text: str) -> str:
+    """Literal comparison form: Unicode compatibility, dash variants, case and whitespace folded."""
+    return " ".join(normalize_term(text).casefold().split())
+
+
+def _comma_parts(text: str) -> tuple[str, ...]:
+    return tuple(key for part in text.split(",") if (key := term_key(part)))
 
 
 def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
-    """Accept only a preferred-term or entry-term equality; literal equality wins over normalization."""
+    """Accept only a preferred-term or entry-term equality; literal equality wins over normalization.
+
+    A plural is folded only where :func:`lookup_variants` searches it (the
+    last word), so a record found through another phrase can never confirm
+    a form this phrase would not have searched ("patients care" never
+    matches "Patient Care"). A phrase containing a comma only matches a term
+    with commas at the same word boundaries ("diabetes mellitus, type 2" =
+    "Diabetes Mellitus, Type 2"), so "anxiety, depression" never matches
+    "Anxiety Depression".
+    """
     terms = record.terms
-    literal = _exact(phrase)
+    literal = exact_form(phrase)
     for index, term in enumerate(terms):
-        if _exact(term) == literal:
+        if exact_form(term) == literal:
             return TermMatch(record, "preferred" if index == 0 else "entry_term", term)
     key = term_key(phrase)
     if not key:
         return None
+    searched = {_surface_key(variant) for variant in lookup_variants(phrase)}
+    parts = _comma_parts(phrase) if "," in phrase else None
     for index, term in enumerate(terms):
-        if term_key(term) == key:
+        if term_key(term) != key or _surface_key(term) not in searched:
+            continue
+        if parts is None or _comma_parts(term) == parts:
             return TermMatch(record, "preferred" if index == 0 else "entry_term", term)
     return None
 

@@ -870,7 +870,7 @@ class TestNCBIStrategy:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
-        search_record = {"IdList": ["68003920"], "TranslationStack": []}
+        search_record = {"Count": "1", "IdList": ["68003920"], "TranslationStack": []}
         summary = [
             {
                 "Id": "68003920",

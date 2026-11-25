@@ -293,6 +293,27 @@ class TestBooleanOperators:
         r = self.v.validate('"aspirin AND ibuprofen" OR stroke')
         assert r.is_valid is True
 
+    async def test_lowercase_or_and_not_are_operators_like_pubmed(self):
+        # Live ESearch 2026-11-25: "delirium[tiab] not pacu[tiab]" == "... NOT ..." (same count).
+        assert any("ends with" in e for e in self.v.validate("aspirin or").errors)
+        assert any("Consecutive Boolean" in e for e in self.v.validate("A AND not B").errors)
+        assert any("starts with" in e for e in self.v.validate("or aspirin").errors)
+
+    async def test_lowercase_and_and_mixed_case_words_are_not_operators(self):
+        # PubMed ignores a trailing stopword "and" and searches "Not" as a word.
+        for query in ("aspirin and", "cancer Not", "Or aspirin", "A Or AND B"):
+            result = self.v.validate(query)
+            assert not any("Boolean operator" in e or "Consecutive" in e for e in result.errors), query
+        assert any("'Or' is not a PubMed operator" in w for w in self.v.validate("A Or B").warnings)
+
+    async def test_lowercase_and_before_a_tagged_phrase_is_flagged(self):
+        # Live: delirium[tiab] and pacu[tiab] -> "delirium"[tiab] AND "and pacu"[tiab], 0 hits.
+        result = self.v.validate("delirium[tiab] and pacu[tiab]")
+        assert result.is_valid
+        assert any('"and pacu"' in w for w in result.warnings)
+        for query in ("Delirium/prevention and control[Mesh]", "delirium and pacu", '(a) and "b"[tiab]'):
+            assert not any("lowercase" in w for w in self.v.validate(query).warnings), query
+
     async def test_auto_correct_leading_and(self):
         r = self.v.validate("AND aspirin AND stroke")
         assert r.corrected_query is not None

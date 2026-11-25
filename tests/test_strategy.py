@@ -100,7 +100,7 @@ class TestSearchStrategyGenerator:
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary") as mock_esummary,
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
-            mock_read.side_effect = [{"IdList": ["68003920"]}, summary]
+            mock_read.side_effect = [{"Count": "1", "IdList": ["68003920"]}, summary]
             mock_esearch.return_value = MagicMock()
             mock_esummary.return_value = MagicMock()
 
@@ -123,7 +123,7 @@ class TestSearchStrategyGenerator:
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": []}
+            mock_read.return_value = {"Count": "0", "IdList": []}
             mock_esearch.return_value = MagicMock()
 
             result = await strategy_generator.get_mesh_info("nonexistentterm12345")

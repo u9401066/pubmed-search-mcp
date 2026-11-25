@@ -42,6 +42,7 @@ from pubmed_search.domain.services.mesh_correction import (
     descriptor_shares,
     find_mesh_terms,
     flag_unresolved_terms,
+    pubmed_text_key,
     rank_descriptors,
     score_descriptor,
     text_word_variants,
@@ -98,6 +99,63 @@ def test_mesh_clauses_are_found_in_every_tag_form_and_only_there():
         (True, False, True),
     ]
     assert all(query[term.start : term.end] == term.clause for term in terms)
+
+
+def test_a_slash_separates_only_a_real_mesh_subheading():
+    query = (
+        '"Ischemia/Reperfusion Injury"[Mesh] AND "Neoplasms/dh"[mh] AND "Delirium/Prevention & Control"[Majr] '
+        'AND Delirium/prevention and control[Mesh] AND "Delirium/"[Mesh] AND "/therapy"[Mesh]'
+    )
+
+    terms = find_mesh_terms(query)
+
+    assert [(term.descriptor, term.qualifier) for term in terms] == [
+        ("Ischemia/Reperfusion Injury", None),  # "Reperfusion Injury" is a heading, not a subheading
+        ("Neoplasms", "dh"),  # two-letter abbreviation of "diet therapy"
+        ("Delirium", "Prevention & Control"),
+        ("Delirium", "prevention and control"),
+        ("Delirium", None),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "negated"),
+    [
+        ('a[tiab] NOT "X"[mh]', True),
+        ('a[tiab] not "X"[mh]', True),
+        ('a[tiab] Not "X"[mh]', True),  # PubMed reads a word here; treated as NOT to stay conservative
+        ('a[tiab] NOT (b[tiab] OR "X"[mh])', True),
+        ('a[tiab] NOT ((b[tiab]) OR (c[tiab] AND "X"[mh]))', True),
+        ("a[tiab] NOT b c X[mh]", True),
+        ('a[tiab] NOT b[tiab] OR "X"[mh]', False),  # left to right: (a NOT b) OR X
+        ('a[tiab] NOT b[tiab] AND "X"[mh]', False),
+        ('a[tiab] AND ("X"[mh] NOT b[tiab])', False),
+        ('(a[tiab] NOT b[tiab]) AND "X"[mh]', False),
+        ('"NOT really"[tiab] AND "X"[mh]', False),
+    ],
+)
+def test_terms_inside_a_not_operand_are_marked_negated(query: str, negated: bool):
+    (term,) = find_mesh_terms(query)
+    assert term.negated is negated
+
+
+def test_bare_mesh_terms_stop_at_pubmed_operators_in_either_case():
+    # Live ESearch 2026-11-25: "not"/"or" are operators; "and" is a stopword that PubMed glues
+    # onto the next bare phrase but reports the heading itself (PhraseNotFound: ["pacu"]).
+    query = (
+        "delirium[tiab] not pacu[mh] AND x[tiab] or recovery room[mh] AND y[tiab] and PACU[mh] "
+        "AND Delirium/prevention and control[mh] AND z[tiab] Not head and neck neoplasms[mh]"
+    )
+
+    terms = find_mesh_terms(query)
+
+    assert [term.clause for term in terms] == [
+        "pacu[mh]",
+        "recovery room[mh]",
+        "PACU[mh]",
+        "Delirium/prevention and control[mh]",
+        "head and neck neoplasms[mh]",
+    ]
 
 
 def test_only_clauses_named_by_ncbi_are_flagged():
@@ -172,6 +230,9 @@ def test_text_word_variants_fold_hyphen_space_duplicates_and_use_canonical_casin
     )
     assert text_word_variants("PACU") == ("PACU",)
     assert all("PostAnesthesia" not in variant for variant in text_word_variants("Post-Anesthesia care unit"))
+    slashed = text_word_variants("Ischemia/Reperfusion Injury")
+    assert {"Ischemia/Reperfusion Injury", "Ischemia-Reperfusion Injury", "Ischemiareperfusion Injury"} <= set(slashed)
+    assert all("IschemiaReperfusion" not in variant for variant in slashed)
 
 
 def test_overlapping_replacements_are_rejected():
@@ -233,6 +294,151 @@ async def test_plural_hyphen_and_noexp_variants_are_fixed_by_exact_lookup(fake: 
     assert by_original['"Recovery Rooms"[mesh:noexp]']["matched_on"] == "entry_term"
     assert fake.count("efetch") == 0  # exact matches need no co-occurrence evidence
     assert result.after_count == 412
+
+
+async def test_unicode_hyphen_in_a_heading_is_searched_as_a_hyphen(fake: FakeEntrez):
+    # Before: the U+2011 form was looked up verbatim, found nothing, and fell to co-occurrence.
+    result = await make_service().correct_query('"Pre\u2011Eclampsia"[Mesh] AND twins[tiab]')
+
+    (correction,) = result.corrections
+    assert result.corrected_query == '"Pre-Eclampsia"[Mesh] AND twins[tiab]'
+    assert (correction.tier, correction.confidence) == ("exact", "high")
+    assert fake.count("efetch") == 0
+    assert not any("\u2011" in term for _, db, term in fake.calls if db == "mesh")  # Substance Name too
+    assert text_word_variants("Pre\u2011Eclampsia") == text_word_variants("Pre-Eclampsia")
+    assert text_word_variants("Pre\u2011Eclampsia")[0] == "Pre-Eclampsia"
+    assert pubmed_text_key("pre\u2013eclampsia") == pubmed_text_key("pre eclampsia")
+
+
+async def test_slashed_heading_is_corrected_as_one_concept_not_truncated(fake: FakeEntrez):
+    # Before: partition("/") read "Reperfusion Injury" as a qualifier and "corrected" the
+    # clause to "Ischemia"[Mesh] (exact, high), silently dropping the concept.
+    result = await make_service().correct_query('"Ischemia/Reperfusion Injury"[Mesh] AND stroke[tiab]')
+
+    (correction,) = result.corrections
+    assert result.corrected_query == '"Reperfusion Injury"[Mesh] AND stroke[tiab]'
+    assert (correction.tier, correction.confidence, correction.replacement_mesh) == (
+        "exact",
+        "high",
+        "Reperfusion Injury",
+    )
+    assert correction.evidence["matched_term"] == "Ischemia-Reperfusion Injury"
+    assert '"Ischemia-Reperfusion Injury"[MeSH Terms]' in str(fake.calls)
+
+
+@pytest.mark.parametrize(
+    ("clause", "replacement", "confidence", "note"),
+    [
+        # Abbreviations are rejected inside quotes (live: "Neoplasms/dh"[mh]); the full name is not.
+        ('"Emergence Delirium/dt"[Mesh]', '"Emergence Delirium/drug therapy"[Mesh]', "high", "abbreviation"),
+        ('"Emergence Deliriums/dt"[Mesh]', '"Emergence Delirium/drug therapy"[Mesh]', "high", "abbreviation"),
+        # Before: kept as "Emergence Delirium/pharmacokinetics"[Mesh] and labeled high confidence.
+        ('"Emergence Deliriums/pharmacokinetics"[Mesh]', '"Emergence Delirium"[Mesh]', "medium", "not an allowable"),
+        # Before: a case-only difference counted as a new heading, so the rejected clause was
+        # re-emitted unchanged except for case, labeled high confidence.
+        ('"emergence delirium/pharmacokinetics"[Mesh]', '"Emergence Delirium"[Mesh]', "medium", "not an allowable"),
+        # The record lists no allowable qualifiers: the qualifier is kept but not vouched for.
+        ('"Recovery Rooms/methods"[Mesh]', '"Recovery Room/methods"[Mesh]', "medium", "could not be checked"),
+    ],
+)
+async def test_qualifiers_are_checked_against_the_headings_allowable_qualifiers(
+    fake: FakeEntrez, clause: str, replacement: str, confidence: str, note: str
+):
+    result = await make_service().correct_query(f"{clause} AND sedation[tiab]")
+
+    (correction,) = result.corrections
+    assert result.corrected_query == f"{replacement} AND sedation[tiab]"
+    assert (correction.tier, correction.confidence) == ("exact", confidence)
+    assert any(note in item for item in correction.notes)
+
+
+async def test_a_flagged_clause_that_already_names_the_heading_and_an_allowed_qualifier_is_left_alone(
+    fake: FakeEntrez,
+):
+    query = '"emergence delirium/therapy"[Mesh] AND sedation[tiab]'
+
+    result = await make_service().correct_query(query)
+
+    assert (result.corrected_query, result.corrections) == (query, ())
+    assert any("left unchanged" in warning for warning in result.warnings)
+
+
+async def test_a_lowercase_operator_is_never_swallowed_into_the_rewritten_clause(fake: FakeEntrez):
+    # Before: "not PACU[mh]" was one bare term, rewritten to the text words "not PACU", which
+    # turned the exclusion into an inclusion.
+    query = "delirium[tiab] not PACU[mh]"
+
+    result = await make_service().correct_query(query)
+
+    assert (result.corrected_query, result.corrections) == (query, ())  # a NOT operand: suggest only
+    assert [item.original for item in result.suggestions] == ["PACU[mh]"]
+    assert '"not PACU"' not in json.dumps(result.to_dict())
+
+
+async def test_a_not_operand_is_never_widened_with_a_related_heading_or_text_words(fake: FakeEntrez):
+    # Before: NOT "X"[Mesh] became NOT (<text words> OR "Anesthesia Recovery Period"[Mesh]),
+    # excluding records about a related concept as well.
+    query = f"delirium[tiab] NOT {PACU}"
+
+    result = await make_service().correct_query(query)
+
+    assert (result.status, result.corrected_query, result.corrections) == ("unavailable", query, ())
+    (suggestion,) = result.suggestions
+    assert (suggestion.original, suggestion.tier) == (PACU, "co_occurrence")
+    assert any("NOT operand" in note for note in suggestion.notes)
+    assert any("removes nothing" in warning and PACU in warning for warning in result.warnings)
+    assert result.to_dict()["suggestions"][0]["replacement_mesh"] == "Anesthesia Recovery Period"
+
+
+@pytest.mark.parametrize(
+    ("query", "corrected"),
+    [
+        # An equivalent heading narrows nothing: the exact fix is applied inside NOT.
+        ('delirium[tiab] NOT "Emergence Deliriums"[Mesh]', 'delirium[tiab] NOT "Emergence Delirium"[Mesh]'),
+        (
+            'delirium[tiab] not "Emergence Deliriums/dt"[Mesh]',
+            'delirium[tiab] not "Emergence Delirium/drug therapy"[Mesh]',
+        ),
+        # Left to right, a term after the NOT operand is not excluded: the qualifier may be dropped.
+        (
+            'a[tiab] NOT b[tiab] OR "Emergence Deliriums/pharmacokinetics"[Mesh]',
+            'a[tiab] NOT b[tiab] OR "Emergence Delirium"[Mesh]',
+        ),
+    ],
+)
+async def test_exact_fixes_that_keep_every_restriction_apply_inside_not(fake: FakeEntrez, query: str, corrected: str):
+    result = await make_service().correct_query(query)
+
+    assert result.corrected_query == corrected and result.suggestions == ()
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        '"Emergence Deliriums/pharmacokinetics"[Mesh]',  # dropping the qualifier widens the exclusion
+        '"remimazolam"[Majr]',  # [Supplementary Concept] has no major-topic restriction
+    ],
+)
+async def test_exact_fixes_that_drop_a_restriction_are_only_suggested_inside_not(fake: FakeEntrez, clause: str):
+    query = f"delirium[tiab] NOT (sedation[tiab] OR {clause})"
+
+    result = await make_service().correct_query(query)
+
+    assert result.corrected_query == query
+    (suggestion,) = result.suggestions
+    assert suggestion.tier == "exact" and suggestion.evidence["dropped_restrictions"]
+
+
+async def test_the_same_clause_is_rewritten_where_included_and_only_suggested_where_excluded(fake: FakeEntrez):
+    query = f"{PACU} AND delirium[tiab] NOT ({PACU} AND child[tiab])"
+
+    result = await make_service().correct_query(query)
+
+    assert result.status == "corrected"
+    assert result.corrected_query.startswith('("Post-Anesthesia Care Units"[tiab] OR ')
+    assert result.corrected_query.endswith(f"NOT ({PACU} AND child[tiab])")
+    assert [(item.original, item.occurrences) for item in result.corrections] == [(PACU, 1)]
+    assert [(item.original, item.occurrences) for item in result.suggestions] == [(PACU, 1)]
 
 
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):
@@ -347,6 +553,36 @@ async def test_malformed_medline_degrades_to_text_words_with_a_warning(fake: Fak
     assert correction.tier == "text_words" and correction.replacement_mesh is None
     assert "[Mesh]" not in result.corrected_query and '"Post-Anesthesia Care Units"[tiab]' in result.corrected_query
     assert any("MEDLINE" in note for note in correction.notes)
+    assert correction.evidence_complete is False and correction.to_dict()["evidence_complete"] is False
+
+
+async def test_text_words_say_whether_mesh_was_actually_checked(fake: FakeEntrez):
+    # Completed evidence whose best heading scores too low: MeSH was checked and has no heading.
+    strict = await make_service(MeshCorrectionPolicy(min_score=0.9)).correct_query(PACU_QUERY)
+    (checked,) = strict.corrections
+    assert (checked.tier, checked.evidence_complete) == ("text_words", True)
+
+    # Not researched (max_terms), budget-skipped evidence, or a failed exact lookup are incomplete.
+    beyond = await make_service(MeshCorrectionPolicy(max_terms=1)).correct_query(
+        f'"Emergence Deliriums"[Mesh] AND {PACU}'
+    )
+    assert {item.original: item.evidence_complete for item in beyond.corrections} == {
+        '"Emergence Deliriums"[Mesh]': True,
+        PACU: False,
+    }
+    skipped = await make_service(MeshCorrectionPolicy(max_ncbi_requests=3)).correct_query(PACU_QUERY)
+    assert [(item.tier, item.evidence_complete) for item in skipped.corrections] == [("text_words", False)]
+
+    gateway = MagicMock()
+    gateway.lookup_exact = AsyncMock(side_effect=RuntimeError("down"))
+    gateway.sample = AsyncMock(return_value=None)
+    diagnostics = PubMedQueryDiagnostics(quoted_phrases_not_found=(PACU,))
+    no_lookup = await MeshCorrectionService(gateway).correct_query(
+        PACU_QUERY, diagnostics=diagnostics, measure_after=False
+    )
+    (unchecked,) = no_lookup.corrections
+    assert unchecked.evidence_complete is False
+    assert any("exact MeSH lookup was unavailable" in note for note in unchecked.notes)
 
 
 async def test_evidence_is_cached_across_calls(fake: FakeEntrez):
