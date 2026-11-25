@@ -781,6 +781,50 @@ async def test_hedged_attempt_that_outlives_the_cancel_grace_is_reaped(
     assert [context.get("message") for context in reported] == []
 
 
+async def test_stopped_attempts_are_reaped_even_if_the_caller_is_cancelled_during_the_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(racing, "_CANCEL_GRACE_SECONDS", 0.5)
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, Any]] = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    stopping, finished = asyncio.Event(), asyncio.Event()
+
+    async def stubborn() -> str:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            stopping.set()
+            await asyncio.sleep(0.6)  # still running when the caller gives up
+            finished.set()
+            raise RuntimeError("late provider failure") from None
+        return "unreachable"
+
+    try:
+        race = asyncio.ensure_future(
+            racing.run_hedged(
+                [racing.HedgedAttempt("europe_pmc", stubborn)],
+                usable=lambda value: value == "body",
+                hedge_after=60.0,
+                deadline=racing.FulltextDeadline(0.1),
+            )
+        )
+        await asyncio.wait_for(stopping.wait(), timeout=2)
+        race.cancel()  # e.g. the MCP request itself is cancelled mid-grace
+        with pytest.raises(asyncio.CancelledError):
+            await race
+        await asyncio.wait_for(finished.wait(), timeout=2)
+        for _ in range(3):
+            await asyncio.sleep(0)
+        gc.collect()
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert racing.abandoned_attempt_count() == 0
+    assert [context.get("message") for context in reported] == []
+
+
 # ----------------------------------------------------------------------------
 # Tool contract: the agent sees typed statuses
 # ----------------------------------------------------------------------------

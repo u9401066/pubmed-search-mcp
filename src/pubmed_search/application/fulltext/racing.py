@@ -164,13 +164,16 @@ async def run_hedged(
             task.cancel()
             outcomes[index].stopped = reason
         if pending:
-            with contextlib.suppress(Exception):
-                await asyncio.wait(pending, timeout=_CANCEL_GRACE_SECONDS)
-            for task, index in pending.items():
-                if task.done():
-                    _retrieve_outcome(task)
-                else:
-                    _reap_when_done(task, outcomes[index].source)
+            try:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait(pending, timeout=_CANCEL_GRACE_SECONDS)
+            finally:
+                # Also when the caller itself is cancelled during the grace.
+                for task, index in pending.items():
+                    if task.done():
+                        _retrieve_outcome(task)
+                    else:
+                        _reap_when_done(task, outcomes[index].source)
         if winner is None:
             for outcome in outcomes[next_index:]:
                 outcome.skipped_by_deadline = deadline.expired
