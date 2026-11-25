@@ -59,11 +59,18 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
               title-word search and a first-author + journal + volume/first-page
               search that do not pin the cited year, so a real but mis-cited
               record (wrong year/volume/page) is still found
+            - A cited PMID/DOI whose record fewer than two other cited fields
+              corroborate does not stop resolution; ``identifier_assessment``
+              reports it as ``probably_wrong`` (no other field agrees) or
+              ``weakly_corroborated``, with ``replaced_by_pmid`` when a
+              corroborated record was found instead
             - ``partial_match`` rows list ``corrections`` (``field``, ``cited``,
-              ``pubmed``) when the cited title anchors the PubMed record;
-              corrections are withheld when the title conflicts or several
-              versions match equally. Apply them only after confirming
-              ``matched_article`` is the intended work.
+              ``pubmed``) only when at least two independent cited fields agree
+              with the PubMed record besides the identifier, title, or locator
+              that found it; otherwise (or when the title conflicts or several
+              versions match equally) the row explains
+              ``corrections_withheld_reason``. Apply corrections only after
+              confirming ``matched_article`` is the intended work.
             - ``unresolved`` rows list ``attempted_strategies`` and note that no
               PubMed record was found; this is not proof of fabrication
             - A manual-review queue with retry queries and a checklist supports

@@ -485,6 +485,185 @@ async def test_conflicting_title_withholds_corrections_for_identifier_match(pubm
     )
 
 
+# A real-looking record that shares nothing with the ENGAGES citation except a
+# cited identifier pointing at it (a transcription error or a fabricated PMID).
+UNRELATED_CIRCULATION = _record(
+    "90000099",
+    title="Totally unrelated cardiology paper.",
+    authors=["Zhang W"],
+    journal="Circulation",
+    journal_abbrev="Circulation",
+    year="2010",
+    volume="122",
+    issue="2",
+    pages="100-110",
+    doi="10.1161/circ.2010.000001",
+)
+ENGAGES_TITLE = (
+    "Effect of electroencephalography-guided anesthetic administration on postoperative delirium among older "
+    "adults undergoing major surgery: the ENGAGES randomized clinical trial"
+)
+_PMID_FIX = {"field": "pmid", "cited": "90000099", "pubmed": "30721296"}
+_YEAR_FIX = {"field": "year", "cited": "2018", "pubmed": "2019"}
+
+
+@pytest.mark.parametrize(
+    ("reference", "method", "attempted", "corrections"),
+    [
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099",
+            "ecitmatch",
+            ["pmid", "ecitmatch"],
+            [_PMID_FIX],
+            id="pmid-found-by-ecitmatch",
+        ),
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2018;321(5):473-483. PMID: 90000099",
+            "metadata_search",
+            ["pmid", "ecitmatch", "metadata_search"],
+            [_YEAR_FIX, _PMID_FIX],
+            id="pmid-and-year-wrong-found-by-locator-search",
+        ),
+        pytest.param(
+            f"Wildes TS, Mickle AM. {ENGAGES_TITLE}. JAMA. 2018;320(5):473-483. PMID: 90000099",
+            "title_search",
+            ["pmid", "ecitmatch", "title_search"],
+            [_YEAR_FIX, {"field": "volume", "cited": "320", "pubmed": "321"}, _PMID_FIX],
+            id="pmid-with-title-found-by-title-search",
+        ),
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2018;321(5):473-483. doi:10.1161/circ.2010.000001",
+            "metadata_search",
+            ["doi_search", "ecitmatch", "metadata_search"],
+            [_YEAR_FIX, {"field": "doi", "cited": "10.1161/circ.2010.000001", "pubmed": "10.1001/jama.2018.22005"}],
+            id="doi-and-year-wrong-found-by-locator-search",
+        ),
+    ],
+)
+async def test_identifier_contradicted_by_every_cited_field_does_not_stop_resolution(
+    reference: str, method: str, attempted: list[str], corrections: list[dict[str, str]]
+) -> None:
+    pubmed = FakePubMed([*PUBMED_RECORDS, UNRELATED_CIRCULATION])
+    row = await ReferenceVerificationService(pubmed).verify_reference(reference, index=1)
+
+    assert row["status"] == "partial_match"
+    assert row["matched_article"]["pmid"] == "30721296"
+    assert row["resolution_method"] == method
+    assert row["attempted_strategies"] == attempted
+    assert row["corrections"] == corrections
+    assessment = row["identifier_assessment"]
+    assert assessment["assessment"] == "probably_wrong"
+    assert assessment["resolved_article"]["pmid"] == "90000099"
+    assert assessment["agreeing_fields"] == []
+    assert assessment["replaced_by_pmid"] == "30721296"
+    assert any(f"is probably wrong; PMID 30721296 found via {method}" in note for note in row["notes"])
+
+
+async def test_identifier_contradicted_by_every_cited_field_without_alternative_is_unresolved() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    report = await ReferenceVerificationService(pubmed).verify_reference_list(
+        "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099"
+    )
+    row = report["results"][0]
+
+    assert row["status"] == "unresolved"
+    assert row["matched_article"] is None
+    assert row["corrections"] == []
+    # The cited PMID does not short-circuit ECitMatch or the year-tolerant search.
+    assert row["attempted_strategies"] == ["pmid", "ecitmatch", "metadata_search"]
+    assert len(pubmed.ecitmatch_calls) == 1
+    assert any("[1au]" in query for query, _kwargs in pubmed.search_calls)
+    assessment = row["identifier_assessment"]
+    assert {key: assessment[key] for key in ("field", "cited", "assessment", "replaced_by_pmid")} == {
+        "field": "pmid",
+        "cited": "90000099",
+        "assessment": "probably_wrong",
+        "replaced_by_pmid": None,
+    }
+    assert assessment["agreeing_fields"] == []
+    assert assessment["conflicting_fields"] == ["first_author", "journal", "year", "volume", "first_page"]
+    assert assessment["resolved_article"]["journal"] == "Circulation"
+    notes = " ".join(row["notes"])
+    assert "The cited PMID 90000099 resolves to PMID 90000099 (Circulation 2010)" in notes
+    assert "the PMID is probably wrong" in notes
+    assert "No PubMed record was found after" in notes
+    queue_item = report["review_workflow"]["review_queue"][0]
+    assert queue_item["review_priority"] == "high"
+    assert "PMID 90000099 is probably wrong" in queue_item["review_reason"]
+
+
+async def test_failed_search_after_contradicted_identifier_keeps_the_identifier_evidence() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    pubmed.fail_queries = ("[1au]",)
+    row = await ReferenceVerificationService(pubmed).verify_reference(
+        "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099", index=1
+    )
+
+    assert row["status"] == "source_unavailable"
+    assert row["source_errors"] == [{"source": "PubMed metadata search", "error": "upstream source unavailable"}]
+    assert row["identifier_assessment"]["assessment"] == "probably_wrong"
+    assert "the PMID is probably wrong" in row["notes"][0]
+
+
+async def test_identifier_record_agreeing_on_one_field_is_kept_without_corrections() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    row = await ReferenceVerificationService(pubmed).verify_reference(
+        "Zhang W. JAMA. 2019;321(5):473-483. PMID: 90000099", index=1
+    )
+
+    assert row["status"] == "partial_match"
+    assert row["resolution_method"] == "pmid"
+    assert row["matched_article"]["pmid"] == "90000099"
+    assert row["corrections"] == []
+    assert row["attempted_strategies"] == ["pmid", "ecitmatch", "metadata_search"]
+    assert row["identifier_assessment"]["assessment"] == "weakly_corroborated"
+    assert row["identifier_assessment"]["agreeing_fields"] == ["first_author"]
+    assert row["identifier_assessment"]["replaced_by_pmid"] is None
+    assert "only first_author agrees with PMID 90000099 besides the cited PMID" in row["corrections_withheld_reason"]
+
+
+@pytest.mark.parametrize(
+    ("cited_title", "record_title", "same_work"),
+    [
+        pytest.param("右美托咪定预防术后谵妄的临床研究", "全身麻醉后苏醒期躁动的临床分析", False, id="different-cjk"),
+        pytest.param("右美托咪定预防术后谵妄的临床研究", "右美托咪定预防术后谵妄的临床研究。", True, id="same-cjk"),
+        pytest.param(
+            "Дексмедетомидин для профилактики делирия",
+            "Клинический анализ послеоперационного возбуждения",
+            False,
+            id="different-cyrillic",
+        ),
+        pytest.param(
+            "Дексмедетомидин для профилактики делирия",
+            "Дексмедетомидин для профилактики делирия.",
+            True,
+            id="same-cyrillic",
+        ),
+    ],
+)
+async def test_non_latin_titles_are_compared_by_their_own_words(
+    cited_title: str, record_title: str, same_work: bool
+) -> None:
+    record = _record(
+        "90000200",
+        title=record_title,
+        authors=["Wang Y"],
+        journal="Zhonghua ma zui xue za zhi",
+        journal_abbrev="Zhonghua Ma Zui Xue Za Zhi",
+        year="2019",
+        volume="39",
+        issue="3",
+        pages="1-5",
+    )
+    row = await ReferenceVerificationService(FakePubMed([record])).verify_reference(
+        f"Wang Y. {cited_title}. Zhonghua Ma Zui Xue Za Zhi. 2019;39(3):1-5. PMID: 90000200", index=1
+    )
+
+    assert row["parsed_reference"]["title"] == cited_title
+    assert row["comparison"]["title"] is same_work
+    assert row["status"] == ("verified" if same_work else "partial_match")
+
+
 async def test_equally_good_versions_withhold_corrections() -> None:
     twins = [
         _record(
@@ -508,6 +687,64 @@ async def test_equally_good_versions_withhold_corrections() -> None:
     assert row["status"] == "partial_match"
     assert row["corrections"] == []
     assert any("several PubMed records match about equally well" in note for note in row["notes"])
+
+
+def _wang_dexmedetomidine_record(title: str) -> dict[str, Any]:
+    """A real-looking record that shares only the cited first author and some title words."""
+    return _record(
+        "31000001",
+        title=title,
+        authors=["Wang H", "Chen L"],
+        journal="Journal of cardiothoracic and vascular anesthesia",
+        journal_abbrev="J Cardiothorac Vasc Anesth",
+        year="2021",
+        volume="35",
+        issue="4",
+        pages="1100-1110",
+    )
+
+
+@pytest.mark.parametrize(
+    "record_title",
+    [
+        pytest.param(
+            "Dexmedetomidine for the prevention of delirium in elderly patients after cardiac surgery: "
+            "a meta-analysis of randomized trials.",
+            id="cited-title-contained-in-longer-title",
+        ),
+        pytest.param("Dexmedetomidine for the prevention of delirium.", id="identical-title"),
+    ],
+)
+async def test_title_hit_corroborated_by_one_field_is_returned_without_corrections(record_title: str) -> None:
+    # Only the first author agrees besides the title used to find the record:
+    # journal, year, volume and first page all differ, so this may be a
+    # fabricated reference rather than a mis-cited one.
+    unrelated_same_words = _record(
+        "31000002",
+        title="Dexmedetomidine for the prevention of delirium after non-cardiac surgery in older adults.",
+        authors=["Zhang Q"],
+        journal="Journal of clinical anesthesia",
+        journal_abbrev="J Clin Anesth",
+        year="2020",
+        volume="60",
+        issue="1",
+        pages="50-58",
+    )
+    pubmed = FakePubMed([_wang_dexmedetomidine_record(record_title), unrelated_same_words])
+    report = await ReferenceVerificationService(pubmed).verify_reference_list(
+        "Wang Y, Li X. Dexmedetomidine for the prevention of delirium. Anesth Analg. 2019;128(3):456-62."
+    )
+    row = report["results"][0]
+
+    assert row["status"] == "partial_match"
+    assert row["resolution_method"] == "title_search"
+    assert row["matched_article"]["pmid"] == "31000001"
+    assert row["corrections"] == []
+    assert "only first_author agrees" in row["corrections_withheld_reason"]
+    assert any(note.startswith("No field corrections proposed: only first_author agrees") for note in row["notes"])
+    queue_item = report["review_workflow"]["review_queue"][0]
+    assert "no corrections are proposed" in queue_item["review_reason"]
+    assert "->" not in queue_item["review_reason"]
 
 
 async def test_failed_year_tolerant_search_is_source_unavailable_not_unresolved(pubmed: FakePubMed) -> None:
@@ -609,6 +846,59 @@ async def test_failed_year_tolerant_search_is_source_unavailable_not_unresolved(
             "Wildes TS. JAMA. 2018;321(5):473-483.",
             {"first_author": "Wildes", "journal": "JAMA", "title": ""},
             id="all-caps-journal-is-not-initials",
+        ),
+        pytest.param(
+            "Wildes TS, et al. Effect of EEG guidance on delirium. JAMA. Published online January 22, 2019. "
+            "Accessed March 1, 2020.",
+            {"year": "2019", "journal": "JAMA", "title": "Effect of EEG guidance on delirium"},
+            id="ama-access-date-is-not-publication-year",
+        ),
+        pytest.param(
+            "World Health Organization. Delirium fact sheet. Published 2019. Accessed March 3, 2023.",
+            {"year": "2019", "first_author": "World Health Organization"},
+            id="ama-web-published-year-before-access-date",
+        ),
+        pytest.param(
+            "Smith J. COVID-19 in 2020; 12 lessons. Anesth Analg. 2021;132(1):1-5.",
+            {"year": "2021", "journal": "Anesth Analg", "volume": "132", "title": "COVID-19 in 2020; 12 lessons"},
+            id="title-year-before-semicolon-number",
+        ),
+        pytest.param(
+            "Smith J. Outcomes in 2019, 3 (n=12) cohort. BMJ. 2020;368:m1234.",
+            {"year": "2020", "journal": "BMJ", "first_page": "m1234", "title": "Outcomes in 2019, 3 (n=12) cohort"},
+            id="title-year-before-comma-number-parenthesis",
+        ),
+        pytest.param(
+            "Smith J. Update of the ESC guidelines (2018) on heart failure. Eur Heart J 2019.",
+            {
+                "year": "2019",
+                "first_author": "Smith",
+                "journal": "Eur Heart J",
+                "title": "Update of the ESC guidelines (2018) on heart failure",
+            },
+            id="parenthesised-year-inside-title",
+        ),
+        pytest.param(
+            "Smith J. The ENGAGES Trial (2019). Lancet. 2020.",
+            {"year": "2020", "journal": "Lancet", "title": "The ENGAGES Trial (2019)"},
+            id="parenthesised-year-ending-title-case-title",
+        ),
+        pytest.param(
+            "Wildes, T. S., Mickle, A. M., & Ben Abdallah, A. (2019). Effect of EEG-guided anesthetic "
+            "administration. JAMA, 321(5), 473-483.",
+            {
+                "year": "2019",
+                "authors": ["Wildes", "Mickle", "Ben Abdallah"],
+                "journal": "JAMA",
+                "volume": "321",
+                "first_page": "473",
+            },
+            id="apa-dotted-initials-before-parenthesised-year",
+        ),
+        pytest.param(
+            "Smith J, Jones K (2019a) Title of the study. Anaesthesia 74:1-5",
+            {"year": "2019", "authors": ["Smith", "Jones"], "journal": "Anaesthesia", "first_page": "1"},
+            id="harvard-parenthesised-year",
         ),
     ],
 )

@@ -3,7 +3,10 @@
 The parser is heuristic but position-aware. The publication year is taken from
 the citation locator (``Journal. 2019 Feb 5;321(5):473-483``) instead of the
 first four-digit number in the entry, so a year inside a title such as
-``...anaesthesia and surgery-2018.`` keeps the title and journal intact.
+``...anaesthesia and surgery-2018.``, ``COVID-19 in 2020; 12 lessons`` or
+``guidelines (2018) on heart failure`` keeps the title and journal intact, and
+an access date (``Accessed March 3, 2023``, ``[cited 2023 Mar 3]``) is never
+read as the publication year.
 
 Supported shapes, in order of preference:
     - Vancouver / AMA: ``Authors. Title. Journal. Year[ Mon[ Day]];Vol(Issue):Pages.``
@@ -21,6 +24,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any, Literal
 
 from pubmed_search.shared.article_identity import normalize_article_doi
@@ -45,7 +49,15 @@ _STRONG_TAIL_RE = re.compile(
     r"\s*(?:;\s*(?:[A-Za-z]{0,4}\d|\(|(?i:suppl))|,\s*[A-Za-z]?\d+[A-Za-z]?\s*[(:])",
 )
 _WEAK_TAIL_RE = re.compile(r"\s*(?:[.;,)]|$)")
-_SEGMENT_OPENING_RE = re.compile(r"(?:^|[.,;(]\s*)$")
+_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+# Searched in a short window that ends at a candidate year.
+_ACCESS_DATE_RE = re.compile(r"\b(?i:accessed|cited|retrieved|viewed)\b[^;\[\]]{0,30}$")
+_ACCESS_DATE_WINDOW = 48
+_PUBLISHED_OPENER_RE = re.compile(r"\b(?i:published)(?:\s+(?i:online))?\s+$")
+_PUBLISHED_OPENER_WINDOW = 24
+# A segment that continues an author list after a break at an initial (``Knopman, D. S., & Scott``).
+_AUTHOR_CONTINUATION_RE = re.compile(r"&|and\s|[A-Z](?:[.,-]|$)")
+_DOTTED_ABBREVIATION_END_RE = re.compile(r"(?:^|[\s,;])(?:[A-Z]\.)+[A-Z]$")
 _PAREN_YEAR_RE = re.compile(
     rf"\(\s*((?:19|20)\d{{2}})[a-z]?(?:\s*,\s*{_MONTH}(?:\s+\d{{1,2}})?)?\s*\)",
 )
@@ -247,38 +259,112 @@ def _surname_from_chunk(chunk: str) -> str:
 
 def _locate_publication_year(bibliography: str) -> _YearAnchor | None:
     """Choose the year in citation position rather than the first year in the text."""
-    # 1. Vancouver/AMA: the first year directly followed by ``;volume`` / ``;(issue)``.
+    # Every check below is O(1) per candidate year (no prefix/suffix slicing),
+    # so an adversarial 4,000-character entry stays linear.
+
+    # 1. Vancouver/AMA: the first year directly followed by ``;volume`` / ``;(issue)``
+    #    whose locator ends the citation. A title year followed by more words
+    #    (``COVID-19 in 2020; 12 lessons``) is used only when nothing better exists.
+    fallback: _YearAnchor | None = None
     for match in _YEAR_TOKEN_RE.finditer(bibliography):
         date = _DATE_SUFFIX_RE.match(bibliography, match.end())
         date_end = date.end() if date else match.end()
         if _STRONG_TAIL_RE.match(bibliography, date_end):
-            return _YearAnchor(match.group(1), match.start(), date_end, "vancouver")
+            anchor = _YearAnchor(match.group(1), match.start(), date_end, "vancouver")
+            if not _locator_runs_into_prose(bibliography, date_end):
+                return anchor
+            fallback = fallback or anchor
+    if fallback is not None:
+        return fallback
 
-    # 2. Author-year: ``Authors (2018). Title. Journal, 121(5), 1005-1012.``
+    last_word_start = _last_word_start(bibliography)
+
+    # 2. Author-year: ``Authors (2018). Title. Journal, 121(5), 1005-1012.`` The
+    #    parenthesised year must close the author block; a year in parentheses
+    #    inside the title (``guidelines (2018) on heart failure``) is not one.
+    author_block_end = _author_block_end(bibliography)
     for match in _PAREN_YEAR_RE.finditer(bibliography):
-        if re.search(r"[A-Za-z]{3,}", bibliography[match.end() :]):
+        if match.start() > author_block_end:
+            break
+        if last_word_start >= match.end():
             return _YearAnchor(match.group(1), match.start(), match.end(), "author_year")
 
     # 3. A standalone year that opens a segment (``cohort. 2024.``) or ends the
     #    entry (``Lancet 2015``); prefer the last one, which follows the title
     #    in every common style. Years inside title prose (``1990 to 2010``) or
     #    glued to a hyphen (``surgery-2018``) are not publication dates.
+    content_end = len(bibliography.rstrip(" .;,)"))
     weak: _YearAnchor | None = None
     for match in _YEAR_TOKEN_RE.finditer(bibliography):
         start = match.start()
         date = _DATE_SUFFIX_RE.match(bibliography, match.end())
         date_end = date.end() if date else match.end()
-        opens_segment = _SEGMENT_OPENING_RE.search(bibliography[:start]) is not None
-        ends_entry = not bibliography[date_end:].strip(" .;,)")
+        opens_segment = _opens_segment(bibliography, start)
+        ends_entry = date_end >= content_end
         glued = start > 0 and bibliography[start - 1] in "-–/"
-        if not glued and (opens_segment or ends_entry) and _WEAK_TAIL_RE.match(bibliography, date_end):
+        if (
+            not glued
+            and (opens_segment or ends_entry)
+            and _WEAK_TAIL_RE.match(bibliography, date_end)
+            and not _ACCESS_DATE_RE.search(bibliography, max(0, start - _ACCESS_DATE_WINDOW), start)
+        ):
             weak = _YearAnchor(match.group(1), start, date_end, "vancouver")
     if weak is None:
         return None
     pre_segments = _segment_spans(bibliography[: weak.start])
-    if len(pre_segments) <= 1 and re.search(r"[A-Za-z]{3,}", bibliography[weak.end :]):
+    if len(pre_segments) <= 1 and last_word_start >= weak.end:
         return _YearAnchor(weak.year, weak.start, weak.end, "author_year")
     return weak
+
+
+def _last_word_start(text: str) -> int:
+    """Start of the last window of three ASCII letters, or ``-1``.
+
+    ``text[pos:]`` contains a three-letter word iff the result is ``>= pos``.
+    """
+    last = -1
+    for match in _WORD_RE.finditer(text):
+        last = match.end() - 3
+    return last
+
+
+def _opens_segment(text: str, start: int) -> bool:
+    """Whether ``start`` begins the entry or follows ``.``, ``,``, ``;``, ``(`` or ``Published``."""
+    if start == 0:
+        return True
+    end = start
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    if end > 0 and text[end - 1] in ".,;(":
+        return True
+    return _PUBLISHED_OPENER_RE.search(text, max(0, start - _PUBLISHED_OPENER_WINDOW), start) is not None
+
+
+def _locator_runs_into_prose(text: str, date_end: int) -> bool:
+    """Whether the ``;volume(issue):pages`` read after a year is followed by more words."""
+    locator = _LOCATOR_RE.match(text, date_end)
+    position = locator.end() if locator else date_end
+    while position < len(text) and text[position].isspace():
+        position += 1
+    return position < len(text) and text[position].isalnum()
+
+
+def _author_block_end(text: str) -> int:
+    """Start of the first segment that cannot continue the leading author list.
+
+    Sentence-like breaks inside an author list fall after an initial
+    (``Knopman, D. S., & Scott, D. A.``) or a dotted abbreviation (``U.S.``);
+    the next segment then starts with another initial, ``&`` / ``and``, or
+    follows the abbreviation. A segment that starts any other way is the title.
+    """
+    spans = _segment_spans(text)
+    for previous, (start, end) in pairwise(spans):
+        if _AUTHOR_CONTINUATION_RE.match(text, start, end):
+            continue
+        if _DOTTED_ABBREVIATION_END_RE.search(text[previous[0] : previous[1]]):
+            continue
+        return start
+    return len(text)
 
 
 def _parse_vancouver(bibliography: str, anchor: _YearAnchor) -> tuple[str, str, str, _Locator]:
