@@ -70,6 +70,7 @@ def generate_pipeline_report(
     parts.append(_section_header(config))
     parts.append(_section_executive_summary(articles, step_results, config))
     parts.append(_section_step_details(step_results, config))
+    parts.append(_section_exhaustive_retrieval(step_results))
     parts.append(_section_source_statistics(step_results))
     parts.append(_section_filter_diagnostics(step_results))
     parts.append(_section_evidence_distribution(articles))
@@ -187,6 +188,36 @@ def _section_step_details(
         parts.append("")
 
     return "\n".join(parts)
+
+
+def _section_exhaustive_retrieval(step_results: dict[str, StepResult]) -> str:
+    """Disclose completeness of every exhaustive PubMed retrieval step."""
+    rows: list[str] = []
+    for step_id, sr in step_results.items():
+        retrieval = sr.metadata.get("retrieval")
+        if not isinstance(retrieval, dict) or retrieval.get("mode") != "exhaustive":
+            continue
+        history = sr.metadata.get("pubmed_history") if isinstance(sr.metadata.get("pubmed_history"), dict) else {}
+        translation = history.get("query_translation") if isinstance(history, dict) else None
+        rows.append(
+            f"| `{escape_markdown_code(step_id)}` | {retrieval.get('total_count', '—')} "
+            f"| {retrieval.get('retrieved_count', '—')} | {'yes' if retrieval.get('exhaustive') else 'no'} "
+            f"| {retrieval.get('cap', '—')} | {retrieval.get('metadata_count', 0)} "
+            f"| {'captured' if translation else '—'} |"
+        )
+    if not rows:
+        return ""
+    return "\n".join(
+        [
+            "## Exhaustive PubMed Retrieval\n",
+            "| Step | PubMed count | Retrieved | Exhaustive | Cap | Metadata | Query translation |",
+            "|------|--------------|-----------|------------|-----|----------|-------------------|",
+            *rows,
+            "",
+            "The complete record set is persisted with the saved run; the article list below is the ranked preview.",
+            "",
+        ]
+    )
 
 
 def _step_output_summary(sr: StepResult) -> str:

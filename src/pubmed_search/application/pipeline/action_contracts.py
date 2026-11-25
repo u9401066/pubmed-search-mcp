@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
-from pubmed_search.application.pipeline.budgets import PIPELINE_ACTION_LIMITS, PIPELINE_SEED_LIMIT
+from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_ACTION_LIMITS,
+    PIPELINE_EXHAUSTIVE_RECORD_LIMIT,
+    PIPELINE_SEED_LIMIT,
+)
 from pubmed_search.domain.entities.article import ArticleType
 from pubmed_search.domain.entities.pipeline import VALID_ACTIONS
 from pubmed_search.domain.value_objects.ncbi_identifiers import normalize_ncbi_identifier
@@ -64,6 +68,15 @@ ReferencesLimit = Annotated[
         le=PIPELINE_ACTION_LIMITS["references"].maximum,
     ),
 ]
+
+ExhaustiveRecordLimit = Annotated[
+    int,
+    Field(
+        ge=PIPELINE_EXHAUSTIVE_RECORD_LIMIT.minimum,
+        le=PIPELINE_EXHAUSTIVE_RECORD_LIMIT.maximum,
+    ),
+]
+RetrievalMode = Literal["bounded", "exhaustive"]
 
 SearchElement = Literal["P", "I", "C", "O"]
 CombinedQueryMode = Literal["precision", "recall", "intervention_outcome", "comparison_outcome"]
@@ -195,6 +208,9 @@ class SearchParams(_ActionParamsModel):
     species: Species | VariableReference | None = None
     language: Language | VariableReference | None = None
     clinical_query: ClinicalQuery | VariableReference | None = None
+    retrieval: RetrievalMode | VariableReference | None = None
+    max_records: ExhaustiveRecordLimit | VariableReference | None = None
+    fetch_metadata: bool | VariableReference | None = None
 
     @field_validator("query", "strategy")
     @classmethod
@@ -202,6 +218,24 @@ class SearchParams(_ActionParamsModel):
         if value is not None:
             _require_non_blank(value, field=info.field_name)
         return value
+
+    @model_validator(mode="after")
+    def _validate_retrieval_mode(self) -> SearchParams:
+        if is_pipeline_variable_reference(self.retrieval):
+            return self
+        if self.retrieval != "exhaustive":
+            exhaustive_only = [name for name in ("max_records", "fetch_metadata") if getattr(self, name) is not None]
+            if exhaustive_only:
+                raise ValueError(f"{', '.join(exhaustive_only)} require retrieval: exhaustive")
+            return self
+        if self.limit is not None:
+            raise ValueError(
+                "limit cannot be combined with retrieval: exhaustive; the complete PubMed set is collected "
+                f"up to max_records (at most {PIPELINE_EXHAUSTIVE_RECORD_LIMIT.maximum})"
+            )
+        if isinstance(self.sources, list) and self.sources != ["pubmed"]:
+            raise ValueError("retrieval: exhaustive supports only sources: [pubmed]")
+        return self
 
     @field_validator("sources")
     @classmethod

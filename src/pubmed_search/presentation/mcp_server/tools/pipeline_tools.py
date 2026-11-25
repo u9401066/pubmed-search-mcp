@@ -12,6 +12,7 @@ Single-purpose tools:
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.pipeline.store import PipelineStore
+    from pubmed_search.domain.entities.pipeline import PipelineRun
     from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,8 @@ PipelineSource = Annotated[str, Field(min_length=1, max_length=4096)]
 SaveScope = Literal["auto", "workspace", "global"]
 ListScope = Literal["", "workspace", "global"]
 CronExpression = Annotated[str, Field(strict=True, min_length=1, max_length=200)]
+RunId = Annotated[str, Field(strict=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
+HistoryView = Literal["runs", "records"]
 
 
 @dataclass(slots=True)
@@ -345,46 +349,32 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
     return "\n".join(parts)
 
 
-def _get_pipeline_history_impl(
-    *,
-    runtime: PipelineToolRuntime,
-    tool_name: str,
-    name: str,
-    limit: int = 5,
-) -> str:
-    store = runtime.store_for_current_tenant()
-    if not store:
-        return _store_unavailable(tool_name)
+def _history_unavailable(tool_name: str) -> str:
+    return ResponseFormatter.error(
+        "Pipeline execution history is unavailable because a stored record is invalid",
+        suggestion="Repair or remove the invalid run record, then retry",
+        tool_name=tool_name,
+    )
 
-    if not store.exists(name):
-        return ResponseFormatter.error(
-            f"Pipeline '{name}' not found",
-            suggestion="Use list_pipelines() to see available pipelines",
-            tool_name=tool_name,
-        )
 
-    try:
-        runs = store.get_history(name, limit=limit)
-    except PipelineHistoryError as exc:
-        logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
-        return ResponseFormatter.error(
-            "Pipeline execution history is unavailable because a stored record is invalid",
-            suggestion="Repair or remove the invalid run record, then retry",
-            tool_name=tool_name,
-        )
+def _retrieval_cells(run: PipelineRun) -> tuple[str, str]:
+    """Return (mode, PubMed total) cells for one run row."""
+    retrieval = run.retrieval or {}
+    if retrieval.get("mode") == "exhaustive":
+        label = "exhaustive" if retrieval.get("exhaustive") else "exhaustive (incomplete)"
+        total = retrieval.get("total_count")
+        return label, "-" if total is None else str(total)
+    if run.record_version >= 2:
+        return "bounded", "-"
+    return "legacy", "-"
 
-    if not runs:
-        return (
-            f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
-        )
 
-    total_runs = store.count_history(name)
-
+def _render_history_runs(name: str, runs: list[PipelineRun], total_runs: int) -> str:
     parts = [
         f'📊 Execution History for "{name}" (showing {len(runs)} of {total_runs}):',
         "",
-        "| # | Date | Articles | New | Removed | Status |",
-        "|---|------|----------|-----|---------|--------|",
+        "| # | Run ID | Date (UTC) | Records | Mode | PubMed total | New | Removed | Status |",
+        "|---|--------|------------|---------|------|--------------|-----|---------|--------|",
     ]
 
     for index, run in enumerate(runs):
@@ -393,7 +383,11 @@ def _get_pipeline_history_impl(
         new_str = f"+{len(run.new_pmids)}" if run.new_pmids else "+0"
         removed_str = f"-{len(run.removed_pmids)}" if run.removed_pmids else "-0"
         run_num = total_runs - index
-        parts.append(f"| {run_num} | {date_str} | {run.article_count} | {new_str} | {removed_str} | {status_icon} |")
+        mode, total = _retrieval_cells(run)
+        parts.append(
+            f"| {run_num} | `{run.run_id}` | {date_str} | {run.article_count} | {mode} | {total} "
+            f"| {new_str} | {removed_str} | {status_icon} |"
+        )
 
     latest = runs[0]
     if latest.new_pmids:
@@ -411,8 +405,109 @@ def _get_pipeline_history_impl(
         parts.append("")
         pmid_str = ",".join(latest.new_pmids[:10])
         parts.append(f'💡 Full details: fetch_article_details(pmids="{pmid_str}")')
+    if latest.artifacts.get("records"):
+        parts.append(
+            f'💡 Page the full record set: get_pipeline_history(name="{name}", run_id="{latest.run_id}", '
+            'view="records", offset=0, limit=100)'
+        )
 
     return "\n".join(parts)
+
+
+def _render_run_records(
+    store: PipelineStore,
+    name: str,
+    run: PipelineRun,
+    *,
+    offset: int,
+    limit: int,
+) -> str:
+    """Return one bounded JSON page of a run's persisted record set."""
+    records = store.load_run_records(name, run.run_id) if run.artifacts.get("records") else []
+    if records:
+        rows = records[offset : offset + limit]
+        page = [
+            {
+                "pmid": str(row.get("pmid")),
+                "title": str(row.get("title") or "")[:300],
+                "year": str(row.get("year") or ""),
+                "journal": str(row.get("journal") or ""),
+                "doi": str(row.get("doi") or ""),
+                "metadata_missing": bool(row.get("metadata_missing")),
+            }
+            for row in rows
+        ]
+        total = len(records)
+    else:
+        page = [{"pmid": pmid} for pmid in run.pmids[offset : offset + limit]]
+        total = len(run.pmids)
+    next_offset = offset + limit if offset + limit < total else None
+    return json.dumps(
+        {
+            "type": "pipeline_run_records",
+            "pipeline": name,
+            "run_id": run.run_id,
+            "record_basis": run.record_basis,
+            "retrieval": run.retrieval,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "records": page,
+            "next_offset": next_offset,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _get_pipeline_history_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    name: str,
+    limit: int = 5,
+    run_id: str | None = None,
+    view: str = "runs",
+    offset: int = 0,
+) -> str:
+    store = runtime.store_for_current_tenant()
+    if not store:
+        return _store_unavailable(tool_name)
+
+    if not store.exists(name):
+        return ResponseFormatter.error(
+            f"Pipeline '{name}' not found",
+            suggestion="Use list_pipelines() to see available pipelines",
+            tool_name=tool_name,
+        )
+
+    if view == "records":
+        try:
+            run = store.get_run(name, run_id)
+        except FileNotFoundError:
+            return ResponseFormatter.error(
+                "Pipeline run was not found",
+                suggestion=f'Use get_pipeline_history(name="{name}") to list run IDs',
+                tool_name=tool_name,
+            )
+        except PipelineHistoryError as exc:
+            logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
+            return _history_unavailable(tool_name)
+        except ValueError as exc:
+            return ResponseFormatter.error(str(exc), tool_name=tool_name)
+        return _render_run_records(store, name, run, offset=offset, limit=limit)
+
+    try:
+        runs = store.get_history(name, limit=limit)
+    except PipelineHistoryError as exc:
+        logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
+        return _history_unavailable(tool_name)
+
+    if not runs:
+        return (
+            f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
+        )
+
+    return _render_history_runs(name, runs, store.count_history(name))
 
 
 def _schedule_pipeline_impl(
@@ -651,24 +746,37 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
     def get_pipeline_history(
         name: PipelineName,
         limit: Annotated[int, Field(ge=1, le=100)] = 5,
+        run_id: RunId | None = None,
+        view: HistoryView = "runs",
+        offset: Annotated[int, Field(ge=0, le=10_000)] = 0,
     ) -> str:
-        """Get execution history for a saved pipeline.
+        """Get execution history, or page one run's persisted record set.
 
-        Shows past execution results with diff analysis: which articles are new
-        compared to the previous run.
+        view="runs" (default) lists recent runs with run ID, record count,
+        retrieval mode, PubMed total, new/removed records versus the previous
+        comparable run, and status.
+        view="records" returns one JSON page (offset/limit) of a run's complete
+        record set; run_id defaults to the latest run. Exhaustive runs
+        (retrieval: exhaustive) persist every PMID PubMed counted.
 
         Args:
             name: Name of the saved pipeline.
-            limit: Maximum number of history entries to return (default: 5).
+            limit: Runs to list, or records per page for view="records" (1-100).
+            run_id: Run to read for view="records" (default: latest run).
+            view: "runs" or "records".
+            offset: Record offset for view="records".
 
         Returns:
-            Execution history with date, article count, new/removed articles, status.
+            Markdown history table, or a JSON record page with next_offset.
         """
         return _get_pipeline_history_impl(
             runtime=runtime,
             tool_name="get_pipeline_history",
             name=name,
             limit=limit,
+            run_id=run_id,
+            view=view,
+            offset=offset,
         )
 
     # ── Tool 6: schedule_pipeline ────────────────────────────────────────

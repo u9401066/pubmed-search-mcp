@@ -31,6 +31,18 @@ class LimitBudget:
 
 PIPELINE_OUTPUT_LIMIT = LimitBudget(default=20, maximum=100)
 PIPELINE_SEED_LIMIT = LimitBudget(default=5, maximum=10)
+
+# Exhaustive PubMed retrieval (``retrieval: exhaustive``) collects the complete
+# PMID set through the E-utilities History Server. PubMed's ESearch cannot page
+# beyond 10,000 records, so the disclosed safety cap can never exceed it. A
+# search whose total count is above the cap is refused rather than truncated.
+PIPELINE_EXHAUSTIVE_RECORD_LIMIT = LimitBudget(default=10_000, maximum=10_000)
+# PMIDs requested per History Server page (one provider operation each).
+PIPELINE_EXHAUSTIVE_PAGE_SIZE = 5_000
+# Records per EFetch metadata batch (one provider operation each, HTTP POST).
+PIPELINE_EXHAUSTIVE_METADATA_BATCH = 500
+# Number of records shown inline when a run is exhaustive; the rest stay on disk.
+PIPELINE_EXHAUSTIVE_PREVIEW = 20
 PIPELINE_ACTION_LIMITS: Mapping[str, LimitBudget] = MappingProxyType(
     {
         "search": LimitBudget(default=50, maximum=100),
@@ -161,7 +173,18 @@ def action_limit(action: str, value: Any | None = None) -> int:
 
     budget = PIPELINE_ACTION_LIMITS[action]
     candidate = budget.default if value is None else value
-    return validate_bounded_limit(candidate, budget, field=f"Pipeline {action} limit")
+    try:
+        return validate_bounded_limit(candidate, budget, field=f"Pipeline {action} limit")
+    except ValueError as exc:
+        if action != "search":
+            raise
+        # A bounded relevance window cannot satisfy a systematic search; point
+        # to the explicit complete-retrieval contract instead of a bigger limit.
+        msg = (
+            f"{exc}; for a complete PubMed record set use retrieval: exhaustive "
+            f"(max_records up to {PIPELINE_EXHAUSTIVE_RECORD_LIMIT.maximum}) instead of limit"
+        )
+        raise ValueError(msg) from None
 
 
 def validate_pipeline_budgets(config: PipelineConfig) -> None:
@@ -178,6 +201,10 @@ __all__ = [
     "PIPELINE_ACTION_LIMITS",
     "DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS",
     "DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS",
+    "PIPELINE_EXHAUSTIVE_METADATA_BATCH",
+    "PIPELINE_EXHAUSTIVE_PAGE_SIZE",
+    "PIPELINE_EXHAUSTIVE_PREVIEW",
+    "PIPELINE_EXHAUSTIVE_RECORD_LIMIT",
     "PIPELINE_OUTPUT_LIMIT",
     "PIPELINE_SEED_LIMIT",
     "PIPELINE_TEMPLATE_LIMITS",

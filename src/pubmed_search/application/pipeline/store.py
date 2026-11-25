@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum execution history records per pipeline
 _MAX_HISTORY = 100
+_RUN_RECORDS_FILE = "records.jsonl"
 _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 # MCP SDK v2 runs synchronous tools in AnyIO worker threads. Pipeline metadata
@@ -590,9 +592,16 @@ class PipelineStore:
         run_count = 0
         if runs_dir.exists():
             for f in runs_dir.iterdir():
+                if f.is_dir() and not f.is_symlink():
+                    shutil.rmtree(f)
+                    continue
+                if f.suffix == ".json":
+                    run_count += 1
                 f.unlink()
-                run_count += 1
             runs_dir.rmdir()
+        artifacts_dir = self._artifacts_dir_for(scope) / name
+        if artifacts_dir.is_dir() and not artifacts_dir.is_symlink():
+            shutil.rmtree(artifacts_dir)
 
         # Update index
         index = self._load_index(scope)
@@ -788,11 +797,104 @@ class PipelineStore:
         return PipelineScope.GLOBAL
 
     def _prune_history(self, runs_dir: Path) -> None:
-        """Keep only the most recent _MAX_HISTORY runs."""
+        """Keep only the most recent _MAX_HISTORY runs (and their record artifacts)."""
         run_files = sorted(runs_dir.glob("*.json"))
         if len(run_files) > _MAX_HISTORY:
+            scope = self._find_pipeline_scope(runs_dir.name)
+            artifacts_dir = self._artifacts_dir_for(scope) / runs_dir.name
             for f in run_files[: len(run_files) - _MAX_HISTORY]:
                 f.unlink()
+                pruned_artifacts = artifacts_dir / f.stem
+                if pruned_artifacts.is_dir() and not pruned_artifacts.is_symlink():
+                    shutil.rmtree(pruned_artifacts)
+
+    # ── Run record artifacts ─────────────────────────────────────────────
+
+    def _scope_root(self, scope: PipelineScope) -> Path:
+        if scope == PipelineScope.WORKSPACE:
+            if not self._workspace_dir:
+                msg = "No workspace directory configured"
+                raise RuntimeError(msg)
+            return self._workspace_dir / ".pubmed-search"
+        return self._global_dir
+
+    def _artifacts_dir_for(self, scope: PipelineScope) -> Path:
+        return self._scope_root(scope) / "pipeline_artifacts"
+
+    def scope_data_dir(self, name: str) -> Path:
+        """Return the data root of the scope that owns ``name`` (for sibling stores)."""
+        return self._scope_root(self._find_pipeline_scope(self._validate_name(name)))
+
+    def _run_records_path(self, name: str, run_id: str) -> Path:
+        name = self._validate_name(name)
+        run_id = self._validate_run_id(run_id)
+        scope = self._find_pipeline_scope(name)
+        return self._artifacts_dir_for(scope) / name / run_id / _RUN_RECORDS_FILE
+
+    @synchronized
+    def save_run_records(self, name: str, run_id: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+        """Persist the complete record set of one run as JSON Lines.
+
+        Each line is one record keyed by ``pmid``; provider-native metadata is
+        stored verbatim so exports use the same fields as ``prepare_export``.
+        Returns a logical, host-path-free locator for the run record.
+        """
+        path = self._run_records_path(name, run_id)
+        lines: list[str] = []
+        for record in records:
+            pmid = str(record.get("pmid") or "").strip()
+            if not pmid.isdigit():
+                msg = "Every run record must carry a canonical PMID"
+                raise ValueError(msg)
+            lines.append(json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
+        return {
+            "kind": "pipeline_run_records",
+            "format": "jsonl",
+            "locator": f"pipeline_artifacts/{self._validate_name(name)}/{self._validate_run_id(run_id)}/{_RUN_RECORDS_FILE}",
+            "scope": self._find_pipeline_scope(name).value,
+            "count": len(lines),
+        }
+
+    @synchronized
+    def load_run_records(self, name: str, run_id: str) -> list[dict[str, Any]]:
+        """Load every persisted record of one run, in stored order."""
+        path = self._run_records_path(name, run_id)
+        if not path.is_file():
+            return []
+        rows: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict) or not str(row.get("pmid") or "").isdigit():
+                msg = "Pipeline run record artifact is invalid"
+                raise PipelineHistoryError(msg)
+            rows.append(row)
+        return rows
+
+    @synchronized
+    def get_run(self, name: str, run_id: str | None = None) -> PipelineRun:
+        """Load one run by ID, or the newest run when ``run_id`` is omitted."""
+        name = self._validate_name(name)
+        if run_id is None:
+            latest = self.get_history(name, limit=1)
+            if not latest:
+                msg = f"Pipeline '{name}' has no execution history"
+                raise FileNotFoundError(msg)
+            return latest[0]
+        run_id = self._validate_run_id(run_id)
+        path = self._runs_dir_for(self._find_pipeline_scope(name)) / name / f"{run_id}.json"
+        if not path.is_file():
+            msg = f"Pipeline run '{run_id}' was not found"
+            raise FileNotFoundError(msg)
+        try:
+            return PipelineRun.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            raise PipelineHistoryError(
+                "Pipeline run history is unavailable because a stored record is invalid"
+            ) from exc
 
     # ── Utility ──────────────────────────────────────────────────────────
 

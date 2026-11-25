@@ -468,7 +468,8 @@ class TestGetPipelineHistory:
 
         output = mcp["get_pipeline_history"](name="hist")
         assert "hist" in output
-        assert "run_002" not in output  # run_id is not displayed directly
+        # Run IDs are shown so record pages, PRISMA-S tables and exports can address one run.
+        assert "| 5 | `run_002` | 2024-06-15 10:00 | 10 | legacy |" in output
         assert "10" in output  # article_count
         mock_store.count_history.assert_called_once_with("hist")
 
