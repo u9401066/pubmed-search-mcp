@@ -8,6 +8,13 @@ decisions per PMID and stage; the latest decision per (PMID, stage) counts,
 earlier ones remain as an audit log, and disagreements between reviewer
 labels are reported as conflicts rather than silently resolved.
 
+Retries: a decision without ``decision_id`` is a replay only when it repeats
+the *latest* decision of the same reviewer for that PMID and stage (same
+decision, reason and note). Anything else -- including a return to an earlier
+decision (include, exclude, include) -- is appended and becomes effective.
+A client-supplied ``decision_id`` is idempotent on its own: resending it is a
+replay even after later decisions, and reusing it for different content fails.
+
 PRISMA 2020 mapping (identification via databases):
 
 * records identified = sum of records identified by every registered run;
@@ -23,7 +30,6 @@ PRISMA 2020 mapping (identification via databases):
 
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -91,7 +97,12 @@ def _text(value: Any, field: str, maximum: int) -> str | None:
 
 
 def normalize_decision(raw: dict[str, Any]) -> dict[str, Any]:
-    """Validate one decision and give it a stable idempotency key."""
+    """Validate one decision; ``decision_id`` stays ``None`` unless the client supplied a retry key.
+
+    Content-derived keys are deliberately not used: a reviewer returning to an
+    earlier decision would otherwise collide with that earlier key and be
+    discarded as a replay. The store assigns a fresh key when none is given.
+    """
     pmid = str(raw.get("pmid") or "").strip()
     if not _PMID_RE.fullmatch(pmid):
         raise ValueError("pmid must be a canonical positive PubMed ID")
@@ -117,12 +128,7 @@ def normalize_decision(raw: dict[str, Any]) -> dict[str, Any]:
         "note": note,
     }
     decision_id = raw.get("decision_id")
-    if decision_id is None:
-        fingerprint = "\x1f".join(
-            str(normalized[key] or "") for key in ("pmid", "stage", "decision", "reason", "reviewer", "note")
-        )
-        decision_id = "d-" + hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:32]
-    elif not isinstance(decision_id, str) or not _DECISION_ID_RE.fullmatch(decision_id):
+    if decision_id is not None and (not isinstance(decision_id, str) or not _DECISION_ID_RE.fullmatch(decision_id)):
         raise ValueError("decision_id must be a stable identifier of 1 to 96 letters, digits, _ . or -")
     normalized["decision_id"] = decision_id
     return normalized

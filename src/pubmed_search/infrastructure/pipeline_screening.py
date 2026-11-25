@@ -5,13 +5,16 @@ Follows the research-workspace journal pattern: one transaction per command,
 opens serialize before the schema is installed), and a local database file
 that separate processes can share. Decisions are append-only; the latest
 decision per (PMID, stage) is the effective one, so a changed decision keeps
-its audit trail. Every write is idempotent through a stable key.
+its audit trail. A client ``decision_id`` makes a write idempotent; without
+one, only a repeat of the reviewer's latest decision for that PMID and stage
+is a replay, so returning to an earlier decision is always recorded.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,6 +86,32 @@ def _now() -> str:
 def _decision_row(row: sqlite3.Row) -> dict[str, Any]:
     payload = json.loads(row["payload"])
     return {**payload, "sequence": row["sequence"], "decided_at": row["decided_at"]}
+
+
+_DECISION_CONTENT = ("pmid", "stage", "decision", "reason", "reviewer", "note")
+
+
+def _content(decision: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(decision.get(key) for key in _DECISION_CONTENT)
+
+
+def _replayed_decision(db: sqlite3.Connection, decision: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the stored row this decision repeats, or ``None`` when it must be appended."""
+    client_id = decision.get("decision_id")
+    if client_id is not None:
+        existing = db.execute("SELECT * FROM decisions WHERE decision_id=?", (client_id,)).fetchone()
+        if existing is None:
+            return None
+        if _content(json.loads(existing["payload"])) != _content(decision):
+            raise ValueError(f"decision_id {client_id} already exists with different content")
+        return _decision_row(existing)
+    latest = db.execute(
+        "SELECT * FROM decisions WHERE stage=? AND pmid=? AND reviewer=? ORDER BY sequence DESC LIMIT 1",
+        (decision["stage"], decision["pmid"], decision["reviewer"]),
+    ).fetchone()
+    if latest is not None and _content(json.loads(latest["payload"])) == _content(decision):
+        return _decision_row(latest)
+    return None
 
 
 class SQLiteScreeningStore:
@@ -175,18 +204,19 @@ class SQLiteScreeningStore:
     # ── Decisions ───────────────────────────────────────────────────────
 
     def record_decisions(self, decisions: list[dict[str, Any]]) -> dict[str, Any]:
-        """Append decisions all-or-nothing; a repeated decision_id is a replay."""
+        """Append decisions all-or-nothing.
+
+        A replay is a resent client ``decision_id`` or, without one, a repeat
+        of the same reviewer's latest decision for that PMID and stage. Every
+        other decision is appended under a fresh key and becomes effective.
+        """
         with self._transaction(write=True) as db:
             recorded: list[dict[str, Any]] = []
             replayed = 0
             for decision in decisions:
-                existing = db.execute(
-                    "SELECT * FROM decisions WHERE decision_id=?", (decision["decision_id"],)
-                ).fetchone()
+                existing = _replayed_decision(db, decision)
                 if existing is not None:
-                    if json.loads(existing["payload"]) != decision:
-                        raise ValueError(f"decision_id {decision['decision_id']} already exists with different content")
-                    recorded.append({**_decision_row(existing), "replayed": True})
+                    recorded.append({**existing, "replayed": True})
                     replayed += 1
                     continue
                 if db.execute("SELECT 1 FROM records WHERE pmid=?", (decision["pmid"],)).fetchone() is None:
@@ -201,22 +231,23 @@ class SQLiteScreeningStore:
                         raise ValueError(
                             f"PMID {decision['pmid']} needs a title/abstract include or maybe before full-text screening"
                         )
+                stored = {**decision, "decision_id": decision.get("decision_id") or f"d-{uuid.uuid4().hex}"}
                 now = _now()
                 cursor = db.execute(
                     """INSERT INTO decisions(decision_id,pmid,stage,decision,reason,reviewer,decided_at,payload)
                        VALUES(?,?,?,?,?,?,?,?)""",
                     (
-                        decision["decision_id"],
-                        decision["pmid"],
-                        decision["stage"],
-                        decision["decision"],
-                        decision.get("reason"),
-                        decision["reviewer"],
+                        stored["decision_id"],
+                        stored["pmid"],
+                        stored["stage"],
+                        stored["decision"],
+                        stored.get("reason"),
+                        stored["reviewer"],
                         now,
-                        json.dumps(decision, sort_keys=True),
+                        json.dumps(stored, sort_keys=True),
                     ),
                 )
-                recorded.append({**decision, "sequence": cursor.lastrowid, "decided_at": now, "replayed": False})
+                recorded.append({**stored, "sequence": cursor.lastrowid, "decided_at": now, "replayed": False})
             return {"decisions": recorded, "recorded": len(recorded) - replayed, "replayed": replayed}
 
     def decision_log(self, *, pmid: str | None, offset: int, limit: int) -> dict[str, Any]:

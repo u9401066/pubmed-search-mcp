@@ -66,7 +66,11 @@ class ScreeningDecision(_Request):
         default=None, description="Reviewer label (default reviewer_1); different labels expose conflicts."
     )
     decision_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")] | None = Field(
-        default=None, description="Optional retry key; omitted keys are derived from the decision content."
+        default=None,
+        description=(
+            "Optional idempotency key: resending it is always a replay. Without it, only an exact repeat of "
+            "this reviewer's latest decision for the PMID and stage is a replay; any other decision is recorded."
+        ),
     )
     note: Annotated[str, Field(min_length=1, max_length=2000)] | None = None
 
@@ -193,7 +197,12 @@ def register_pipeline_screening_tools(mcp: MCPServer, *, runtime: PipelineToolRu
         - record: append decisions (pmid, stage title_abstract|full_text,
           decision include|exclude|maybe, reason, reviewer). Full-text
           exclusions need a reason; full-text screening needs a prior
-          title/abstract include or maybe. Retries are idempotent.
+          title/abstract include or maybe. Without decision_id, a decision is a
+          replay only when it repeats the same reviewer's latest decision for
+          that PMID and stage (same decision, reason and note); every other
+          decision, including a return to an earlier one, is recorded and
+          counted. Pass a stable decision_id to make retries idempotent even
+          after later decisions; reusing one for different content is an error.
         - queue: page records awaiting a decision at a stage (optionally only
           those first identified by run_id), with titles from the run artifact.
         - flow: PRISMA 2020 counts (identified per run/database, duplicates
@@ -223,7 +232,10 @@ def register_pipeline_screening_tools(mcp: MCPServer, *, runtime: PipelineToolRu
             logger.warning("Pipeline screening storage failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
                 "Could not access pipeline screening storage",
-                suggestion="Check data directory availability and retry with the same decision IDs.",
+                suggestion=(
+                    "Check data directory availability and retry; pass decision_id values to make a retried "
+                    "batch idempotent."
+                ),
                 tool_name=TOOL_NAME,
                 output_format="json",
             )

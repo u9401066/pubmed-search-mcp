@@ -79,6 +79,50 @@ def test_decisions_are_idempotent_atomic_and_survive_restart(tmp_path: Path) -> 
     assert [item["pmid"] for item in reopened.queue(stage="full_text")["items"]] == ["1"]
 
 
+def test_returning_to_an_earlier_decision_is_recorded_and_counted(tmp_path: Path) -> None:
+    """include → exclude → include is a reversal, not a replay of the first include."""
+    service = _service(tmp_path)
+    service.register_run(_run("run1", ["111"]))
+
+    outcomes = [service.record([_decide("111", decision)]) for decision in ("include", "exclude", "include")]
+
+    assert [(result["recorded"], result["replayed"]) for result in outcomes] == [(1, 0), (1, 0), (1, 0)]
+    assert len({result["decisions"][0]["decision_id"] for result in outcomes}) == 3
+    flow = _service(tmp_path).flow()["screening"]
+    assert flow["records_excluded"] == 0
+    assert flow["reports_sought_for_retrieval"] == 1
+    assert [row["decision"] for row in service.log(pmid="111")["decisions"]] == ["include", "exclude", "include"]
+
+    # A retry of the latest decision (same reviewer, same content) is still a replay...
+    retry = service.record([_decide("111", "include")])
+    assert (retry["recorded"], retry["replayed"]) == (0, 1)
+    assert retry["decisions"][0]["decision_id"] == outcomes[2]["decisions"][0]["decision_id"]
+    # ...and so is a duplicate inside one batch, while a changed note is a new decision.
+    batch = service.record([_decide("111", "exclude"), _decide("111", "exclude")])
+    assert (batch["recorded"], batch["replayed"]) == (1, 1)
+    noted = service.record([_decide("111", "exclude", note="second look")])
+    assert (noted["recorded"], noted["replayed"]) == (1, 0)
+    # Another reviewer's identical decision is that reviewer's own first decision.
+    other = service.record([_decide("111", "exclude", note="second look", reviewer="reviewer_2")])
+    assert (other["recorded"], other["replayed"]) == (1, 0)
+    assert service.log(pmid="111")["total"] == 6
+
+
+def test_client_decision_id_keeps_a_retry_idempotent_after_later_decisions(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.register_run(_run("run1", ["7"]))
+    service.record([_decide("7", "include", decision_id="ta-7-a")])
+    service.record([_decide("7", "exclude", decision_id="ta-7-b")])
+
+    late_retry = service.record([_decide("7", "include", decision_id="ta-7-a")])
+
+    assert (late_retry["recorded"], late_retry["replayed"]) == (0, 1)
+    assert service.flow()["screening"]["records_excluded"] == 1
+    # An explicit new key records a new decision even when it repeats the latest one.
+    repeat = service.record([_decide("7", "exclude", decision_id="ta-7-c")])
+    assert (repeat["recorded"], repeat["replayed"]) == (1, 0)
+
+
 def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) -> None:
     service = _service(tmp_path)
     service.register_run(_run("run1", ["1", "2", "3", "4", "5"]))
