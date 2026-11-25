@@ -202,13 +202,24 @@ def _identity_tokens(article: UnifiedArticle) -> frozenset[tuple[str, str]]:
 
 @dataclass
 class FillAdmission:
-    """Outcome of admitting one provider attempt into the fill pool."""
+    """Outcome of admitting one provider attempt into the fill pool.
+
+    ``accepted`` are the records handed to the aggregator; an exact-tier
+    attempt keeps ineligible records there because the final filters remove
+    them. ``contributed`` counts only new *eligible* records -- the ones this
+    attempt actually adds to what the caller receives.
+    """
 
     accepted: list[UnifiedArticle] = field(default_factory=list)
     new_unique: int = 0
     duplicates: int = 0
     ineligible: int = 0
     surplus_discarded: int = 0
+
+    @property
+    def contributed(self) -> int:
+        """New unique records that survive the eligibility policy."""
+        return self.new_unique - self.ineligible - self.surplus_discarded
 
 
 class DeepFillTracker:
@@ -462,7 +473,9 @@ def _relaxation_phrase(relaxation: RelaxationResult) -> str:
     return f" → auto-relaxation tried {len(relaxation.steps_tried)} broader PubMed queries; none returned records"
 
 
-def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: int) -> list[dict[str, Any]]:
+def _mesh_correction_rows(
+    mesh_correction: Mapping[str, Any], pubmed_returned: int, pubmed_eligible: int
+) -> list[dict[str, Any]]:
     """Attempt rows for a single-pass (non-deep) search whose PubMed query was corrected."""
     counts = mesh_correction.get("hit_counts") or {}
     before, after = counts.get("before"), counts.get("after")
@@ -472,7 +485,6 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
         "tier_rank": 0,
         "executed": True,
         "duplicates": 0,
-        "ineligible": 0,
         "surplus_discarded": 0,
         "skip_reason": None,
     }
@@ -481,6 +493,7 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
             **base,
             "strategy": "original",
             "phase": PHASE_SUPERSEDED,
+            "ineligible": 0,
             "status": "empty" if before == 0 else "ok",
             "logical_query": mesh_correction.get("original_query"),
             "physical_query": None,
@@ -501,7 +514,8 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
             "total_available": after,
             "returned": pubmed_returned,
             "new_unique": pubmed_returned,
-            "contributed": pubmed_returned,
+            "ineligible": pubmed_returned - pubmed_eligible,
+            "contributed": pubmed_eligible,
         },
     ]
 
@@ -515,8 +529,14 @@ def build_broadening_disclosure(
     exact_pubmed_total: int | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
     pubmed_returned: int = 0,
+    pubmed_eligible: int | None = None,
 ) -> dict[str, Any] | None:
     """Describe automatic query changes (MeSH correction, broadening), why, and their yield.
+
+    ``pubmed_returned`` / ``pubmed_eligible`` describe a single-pass PubMed
+    exact result before any relaxation: the records returned, and how many
+    of them survive the exclude_seen / detected-preprint policy (defaults to
+    all of them).
 
     Returns ``None`` when no MeSH correction was applied and neither tiered
     deep search nor auto-relaxation ran.
@@ -555,11 +575,14 @@ def build_broadening_disclosure(
         summary = _deep_summary(deep_metrics, outcome)
 
     if corrected and outcome is None and mesh_correction is not None:
-        attempts.extend(_mesh_correction_rows(mesh_correction, pubmed_returned))
-        exact_eligible = eligible = pubmed_returned
-        filled = pubmed_returned >= requested_limit
+        corrected_eligible = pubmed_returned if pubmed_eligible is None else min(pubmed_eligible, pubmed_returned)
+        attempts.extend(_mesh_correction_rows(mesh_correction, pubmed_returned, corrected_eligible))
+        exact_eligible = eligible = corrected_eligible
+        filled = corrected_eligible >= requested_limit
         needed = not filled
         summary = f"corrected query returned {pubmed_returned} of requested {requested_limit}"
+        if corrected_eligible != pubmed_returned:
+            summary += f" ({corrected_eligible} eligible after exclusions)"
 
     if relaxation is not None:
         needed = True

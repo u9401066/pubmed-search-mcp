@@ -74,9 +74,12 @@ def _article(pmid: str) -> UnifiedArticle:
 class _FakePubMed:
     """PubMed runner double reporting PubMed's diagnostics like the real adapter."""
 
-    def __init__(self, *, corrected_hits: int = 12, corrected_total: int = CORRECTED_TOTAL) -> None:
+    def __init__(
+        self, *, corrected_hits: int = 12, corrected_total: int = CORRECTED_TOTAL, preprint_hits: int = 0
+    ) -> None:
         self.corrected_hits = corrected_hits
         self.corrected_total = corrected_total
+        self.preprint_hits = preprint_hits
         self.calls: list[str] = []
 
     async def __call__(
@@ -93,6 +96,8 @@ class _FakePubMed:
             total = 9_999
         else:
             items = [_article(str(1000 + index)) for index in range(self.corrected_hits)][:limit]
+            for article in items[: self.preprint_hits]:
+                article.doi = f"10.1101/2024.01.{article.pmid}"  # a detected (excluded) preprint
             total = self.corrected_total
         return SourceAdapterResult(
             source="pubmed",
@@ -242,6 +247,23 @@ async def test_relaxed_records_after_an_empty_corrected_query_are_not_counted_as
     assert (corrected_row["status"], corrected_row["returned"], corrected_row["contributed"]) == ("empty", 0, 0)
     assert "corrected query returned 0 of requested 10 → auto-relaxed" in broadening["summary"]
     assert {article["retrieval"]["tier"] for article in payload["articles"]} == {"relaxed"}
+
+
+async def test_corrected_exact_row_contributes_only_records_that_survive_eligibility(
+    fake_entrez: FakeEntrez,
+) -> None:
+    """Single pass: 3 of the 10 corrected hits are detected preprints and are excluded."""
+    payload = json.loads(
+        await _search(_FakePubMed(corrected_hits=10, preprint_hits=3), service=make_service(), options="shallow,no_oa")
+    )
+
+    assert payload["result_filter_counts"]["excluded_detected_preprints"] == 3
+    broadening = payload["broadening"]
+    corrected_row = next(row for row in broadening["attempts"] if row["strategy"] == "original:mesh_corrected")
+    assert (corrected_row["returned"], corrected_row["ineligible"], corrected_row["contributed"]) == (10, 3, 7)
+    assert broadening["exact_eligible_unique"] == broadening["eligible_unique"] == 7
+    assert (broadening["filled"], broadening["needed"]) == (False, True)
+    assert "corrected query returned 10 of requested 10 (7 eligible after exclusions)" in broadening["summary"]
 
 
 async def test_shallow_markdown_discloses_the_correction(fake_entrez: FakeEntrez) -> None:

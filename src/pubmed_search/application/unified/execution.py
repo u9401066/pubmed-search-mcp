@@ -256,6 +256,8 @@ async def execute_unified_search(
     request = plan.request
     analysis = plan.analysis
     corrector = _mesh_corrector(plan, mesh_correction)
+    eligibility = _retrieval_eligibility(request)
+    exact_pubmed_eligible: int | None = None
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
@@ -308,7 +310,7 @@ async def execute_unified_search(
                 plan.effective_max_year,
                 request.advanced_filters,
                 strategies=plan.deep_strategies,
-                eligibility=_retrieval_eligibility(request),
+                eligibility=eligibility,
                 # The no_relax option opts out of every automatic broadening path;
                 # MeSH correction is separate (options="no_mesh_correction").
                 allow_broadening=request.auto_relax,
@@ -496,6 +498,10 @@ async def execute_unified_search(
                 source_api_counts[result.source] = (len(articles), total_count)
                 source_statuses[result.source] = result.status
                 source_metadata[result.source] = attempt_metadata
+                if result.source == "pubmed":
+                    exact_pubmed_eligible = sum(
+                        1 for article in articles if eligibility is None or eligibility(article)
+                    )
                 if result.source == "pubmed" and total_count is not None:
                     pubmed_total_count = total_count
                 logger.info(
@@ -668,6 +674,7 @@ async def execute_unified_search(
             exact_pubmed_total=exact_pubmed_total,
             mesh_correction=mesh_correction_disclosure,
             pubmed_returned=exact_pubmed_returned,
+            pubmed_eligible=exact_pubmed_eligible,
         )
 
         result_filter_counts = {

@@ -480,6 +480,34 @@ async def test_exact_query_is_deepened_before_any_broadening() -> None:
     assert errors == []
 
 
+async def test_exact_row_contributed_counts_only_eligible_new_records() -> None:
+    """Records later removed by exclude_seen / preprint policy did not contribute to the result."""
+    fake = _FakePubMed(exact_total=15)
+    original = SearchPlan(name="original", query=EXPERT_QUERY, source="pubmed")
+    seen = {str(1000 + index) for index in range(10)}
+
+    _results, metrics, *_ = await _execute_deep_search(
+        AsyncMock(),
+        EnhancedQuery(original_query=EXPERT_QUERY, strategies=[original]),
+        limit=15,
+        min_year=None,
+        max_year=None,
+        advanced_filters={},
+        strategies=[original],
+        search_functions={"pubmed": fake},
+        eligibility=lambda article: article.pmid not in seen,
+    )
+
+    exact_row = metrics.strategy_results[0]
+    assert (exact_row.phase, exact_row.articles_count) == ("exact", 15)
+    assert (exact_row.new_unique, exact_row.ineligible, exact_row.contributed) == (15, 10, 5)
+    disclosure = build_broadening_disclosure(
+        requested_limit=15, deep_metrics=metrics, relaxation=None, broadening_enabled=True
+    )
+    assert disclosure is not None
+    assert disclosure["attempts"][0]["contributed"] == disclosure["exact_eligible_unique"] == 5
+
+
 # ---------------------------------------------------------------------------
 # auto_relax shares the same disclosure and provenance contract
 # ---------------------------------------------------------------------------

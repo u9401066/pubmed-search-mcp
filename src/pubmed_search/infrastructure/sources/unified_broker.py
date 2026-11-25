@@ -606,7 +606,7 @@ async def _execute_deep_search(
         row.tier_rank = provenance.tier_rank
         row.phase = attempt.phase
         row.new_unique = admission.new_unique
-        row.contributed = admission.new_unique if attempt.phase == "exact" else len(admission.accepted)
+        row.contributed = admission.contributed
         row.duplicates = admission.duplicates
         row.ineligible = admission.ineligible
         row.surplus_discarded = admission.surplus_discarded
