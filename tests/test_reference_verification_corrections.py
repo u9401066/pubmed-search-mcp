@@ -805,6 +805,59 @@ async def test_failed_year_tolerant_search_is_source_unavailable_not_unresolved(
             {"first_author": "Wildes", "journal": "JAMA", "title": ""},
             id="all-caps-journal-is-not-initials",
         ),
+        pytest.param(
+            "Wildes TS, et al. Effect of EEG guidance on delirium. JAMA. Published online January 22, 2019. "
+            "Accessed March 1, 2020.",
+            {"year": "2019", "journal": "JAMA", "title": "Effect of EEG guidance on delirium"},
+            id="ama-access-date-is-not-publication-year",
+        ),
+        pytest.param(
+            "World Health Organization. Delirium fact sheet. Published 2019. Accessed March 3, 2023.",
+            {"year": "2019", "first_author": "World Health Organization"},
+            id="ama-web-published-year-before-access-date",
+        ),
+        pytest.param(
+            "Smith J. COVID-19 in 2020; 12 lessons. Anesth Analg. 2021;132(1):1-5.",
+            {"year": "2021", "journal": "Anesth Analg", "volume": "132", "title": "COVID-19 in 2020; 12 lessons"},
+            id="title-year-before-semicolon-number",
+        ),
+        pytest.param(
+            "Smith J. Outcomes in 2019, 3 (n=12) cohort. BMJ. 2020;368:m1234.",
+            {"year": "2020", "journal": "BMJ", "first_page": "m1234", "title": "Outcomes in 2019, 3 (n=12) cohort"},
+            id="title-year-before-comma-number-parenthesis",
+        ),
+        pytest.param(
+            "Smith J. Update of the ESC guidelines (2018) on heart failure. Eur Heart J 2019.",
+            {
+                "year": "2019",
+                "first_author": "Smith",
+                "journal": "Eur Heart J",
+                "title": "Update of the ESC guidelines (2018) on heart failure",
+            },
+            id="parenthesised-year-inside-title",
+        ),
+        pytest.param(
+            "Smith J. The ENGAGES Trial (2019). Lancet. 2020.",
+            {"year": "2020", "journal": "Lancet", "title": "The ENGAGES Trial (2019)"},
+            id="parenthesised-year-ending-title-case-title",
+        ),
+        pytest.param(
+            "Wildes, T. S., Mickle, A. M., & Ben Abdallah, A. (2019). Effect of EEG-guided anesthetic "
+            "administration. JAMA, 321(5), 473-483.",
+            {
+                "year": "2019",
+                "authors": ["Wildes", "Mickle", "Ben Abdallah"],
+                "journal": "JAMA",
+                "volume": "321",
+                "first_page": "473",
+            },
+            id="apa-dotted-initials-before-parenthesised-year",
+        ),
+        pytest.param(
+            "Smith J, Jones K (2019a) Title of the study. Anaesthesia 74:1-5",
+            {"year": "2019", "authors": ["Smith", "Jones"], "journal": "Anaesthesia", "first_page": "1"},
+            id="harvard-parenthesised-year",
+        ),
     ],
 )
 def test_parser_reads_citation_position_fields(reference: str, expected: dict[str, Any], pubmed: FakePubMed) -> None:
