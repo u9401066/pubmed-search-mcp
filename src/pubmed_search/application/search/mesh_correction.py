@@ -32,7 +32,10 @@ Correction tiers, tried in order for each unresolved heading:
     No usable heading, or the evidence budget ran out: the clause becomes the
     agent's words as ``[tiab]`` text words. Confidence ``low``.
 
-A clause that PubMed resolves is never changed. Each correction lists the
+A clause that PubMed resolves is never changed. Inside a NOT operand only an
+``exact`` correction that keeps every restriction is applied; any other fix is
+returned in ``suggestions`` and left out of the query, because a related
+heading or text words would change what the NOT excludes. Each correction lists the
 NCBI warning that triggered it, the replacement, the evidence (exact match
 or the evidence query, date, sample and candidate scores), and the query's
 before/after hit counts from count-only ESearch requests. NCBI traffic is
@@ -100,6 +103,10 @@ SAMPLE_NOTE = (
     "heading itself ([mh:noexp]) at retrieval time."
 )
 PROBE_COUNT_METHOD = "PubMed ESearch count (retmax=0)"
+NOT_OPERAND_NOTE = (
+    "Inside a NOT operand: only an equivalent heading that keeps every restriction is applied automatically. "
+    "This rewrite would change what is excluded, so it is a suggestion only."
+)
 SCORING_NOTE = (
     "share = sampled records carrying the heading / sampled records with MeSH (nominates candidates); "
     "joint_count = evidence records indexed with the heading ([mh:noexp]); recall = joint_count / evidence_total; "
@@ -270,7 +277,12 @@ class TermCorrection:
 
 @dataclass(frozen=True)
 class MeshCorrectionResult:
-    """Outcome of :meth:`MeshCorrectionService.correct_query`; ``to_dict`` is the disclosure."""
+    """Outcome of :meth:`MeshCorrectionService.correct_query`; ``to_dict`` is the disclosure.
+
+    ``corrections`` were applied to ``corrected_query``; ``suggestions`` were
+    not (clauses inside a NOT operand whose only fix would change what is
+    excluded).
+    """
 
     original_query: str
     corrected_query: str
@@ -285,6 +297,7 @@ class MeshCorrectionResult:
     budget: Mapping[str, Any] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     count_method: str = PROBE_COUNT_METHOD
+    suggestions: tuple[TermCorrection, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -308,6 +321,7 @@ class MeshCorrectionResult:
                 "method": self.count_method,
             },
             "corrections": [correction.to_dict() for correction in self.corrections],
+            "suggestions": [suggestion.to_dict() for suggestion in self.suggestions],
             "valid_terms": list(self.valid_terms),
             "diagnostics_before": self.diagnostics_before.to_dict() if self.diagnostics_before else None,
             "diagnostics_after": self.diagnostics_after.to_dict() if self.diagnostics_after else None,
@@ -455,7 +469,7 @@ class MeshCorrectionService:
                 warnings=tuple(warnings),
             )
 
-        corrections, replacements = await self._correct_flagged(flagged, records_by_key, budget, warnings)
+        corrections, suggestions, replacements = await self._correct_flagged(flagged, records_by_key, budget, warnings)
         corrected = apply_replacements(query, replacements)
 
         from .query_validator import validate_query
@@ -472,6 +486,7 @@ class MeshCorrectionService:
                 diagnostics_before=diagnostics,
                 budget=budget.to_dict(),
                 warnings=tuple(warnings),
+                suggestions=tuple(suggestions),
             )
 
         after_count: int | None = None
@@ -500,6 +515,7 @@ class MeshCorrectionService:
             diagnostics_after=diagnostics_after,
             budget=budget.to_dict(),
             warnings=tuple(warnings),
+            suggestions=tuple(suggestions),
         )
 
     async def suggest_for_phrases(
@@ -550,9 +566,17 @@ class MeshCorrectionService:
         records_by_key: Mapping[str, tuple[MeshRecord, ...]] | None,
         budget: RequestBudget,
         warnings: list[str],
-    ) -> tuple[list[TermCorrection], list[tuple[int, int, str]]]:
+    ) -> tuple[list[TermCorrection], list[TermCorrection], list[tuple[int, int, str]]]:
+        """Applied corrections, NOT-operand suggestions, and the replacement spans of the applied ones.
+
+        Clauses are grouped by text *and* polarity. Inside a NOT operand only
+        an exact correction that keeps every restriction (qualifier, major
+        topic, no-explode) is applied: anything else would change what the
+        NOT excludes (a related heading or text words widen it), so it is
+        reported as a suggestion. Included clauses are researched first.
+        """
         researched: dict[str, str] = {}
-        for item in flagged:
+        for item in sorted(flagged, key=lambda flagged_item: flagged_item.term.negated):
             if item.term.key and item.term.key not in researched and len(researched) < self._policy.max_terms:
                 researched[item.term.key] = item.term.descriptor
         if len(researched) < len({item.term.key for item in flagged}):
@@ -576,13 +600,14 @@ class MeshCorrectionService:
             if key not in exact:
                 reports[key] = await self._cooccurrence(descriptor, budget, keep=1)
 
-        grouped: dict[str, list[FlaggedTerm]] = {}
+        grouped: dict[tuple[str, bool], list[FlaggedTerm]] = {}
         for item in flagged:
-            grouped.setdefault(item.term.clause, []).append(item)
+            grouped.setdefault((item.term.clause, item.term.negated), []).append(item)
 
         corrections: list[TermCorrection] = []
+        suggestions: list[TermCorrection] = []
         replacements: list[tuple[int, int, str]] = []
-        for clause, items in grouped.items():
+        for (clause, negated), items in grouped.items():
             term, reason = items[0].term, items[0].reason
             if term.key in exact:
                 correction = self._exact_correction(term, exact[term.key], reason)
@@ -598,13 +623,22 @@ class MeshCorrectionService:
             if not correction.replacement:
                 warnings.append(f"{clause} was left unchanged: it has no searchable words.")
                 continue
-            corrections.append(replace(correction, occurrences=len(items)))
+            correction = replace(correction, occurrences=len(items))
+            if negated and (correction.tier != "exact" or correction.evidence.get("dropped_restrictions")):
+                suggestions.append(replace(correction, notes=(*correction.notes, NOT_OPERAND_NOTE)))
+                warnings.append(
+                    f"{clause} is inside a NOT operand and PubMed cannot resolve it, so this exclusion currently "
+                    f"removes nothing. Its {correction.tier.replace('_', ' ')} rewrite would change what is "
+                    "excluded, so it was not applied; see suggestions."
+                )
+                continue
+            corrections.append(correction)
             replacements.extend((item.term.start, item.term.end, correction.replacement) for item in items)
-        return corrections, replacements
+        return corrections, suggestions, replacements
 
     def _exact_correction(self, term: TaggedMeshTerm, match: TermMatch, reason: str) -> TermCorrection | None:
         record = match.record
-        evidence = {
+        evidence: dict[str, Any] = {
             "method": "exact preferred/entry-term match (case, hyphen spacing and simple plurals folded)",
             "mesh_id": record.uid,
             "preferred": record.preferred,
@@ -638,7 +672,10 @@ class MeshCorrectionService:
                 evidence["qualifier_check"] = qualifier_check
                 if qualifier_check != "allowed":
                     confidence = "medium"
+            dropped = [f"qualifier /{term.qualifier}"] if term.qualifier and qualifier is None else []
             replacement = term.render(record.preferred, keep_qualifier=qualifier is not None, qualifier=qualifier)
+        if dropped:
+            evidence["dropped_restrictions"] = dropped
         return TermCorrection(
             original=term.clause,
             term=term.descriptor,

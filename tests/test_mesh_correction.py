@@ -117,6 +117,27 @@ def test_a_slash_separates_only_a_real_mesh_subheading():
     ]
 
 
+@pytest.mark.parametrize(
+    ("query", "negated"),
+    [
+        ('a[tiab] NOT "X"[mh]', True),
+        ('a[tiab] not "X"[mh]', True),
+        ('a[tiab] Not "X"[mh]', True),  # PubMed reads a word here; treated as NOT to stay conservative
+        ('a[tiab] NOT (b[tiab] OR "X"[mh])', True),
+        ('a[tiab] NOT ((b[tiab]) OR (c[tiab] AND "X"[mh]))', True),
+        ("a[tiab] NOT b c X[mh]", True),
+        ('a[tiab] NOT b[tiab] OR "X"[mh]', False),  # left to right: (a NOT b) OR X
+        ('a[tiab] NOT b[tiab] AND "X"[mh]', False),
+        ('a[tiab] AND ("X"[mh] NOT b[tiab])', False),
+        ('(a[tiab] NOT b[tiab]) AND "X"[mh]', False),
+        ('"NOT really"[tiab] AND "X"[mh]', False),
+    ],
+)
+def test_terms_inside_a_not_operand_are_marked_negated(query: str, negated: bool):
+    (term,) = find_mesh_terms(query)
+    assert term.negated is negated
+
+
 def test_bare_mesh_terms_stop_at_pubmed_operators_in_either_case():
     # Live ESearch 2026-11-25: "not"/"or" are operators; "and" is a stopword that PubMed glues
     # onto the next bare phrase but reports the heading itself (PhraseNotFound: ["pacu"]).
@@ -330,11 +351,79 @@ async def test_a_flagged_clause_that_already_names_the_heading_and_an_allowed_qu
 async def test_a_lowercase_operator_is_never_swallowed_into_the_rewritten_clause(fake: FakeEntrez):
     # Before: "not PACU[mh]" was one bare term, rewritten to the text words "not PACU", which
     # turned the exclusion into an inclusion.
-    result = await make_service().correct_query("delirium[tiab] not PACU[mh]")
+    query = "delirium[tiab] not PACU[mh]"
 
-    assert [item.original for item in result.corrections] == ["PACU[mh]"]
-    assert result.corrected_query.startswith("delirium[tiab] not ")
-    assert '"not PACU"' not in result.corrected_query
+    result = await make_service().correct_query(query)
+
+    assert (result.corrected_query, result.corrections) == (query, ())  # a NOT operand: suggest only
+    assert [item.original for item in result.suggestions] == ["PACU[mh]"]
+    assert '"not PACU"' not in json.dumps(result.to_dict())
+
+
+async def test_a_not_operand_is_never_widened_with_a_related_heading_or_text_words(fake: FakeEntrez):
+    # Before: NOT "X"[Mesh] became NOT (<text words> OR "Anesthesia Recovery Period"[Mesh]),
+    # excluding records about a related concept as well.
+    query = f"delirium[tiab] NOT {PACU}"
+
+    result = await make_service().correct_query(query)
+
+    assert (result.status, result.corrected_query, result.corrections) == ("unavailable", query, ())
+    (suggestion,) = result.suggestions
+    assert (suggestion.original, suggestion.tier) == (PACU, "co_occurrence")
+    assert any("NOT operand" in note for note in suggestion.notes)
+    assert any("removes nothing" in warning and PACU in warning for warning in result.warnings)
+    assert result.to_dict()["suggestions"][0]["replacement_mesh"] == "Anesthesia Recovery Period"
+
+
+@pytest.mark.parametrize(
+    ("query", "corrected"),
+    [
+        # An equivalent heading narrows nothing: the exact fix is applied inside NOT.
+        ('delirium[tiab] NOT "Emergence Deliriums"[Mesh]', 'delirium[tiab] NOT "Emergence Delirium"[Mesh]'),
+        (
+            'delirium[tiab] not "Emergence Deliriums/dt"[Mesh]',
+            'delirium[tiab] not "Emergence Delirium/drug therapy"[Mesh]',
+        ),
+        # Left to right, a term after the NOT operand is not excluded: the qualifier may be dropped.
+        (
+            'a[tiab] NOT b[tiab] OR "Emergence Deliriums/pharmacokinetics"[Mesh]',
+            'a[tiab] NOT b[tiab] OR "Emergence Delirium"[Mesh]',
+        ),
+    ],
+)
+async def test_exact_fixes_that_keep_every_restriction_apply_inside_not(fake: FakeEntrez, query: str, corrected: str):
+    result = await make_service().correct_query(query)
+
+    assert result.corrected_query == corrected and result.suggestions == ()
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        '"Emergence Deliriums/pharmacokinetics"[Mesh]',  # dropping the qualifier widens the exclusion
+        '"remimazolam"[Majr]',  # [Supplementary Concept] has no major-topic restriction
+    ],
+)
+async def test_exact_fixes_that_drop_a_restriction_are_only_suggested_inside_not(fake: FakeEntrez, clause: str):
+    query = f"delirium[tiab] NOT (sedation[tiab] OR {clause})"
+
+    result = await make_service().correct_query(query)
+
+    assert result.corrected_query == query
+    (suggestion,) = result.suggestions
+    assert suggestion.tier == "exact" and suggestion.evidence["dropped_restrictions"]
+
+
+async def test_the_same_clause_is_rewritten_where_included_and_only_suggested_where_excluded(fake: FakeEntrez):
+    query = f"{PACU} AND delirium[tiab] NOT ({PACU} AND child[tiab])"
+
+    result = await make_service().correct_query(query)
+
+    assert result.status == "corrected"
+    assert result.corrected_query.startswith('("Post-Anesthesia Care Units"[tiab] OR ')
+    assert result.corrected_query.endswith(f"NOT ({PACU} AND child[tiab])")
+    assert [(item.original, item.occurrences) for item in result.corrections] == [(PACU, 1)]
+    assert [(item.original, item.occurrences) for item in result.suggestions] == [(PACU, 1)]
 
 
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):

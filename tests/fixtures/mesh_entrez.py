@@ -210,6 +210,7 @@ class FakeEntrez:
             '"emergence deliriums"[mesh]',
             '"recovery rooms"[mesh:noexp]',
             '"remimazolam"[mesh]',
+            '"remimazolam"[majr]',
             '"post-operative deliriums"[majr]',
             '"postanesthesia recovery wards"[mesh]',
             '"ischemia/reperfusion injury"[mesh]',

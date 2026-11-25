@@ -60,6 +60,8 @@ _MESH_TAG = re.compile(
 )
 _DELIMITERS = '()"[]'
 _WORD = re.compile(r"\S+")
+# Query tokens for NOT scoping: quoted phrase, field tag, parenthesis or bare word.
+_SCAN_TOKEN = re.compile(r'"[^"]*"?|\[[^\]]*\]?|[()]|[^\s()"\[]+')
 
 # The 76 MeSH qualifiers (subheadings) and their two-letter abbreviations, as
 # listed by NLM's "Qualifiers - Scope Notes" (checked 2026-11-25). PubMed
@@ -274,7 +276,12 @@ STUDY_DESIGN_DESCRIPTORS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class TaggedMeshTerm:
-    """One MeSH-tagged clause located in a query string."""
+    """One MeSH-tagged clause located in a query string.
+
+    ``negated`` marks a clause inside a NOT operand (see
+    :func:`negated_spans`): records it matches are excluded, so any rewrite
+    that is not an equivalent heading would change what is excluded.
+    """
 
     clause: str
     start: int
@@ -286,6 +293,7 @@ class TaggedMeshTerm:
     major: bool
     noexp: bool
     quoted: bool
+    negated: bool = False
 
     @property
     def key(self) -> str:
@@ -399,15 +407,52 @@ def _bare_term_start(query: str, end: int) -> int | None:
     return words[0].start() if words else None
 
 
+def negated_spans(query: str) -> tuple[tuple[int, int], ...]:
+    """``[start, end)`` spans of the query tokens whose records a NOT excludes.
+
+    PubMed applies operators left to right with no precedence, so a NOT
+    excludes exactly its next operand: one parenthesized group, or the term
+    words up to the next operator or parenthesis (``a NOT b OR c`` excludes
+    only ``b``). Any spelling of "not" counts, including a mixed-case ``Not``
+    that PubMed searches as a word, so that ambiguity can only make the
+    correction more cautious. A clause nested in two NOTs is still negated.
+    """
+    spans: list[tuple[int, int]] = []
+    groups = [False]  # whether each open parenthesis group is inside a NOT operand
+    pending = False  # a NOT was just read
+    in_operand = False  # inside the term words of a NOT operand
+    for match in _SCAN_TOKEN.finditer(query):
+        piece = match.group()
+        if piece.casefold() == "not":
+            pending, in_operand = True, False
+        elif boolean_operator(piece) is not None:
+            pending = in_operand = False
+        elif piece == "(":
+            groups.append(groups[-1] or pending or in_operand)
+            pending = in_operand = False
+        elif piece == ")":
+            if len(groups) > 1:
+                groups.pop()
+            pending = in_operand = False
+        else:
+            in_operand = in_operand or pending
+            pending = False
+            if groups[-1] or in_operand:
+                spans.append((match.start(), match.end()))
+    return tuple(spans)
+
+
 def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
     """Every MeSH descriptor clause in ``query``, in order.
 
     Recognizes ``[Mesh]``, ``[MeSH Terms]``, ``[mh]``, ``[Majr]``, ``[MeSH Major
     Topic]`` and their ``:noexp`` forms, quoted or bare, with an optional
     ``/qualifier`` (a real MeSH subheading, see :func:`split_qualifier`). Tags
-    inside a quoted phrase are ignored.
+    inside a quoted phrase are ignored. Clauses inside a NOT operand are
+    marked ``negated``.
     """
     terms: list[TaggedMeshTerm] = []
+    excluded = negated_spans(query)
     for match in _MESH_TAG.finditer(query):
         if not _quote_balance_is_even(query[: match.start()]):
             continue
@@ -441,6 +486,7 @@ def find_mesh_terms(query: str) -> tuple[TaggedMeshTerm, ...]:
                 major=field_name in {"majr", "mesh major topic"},
                 noexp=match.group("noexp") is not None,
                 quoted=quoted,
+                negated=any(low <= start < high for low, high in excluded),
             )
         )
     return tuple(terms)
@@ -684,6 +730,7 @@ __all__ = [
     "find_mesh_terms",
     "flag_unresolved_terms",
     "joint_query",
+    "negated_spans",
     "normalize_heading",
     "not_found_clauses",
     "or_block",
