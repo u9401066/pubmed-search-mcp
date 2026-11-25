@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import ResultAggregator
-from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.domain.entities.article import RetrievalProvenance, UnifiedArticle
+from pubmed_search.domain.services.mesh_correction import find_mesh_terms
 from pubmed_search.shared.article_identity import canonical_article_key
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
@@ -38,6 +39,7 @@ from .clinical_trials import (
     validate_clinical_trials_rows,
 )
 from .helpers import DispatchStrategy, RelaxationResult, SearchDepthMetrics
+from .mesh_correction import MESH_CORRECTED_SUFFIX, PubMedMeshCorrector
 from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint, is_seen_article
 from .tiering import (
     build_broadening_disclosure,
@@ -47,6 +49,7 @@ from .tiering import (
 )
 
 if TYPE_CHECKING:
+    from pubmed_search.application.search.mesh_correction import MeshCorrectionService
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
 
     from .planning import ProgressReporter, UnifiedSearchPlan
@@ -115,6 +118,7 @@ class UnifiedSearchExecutionResult:
     enrichment_metadata: dict[str, Any]
     exclude_seen_message: str | None = None
     broadening: dict[str, Any] | None = None
+    mesh_correction: dict[str, Any] | None = None
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -148,8 +152,9 @@ async def _search_single_source(
     search_functions: Mapping[str, SearchRunner],
     *,
     limit_override: int | None = None,
+    query_override: str | None = None,
 ) -> SourceAdapterResult[UnifiedArticle]:
-    query = plan.query if source == "pubmed" else plan.provider_neutral_query
+    query = query_override or (plan.query if source == "pubmed" else plan.provider_neutral_query)
     limit = plan.request.limit if limit_override is None else limit_override
     min_year = plan.effective_min_year
     max_year = plan.effective_max_year
@@ -181,6 +186,56 @@ async def _search_single_source(
     return outcome
 
 
+def _mesh_corrector(plan: UnifiedSearchPlan, service: MeshCorrectionService | None) -> PubMedMeshCorrector | None:
+    """A corrector only when PubMed runs, the caller allows it and the query has MeSH clauses."""
+    if service is None or not plan.request.mesh_correction or "pubmed" not in plan.dispatch_sources:
+        return None
+    return PubMedMeshCorrector(service) if find_mesh_terms(plan.query) else None
+
+
+async def _correct_single_pass_pubmed(
+    plan: UnifiedSearchPlan,
+    search_results: list[SourceAdapterResult[UnifiedArticle]],
+    search_functions: Mapping[str, SearchRunner],
+    corrector: PubMedMeshCorrector,
+) -> list[SourceAdapterResult[UnifiedArticle]]:
+    """Re-run the PubMed leg with the MeSH-corrected query and use it as the exact result."""
+    for index, result in enumerate(search_results):
+        if result.source != "pubmed" or result.status == "error":
+            continue
+        raw_total = result.metadata.get("total_available")
+        total = raw_total if isinstance(raw_total, int) and not isinstance(raw_total, bool) else result.total_count
+        corrected_query = await corrector.propose(plan.query, result.metadata, total)
+        if not corrected_query:
+            return search_results
+
+        async def _execute_corrected(query: str = corrected_query) -> SourceAdapterResult[UnifiedArticle]:
+            return await _search_single_source("pubmed", plan, search_functions, query_override=query)
+
+        (rerun,) = await gather_source_adapter_calls(
+            [SourceAdapterCall(source="pubmed", operation="search", execute=_execute_corrected)],
+            per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+        )
+        raw_rerun_total = rerun.metadata.get("total_available")
+        corrector.record_rerun(
+            status=rerun.status,
+            total=raw_rerun_total if isinstance(raw_rerun_total, int) else rerun.total_count,
+            metadata=rerun.metadata,
+        )
+        if rerun.status == "error":
+            return search_results
+        tag_retrieval(
+            rerun.items,
+            RetrievalProvenance(
+                source="pubmed", strategy=f"original{MESH_CORRECTED_SUFFIX}", tier="exact", tier_rank=0
+            ),
+        )
+        corrected_results = list(search_results)
+        corrected_results[index] = rerun
+        return corrected_results
+    return search_results
+
+
 async def execute_unified_search(
     plan: UnifiedSearchPlan,
     *,
@@ -188,11 +243,19 @@ async def execute_unified_search(
     source_broker: SourceBrokerPort,
     enrichment: EnrichmentPort,
     source_registry: Any,
+    mesh_correction: MeshCorrectionService | None = None,
 ) -> UnifiedSearchExecutionResult:
-    """Execute a planned unified search and return normalized output state."""
+    """Execute a planned unified search and return normalized output state.
+
+    ``mesh_correction`` enables automatic correction of MeSH clauses PubMed
+    reports as not found (unless ``options="no_mesh_correction"``); the
+    corrected query replaces the PubMed exact tier before any deepening,
+    broadening or relaxation decision.
+    """
     search_functions = source_broker.build_search_functions()
     request = plan.request
     analysis = plan.analysis
+    corrector = _mesh_corrector(plan, mesh_correction)
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
@@ -246,8 +309,10 @@ async def execute_unified_search(
                 request.advanced_filters,
                 strategies=plan.deep_strategies,
                 eligibility=_retrieval_eligibility(request),
-                # The no_relax option opts out of every automatic broadening path.
+                # The no_relax option opts out of every automatic broadening path;
+                # MeSH correction is separate (options="no_mesh_correction").
                 allow_broadening=request.auto_relax,
+                **({"exact_query_corrector": corrector} if corrector is not None else {}),
             )
             for error in deep_source_errors:
                 logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
@@ -341,6 +406,8 @@ async def execute_unified_search(
                 [_build_search_call(source) for source in search_sources],
                 per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
             )
+            if corrector is not None:
+                search_results = await _correct_single_pass_pubmed(plan, search_results, search_functions, corrector)
 
             # A default simple/lookup search often has one fast primary leg. If
             # that leg failed (rather than returning a valid empty set), make one
@@ -441,6 +508,14 @@ async def execute_unified_search(
         # stable identifier; a matching title alone never overwrites conflicting
         # preprint and published-version identities.
 
+        effective_pubmed_query = corrector.rewrite(plan.query) if corrector is not None else plan.query
+        if corrector is not None and corrector.applied:
+            source_metadata.setdefault("pubmed", {})["mesh_correction"] = {
+                "applied": True,
+                "original_query": plan.query,
+                "corrected_query": effective_pubmed_query,
+            }
+
         await progress(5, 10, "Aggregating results...")
         aggregator = ResultAggregator(plan.ranking_config)
         articles, stats = aggregator.aggregate(all_results)
@@ -456,7 +531,7 @@ async def execute_unified_search(
         ):
             logger.info("0 results — attempting auto-relaxation")
             relaxation_result = await source_broker.auto_relax(
-                plan.query,
+                effective_pubmed_query,
                 request.limit,
                 request.min_year or analysis.year_from,
                 request.max_year or analysis.year_to,
@@ -582,12 +657,15 @@ async def execute_unified_search(
                 )
         if request.limit and len(ranked) > request.limit:
             ranked = ranked[: request.limit]
+        mesh_correction_disclosure = corrector.disclosure() if corrector is not None else None
         broadening = build_broadening_disclosure(
             requested_limit=request.limit,
             deep_metrics=deep_search_metrics,
             relaxation=relaxation_result,
             broadening_enabled=request.auto_relax,
             exact_pubmed_total=exact_pubmed_total,
+            mesh_correction=mesh_correction_disclosure,
+            pubmed_returned=source_api_counts.get("pubmed", (0, None))[0],
         )
 
         result_filter_counts = {
@@ -683,6 +761,7 @@ async def execute_unified_search(
             result_filter_counts=result_filter_counts,
             enrichment_metadata=enrichment_metadata,
             broadening=broadening,
+            mesh_correction=mesh_correction_disclosure,
         )
     finally:
         if clinical_trials_task is not None and not clinical_trials_task.done():

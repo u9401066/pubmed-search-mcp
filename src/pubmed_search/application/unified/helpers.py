@@ -389,6 +389,7 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     "no_next": ("include_next_tools", False),
     "no_provenance": ("include_section_provenance", False),
     "no_relax": ("auto_relax", False),
+    "no_mesh_correction": ("mesh_correction", False),
     "shallow": ("deep_search", False),
 }
 _COMPACT_OPTION_DEFAULTS: dict[str, bool] = {

@@ -14,6 +14,14 @@ Design:
     one ``search-broadening/v1`` disclosure, so agents can always tell whether
     broadening happened, why, and which records it added.
 
+    A PubMed MeSH correction (``mechanisms`` entry ``"mesh_correction"``)
+    happens before all of this: when PubMed reports that a MeSH clause of the
+    caller's query matched nothing, the corrected query is re-run as the exact
+    tier and every later decision uses its results. ``mechanisms`` therefore
+    lists every automatic change to what was searched, and ``applied`` is
+    true when any of them ran; ``broadened_records`` alone counts records
+    from lower-precision tiers.
+
 Maintenance:
     This module is pure policy: no I/O, no presentation strings beyond the
     disclosure summary. The infrastructure broker drives provider calls with
@@ -26,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.semantic_enhancer import STRATEGY_TIER_RANKS
+from pubmed_search.application.unified.mesh_correction import correction_summary
 from pubmed_search.domain.entities.article import RetrievalProvenance
 from pubmed_search.shared.article_identity import (
     normalize_article_doi,
@@ -34,7 +43,7 @@ from pubmed_search.shared.article_identity import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from pubmed_search.domain.entities.article import UnifiedArticle
 
@@ -51,6 +60,13 @@ EXACT_TIER = "exact"
 NARROW_TIER = "narrow"
 RELAXED_TIER = "relaxed"
 RELAXED_TIER_RANK = max(STRATEGY_TIER_RANKS.values()) + 1
+
+PHASE_SUPERSEDED = "superseded"
+"""Exact attempt replaced by its MeSH-corrected re-run; its records never entered the pool."""
+PHASE_MESH_CORRECTION_FAILED = "mesh_correction_failed"
+"""Failed re-run of a MeSH-corrected query; the original exact attempt was kept."""
+UNADMITTED_PHASES = frozenset({PHASE_SUPERSEDED, PHASE_MESH_CORRECTION_FAILED})
+MECHANISM_MESH_CORRECTION = "mesh_correction"
 
 SKIP_LIMIT_FILLED = "limit_filled"
 SKIP_BROADENING_DISABLED = "broadening_disabled"
@@ -400,6 +416,50 @@ def _relaxation_phrase(relaxation: RelaxationResult) -> str:
     return f" → auto-relaxation tried {len(relaxation.steps_tried)} broader PubMed queries; none returned records"
 
 
+def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: int) -> list[dict[str, Any]]:
+    """Attempt rows for a single-pass (non-deep) search whose PubMed query was corrected."""
+    counts = mesh_correction.get("hit_counts") or {}
+    before, after = counts.get("before"), counts.get("after")
+    base = {
+        "source": "pubmed",
+        "tier": EXACT_TIER,
+        "tier_rank": 0,
+        "executed": True,
+        "duplicates": 0,
+        "ineligible": 0,
+        "surplus_discarded": 0,
+        "skip_reason": None,
+    }
+    return [
+        {
+            **base,
+            "strategy": "original",
+            "phase": PHASE_SUPERSEDED,
+            "status": "empty" if before == 0 else "ok",
+            "logical_query": mesh_correction.get("original_query"),
+            "physical_query": None,
+            "requested": None,
+            "total_available": before,
+            "returned": None,
+            "new_unique": 0,
+            "contributed": 0,
+        },
+        {
+            **base,
+            "strategy": "original:mesh_corrected",
+            "phase": "exact",
+            "status": "ok" if pubmed_returned else "empty",
+            "logical_query": mesh_correction.get("corrected_query"),
+            "physical_query": None,
+            "requested": None,
+            "total_available": after,
+            "returned": pubmed_returned,
+            "new_unique": pubmed_returned,
+            "contributed": pubmed_returned,
+        },
+    ]
+
+
 def build_broadening_disclosure(
     *,
     requested_limit: int,
@@ -407,13 +467,17 @@ def build_broadening_disclosure(
     relaxation: RelaxationResult | None,
     broadening_enabled: bool,
     exact_pubmed_total: int | None = None,
+    mesh_correction: Mapping[str, Any] | None = None,
+    pubmed_returned: int = 0,
 ) -> dict[str, Any] | None:
-    """Describe whether automatic broadening happened, why, and its yield.
+    """Describe automatic query changes (MeSH correction, broadening), why, and their yield.
 
-    Returns ``None`` when neither tiered deep search nor auto-relaxation ran.
+    Returns ``None`` when no MeSH correction was applied and neither tiered
+    deep search nor auto-relaxation ran.
     """
     outcome = deep_metrics.tier_outcome if deep_metrics is not None else None
-    if outcome is None and relaxation is None:
+    corrected = bool(mesh_correction and mesh_correction.get("applied"))
+    if outcome is None and relaxation is None and not corrected:
         return None
 
     attempts: list[dict[str, Any]] = []
@@ -440,11 +504,18 @@ def build_broadening_disclosure(
         filled = outcome.filled
         summary = _deep_summary(deep_metrics, outcome)
 
+    if corrected and outcome is None and mesh_correction is not None:
+        attempts.extend(_mesh_correction_rows(mesh_correction, pubmed_returned))
+        exact_eligible = eligible = pubmed_returned
+        filled = pubmed_returned >= requested_limit
+        needed = not filled
+        summary = f"corrected query returned {pubmed_returned} of requested {requested_limit}"
+
     if relaxation is not None:
         needed = True
         if relaxation.steps_tried:
             mechanisms.append("auto_relax")
-        if outcome is None:
+        if outcome is None and not corrected:
             total = f" (PubMed total {exact_pubmed_total})" if exact_pubmed_total is not None else ""
             summary = f"original returned 0 of requested {requested_limit}{total}"
             attempts.insert(
@@ -480,6 +551,9 @@ def build_broadening_disclosure(
 
     if needed and not filled:
         summary += f"; still under-filled ({eligible} of {requested_limit})"
+    if corrected:
+        mechanisms.insert(0, MECHANISM_MESH_CORRECTION)
+        summary = f"{correction_summary(mesh_correction)} → {summary}"
     applied = bool(mechanisms)
     return {
         "schema_version": BROADENING_SCHEMA_VERSION,
@@ -521,6 +595,9 @@ def compact_broadening(disclosure: dict[str, Any] | None) -> dict[str, Any] | No
 __all__ = [
     "BROADENING_SCHEMA_VERSION",
     "DEEP_FILL_MAX_REQUEST",
+    "MECHANISM_MESH_CORRECTION",
+    "PHASE_MESH_CORRECTION_FAILED",
+    "PHASE_SUPERSEDED",
     "POLICY_SKIP_REASONS",
     "DeepFillTracker",
     "FillAdmission",
@@ -534,4 +611,5 @@ __all__ = [
     "strategy_tier",
     "strategy_tier_rank",
     "tag_retrieval",
+    "UNADMITTED_PHASES",
 ]

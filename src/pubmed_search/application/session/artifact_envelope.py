@@ -15,6 +15,7 @@ from pubmed_search.application.unified.clinical_trials import (
     ClinicalTrialsResponseError,
     validate_clinical_trials_rows,
 )
+from pubmed_search.application.unified.mesh_correction import compact_mesh_correction, correction_summary
 from pubmed_search.application.unified.tiering import POLICY_SKIP_REASONS, compact_broadening
 from pubmed_search.shared.credential_sanitizer import (
     extract_credential_values,
@@ -90,6 +91,7 @@ class UnifiedSearchArtifactExecution:
     result_filter_counts: dict[str, int] | None = None
     enrichment_metadata: dict[str, Any] | None = None
     broadening: dict[str, Any] | None = None
+    mesh_correction: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,7 @@ def normalize_unified_search_artifact_input(
             result_filter_counts=dict(getattr(execution, "result_filter_counts", {}) or {}),
             enrichment_metadata=dict(getattr(execution, "enrichment_metadata", {}) or {}),
             broadening=_broadening_attr(execution),
+            mesh_correction=_mesh_correction_attr(execution),
         )
 
     return UnifiedSearchArtifactInput(
@@ -215,6 +218,11 @@ def _list_attr(value: Any, attr: str) -> list[Any]:
 
 def _broadening_attr(execution: Any) -> dict[str, Any] | None:
     raw = getattr(execution, "broadening", None)
+    return dict(raw) if isinstance(raw, dict) else None
+
+
+def _mesh_correction_attr(execution: Any) -> dict[str, Any] | None:
+    raw = getattr(execution, "mesh_correction", None)
     return dict(raw) if isinstance(raw, dict) else None
 
 
@@ -453,6 +461,7 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "deep_search": _deep_search_payload(plan, execution),
         "relaxation": _relaxation_payload(execution),
         "broadening": execution.broadening,
+        "mesh_correction": execution.mesh_correction,
     }
 
 
@@ -759,6 +768,16 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
                 details=compact_broadening(broadening),
             )
 
+    mesh_correction = execution.mesh_correction
+    if mesh_correction:
+        _add_check(
+            checks,
+            check="mesh_correction",
+            severity="info" if mesh_correction.get("applied") else "warn",
+            message=correction_summary(mesh_correction) or "PubMed could not resolve a MeSH clause.",
+            details=compact_mesh_correction(mesh_correction),
+        )
+
     tier_ranks = [_article_tier_rank(article) for article in ranked]
     if tier_ranks != sorted(tier_ranks):
         _add_check(
@@ -864,6 +883,8 @@ def build_unified_search_artifact_envelope(
     }
     if execution.broadening:
         summary["broadening"] = compact_broadening(execution.broadening)
+    if execution.mesh_correction:
+        summary["mesh_correction"] = compact_mesh_correction(execution.mesh_correction)
     metadata = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "artifact_role": "research_output",

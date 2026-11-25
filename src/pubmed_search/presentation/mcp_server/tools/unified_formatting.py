@@ -18,11 +18,16 @@ from pubmed_search.application.unified.clinical_trials import (
     ClinicalTrialsFormatError,
     clinical_trials_error_payload,
 )
+from pubmed_search.application.unified.mesh_correction import (
+    compact_mesh_correction,
+    correction_summary,
+)
 from pubmed_search.application.unified.tiering import compact_broadening, source_label
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     get_openurl_link,
 )
+from pubmed_search.shared.markdown import escape_markdown_code as _escape_markdown_code
 from pubmed_search.shared.markdown import escape_markdown_text as _escape_markdown_text
 from pubmed_search.shared.markdown import safe_markdown_url as _safe_markdown_url
 
@@ -273,6 +278,7 @@ def _build_unified_section_provenance(
     include_source_disagreement: bool,
     include_reproducibility: bool,
     include_broadening: bool = False,
+    include_mesh_correction: bool = False,
 ) -> dict[str, dict[str, object]]:
     """Describe where each JSON section came from for agent chaining."""
     upstream_sources = [str(row["source"]) for row in source_rows]
@@ -330,6 +336,18 @@ def _build_unified_section_provenance(
                 "relaxation added records, why, and each attempt's query, totals, and contribution."
             ),
             upstream_sources=upstream_sources,
+        )
+    if include_mesh_correction:
+        provenance["mesh_correction"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed",
+            provenance="derived",
+            note=(
+                "Automatic MeSH correction: PubMed's WarningList/ErrorList named a MeSH clause that matched "
+                "nothing; the rewrite, its tier, evidence (exact MeSH record or MEDLINE co-occurrence sample) "
+                'and before/after PubMed totals. Opt out with options="no_mesh_correction".'
+            ),
+            upstream_sources=["pubmed"],
         )
     if include_relaxation:
         provenance["relaxation"] = make_section_provenance(
@@ -475,6 +493,22 @@ def _format_broadening_section(broadening: Mapping[str, Any] | None) -> list[str
     return lines
 
 
+def _format_mesh_correction_section(mesh_correction: Mapping[str, Any] | None) -> list[str]:
+    """One Markdown line per MeSH correction attempt (applied or not)."""
+    summary = correction_summary(mesh_correction)
+    if not summary or mesh_correction is None:
+        return []
+    icon = "🔧" if mesh_correction.get("applied") else "⚠️"
+    line = f"**MeSH correction**: {icon} {_escape_markdown_text(summary)}"
+    corrected = mesh_correction.get("corrected_query")
+    if mesh_correction.get("applied") and isinstance(corrected, str):
+        line += f". Corrected PubMed query: `{_escape_markdown_code(corrected)}`"
+    opt_out = mesh_correction.get("opt_out")
+    if opt_out:
+        line += f". Opt out with `{_escape_markdown_code(str(opt_out))}`"
+    return [line + "."]
+
+
 def _retrieval_badge(article: UnifiedArticle) -> str | None:
     """Return a visible badge for a record found only by automatic broadening."""
     best = article.best_retrieval
@@ -517,6 +551,7 @@ async def _format_unified_results(
     result_filter_counts: Mapping[str, int] | None = None,
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
+    mesh_correction: Mapping[str, Any] | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -636,6 +671,11 @@ async def _format_unified_results(
                 "(remaining records are not thereby proven peer reviewed)"
             )
         output_parts.append(f"**Results**: {results_str}")
+        output_parts.append("")
+
+    mesh_correction_lines = _format_mesh_correction_section(mesh_correction)
+    if mesh_correction_lines:
+        output_parts.extend(mesh_correction_lines)
         output_parts.append("")
 
     broadening_lines = _format_broadening_section(broadening)
@@ -1014,6 +1054,8 @@ def _serialize_truncated_response_payload(
         truncated_payload["search_status"] = payload["search_status"]
     if payload.get("broadening"):
         truncated_payload["broadening"] = compact_broadening(payload["broadening"])
+    if payload.get("mesh_correction"):
+        truncated_payload["mesh_correction"] = compact_mesh_correction(payload["mesh_correction"])
     if payload.get("search_run"):
         truncated_payload["search_run"] = payload["search_run"]
 
@@ -1247,6 +1289,7 @@ def _format_as_json(
     prefetched_trials: list[dict[str, Any]] | None = None,
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
+    mesh_correction: Mapping[str, Any] | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
@@ -1287,6 +1330,8 @@ def _format_as_json(
             cap_context["source_metadata"] = source_metadata
         if broadening:
             cap_context["broadening"] = dict(broadening)
+        if mesh_correction:
+            cap_context["mesh_correction"] = dict(mesh_correction)
         if enrichment_metadata:
             cap_context["enrichment"] = enrichment_metadata
         if artifact_manifest:
@@ -1332,6 +1377,9 @@ def _format_as_json(
         # Always present (independent of no_analysis): agents must be able to
         # tell exact-query matches from automatically broadened fill.
         result["broadening"] = dict(broadening)
+    if mesh_correction:
+        # Always present when PubMed flagged a MeSH clause: what was rewritten and why.
+        result["mesh_correction"] = dict(mesh_correction)
     if source_metadata:
         result["source_metadata"] = source_metadata
     if enrichment_metadata:
@@ -1435,6 +1483,7 @@ def _format_as_json(
             include_source_disagreement=include_analysis and source_disagreement is not None,
             include_reproducibility=include_analysis and reproducibility_score is not None,
             include_broadening=bool(broadening),
+            include_mesh_correction=bool(mesh_correction),
         )
 
     return _serialize_with_response_cap(

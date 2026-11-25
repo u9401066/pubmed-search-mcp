@@ -67,7 +67,7 @@ from pubmed_search.domain.services.mesh_correction import (
 from pubmed_search.domain.services.mesh_phrase_matching import matches_for, resolve_matches
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Mapping, Sequence
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
 
     from pubmed_search.domain.services.mesh_correction import Confidence, EvidenceSample
     from pubmed_search.domain.services.mesh_phrase_matching import MeshRecord, TermMatch
@@ -92,6 +92,7 @@ SAMPLE_NOTE = (
     "The sample is the first records of the evidence query in the stated sort order, not a random sample; "
     "background counts are records indexed with the heading itself ([mh:noexp]) at retrieval time."
 )
+PROBE_COUNT_METHOD = "PubMed ESearch count (retmax=0)"
 SCORING_NOTE = (
     "share = sampled records carrying the heading / sampled records with MeSH (recall estimate); "
     "estimated_precision = share x evidence_total / background_count, capped at 1; score = F1 of the two. "
@@ -273,6 +274,7 @@ class MeshCorrectionResult:
     diagnostics_after: PubMedQueryDiagnostics | None = None
     budget: Mapping[str, Any] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+    count_method: str = PROBE_COUNT_METHOD
 
     @property
     def changed(self) -> bool:
@@ -293,7 +295,7 @@ class MeshCorrectionResult:
             "hit_counts": {
                 "before": self.before_count,
                 "after": self.after_count,
-                "method": "PubMed ESearch count (retmax=0)",
+                "method": self.count_method,
             },
             "corrections": [correction.to_dict() for correction in self.corrections],
             "valid_terms": list(self.valid_terms),
@@ -347,12 +349,36 @@ class MeshCorrectionService:
     def policy(self) -> MeshCorrectionPolicy:
         return self._policy
 
+    def unavailable_result(
+        self,
+        query: str,
+        *,
+        diagnostics: PubMedQueryDiagnostics | None = None,
+        observed_count: int | None = None,
+        warning: str | None = None,
+    ) -> MeshCorrectionResult:
+        """Disclosure for a correction attempt that could not complete; the query is unchanged."""
+        terms = find_mesh_terms(query)
+        flagged = {item.term.start for item in flag_unresolved_terms(terms, diagnostics)} if diagnostics else set()
+        return MeshCorrectionResult(
+            query,
+            query,
+            "unavailable",
+            "ncbi_diagnostics" if diagnostics is not None else "none",
+            valid_terms=tuple(dict.fromkeys(term.clause for term in terms if term.start not in flagged)),
+            before_count=observed_count,
+            diagnostics_before=diagnostics,
+            warnings=(warning,) if warning else (),
+        )
+
     async def correct_query(
         self,
         query: str,
         *,
         diagnostics: PubMedQueryDiagnostics | None = None,
         observed_count: int | None = None,
+        measure_after: bool = True,
+        count_scope: Callable[[str], str] | None = None,
     ) -> MeshCorrectionResult:
         """Return ``query`` with every unresolved MeSH clause corrected, plus the disclosure.
 
@@ -361,7 +387,15 @@ class MeshCorrectionService:
             diagnostics: ESearch diagnostics already obtained for ``query``;
                 when omitted, one count-only probe obtains them.
             observed_count: Hit count already obtained for ``query``.
+            measure_after: Count the corrected query with one ESearch. Callers
+                that re-run the corrected query themselves pass ``False`` and
+                fill ``after_count`` from that search.
+            count_scope: Maps a query to the string actually counted, so
+                probes include the caller's filters (for example
+                ``lambda q: f"({q}) AND 2020:2025[dp]"``). Corrections are
+                always computed on ``query`` itself.
         """
+        scope = count_scope or (lambda text: text)
         terms = find_mesh_terms(query)
         if not terms:
             return MeshCorrectionResult(query, query, "not_applicable", "none", before_count=observed_count)
@@ -370,7 +404,7 @@ class MeshCorrectionService:
         warnings: list[str] = []
         before_count = observed_count
         if diagnostics is None and budget.reserve(1, "diagnostics probe of the original query"):
-            probe = await self._attempt(self._gateway.probe(query), "PubMed diagnostics probe", warnings)
+            probe = await self._attempt(self._gateway.probe(scope(query)), "PubMed diagnostics probe", warnings)
             if probe is not None:
                 diagnostics, before_count = probe.diagnostics, probe.count
 
@@ -428,8 +462,10 @@ class MeshCorrectionService:
 
         after_count: int | None = None
         diagnostics_after: PubMedQueryDiagnostics | None = None
-        if budget.reserve(1, "count of the corrected query"):
-            after = await self._attempt(self._gateway.probe(corrected), "PubMed count of the corrected query", warnings)
+        if measure_after and budget.reserve(1, "count of the corrected query"):
+            after = await self._attempt(
+                self._gateway.probe(scope(corrected)), "PubMed count of the corrected query", warnings
+            )
             if after is not None:
                 after_count, diagnostics_after = after.count, after.diagnostics
                 for remaining in flag_unresolved_terms(find_mesh_terms(corrected), after.diagnostics):
@@ -767,6 +803,7 @@ __all__ = [
     "MeshCorrectionPolicy",
     "MeshCorrectionResult",
     "MeshCorrectionService",
+    "PROBE_COUNT_METHOD",
     "PhraseSuggestions",
     "RequestBudget",
     "TermCorrection",

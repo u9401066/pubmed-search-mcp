@@ -236,7 +236,14 @@ def register_unified_search_tools(
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
                        no_relax       → disable automatic broadening (deep fill tiers
-                                        and auto-relaxation on 0 results)
+                                        and auto-relaxation on 0 results); MeSH
+                                        correction still runs
+                       no_mesh_correction
+                                      → keep a PubMed MeSH clause that PubMed reports
+                                        as not found (QuotedPhraseNotFound /
+                                        PhraseNotFound) instead of re-running the
+                                        exact tier with a corrected query; the
+                                        PubMed warning is still shown
                        exclude_seen   → omit prior session results by PMID/DOI (not supported with pipeline)
                        native_semantic → use provider-native semantic retrieval;
                                          currently OpenAlex, max 50 results

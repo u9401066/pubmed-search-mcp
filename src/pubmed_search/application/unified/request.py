@@ -145,6 +145,8 @@ class UnifiedSearchRequest:
     deep_search: bool
     fulltext: Literal["off", "prefetch"] = "off"
     exclude_seen: bool = False
+    # Automatic correction of MeSH clauses PubMed cannot resolve; independent of auto_relax.
+    mesh_correction: bool = True
     seen_pmids: frozenset[str] = frozenset()
     seen_dois: frozenset[str] = frozenset()
     seen_search_count: int | None = None
@@ -265,6 +267,7 @@ def normalize_unified_search_request(
         deep_search=False if explicit_provider_mode else parsed_options.get("deep_search", True),
         fulltext=fulltext,
         exclude_seen=parsed_options.get("exclude_seen", False),
+        mesh_correction=parsed_options.get("mesh_correction", True),
     )
 
 
