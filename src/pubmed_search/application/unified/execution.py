@@ -349,6 +349,7 @@ async def execute_unified_search(
                     )
                 )
                 logical_queries = list(dict.fromkeys(attempt.query for attempt in executed_attempts if attempt.query))
+                requested = sum(attempt.allocated_limit for attempt in executed_attempts)
                 warning_values: list[str] = []
                 for attempt in attempts:
                     attempt_warnings = attempt.metadata.get("warnings")
@@ -367,7 +368,10 @@ async def execute_unified_search(
                     "budget": {
                         "policy": "precision_first",
                         "per_source_limit": request.limit,
-                        "requested": sum(attempt.allocated_limit for attempt in executed_attempts),
+                        "requested": requested,
+                        # Deprecated alias kept for v0.10 consumers: the sum of
+                        # provider request limits (skipped attempts request 0).
+                        "allocated": requested,
                         "fetched": sum(attempt.articles_count for attempt in executed_attempts),
                         "returned": returned,
                     },
