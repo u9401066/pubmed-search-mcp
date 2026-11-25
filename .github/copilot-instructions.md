@@ -713,7 +713,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 3. **Parallel Execution**: When generating search strategies or PICO elements, call `generate_search_queries()` in parallel for efficiency.
 
-4. **MeSH Expansion**: `generate_search_queries()` automatically expands terms using NCBI MeSH database. This finds papers using different terminology but same concepts.
+4. **MeSH Expansion**: `generate_search_queries()` automatically expands terms using NCBI MeSH database. This finds papers using different terminology but same concepts. Only `mesh_terms` are confirmed (the topic phrase equals a preferred or entry term); review `mesh_candidates` before use and cover `unmapped_phrases` with free-text terms.
 
 5. **Rate Limits**: The server automatically handles NCBI API rate limits. No manual throttling needed.
 
