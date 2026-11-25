@@ -402,6 +402,8 @@ class TestReferenceVerificationService:
 
     @pytest.mark.asyncio
     async def test_partial_match_row_exposes_review_strategy(self):
+        # The exact-title search is year-tolerant: the same-titled record from
+        # another year is a partial match, not an unrelated "close" title.
         self.searcher.find_by_citation = AsyncMock(return_value=None)
         self.searcher.search_page = AsyncMock(
             return_value=_pubmed_page(
@@ -409,7 +411,7 @@ class TestReferenceVerificationService:
                     {
                         "pmid": "45678901",
                         "doi": "10.1000/example-doi",
-                        "title": "Close but not exact title",
+                        "title": "Original trial title",
                         "journal": "N Engl J Med",
                         "journal_abbrev": "N Engl J Med",
                         "year": "2022",
@@ -434,17 +436,18 @@ class TestReferenceVerificationService:
         assert any(item["label"] == "journal_year_author" for item in result["review_strategy"]["retry_queries"])
 
     @pytest.mark.asyncio
-    async def test_resolve_by_title_escapes_embedded_quotes(self):
-        parsed = self.service.parse_reference(
+    async def test_title_search_strips_embedded_quotes_without_year_filter(self):
+        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
+
+        await self.service.verify_reference(
             'Smith J. Alpha "beta" gamma trial results. N Engl J Med. 2024;390(1):12-18.',
             index=1,
         )
-        self.searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
 
-        await self.service._resolve_by_title(parsed)
-
-        called_query = self.searcher.search_page.await_args.args[0]
-        assert called_query == '"Alpha beta gamma trial results"[Title]'
+        title_call = self.searcher.search_page.await_args_list[0]
+        assert title_call.args[0] == "alpha[ti] AND beta[ti] AND gamma[ti] AND trial[ti] AND results[ti]"
+        assert "min_year" not in title_call.kwargs
+        assert "max_year" not in title_call.kwargs
 
 
 class TestReferenceVerificationTool:

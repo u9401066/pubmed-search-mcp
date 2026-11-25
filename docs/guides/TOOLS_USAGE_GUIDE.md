@@ -247,6 +247,21 @@ record's identity. Individual lookup failures retain successful rows and report
 `source_unavailable`; they are not missing references. This check does not
 determine whether the cited paper supports a claim; read the relevant passage.
 
+The publication year is read from the citation locator (`Journal. 2019;321(5):473`),
+so a year inside a title such as `...surgery-2018.` does not break parsing. When
+ECitMatch finds nothing, a title-word search and a first-author + journal +
+volume/first-page search run **without the cited year**, because a wrong year is
+the most common citation error. A record found this way is accepted only when its
+title agrees and it does not conflict on both first author and journal (without a
+cited title, author, journal, volume and first page must all agree); the closest
+year, author order and locator agreement rank versions of the same work. Its row is
+`partial_match` with `corrections` such as
+`{"field": "year", "cited": "2018", "pubmed": "2019"}`. Corrections are withheld
+when the cited title conflicts with the record or several versions match equally.
+Confirm `matched_article` before applying them. An `unresolved` row lists
+`attempted_strategies`; it means PubMed returned no acceptable record, not that
+the reference is fabricated.
+
 ### Full Text, Figures, And Image Evidence
 
 ![Full text, figures, and biomedical image workflow](../images/visual-evidence-workflow.svg)
