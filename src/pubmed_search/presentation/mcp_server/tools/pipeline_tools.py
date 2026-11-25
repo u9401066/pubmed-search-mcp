@@ -794,9 +794,11 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
             config: Pipeline YAML/JSON string. Same format as unified_search pipeline param.
             tags: Bounded array of canonical tags (e.g., ["anesthesia", "sedation"]).
             description: Human-readable description of the pipeline's purpose.
-            scope: Storage scope - "workspace" (project-level, git-trackable),
-                   "global" (user-level, cross-project), or "auto" (workspace if
-                   available, otherwise global). Default: "auto".
+            scope: Storage scope - "workspace" (project-level
+                   <workspace>/.pubmed-search/; a newly created directory gets a
+                   .gitignore that ignores everything), "global" (user-level,
+                   cross-project), or "auto" (workspace if available, otherwise
+                   global). Default: "auto".
 
         Returns:
             Confirmation with pipeline metadata.

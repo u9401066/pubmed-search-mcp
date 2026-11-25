@@ -170,6 +170,42 @@ class TestStoreInit:
         PipelineStore(global_data_dir=global_dir)
         assert not (workspace_dir / ".pubmed-search").exists()
 
+    def test_new_workspace_data_dir_is_git_ignored(self, global_dir: Path, workspace_dir: Path):
+        """Record sets (abstracts) and the screening log must not be committed by accident."""
+        import shutil
+        import subprocess
+
+        git = shutil.which("git")
+        if git is None:
+            pytest.skip("git is not installed")
+        store = PipelineStore(global_data_dir=global_dir, workspace_dir=workspace_dir)
+        store.save("ignored", PipelineConfig(steps=[PipelineStep(id="s", action="search", params={"query": "q"})]))
+        store.save_report("ignored", "run_001", "# private report")
+
+        gitignore = workspace_dir / ".pubmed-search" / ".gitignore"
+        assert gitignore.is_file()
+        assert "*" in gitignore.read_text(encoding="utf-8").splitlines()
+        subprocess.run([git, "init", "-q", str(workspace_dir)], check=True)
+        status = subprocess.run(
+            [git, "-C", str(workspace_dir), "status", "--porcelain", "--untracked-files=all"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == ""
+
+    def test_existing_workspace_data_dir_and_gitignore_are_left_alone(self, global_dir: Path, workspace_dir: Path):
+        tracked = workspace_dir / ".pubmed-search"
+        (tracked / "pipelines").mkdir(parents=True)
+        PipelineStore(global_data_dir=global_dir, workspace_dir=workspace_dir)
+        assert not (tracked / ".gitignore").exists()  # an existing (possibly git-tracked) directory is not changed
+
+        custom = workspace_dir / "other"
+        (custom / ".pubmed-search").mkdir(parents=True)
+        (custom / ".pubmed-search" / ".gitignore").write_text("records/\n", encoding="utf-8")
+        PipelineStore(global_data_dir=global_dir, workspace_dir=custom)
+        assert (custom / ".pubmed-search" / ".gitignore").read_text(encoding="utf-8") == "records/\n"
+
 
 # =========================================================================
 # Save

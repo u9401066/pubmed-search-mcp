@@ -97,6 +97,20 @@ class PipelineDeletion:
 
 
 _SCREENING_LOG_SIDECARS = ("-journal", "-wal", "-shm", "")
+WORKSPACE_DATA_DIRNAME = ".pubmed-search"
+# Written once into a workspace data directory this store creates. Run record
+# sets carry titles and abstracts and the screening log holds reviewers' work;
+# neither should reach a project repository by accident.
+WORKSPACE_GITIGNORE = """# Created by pubmed-search-mcp: local research data (saved pipelines, run record
+# sets with titles/abstracts, screening decisions, reports). Ignored by default.
+# To share saved pipeline definitions through git, replace this file, e.g. with:
+#   /*
+#   !/.gitignore
+#   !/pipelines/
+#   /pipelines/*
+#   !/pipelines/*.yaml
+*
+"""
 
 
 def _config_to_dict(config: PipelineConfig, *, include_output_defaults: bool = False) -> dict[str, Any]:
@@ -163,8 +177,23 @@ class PipelineStore:
         self._global_runs_dir.mkdir(parents=True, exist_ok=True)
 
         if self._workspace_dir:
+            data_root = self._workspace_dir / WORKSPACE_DATA_DIRNAME
+            created_root = not data_root.exists()
             self._workspace_pipelines_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_runs_dir.mkdir(parents=True, exist_ok=True)
+            if created_root:
+                self._write_workspace_gitignore(data_root)
+
+    @staticmethod
+    def _write_workspace_gitignore(data_root: Path) -> None:
+        """Ignore a newly created workspace data directory; never replace an existing file."""
+        try:
+            with (data_root / ".gitignore").open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(WORKSPACE_GITIGNORE)
+        except FileExistsError:
+            return
+        except OSError as exc:
+            logger.warning("Could not create the workspace data .gitignore (%s)", type(exc).__name__)
 
     def rebased(self, global_data_dir: str | Path) -> PipelineStore:
         """Return an equivalent store rooted at a different global directory.
