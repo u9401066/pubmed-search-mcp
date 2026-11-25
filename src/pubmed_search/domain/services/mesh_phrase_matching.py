@@ -137,13 +137,19 @@ class TopicPhrases:
 
 @dataclass(frozen=True)
 class MeshRecord:
-    """Vocabulary record reduced to the fields needed for exact matching."""
+    """Vocabulary record reduced to the fields needed for exact matching.
+
+    ``allowed_qualifiers`` are the subheadings MeSH allows with the heading
+    (ESummary ``DS_Subheading``, written with ``and`` for ``&``); empty means
+    unknown, not "none allowed".
+    """
 
     uid: str
     preferred: str
     entry_terms: tuple[str, ...] = ()
     tree_numbers: tuple[str, ...] = ()
     record_type: RecordType = "descriptor"
+    allowed_qualifiers: tuple[str, ...] = ()
 
     @property
     def terms(self) -> tuple[str, ...]:
@@ -324,16 +330,17 @@ def lookup_variants(phrase: str) -> tuple[str, ...]:
     return tuple(unique.values())
 
 
-def _exact(text: str) -> str:
+def exact_form(text: str) -> str:
+    """Literal comparison form: Unicode compatibility, case and whitespace folded, nothing else."""
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
 def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
     """Accept only a preferred-term or entry-term equality; literal equality wins over normalization."""
     terms = record.terms
-    literal = _exact(phrase)
+    literal = exact_form(phrase)
     for index, term in enumerate(terms):
-        if _exact(term) == literal:
+        if exact_form(term) == literal:
             return TermMatch(record, "preferred" if index == 0 else "entry_term", term)
     key = term_key(phrase)
     if not key:

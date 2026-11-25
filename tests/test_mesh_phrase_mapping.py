@@ -339,6 +339,17 @@ def test_summary_parser_classifies_records_and_skips_qualifiers_and_actions():
         _mesh_record_from_summary(_doc("D003920", "Diabetes Mellitus"))
 
 
+def test_summary_parser_keeps_a_descriptors_allowable_qualifiers():
+    # Live Bio.Entrez key and spelling (ESummary 2026-11-25): "DS_Subheading", "and" for "&".
+    descriptor = _mesh_record_from_summary(
+        _doc("68020927", "Dexmedetomidine", DS_Subheading=["administration and dosage", "adverse effects"])
+    )
+    assert descriptor is not None
+    assert descriptor.allowed_qualifiers == ("administration and dosage", "adverse effects")
+    unlisted = _mesh_record_from_summary(_doc("68003920", "Diabetes Mellitus"))
+    assert unlisted is not None and unlisted.allowed_qualifiers == ()  # unknown, not "none allowed"
+
+
 # ---------------------------------------------------------------------------
 # generate_strategies through the fake Entrez boundary
 # ---------------------------------------------------------------------------

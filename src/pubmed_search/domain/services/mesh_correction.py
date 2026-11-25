@@ -162,6 +162,27 @@ def canonical_qualifier(text: str) -> str | None:
     return _QUALIFIER_BY_FORM.get(qualifier_form(text))
 
 
+def qualifier_spelling(written: str) -> str:
+    """The qualifier as written, or its full name when written as a two-letter abbreviation.
+
+    PubMed resolves abbreviations only in unquoted clauses (live 2026-11-25:
+    ``neoplasms/dh[mh]`` finds records, ``"Neoplasms/dh"[mh]`` is not found).
+    """
+    stripped = written.strip()
+    name = canonical_qualifier(stripped)
+    if name is not None and stripped.casefold() == MESH_QUALIFIERS[name].casefold():
+        return name
+    return stripped
+
+
+def qualifier_allowed(written: str, allowed: Sequence[str]) -> bool | None:
+    """Whether MeSH allows the qualifier with a heading; None when the allowed list is unknown (empty)."""
+    if not allowed:
+        return None
+    name = canonical_qualifier(written)
+    return name is not None and qualifier_form(name) in {qualifier_form(item) for item in allowed}
+
+
 def split_qualifier(text: str) -> tuple[str, str | None]:
     """``(heading, qualifier)`` of a MeSH clause text; only a real MeSH subheading is a qualifier.
 
@@ -271,9 +292,14 @@ class TaggedMeshTerm:
         """Normalized descriptor key shared by spelling, hyphen and plural variants."""
         return term_key(self.descriptor)
 
-    def render(self, descriptor: str, *, keep_qualifier: bool = True) -> str:
-        """The same clause with another heading, keeping the agent's field tag."""
-        text = f"{descriptor}/{self.qualifier}" if keep_qualifier and self.qualifier else descriptor
+    def render(self, descriptor: str, *, keep_qualifier: bool = True, qualifier: str | None = None) -> str:
+        """The same clause with another heading, keeping the agent's field tag.
+
+        ``qualifier`` replaces the written qualifier (for example its full
+        name instead of an abbreviation); ``keep_qualifier=False`` drops it.
+        """
+        chosen = (qualifier or self.qualifier) if keep_qualifier else None
+        text = f"{descriptor}/{chosen}" if chosen else descriptor
         return f'"{text}"[{self.tag}]'
 
 
@@ -653,7 +679,9 @@ __all__ = [
     "or_block",
     "phrase_priority",
     "pubmed_text_key",
+    "qualifier_allowed",
     "qualifier_form",
+    "qualifier_spelling",
     "rank_descriptors",
     "score_descriptor",
     "split_qualifier",

@@ -61,13 +61,15 @@ from pubmed_search.domain.services.mesh_correction import (
     joint_query,
     or_block,
     phrase_priority,
+    qualifier_allowed,
+    qualifier_spelling,
     rank_descriptors,
     score_descriptor,
     text_word_block,
     text_word_clauses,
     text_word_variants,
 )
-from pubmed_search.domain.services.mesh_phrase_matching import matches_for, resolve_matches
+from pubmed_search.domain.services.mesh_phrase_matching import exact_form, matches_for, resolve_matches
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -81,6 +83,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 SampleSort = Literal["relevance", "pub_date"]
 CorrectionTier = Literal["exact", "co_occurrence", "text_words"]
+QualifierCheck = Literal["allowed", "not_allowed", "unverified"]
 CorrectionStatus = Literal["not_applicable", "valid", "corrected", "unavailable"]
 Detection = Literal["none", "ncbi_diagnostics", "exact_lookup"]
 CooccurrenceStatus = Literal[
@@ -625,14 +628,17 @@ class MeshCorrectionService:
             notes.append(f"{record.record_type.replace('_', ' ')} records are searched with [{record.search_field}].")
             if dropped:
                 notes.append(f"Dropped {', '.join(dropped)}, which do not apply to this record type.")
-        elif term.descriptor == record.preferred:
-            if not term.qualifier:
-                return None
-            replacement = term.render(record.preferred, keep_qualifier=False)
-            notes.append(f"The heading exists but PubMed rejected qualifier /{term.qualifier}; it was removed.")
-            confidence = "medium"
         else:
-            replacement = term.render(record.preferred)
+            same_heading = exact_form(term.descriptor) == exact_form(record.preferred)
+            qualifier, qualifier_notes, qualifier_check = self._checked_qualifier(term, record, same_heading)
+            if same_heading and qualifier == term.qualifier:
+                return None  # PubMed flagged the clause, but no rewrite would change it
+            notes.extend(qualifier_notes)
+            if qualifier_check is not None:
+                evidence["qualifier_check"] = qualifier_check
+                if qualifier_check != "allowed":
+                    confidence = "medium"
+            replacement = term.render(record.preferred, keep_qualifier=qualifier is not None, qualifier=qualifier)
         return TermCorrection(
             original=term.clause,
             term=term.descriptor,
@@ -645,6 +651,44 @@ class MeshCorrectionService:
             evidence=evidence,
             notes=tuple(notes),
         )
+
+    @staticmethod
+    def _checked_qualifier(
+        term: TaggedMeshTerm, record: MeshRecord, same_heading: bool
+    ) -> tuple[str | None, list[str], QualifierCheck | None]:
+        """Qualifier to keep on the corrected heading (None drops it), the notes, and how it was checked.
+
+        Only a qualifier MeSH allows with the heading keeps "high" confidence;
+        an unlisted allowed set is "unverified". When the clause already names
+        the heading exactly, PubMed's flag is evidence against an unverified
+        qualifier, so it is removed.
+        """
+        if not term.qualifier:
+            return None, [], None
+        spelled = qualifier_spelling(term.qualifier)
+        allowed = qualifier_allowed(term.qualifier, record.allowed_qualifiers)
+        if allowed is False:
+            note = f"Qualifier /{term.qualifier} is not an allowable qualifier of {record.preferred!r}; it was removed."
+            return None, [note], "not_allowed"
+        if allowed is None and same_heading and spelled == term.qualifier:
+            return (
+                None,
+                [f"The heading exists but PubMed rejected qualifier /{term.qualifier}; it was removed."],
+                ("unverified"),
+            )
+        notes = []
+        if spelled != term.qualifier:
+            notes.append(
+                f"Qualifier abbreviation /{term.qualifier} was written out as /{spelled}; PubMed does not resolve "
+                "abbreviations inside quotes."
+            )
+        if allowed is None:
+            notes.append(
+                f"Qualifier /{spelled} could not be checked: the MeSH record lists no allowable qualifiers, so "
+                "PubMed may still reject it."
+            )
+            return spelled, notes, "unverified"
+        return spelled, notes, "allowed"
 
     def _cooccurrence_correction(
         self, term: TaggedMeshTerm, report: CooccurrenceReport, reason: str, ambiguous: Sequence[str]

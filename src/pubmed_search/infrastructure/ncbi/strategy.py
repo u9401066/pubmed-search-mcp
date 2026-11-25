@@ -69,9 +69,11 @@ def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
 
     Qualifier (subheading) and pharmacological-action records are skipped:
     they are not standalone PubMed MeSH Terms and would shadow descriptors.
+    ``DS_Subheading`` lists the qualifiers allowed with a descriptor.
     """
     uid = str(summary["Id"])
     terms = [str(term).strip() for term in summary["DS_MeshTerms"] if str(term).strip()]
+    qualifiers = [str(name).strip() for name in summary.get("DS_Subheading") or [] if str(name).strip()]
     if not uid.isascii() or not uid.isdecimal():
         raise ValueError("Invalid MeSH identifier")
     if not terms:
@@ -92,6 +94,7 @@ def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
         entry_terms=tuple(dict.fromkeys(term for term in terms[1:] if term != terms[0])),
         tree_numbers=tuple(tree for tree in trees if not tree.startswith("@")),
         record_type=record_type,
+        allowed_qualifiers=tuple(dict.fromkeys(qualifiers)) if record_type == "descriptor" else (),
     )
 
 

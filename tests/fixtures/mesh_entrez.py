@@ -95,13 +95,56 @@ JOINT_COUNTS = {
 }
 
 
-def _doc(uid: str, *terms: str, trees: tuple[str, ...] = ("X00",), scr: bool = False) -> dict[str, Any]:
+# Live DS_Subheading of Emergence Delirium (2016453), ESummary 2026-11-25.
+EMERGENCE_DELIRIUM_QUALIFIERS = (
+    "blood",
+    "cerebrospinal fluid",
+    "chemically induced",
+    "classification",
+    "complications",
+    "diagnosis",
+    "diagnostic imaging",
+    "diet therapy",
+    "drug therapy",
+    "economics",
+    "enzymology",
+    "epidemiology",
+    "ethnology",
+    "etiology",
+    "genetics",
+    "history",
+    "immunology",
+    "metabolism",
+    "microbiology",
+    "mortality",
+    "nursing",
+    "parasitology",
+    "pathology",
+    "physiopathology",
+    "prevention and control",
+    "psychology",
+    "rehabilitation",
+    "surgery",
+    "therapy",
+    "urine",
+    "virology",
+)
+
+
+def _doc(
+    uid: str,
+    *terms: str,
+    trees: tuple[str, ...] = ("X00",),
+    scr: bool = False,
+    qualifiers: tuple[str, ...] = (),
+) -> dict[str, Any]:
     return {
         "Id": uid,
         "DS_MeshTerms": list(terms),
         "DS_IdxLinks": [{"TreeNum": tree} for tree in trees],
         "DS_HeadingMappedToList": [68001569] if scr else [],
         "DS_PaList": [],
+        "DS_Subheading": list(qualifiers),
     }
 
 
@@ -114,6 +157,7 @@ MESH_DOCS = [
         "Postoperative Delirium",
         "Post-Operative Delirium",
         trees=("C10.597.606.337.500.500",),
+        qualifiers=EMERGENCE_DELIRIUM_QUALIFIERS,
     ),
     _doc("68003693", "Delirium", "Deliriums", trees=("F01.700.250.500",)),
     _doc("68011997", "Recovery Room", "Recovery Rooms", "Hospital Recovery Room", trees=("N02.278.388.493.592",)),
@@ -169,6 +213,14 @@ class FakeEntrez:
             '"post-operative deliriums"[majr]',
             '"postanesthesia recovery wards"[mesh]',
             '"ischemia/reperfusion injury"[mesh]',
+            # PubMed rejects quoted qualifier abbreviations (live: "Neoplasms/dh"[mh]) and
+            # qualifiers a heading does not allow.
+            '"emergence delirium/dt"[mesh]',
+            '"emergence deliriums/dt"[mesh]',
+            '"emergence deliriums/pharmacokinetics"[mesh]',
+            '"emergence delirium/pharmacokinetics"[mesh]',
+            '"recovery rooms/methods"[mesh]',
+            '"emergence delirium/therapy"[mesh]',
         }
         self.bad_bare = {"pacu": "PACU", "units": "units"}
         self.headings = _pacu_headings()

@@ -271,6 +271,43 @@ async def test_slashed_heading_is_corrected_as_one_concept_not_truncated(fake: F
     assert '"Ischemia-Reperfusion Injury"[MeSH Terms]' in str(fake.calls)
 
 
+@pytest.mark.parametrize(
+    ("clause", "replacement", "confidence", "note"),
+    [
+        # Abbreviations are rejected inside quotes (live: "Neoplasms/dh"[mh]); the full name is not.
+        ('"Emergence Delirium/dt"[Mesh]', '"Emergence Delirium/drug therapy"[Mesh]', "high", "abbreviation"),
+        ('"Emergence Deliriums/dt"[Mesh]', '"Emergence Delirium/drug therapy"[Mesh]', "high", "abbreviation"),
+        # Before: kept as "Emergence Delirium/pharmacokinetics"[Mesh] and labeled high confidence.
+        ('"Emergence Deliriums/pharmacokinetics"[Mesh]', '"Emergence Delirium"[Mesh]', "medium", "not an allowable"),
+        # Before: a case-only difference counted as a new heading, so the rejected clause was
+        # re-emitted unchanged except for case, labeled high confidence.
+        ('"emergence delirium/pharmacokinetics"[Mesh]', '"Emergence Delirium"[Mesh]', "medium", "not an allowable"),
+        # The record lists no allowable qualifiers: the qualifier is kept but not vouched for.
+        ('"Recovery Rooms/methods"[Mesh]', '"Recovery Room/methods"[Mesh]', "medium", "could not be checked"),
+    ],
+)
+async def test_qualifiers_are_checked_against_the_headings_allowable_qualifiers(
+    fake: FakeEntrez, clause: str, replacement: str, confidence: str, note: str
+):
+    result = await make_service().correct_query(f"{clause} AND sedation[tiab]")
+
+    (correction,) = result.corrections
+    assert result.corrected_query == f"{replacement} AND sedation[tiab]"
+    assert (correction.tier, correction.confidence) == ("exact", confidence)
+    assert any(note in item for item in correction.notes)
+
+
+async def test_a_flagged_clause_that_already_names_the_heading_and_an_allowed_qualifier_is_left_alone(
+    fake: FakeEntrez,
+):
+    query = '"emergence delirium/therapy"[Mesh] AND sedation[tiab]'
+
+    result = await make_service().correct_query(query)
+
+    assert (result.corrected_query, result.corrections) == (query, ())
+    assert any("left unchanged" in warning for warning in result.warnings)
+
+
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):
     result = await make_service().correct_query('"remimazolam"[Mesh] AND sedation[tiab]')
 
