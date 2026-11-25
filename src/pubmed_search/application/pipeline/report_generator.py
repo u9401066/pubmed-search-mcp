@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.pipeline.executor import classify_pipeline_outcome
+from pubmed_search.application.pipeline.mesh_suggestions import ADOPT_INSTRUCTION, suggestion_note
 from pubmed_search.shared.markdown import (
     escape_markdown_block,
     escape_markdown_code,
@@ -29,6 +30,8 @@ from pubmed_search.shared.markdown import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from pubmed_search.domain.entities.article import UnifiedArticle
     from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineRun, StepResult
 
@@ -72,6 +75,7 @@ def generate_pipeline_report(
     parts.append(_section_step_details(step_results, config))
     parts.append(_section_exhaustive_retrieval(step_results))
     parts.append(_section_block_analysis(step_results))
+    parts.append(_section_mesh_corrections(step_results))
     parts.append(_section_source_statistics(step_results))
     parts.append(_section_filter_diagnostics(step_results))
     parts.append(_section_evidence_distribution(articles))
@@ -225,6 +229,32 @@ def _count_cell(value: Any) -> str:
     return "—" if value is None else f"{value:,}" if isinstance(value, int) else escape_markdown_text(value)
 
 
+def mesh_correction_warnings(step_results: Mapping[str, StepResult]) -> list[str]:
+    """One warning per step whose PubMed query had a MeSH clause PubMed could not resolve."""
+    warnings: list[str] = []
+    for step_id, result in step_results.items():
+        suggestions = [result.metadata.get("mesh_correction")]
+        analysis = result.metadata.get("block_analysis")
+        if isinstance(analysis, dict):
+            suggestions.append(analysis.get("mesh_correction"))
+        for suggestion in suggestions:
+            note = suggestion_note(suggestion if isinstance(suggestion, dict) else None)
+            if note:
+                warnings.append(f"Step {step_id}: {note}")
+    return warnings
+
+
+def _section_mesh_corrections(step_results: dict[str, StepResult]) -> str:
+    warnings = mesh_correction_warnings(step_results)
+    if not warnings:
+        return ""
+    parts = ["## ⚠️ PubMed MeSH clauses that matched nothing\n"]
+    parts.extend(f"- {escape_markdown_text(warning)}" for warning in warnings)
+    parts.append("")
+    parts.append(f"{escape_markdown_text(ADOPT_INSTRUCTION)}\n")
+    return "\n".join(parts)
+
+
 def render_block_analysis_markdown(analysis: dict[str, Any], *, heading: str = "###") -> str:
     """Render one strategy block analysis as Markdown tables."""
     step_id = escape_markdown_code(str(analysis.get("step_id") or "block_analysis"))
@@ -259,6 +289,16 @@ def render_block_analysis_markdown(analysis: dict[str, Any], *, heading: str = "
             f"| {escape_markdown_text(term.get('block'))} | `{escape_markdown_code(term.get('term'))}` "
             f"| {_count_cell(term.get('unique_contribution'))} | {escape_markdown_text(term.get('status'))} |"
         )
+    unresolved = analysis.get("unresolved_terms") or []
+    if unresolved:
+        parts.append("")
+        parts.append(
+            "⚠️ PubMed did not find these terms, so they match nothing and their unique contribution "
+            "is meaningless: " + ", ".join(f"`{escape_markdown_code(str(item['term']))}`" for item in unresolved)
+        )
+        note = suggestion_note(analysis.get("mesh_correction"))
+        if note:
+            parts.append(escape_markdown_text(note))
     zero = analysis.get("zero_contribution_terms") or []
     if zero:
         parts.append("")

@@ -20,7 +20,7 @@ analysis is bounded and any unevaluated item is disclosed, never guessed.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.pipeline.boolean_query import (
     DecomposedQuery,
@@ -28,6 +28,10 @@ from pubmed_search.application.pipeline.boolean_query import (
     decompose_pubmed_query,
 )
 from pubmed_search.application.pipeline.budgets import PipelineBudgetExceededError
+from pubmed_search.domain.services.mesh_correction import not_found_clauses
+
+if TYPE_CHECKING:
+    from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
 
 CountFn = Callable[[str], Awaitable[int]]
 
@@ -201,4 +205,33 @@ async def analyze_strategy_blocks(query: str, *, count: CountFn, max_count_queri
     }
 
 
-__all__ = ["analyze_strategy_blocks", "not_decomposable", "planned_count_queries"]
+def annotate_unresolved_terms(analysis: dict[str, Any], diagnostics: PubMedQueryDiagnostics | None) -> dict[str, Any]:
+    """Mark terms PubMed reported as not found; their unique contribution is meaningless.
+
+    A term that matches nothing contributes nothing *by construction*, so a
+    zero unique contribution says the term is broken, not redundant. Such
+    terms get ``pubmed_not_found`` and ``contribution_meaningful: false``,
+    are listed in ``unresolved_terms`` and are removed from
+    ``zero_contribution_terms``.
+    """
+    analysis.setdefault("unresolved_terms", [])
+    if diagnostics is None or not diagnostics.has_issues:
+        return analysis
+    unresolved: list[dict[str, Any]] = []
+    for term in analysis.get("terms") or []:
+        clauses = not_found_clauses(str(term.get("term") or ""), diagnostics)
+        if not clauses:
+            continue
+        term["pubmed_not_found"] = clauses
+        term["contribution_meaningful"] = False
+        term["note"] = "PubMed did not find this term, so it matches nothing; fix or replace it before judging it."
+        unresolved.append({"block": term.get("block"), "term": term.get("term"), "not_found": clauses})
+    broken = {(item["block"], item["term"]) for item in unresolved}
+    analysis["unresolved_terms"] = unresolved
+    analysis["zero_contribution_terms"] = [
+        item for item in analysis.get("zero_contribution_terms") or [] if (item["block"], item["term"]) not in broken
+    ]
+    return analysis
+
+
+__all__ = ["analyze_strategy_blocks", "annotate_unresolved_terms", "not_decomposable", "planned_count_queries"]

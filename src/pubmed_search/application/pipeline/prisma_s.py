@@ -12,7 +12,11 @@ The record distinguishes three query forms:
 * ``logical_query`` — the strategy as saved in the pipeline (as entered);
 * ``physical_query`` — what was sent to the provider, including limits;
 * ``query_translation`` — PubMed's own interpretation (``QueryTranslation``),
-  captured for exhaustive retrieval steps from the ESearch snapshot.
+  captured from the ESearch response of exhaustive and bounded PubMed steps.
+
+When PubMed reports a MeSH clause as not found, the record carries the
+suggest-only ``mesh_correction`` (never applied to a saved strategy) and a
+note telling the reader how to adopt it.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.pipeline.exhaustive import PUBMED_PLATFORM, SEARCH_FILTER_KEYS
+from pubmed_search.application.pipeline.mesh_suggestions import diagnostics_from_provenance, suggestion_note
 from pubmed_search.application.pipeline.store import _config_to_dict
 from pubmed_search.application.pipeline.validator import compute_config_hash
 from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text
@@ -144,6 +149,22 @@ def _bounded_search_records(step_id: str, result: StepResult, server_version: st
         physical = provenance.get("physical_query") or logical
         error = errors_by_source.get(source)
         total = provider.get("total_count")
+        diagnostics = diagnostics_from_provenance(provenance) if source == "pubmed" else None
+        provider_notes = (
+            {
+                key: value
+                for group in ("warning_list", "error_list")
+                for key, value in diagnostics.to_dict()[group].items()
+                if value and key != "output_messages"
+            }
+            if diagnostics is not None
+            else {}
+        )
+        mesh_correction = metadata.get("mesh_correction") if source == "pubmed" else None
+        notes = ["Bounded relevance window; not a complete record set."] if not error else [str(error.get("message"))]
+        mesh_note = suggestion_note(mesh_correction)
+        if mesh_note:
+            notes.append(mesh_note)
         records.append(
             {
                 "step_id": step_id,
@@ -153,9 +174,12 @@ def _bounded_search_records(step_id: str, result: StepResult, server_version: st
                 "interface": f"{SERVER_NAME} {server_version or ''}".strip(),
                 "logical_query": logical,
                 "physical_query": physical,
-                "query_translation": None,
-                "translation_set": [],
-                "provider_notes": {},
+                "query_translation": diagnostics.query_translation if diagnostics is not None else None,
+                "translation_set": [{"from": item.source, "to": item.target} for item in diagnostics.translation_set]
+                if diagnostics is not None
+                else [],
+                "provider_notes": provider_notes,
+                "mesh_correction": mesh_correction,
                 "filters": filters,
                 "limits_text": _filters_text(filters),
                 "total_count": total if isinstance(total, int) and not isinstance(total, bool) else None,
@@ -166,9 +190,7 @@ def _bounded_search_records(step_id: str, result: StepResult, server_version: st
                 "executed_at": metadata.get("executed_at"),
                 "status": "error" if error else ("ok" if result.ok else "error"),
                 "query_sha256": query_fingerprint(physical if isinstance(physical, str) else None),
-                "notes": "Bounded relevance window; not a complete record set."
-                if not error
-                else str(error.get("message")),
+                "notes": "; ".join(notes),
             }
         )
     return records
@@ -194,6 +216,9 @@ def _exhaustive_search_record(step_id: str, result: StepResult, server_version: 
         note_parts.append(f"Quoted phrases not found: {', '.join(notes['quoted_phrases_not_found'])}")
     if notes.get("phrases_ignored"):
         note_parts.append(f"Phrases ignored: {', '.join(notes['phrases_ignored'])}")
+    mesh_note = suggestion_note(metadata.get("mesh_correction"))
+    if mesh_note:
+        note_parts.append(mesh_note)
     if retrieval.get("metadata_complete") is False and retrieval.get("metadata_requested"):
         note_parts.append(f"Metadata for {retrieval.get('metadata_count', 0)} records; export completes the rest")
     filters = dict(metadata.get("filters") or {})
@@ -208,6 +233,7 @@ def _exhaustive_search_record(step_id: str, result: StepResult, server_version: 
         "query_translation": history.get("query_translation"),
         "translation_set": list(history.get("translation_set") or []),
         "provider_notes": notes,
+        "mesh_correction": metadata.get("mesh_correction"),
         "filters": filters,
         "limits_text": _filters_text(filters),
         "total_count": retrieval.get("total_count"),

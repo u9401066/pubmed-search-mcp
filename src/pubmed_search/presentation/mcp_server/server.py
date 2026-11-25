@@ -336,6 +336,7 @@ def create_server(
         workspace_dir=workspace_dir,
         settings=settings,
         source_runtime=source_runtime,
+        mesh_correction=mesh_correction,
     )
 
     # ── Create MCP server with lifespan ─────────────────────────────────

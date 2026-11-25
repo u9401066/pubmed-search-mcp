@@ -379,6 +379,7 @@ class MeshCorrectionService:
         observed_count: int | None = None,
         measure_after: bool = True,
         count_scope: Callable[[str], str] | None = None,
+        max_ncbi_requests: int | None = None,
     ) -> MeshCorrectionResult:
         """Return ``query`` with every unresolved MeSH clause corrected, plus the disclosure.
 
@@ -394,13 +395,16 @@ class MeshCorrectionService:
                 probes include the caller's filters (for example
                 ``lambda q: f"({q}) AND 2020:2025[dp]"``). Corrections are
                 always computed on ``query`` itself.
+            max_ncbi_requests: Lower per-call request cap (callers with their
+                own quota); defaults to ``policy.max_ncbi_requests``.
         """
         scope = count_scope or (lambda text: text)
         terms = find_mesh_terms(query)
         if not terms:
             return MeshCorrectionResult(query, query, "not_applicable", "none", before_count=observed_count)
 
-        budget = RequestBudget(self._policy.max_ncbi_requests)
+        limit = self._policy.max_ncbi_requests
+        budget = RequestBudget(min(limit, max_ncbi_requests) if max_ncbi_requests is not None else limit)
         warnings: list[str] = []
         before_count = observed_count
         if diagnostics is None and budget.reserve(1, "diagnostics probe of the original query"):

@@ -239,8 +239,13 @@ def build_pipeline_runtime(
     source_runtime: SourceRuntime,
     workspace_dir: str | None = None,
     settings: AppSettings | None = None,
+    mesh_correction: Any | None = None,
 ) -> PipelineToolRuntime:
-    """Build one isolated pipeline runtime for one MCP server instance."""
+    """Build one isolated pipeline runtime for one MCP server instance.
+
+    ``mesh_correction`` lets scheduled and saved runs record suggest-only MeSH
+    corrections; it never rewrites a saved strategy.
+    """
     from pathlib import Path
 
     from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
@@ -294,6 +299,7 @@ def build_pipeline_runtime(
             max_external_calls=resolved_settings.pipeline_max_external_calls,
         ),
         execution_context=_bind_pipeline_execution_runtime,
+        mesh_correction=mesh_correction,
     )
     pipeline_scheduler = APSPipelineScheduler(
         store=pipeline_store,

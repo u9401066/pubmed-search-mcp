@@ -308,6 +308,23 @@ def flag_unresolved_terms(terms: Sequence[TaggedMeshTerm], diagnostics: PubMedQu
     return flagged
 
 
+def not_found_clauses(text: str, diagnostics: PubMedQueryDiagnostics) -> list[str]:
+    """NCBI not-found entries that occur in ``text`` (any field, not only MeSH).
+
+    A quoted entry matches when its normalized clause occurs in the text; a
+    bare ``PhraseNotFound`` word matches only directly before a field tag
+    (``PACU[mh]``), so an ordinary text word is not misattributed.
+    """
+    key = _clause_key(text)
+    found = [entry for entry in diagnostics.quoted_phrases_not_found if _clause_key(entry) in key]
+    found.extend(
+        word
+        for word in diagnostics.phrases_not_found
+        if re.search(rf"(?<![\w-]){re.escape(word)}\s*\[", text, re.IGNORECASE)
+    )
+    return list(dict.fromkeys(found))
+
+
 def normalize_heading(raw: str) -> str:
     """Descriptor name of a MEDLINE ``MH`` value (``*Recovery Room/statistics`` -> ``Recovery Room``)."""
     return raw.split("/", 1)[0].strip().lstrip("*").strip()
@@ -480,6 +497,7 @@ __all__ = [
     "find_mesh_terms",
     "flag_unresolved_terms",
     "normalize_heading",
+    "not_found_clauses",
     "or_block",
     "phrase_priority",
     "pubmed_text_key",

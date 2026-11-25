@@ -153,6 +153,19 @@ class PipelineRunBudget:
                 raise PipelineBudgetExceededError("external_call_quota_exhausted")
             self._external_calls_used += 1
 
+    async def try_reserve_external_calls(self, count: int) -> bool:
+        """Reserve ``count`` calls for optional work only if they all fit; never exhausts the run."""
+        async with self._lock:
+            if self.remaining_seconds() <= 0 or self._external_calls_used + count > self.policy.max_external_calls:
+                return False
+            self._external_calls_used += count
+            return True
+
+    async def release_external_calls(self, count: int) -> None:
+        """Return calls reserved by :meth:`try_reserve_external_calls` that were not used."""
+        async with self._lock:
+            self._external_calls_used = max(0, self._external_calls_used - count)
+
     async def reserve_count_query(self) -> None:
         """Reserve one count-only query; its quota never ends the whole run."""
         async with self._lock:
