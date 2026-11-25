@@ -541,9 +541,13 @@ class FulltextService:
 
         outcomes = await run_hedged(
             attempts,
-            # A publisher restriction reported by PMC's canonical host is final:
-            # the same JATS record cannot be redistributed by the mirror either.
-            usable=lambda document: document.has_body or document.restricted,
+            # Only a body ends the race. NCBI's publisher restriction applies to
+            # NCBI's XML copy; Europe PMC licenses and serves its own copy (for
+            # example funder author manuscripts), so an attempt already running
+            # there may still return the body. It keeps running until it
+            # answers, fails, or the request deadline stops it -- and is never
+            # reported as "superseded" by an answer that had no body.
+            usable=lambda document: document.has_body,
             hedge_after=self._hedge_seconds,
             deadline=deadline,
             on_start=on_start,
@@ -551,6 +555,7 @@ class FulltextService:
         await self._record_hedged_outcomes(result, outcomes, log, deadline)
 
         chosen: tuple[str, _StructuredDocument] | None = None
+        chosen_rank = 0
         for outcome in outcomes:
             document = outcome.value
             if not outcome.answered or document is None:
@@ -559,11 +564,12 @@ class FulltextService:
                 result.record_source_notice(outcome.source, "front_matter_only")
             elif not document.has_body:
                 result.record_source_notice(outcome.source, "no_body")
-            # Prefer the first body; otherwise keep the first parsed record
-            # (title, abstract-only XML) exactly as before the fallback existed.
-            better_body = document.has_body and (chosen is None or not chosen[1].has_body)
-            if better_body or (chosen is None and document.parsed):
-                chosen = (outcome.source, document)
+            # Prefer the first body; then a publisher restriction (it decides
+            # the links shown); then the first parsed record (title,
+            # abstract-only XML) exactly as before the fallback existed.
+            rank = 3 if document.has_body else 2 if document.restricted else 1 if document.parsed else 0
+            if rank > chosen_rank:
+                chosen, chosen_rank = (outcome.source, document), rank
         if chosen is not None:
             self._apply_structured_document(chosen[0], chosen[1], request, result)
 

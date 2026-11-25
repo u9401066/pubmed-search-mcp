@@ -31,6 +31,7 @@ from pubmed_search.infrastructure.sources.base_client import (
     ProviderSchemaError,
 )
 from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult, PDFLinkDiscoveryResult
+from pubmed_search.infrastructure.sources.jats import parse_jats_article
 from pubmed_search.infrastructure.sources.ncbi_pmc import NCBI_EUTILS_RATE_LIMIT, NCBIPMCClient
 from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import register_europe_pmc_tools
@@ -299,43 +300,96 @@ async def test_publisher_restricted_pmc_record_is_reported_not_presented_as_full
     assert result.sources_tried == ["europe_pmc", "ncbi_pmc", "pdf_retrieval_fallback"]
 
 
-async def test_pmc_publisher_restriction_ends_the_structured_race_without_waiting_for_the_mirror() -> None:
-    """ENGAGES (PMC6439616) shape: NCBI restricts XML while Europe PMC keeps failing slowly."""
+async def _race_slow_mirror_against_ncbi_restriction(
+    mirror_answer: Callable[[], Any], *, deadline_seconds: float = 30.0
+) -> Any:
+    """Europe PMC (the mirror) answers only after NCBI has reported a publisher restriction."""
     cache = FulltextCache()
-    cancelled = asyncio.Event()
-
-    async def slow_mirror(_: str) -> str:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cancelled.set()
-            raise
-        return "<article/>"
-
+    ncbi_answered = asyncio.Event()
     ncbi = await _ncbi_client(_NCBIFixture(efetch=PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT))
+    parse_ncbi = ncbi.parse_article_xml
+
+    def parse_and_signal(xml: str) -> dict[str, Any]:
+        parsed = parse_ncbi(xml)
+        ncbi_answered.set()
+        return parsed
+
+    ncbi.parse_article_xml = parse_and_signal  # type: ignore[method-assign]
+
+    async def slow_mirror(_: str) -> str | None:
+        await ncbi_answered.wait()
+        await asyncio.sleep(0.05)  # the restricted answer is already in hand
+        return await mirror_answer()
+
+    provider = MagicMock()
+    provider.parse_fulltext_xml.side_effect = lambda xml: parse_jats_article(xml, source="Europe PMC")
     try:
-        result = await asyncio.wait_for(
+        return await asyncio.wait_for(
             _service(
-                europe_pmc=MagicMock(),
+                europe_pmc=provider,
                 ncbi=ncbi,
                 structured_xml_fetcher=lambda pmcid: cache.get(pmcid, tenant="t", fetch=slow_mirror),
                 hedge_seconds=0.01,
+                deadline_seconds=deadline_seconds,
             ).retrieve(FulltextRequest(pmcid=PMCID)),
-            timeout=5,
+            timeout=10,
         )
-        await asyncio.wait_for(cancelled.wait(), timeout=1)
     finally:
         await ncbi.close()
         await cache.aclose()
 
+
+async def test_pmc_publisher_restriction_does_not_cancel_a_mirror_that_still_returns_the_body() -> None:
+    """NCBI's restriction says nothing about Europe PMC's own copy; its body still wins."""
+
+    async def body() -> str:
+        return PMC_EFETCH_FULL_BODY
+
+    result = await _race_slow_mirror_against_ncbi_restriction(body)
+
+    assert result.has_retrieved_text
+    assert result.fulltext_source_name == "Europe PMC"
+    assert "11/100 patients versus 9/101" in (result.raw_fulltext_content or "")
+    assert result.sources_completed == ["europe_pmc", "ncbi_pmc"]
     assert result.source_errors == []
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("ncbi_pmc", "front_matter_only")]
+    assert result.coverage_status == "complete"
+
+
+async def test_pmc_publisher_restriction_is_kept_when_the_mirror_has_no_body() -> None:
+    async def abstract_only() -> str:
+        return PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT
+
+    result = await _race_slow_mirror_against_ncbi_restriction(abstract_only)
+
+    assert not result.has_retrieved_text
     assert [(notice.source, notice.code) for notice in result.source_notices] == [
-        ("europe_pmc", "superseded"),
+        ("europe_pmc", "no_body"),
         ("ncbi_pmc", "front_matter_only"),
     ]
-    assert result.source_notices[0].message == "Stopped waiting after another source gave a definitive answer first."
+    # The restricted record decides the link: free to read on PMC, not an open-access PDF.
+    assert [link["type"] for link in result.pdf_links if "PubMed Central" in link["source"]] == ["landing_page"]
+    assert result.coverage_status == "complete"
+
+
+@pytest.mark.parametrize("mirror_hangs", [False, True], ids=["mirror-fails-slowly", "mirror-hangs"])
+async def test_pmc_publisher_restriction_waits_for_the_mirror_and_reports_its_failure(mirror_hangs: bool) -> None:
+    """ENGAGES (PMC6439616) shape: NCBI restricts XML while Europe PMC keeps failing slowly."""
+
+    async def failing() -> str:
+        if mirror_hangs:
+            await asyncio.Event().wait()
+        raise RetryableOperationError("Europe PMC request failed", status_code=503)
+
+    result = await _race_slow_mirror_against_ncbi_restriction(failing, deadline_seconds=1.0)
+
+    expected_code = "deadline_exceeded" if mirror_hangs else "upstream_retries_exhausted"
+    assert [(error.source, error.code) for error in result.source_errors] == [("europe_pmc", expected_code)]
+    # A restriction on NCBI's copy is not a definitive answer for the mirror: never "superseded".
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("ncbi_pmc", "front_matter_only")]
     assert not result.has_retrieved_text
-    assert result.sources_tried == ["europe_pmc", "ncbi_pmc", "pdf_retrieval_fallback"]
+    assert result.coverage_status == "partial"
+    assert result.pdf_links[0]["type"] == "landing_page"
 
 
 def test_service_and_settings_share_the_default_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
