@@ -10,9 +10,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Fixes for two agent-facing defects found by the 2026-11-25 Claude Code harness
-pilot (Haiku 5.5): a transient NCBI failure that the agent read as a query
-problem, and structured search responses too large for an agent context.
+## [0.12.0] - 2026-11-25
+
+Fulltext acquisition beyond PMC XML for host agents, plus agent-facing fixes
+found by the first Claude Code harness pilot (Haiku 5.5): a transient NCBI
+failure that the agent read as a query problem, structured search responses
+too large for an agent context, and PubMed records that never carried their
+article type or PMCID.
+
+**Upgrade note:** `unified_search` JSON/TOON articles are now summary records.
+Consumers that import `articles` wholesale (for example Zotero Keeper
+`import_articles`) must pass `options="full_records"`; versions before 0.12.0
+reject that option and already return complete records.
+
+### Added
+
+- `get_fulltext` reads the public PMC article page (`pmc_html`) for an explicit
+  single-article request when the XML sources fail, have no body or are front
+  matter only (for example JAMA records in PMC); search prefetch, batch and
+  pipeline paths never use it. Requires `NCBI_EMAIL` (otherwise skipped as
+  `not_configured`; placeholder contacts are never sent); 1 request/s, rolling
+  hourly budgets per process and per tenant, per-tenant cache, redirects
+  limited to NCBI hosts, back-off on 429, 403 or a bot challenge. Disable with
+  `PUBMED_FULLTEXT_PMC_HTML=false`.
+- `fulltext_plan` (JSON and Markdown) in `get_fulltext`: ordered next steps when
+  no usable body is returned (`retry_later`, `host_fetch`, `download_oa_pdf` for
+  verified open access only, `download_pdf` for free-to-read copies,
+  `check_access` for unknown access, `expand_discovery`, `institutional`,
+  `zotero_attachment`, `ask_user_for_pdf`), each with legal guidance and a
+  `register_fulltext` call shaped for what the caller may use.
+- `register_fulltext` tool (44 tools): register article text the host agent or
+  user obtained (content, or a local file in the workspace, notes directory,
+  tenant intake folder `<data>/fulltext/intake` or `PUBMED_FULLTEXT_INTAKE_ROOTS`)
+  with required provenance. Stored per tenant as `agent_supplied`/`user_supplied`
+  and reused by `get_fulltext`, notes and Chronicle evidence, never as
+  provider-verified text. The newest registration wins per article across PMID,
+  PMCID and DOI; registrations without body sections are kept as a
+  `supplied_fulltext` note and never hide provider fulltext. Annotated
+  destructive (it replaces the served text).
+- `get_fulltext` fields and codes: `use_registered_fulltext` parameter,
+  `fulltext_origin`, `fulltext_retrieval`, `supplied_fulltext`,
+  `fulltext_provenance: "supplied"`; notices `supplied_not_verified`,
+  `supplied_no_body`, `pdf_only`; skip reason `not_configured`.
+- Settings: `PUBMED_FULLTEXT_PMC_HTML` (default true),
+  `PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT` (60/process),
+  `PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT` (20/tenant),
+  `PUBMED_FULLTEXT_INTAKE_ROOTS`.
+- Agent Plugin skill `pubmed-fulltext-access` and server/Copilot/Cline guidance
+  for the plan-then-register flow.
+- Agent harness evaluation plan and the first Claude Code pilot report
+  (`docs/design/AGENT_HARNESS_EVAL.md`,
+  `docs/reports/claude_code_harness_pilot_2026-11-25.md`).
 
 ### Changed
 
@@ -71,6 +119,17 @@ problem, and structured search responses too large for an agent context.
   open in PMC, and a PubMed record indexed as `Preprint` is excluded by default
   like other detected preprints (`options="include_detected_preprints"` keeps
   it).
+
+### Security
+
+- Supplied content and PMC pages are parsed in linear time with hard caps on
+  size, elements, depth and sections (breaches are `invalid_input`); intake
+  parsing, file reads and store writes run off the event loop.
+- `register_fulltext` refuses network-share, device and extended-length paths
+  before any filesystem call, reads a file once with an identity check, refuses
+  JATS/PMC pages that declare another article, and redacts credentials and
+  signed query values from `source_url`.
+- Outbound fetches can be limited to an allow-list of hosts across redirects.
 
 ## [0.11.0] - 2026-11-25
 
