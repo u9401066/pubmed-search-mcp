@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from Bio import Entrez
+from typing_extensions import Self
 
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.infrastructure.provider_payload import has_provider_error_envelope
@@ -24,6 +25,10 @@ from .base import (
     raise_ncbi_infrastructure_error,
     run_entrez_callable,
 )
+from .diagnostics import parse_esearch_diagnostics
+
+if TYPE_CHECKING:
+    from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +136,29 @@ MESH_SUBHEADINGS = {
 }
 
 
+class ESearchIdList(tuple[list[str], int, str, str]):  # noqa: SLOT001 - instance __dict__ carries diagnostics
+    """``(id_list, total_count, webenv, query_key)`` plus PubMed's query diagnostics.
+
+    A tuple subclass so existing four-way unpacking keeps working while the
+    diagnostics from the same ESearch response travel with the IDs.
+    """
+
+    diagnostics: PubMedQueryDiagnostics
+
+    def __new__(
+        cls,
+        id_list: list[str],
+        total_count: int,
+        webenv: str,
+        query_key: str,
+        *,
+        diagnostics: PubMedQueryDiagnostics,
+    ) -> Self:
+        result = super().__new__(cls, (id_list, total_count, webenv, query_key))
+        result.diagnostics = diagnostics
+        return result
+
+
 class SearchMixin:
     """
     Mixin providing core search functionality.
@@ -192,6 +220,9 @@ class SearchMixin:
         Returns:
             A ``SourceSearchPage`` containing article dictionaries plus count,
             executed-query, retrieval-mode, and materialization provenance.
+            ``metadata["query_diagnostics"]`` carries PubMed's translation and
+            WarningList/ErrorList (see ``PubMedQueryDiagnostics.to_dict``), and
+            each reported issue is also added to ``warnings``.
         """
         full_query, sort_param = self._compile_search_request(
             query=query,
@@ -213,7 +244,9 @@ class SearchMixin:
             # Step 1: Search for IDs with retry (usehistory=y for large requests)
             executed_query = full_query
             query_executed = True
-            id_list, total_count, webenv, query_key = await self._search_ids(full_query, limit, sort_param)
+            search_ids = await self._search_ids(full_query, limit, sort_param)
+            id_list, total_count, webenv, query_key = search_ids
+            diagnostics: PubMedQueryDiagnostics | None = getattr(search_ids, "diagnostics", None)
 
             # Step 2: Fetch article records.
             # - "summary" mode: ESummary (fast, lightweight metadata only)
@@ -230,12 +263,14 @@ class SearchMixin:
 
             final_results = results[:limit]
             self._validate_search_response(total_count, final_results)
+            diagnostics_metadata = {"query_diagnostics": diagnostics.to_dict()} if diagnostics is not None else {}
             return SourceSearchPage(
                 source="pubmed",
                 items=final_results,
                 total=total_count,
                 query=executed_query,
                 mode=strategy,
+                warnings=diagnostics.issue_messages() if diagnostics is not None else [],
                 metadata={
                     "logical_query": query,
                     "physical_query": executed_query,
@@ -249,6 +284,7 @@ class SearchMixin:
                     "materialized_count": len(final_results),
                     "bounded": total_count > len(final_results),
                     "continuation_supported": False,
+                    **diagnostics_metadata,
                 },
             )
 
@@ -359,7 +395,7 @@ class SearchMixin:
         if any(not isinstance(article, dict) or not str(article.get("pmid") or "").strip() for article in articles):
             raise TypeError("NCBI returned an invalid article collection")
 
-    async def _search_ids(self, query: str, retmax: int, sort: str) -> tuple[list[str], int, str, str]:
+    async def _search_ids(self, query: str, retmax: int, sort: str) -> ESearchIdList:
         """Search for PubMed IDs using History Server by default.
 
         Using ``usehistory="y"`` stores the result set on NCBI servers so that
@@ -367,13 +403,14 @@ class SearchMixin:
         sending a potentially very long ID list over the wire.
 
         Returns:
-            Tuple of ``(id_list, total_count, webenv, query_key)``.
+            ``(id_list, total_count, webenv, query_key)`` with the response's
+            ``PubMedQueryDiagnostics`` on ``.diagnostics``.
         """
         api_key = getattr(self, "_api_key", None)
         email = getattr(self, "_email", None)
         tool = getattr(self, "_tool", DEFAULT_ENTREZ_TOOL)
 
-        async def do_search() -> tuple[list[str], int, str, str]:
+        async def do_search() -> ESearchIdList:
             handle = await asyncio.to_thread(
                 run_entrez_callable,
                 Entrez,
@@ -392,21 +429,16 @@ class SearchMixin:
             finally:
                 handle.close()
 
-            # Check NCBI WarningList for query translation issues
-            warning_list = record.get("WarningList", {})
-            if warning_list:
-                for warn_type, warn_msgs in warning_list.items():
-                    if isinstance(warn_msgs, list) and warn_msgs:
-                        logger.warning("NCBI %s returned %s warning message(s)", warn_type, len(warn_msgs))
-
-            translation_set = record.get("TranslationSet", [])
-            if translation_set:
-                logger.debug("NCBI translated %s query term(s)", len(translation_set))
+            # WarningList/ErrorList/TranslationSet are returned to callers and
+            # logged as counts only (the phrases may carry the user's query).
+            diagnostics = parse_esearch_diagnostics(record)
+            if diagnostics.translation_set:
+                logger.debug("NCBI translated %s query term(s)", len(diagnostics.translation_set))
 
             total_count = int(record.get("Count", 0))
             webenv = record.get("WebEnv", "")
             query_key = record.get("QueryKey", "")
-            return record["IdList"], total_count, webenv, query_key
+            return ESearchIdList(record["IdList"], total_count, webenv, query_key, diagnostics=diagnostics)
 
         return await execute_entrez_operation(
             do_search,
