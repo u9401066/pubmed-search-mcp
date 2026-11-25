@@ -3,8 +3,9 @@
 Design goals:
     - Accept plain-text reference lists passed from an MCP client.
     - Reuse existing PubMed evidence paths first: explicit PMID, DOI search,
-      ECitMatch, then a conservative title search fallback.
-    - Return structured evidence instead of a black-box yes/no verdict.
+      ECitMatch, then year-tolerant title and author/journal/locator searches.
+    - Return structured evidence instead of a black-box yes/no verdict,
+      including field-level corrections when a real record was mis-cited.
 
 This is intentionally the first-stage implementation for reference-list
 verification only. It does not attempt to extract references from arbitrary
@@ -20,8 +21,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from pubmed_search.application.search.source_models import SourceSearchPage
-from pubmed_search.shared.article_identity import normalize_article_doi, normalize_article_title
+from pubmed_search.shared.article_identity import normalize_article_doi
 from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
+
+from .matching import (
+    AMBIGUITY_SCORE_MARGIN,
+    article_first_author,
+    build_comparison,
+    build_corrections,
+    identity_supported,
+    score_candidate,
+    search_candidate_rejection,
+)
+from .parsing import REFERENCE_MARKER_RE, ParsedReference, fold_ascii, parse_reference_text
+from .queries import metadata_query, safe_phrase, title_word_query
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -36,7 +49,7 @@ ReferenceStatus = Literal[
     "source_unavailable",
     "not_checked",
 ]
-ResolutionMethod = Literal["pmid", "doi_search", "ecitmatch", "title_search"]
+ResolutionMethod = Literal["pmid", "doi_search", "ecitmatch", "title_search", "metadata_search"]
 
 MAX_REFERENCE_TEXT_CHARS = 200_000
 MAX_REFERENCE_TEXT_BYTES = 400_000
@@ -47,20 +60,41 @@ MAX_SOURCE_NAME_BYTES = 512
 MAX_REFERENCES = 200
 DEFAULT_MAX_CONCURRENCY = 8
 DEFAULT_TOTAL_TIMEOUT_SECONDS = 60.0
+SEARCH_CANDIDATE_LIMIT = 10
+MAX_ALTERNATIVE_NOTES = 3
 _T = TypeVar("_T")
 
-_REFERENCE_MARKER_RE = re.compile(r"^\s*(?:\[\d+\]|\d+[.)])\s*")
-_DOI_RE = re.compile(r"\b(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.\d{4,9}/[-._;()/:A-Z0-9]+)\b", re.IGNORECASE)
-_PMID_RE = re.compile(r"\bPMID\s*:?\s*([1-9][0-9]{0,19})\b", re.IGNORECASE)
-_YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
-_FIRST_PAGE_RE = re.compile(r":\s*([A-Za-z]?\d+)")
-_VOLUME_RE = re.compile(r";\s*([A-Za-z0-9][A-Za-z0-9 .-]{0,20}?)(?:\(|:|;)")
 _UNSAFE_SOURCE_NAME_RE = re.compile(r"[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
 _UNSAFE_REFERENCE_TEXT_RE = re.compile(r"[\x00\u202a-\u202e\u2066-\u2069]")
+_ECITMATCH_UNSAFE_RE = re.compile(r"[|\r\n\t]")
+
+_STRATEGY_LABELS: dict[str, str] = {
+    "pmid": "explicit PMID lookup",
+    "doi_search": "DOI search",
+    "ecitmatch": "NCBI citation match (ECitMatch)",
+    "title_search": "title-word search without a year restriction",
+    "metadata_search": "first-author + journal + volume/first-page search without a year restriction",
+}
+_STRATEGY_REQUIREMENTS: dict[str, str] = {
+    "ecitmatch": "needs a journal and year",
+    "title_search": "needs a parsed title with at least two distinctive words",
+    "metadata_search": "needs a first author, journal, and volume or first page",
+}
 
 
 class ReferenceVerificationInputError(ValueError):
     """Raised when a reference-verification request exceeds a hard boundary."""
+
+
+@dataclass(frozen=True, slots=True)
+class _SearchSelection:
+    """Best accepted year-tolerant search hit plus context for review notes."""
+
+    article: dict[str, Any] | None = None
+    alternatives: tuple[dict[str, Any], ...] = ()
+    ambiguous: bool = False
+    rejected_article: dict[str, Any] | None = None
+    rejected_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,62 +104,20 @@ class _ResolutionOutcome:
     article: dict[str, Any] | None
     method: ResolutionMethod | None
     unavailable_sources: tuple[str, ...] = ()
-
-
-@dataclass(slots=True)
-class ParsedReference:
-    """Structured fields extracted from one reference entry.
-
-    Attributes:
-        index: 1-based position in the provided reference list.
-        raw_text: Original reference string as received.
-        cleaned_text: Whitespace-normalized reference string without numbering.
-        first_author: Parsed first author surname chunk.
-        year: Four-digit publication year if found.
-        journal: Parsed journal name or abbreviation.
-        volume: Parsed volume token.
-        first_page: Parsed first page token.
-        title: Parsed article title candidate.
-        doi: Normalized DOI if present.
-        pmid: Explicit PMID if present in the reference text.
-    """
-
-    index: int
-    raw_text: str
-    cleaned_text: str
-    first_author: str = ""
-    year: str = ""
-    journal: str = ""
-    volume: str = ""
-    first_page: str = ""
-    title: str = ""
-    doi: str = ""
-    pmid: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize the parsed reference for JSON output."""
-        return {
-            "index": self.index,
-            "raw_text": self.raw_text,
-            "cleaned_text": self.cleaned_text,
-            "first_author": self.first_author,
-            "year": self.year,
-            "journal": self.journal,
-            "volume": self.volume,
-            "first_page": self.first_page,
-            "title": self.title,
-            "doi": self.doi,
-            "pmid": self.pmid,
-        }
+    attempted: tuple[ResolutionMethod, ...] = ()
+    skipped: tuple[ResolutionMethod, ...] = ()
+    selection: _SearchSelection | None = None
 
 
 class ReferenceVerificationService:
     """Verify reference-list entries against PubMed evidence.
 
     The service uses existing infrastructure already present in the repository:
-    explicit PMID lookup, DOI-based PubMed search, ECitMatch, and a narrow title
-    search fallback. Results are returned with field-level evidence rather than
-    a binary pass/fail only.
+    explicit PMID lookup, DOI-based PubMed search, ECitMatch, then title and
+    first-author/journal/locator searches that do not pin the cited year, so a
+    real but mis-cited record can be found and its differing fields reported as
+    corrections. Results are returned with field-level evidence rather than a
+    binary pass/fail only.
 
     Args:
         searcher: Existing LiteratureSearcher instance.
@@ -183,40 +175,7 @@ class ReferenceVerificationService:
             ParsedReference containing heuristically extracted fields.
         """
         self._validate_reference_entry(reference_text, index=index)
-        cleaned = self._clean_reference_text(reference_text)
-        doi_match = _DOI_RE.search(cleaned)
-        pmid_match = _PMID_RE.search(cleaned)
-        # Identifier text is not bibliographic author, journal, or date evidence.
-        bibliography = _PMID_RE.sub("", _DOI_RE.sub("", cleaned)).strip(" .;")
-        year_match = _YEAR_RE.search(bibliography)
-
-        doi = normalize_article_doi(doi_match.group(1)) if doi_match else ""
-        pmid = pmid_match.group(1) if pmid_match else ""
-        year = year_match.group(0) if year_match else ""
-
-        pre_year = bibliography.split(year, 1)[0] if year else bibliography
-        segments = [segment.strip(" .;") for segment in pre_year.split(".") if segment.strip(" .;")]
-        authors_segment = segments[0] if segments else ""
-        journal = segments[-1] if len(segments) >= 2 else ""
-        title = ". ".join(segments[1:-1]) if len(segments) >= 3 else ""
-
-        after_year = bibliography.split(year, 1)[1] if year else ""
-        volume = self._extract_volume(after_year)
-        first_page = self._extract_first_page(after_year)
-
-        return ParsedReference(
-            index=index,
-            raw_text=reference_text,
-            cleaned_text=cleaned,
-            first_author=self._extract_first_author(authors_segment),
-            year=year,
-            journal=journal,
-            volume=volume,
-            first_page=first_page,
-            title=title,
-            doi=doi,
-            pmid=pmid,
-        )
+        return parse_reference_text(reference_text, index=index)
 
     async def verify_reference_list(
         self,
@@ -386,8 +345,9 @@ class ReferenceVerificationService:
             "review_workflow": review_workflow,
             "next_steps": [
                 "Review partial_match rows for field-level mismatches",
+                "Apply a row's corrections only after confirming matched_article is the intended work",
                 "Retry source_unavailable and not_checked rows before treating them as unresolved",
-                "Review unresolved rows for non-PubMed citations or parser misses",
+                "Review unresolved rows for non-PubMed citations or parser misses before calling them fabricated",
                 "Use PMID/DOI evidence before title-only matches when making editorial decisions",
             ],
         }
@@ -437,18 +397,24 @@ class ReferenceVerificationService:
         prefetched_citation_pmid: str | None = None,
         article_cache: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Verify one parsed reference, optionally reusing batch-prefetched data."""
+        """Verify one parsed reference, optionally reusing batch-prefetched data.
+
+        ``prefetched_citation_pmid`` is ``None`` when the batch ECitMatch did not
+        cover this row, ``""`` when it ran without a match, or the matched PMID.
+        """
         if not parsed.cleaned_text:
             return {
                 "index": parsed.index,
                 "status": "invalid_input",
                 "resolution_method": None,
+                "attempted_strategies": [],
                 "input_reference": parsed.raw_text,
                 "parsed_reference": parsed.to_dict(),
                 "matched_article": None,
                 "comparison": {},
                 "matched_fields": [],
                 "mismatched_fields": [],
+                "corrections": [],
                 "notes": ["Reference entry is empty after normalization"],
                 "review_required": False,
                 "review_strategy": {"retry_queries": [], "review_checklist": []},
@@ -460,28 +426,39 @@ class ReferenceVerificationService:
             article_cache=article_cache,
         )
         if outcome.article is None and outcome.unavailable_sources:
-            return self._source_unavailable_row(parsed, outcome.unavailable_sources)
+            return self._source_unavailable_row(parsed, outcome.unavailable_sources, attempted=outcome.attempted)
 
         article = outcome.article
         method = outcome.method
-        comparison = self._build_comparison(parsed, article)
+        comparison = build_comparison(parsed, article)
         matched_fields = [field for field, matched in comparison.items() if matched is True]
         mismatched_fields = [field for field, matched in comparison.items() if matched is False]
         status = self._determine_status(parsed, article, comparison)
+        corrections, withheld_reason = self._corrections_for(parsed, outcome, comparison, status)
 
-        notes = self._build_notes(parsed, article, method, status, matched_fields, mismatched_fields)
+        notes = self._build_notes(
+            parsed,
+            outcome,
+            status,
+            matched_fields,
+            mismatched_fields,
+            corrections=corrections,
+            withheld_reason=withheld_reason,
+        )
         review_required = status in {"partial_match", "unresolved"}
         review_strategy = self._build_retry_strategy(parsed, method=method, status=status)
         result: dict[str, Any] = {
             "index": parsed.index,
             "status": status,
             "resolution_method": method,
+            "attempted_strategies": list(outcome.attempted),
             "input_reference": parsed.raw_text,
             "parsed_reference": parsed.to_dict(),
             "matched_article": self._serialize_article(article),
             "comparison": comparison,
             "matched_fields": matched_fields,
             "mismatched_fields": mismatched_fields,
+            "corrections": corrections,
             "notes": notes,
             "review_required": review_required,
             "review_strategy": review_strategy,
@@ -512,6 +489,8 @@ class ReferenceVerificationService:
         self,
         parsed: ParsedReference,
         sources: tuple[str, ...],
+        *,
+        attempted: tuple[ResolutionMethod, ...] = (),
     ) -> dict[str, Any]:
         """Build a row that cannot be adjudicated because evidence sources failed."""
         unique_sources = tuple(dict.fromkeys(source for source in sources if source))
@@ -519,12 +498,14 @@ class ReferenceVerificationService:
             "index": parsed.index,
             "status": "source_unavailable",
             "resolution_method": None,
+            "attempted_strategies": list(attempted),
             "input_reference": parsed.raw_text,
             "parsed_reference": parsed.to_dict(),
             "matched_article": None,
             "comparison": {},
             "matched_fields": [],
             "mismatched_fields": [],
+            "corrections": [],
             "notes": [
                 "Verification could not be completed because an upstream evidence source was unavailable",
                 "Retry this row before classifying it as unresolved",
@@ -544,12 +525,14 @@ class ReferenceVerificationService:
             "index": parsed.index,
             "status": "not_checked",
             "resolution_method": None,
+            "attempted_strategies": [],
             "input_reference": parsed.raw_text,
             "parsed_reference": parsed.to_dict(),
             "matched_article": None,
             "comparison": {},
             "matched_fields": [],
             "mismatched_fields": [],
+            "corrections": [],
             "notes": [reason, "Retry this row before classifying it as unresolved"],
             "review_required": True,
             "review_strategy": self._build_retry_strategy(
@@ -632,16 +615,16 @@ class ReferenceVerificationService:
         normalized_lines = [line.strip() for line in reference_text.splitlines() if line.strip()]
         if not normalized_lines:
             return []
-        if not any(_REFERENCE_MARKER_RE.match(line) for line in normalized_lines):
+        if not any(REFERENCE_MARKER_RE.match(line) for line in normalized_lines):
             return normalized_lines
 
         entries: list[str] = []
         current: list[str] = []
         for line in normalized_lines:
-            if _REFERENCE_MARKER_RE.match(line):
+            if REFERENCE_MARKER_RE.match(line):
                 if current:
                     entries.append(" ".join(current).strip())
-                current = [_REFERENCE_MARKER_RE.sub("", line, count=1).strip()]
+                current = [REFERENCE_MARKER_RE.sub("", line, count=1).strip()]
             else:
                 current.append(line)
         if current:
@@ -739,8 +722,16 @@ class ReferenceVerificationService:
             if parsed.get("doi"):
                 return "DOI present but unresolved; verify DOI transcription and index coverage"
             if parsed.get("title"):
-                return "Title-only resolution failed; inspect title normalization and source journal metadata"
+                return (
+                    "No PubMed record found by citation match, year-tolerant title search, or "
+                    "author/journal/locator search; check non-PubMed indexes and parsed fields"
+                )
             return "Insufficient structured fields; manually inspect author/journal/year extraction"
+        corrections = row.get("corrections") or []
+        if corrections:
+            pmid = (row.get("matched_article") or {}).get("pmid", "")
+            changes = ", ".join(f"{item['field']} ({item['cited']} -> {item['pubmed']})" for item in corrections)
+            return f"Cited fields differ from PubMed PMID {pmid}: {changes}"
         if mismatched_fields:
             return f"Candidate found but mismatched fields: {', '.join(mismatched_fields)}"
         return "Manual review requested"
@@ -781,7 +772,7 @@ class ReferenceVerificationService:
                 }
             )
         if parsed.title:
-            safe_title = re.sub(r"\s+", " ", parsed.title.replace('"', " ")).strip()
+            safe_title = safe_phrase(parsed.title)
             retry_queries.append(
                 {
                     "label": "title_exact",
@@ -789,6 +780,15 @@ class ReferenceVerificationService:
                     "purpose": "Exact-title recheck",
                 }
             )
+            title_words = title_word_query(parsed.title)
+            if title_words:
+                retry_queries.append(
+                    {
+                        "label": "title_words",
+                        "query": title_words,
+                        "purpose": "Year-tolerant title-word search (stopwords removed, spelling variants OR-ed)",
+                    }
+                )
             if parsed.year:
                 retry_queries.append(
                     {
@@ -806,6 +806,15 @@ class ReferenceVerificationService:
                     "purpose": "Metadata-driven fallback for noisy titles",
                 }
             )
+        locator_query = metadata_query(parsed)
+        if locator_query:
+            retry_queries.append(
+                {
+                    "label": "author_journal_locator",
+                    "query": locator_query,
+                    "purpose": "Year-tolerant first-author + journal + volume/first-page lookup",
+                }
+            )
 
         review_checklist = [
             "Confirm author surname, journal abbreviation, and year were parsed correctly",
@@ -813,9 +822,11 @@ class ReferenceVerificationService:
             "Accept only when DOI/PMID matches or when year+journal plus one field (page/author/volume) agree",
             "Document acceptance/rejection rationale for each unresolved reference",
         ]
-        if method == "title_search":
+        if method in {"title_search", "metadata_search"}:
             review_checklist.insert(
-                1, "Title-search candidates are weak evidence; prefer DOI/PMID or citation metadata"
+                1,
+                "Search candidates found without the cited year are weaker evidence; confirm the record "
+                "is the intended work before applying corrections",
             )
 
         return {
@@ -841,27 +852,54 @@ class ReferenceVerificationService:
         prefetched_citation_pmid: str | None = None,
         article_cache: dict[str, dict[str, Any]] | None = None,
     ) -> _ResolutionOutcome:
-        """Resolve one parsed reference to the best PubMed article candidate."""
+        """Resolve one parsed reference to the best PubMed article candidate.
+
+        Order: explicit PMID, exact DOI, ECitMatch, then two searches that do
+        not pin the cited year (title words; first author + journal + volume or
+        first page). A wrong year is the most common citation error, so the
+        year-tolerant searches let a real but mis-cited record be found and
+        reported with field-level corrections instead of looking fabricated.
+        """
         unavailable_sources: list[str] = []
+        attempted: list[ResolutionMethod] = []
+        skipped: list[ResolutionMethod] = []
+
+        def outcome(
+            article: dict[str, Any] | None,
+            method: ResolutionMethod | None,
+            selection: _SearchSelection | None = None,
+        ) -> _ResolutionOutcome:
+            return _ResolutionOutcome(
+                article,
+                method,
+                tuple(unavailable_sources),
+                attempted=tuple(attempted),
+                skipped=tuple(skipped),
+                selection=selection,
+            )
+
         if parsed.pmid:
+            attempted.append("pmid")
             try:
                 article = await self._fetch_article_by_pmid(parsed.pmid, article_cache=article_cache)
             except Exception:
                 unavailable_sources.append("PubMed article details")
                 article = None
             if article:
-                return _ResolutionOutcome(article, "pmid", tuple(unavailable_sources))
+                return outcome(article, "pmid")
 
         if parsed.doi:
+            attempted.append("doi_search")
             try:
                 article = await self._resolve_by_doi(parsed)
             except Exception:
                 unavailable_sources.append("PubMed DOI search")
                 article = None
             if article:
-                return _ResolutionOutcome(article, "doi_search", tuple(unavailable_sources))
+                return outcome(article, "doi_search")
 
         if parsed.journal and parsed.year:
+            attempted.append("ecitmatch")
             try:
                 article = await self._resolve_by_citation(
                     parsed,
@@ -872,18 +910,38 @@ class ReferenceVerificationService:
                 unavailable_sources.append("NCBI ECitMatch")
                 article = None
             if article:
-                return _ResolutionOutcome(article, "ecitmatch", tuple(unavailable_sources))
+                return outcome(article, "ecitmatch")
+        else:
+            skipped.append("ecitmatch")
 
-        if parsed.title:
+        found_by: dict[str, ResolutionMethod] = {}
+        candidates: list[dict[str, Any]] = []
+        selection = _SearchSelection()
+        searches: tuple[tuple[ResolutionMethod, str | None, str], ...] = (
+            ("title_search", title_word_query(parsed.title) if parsed.title else None, "PubMed title search"),
+            ("metadata_search", metadata_query(parsed), "PubMed metadata search"),
+        )
+        for method, query, source_label in searches:
+            if query is None:
+                skipped.append(method)
+                continue
+            attempted.append(method)
             try:
-                article = await self._resolve_by_title(parsed)
+                items = await self._search_candidates(query)
             except Exception:
-                unavailable_sources.append("PubMed title search")
-                article = None
-            if article:
-                return _ResolutionOutcome(article, "title_search", tuple(unavailable_sources))
+                unavailable_sources.append(source_label)
+                continue
+            for item in items:
+                pmid = str(item.get("pmid") or "").strip()
+                if pmid not in found_by:
+                    found_by[pmid] = method
+                    candidates.append(item)
+            selection = self._select_search_candidate(parsed, candidates)
+            if selection.article is not None:
+                chosen_pmid = str(selection.article.get("pmid") or "").strip()
+                return outcome(selection.article, found_by.get(chosen_pmid, method), selection)
 
-        return _ResolutionOutcome(None, None, tuple(unavailable_sources))
+        return outcome(None, None, selection)
 
     async def _resolve_by_doi(self, parsed: ParsedReference) -> dict[str, Any] | None:
         """Resolve by DOI using PubMed search results and exact DOI filtering."""
@@ -899,38 +957,34 @@ class ReferenceVerificationService:
         prefetched_pmid: str | None = None,
         article_cache: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
-        """Resolve by ECitMatch using existing Entrez utility support."""
+        """Resolve by ECitMatch, reusing a batch result (including a batch miss) when present."""
         pmid = prefetched_pmid
-        if not pmid:
-            pmid = await self._searcher.find_by_citation(
-                journal=parsed.journal,
-                year=parsed.year,
-                volume=parsed.volume,
-                first_page=parsed.first_page,
-                author=parsed.first_author,
-                title=parsed.title,
-            )
+        if pmid is None:
+            pmid = await self._searcher.find_by_citation(**self._citation_payload(parsed))
         if not pmid:
             return None
         return await self._fetch_article_by_pmid(pmid, article_cache=article_cache)
 
-    async def _resolve_by_title(self, parsed: ParsedReference) -> dict[str, Any] | None:
-        """Resolve by a conservative exact-title PubMed search fallback."""
-        safe_title = re.sub(r"\s+", " ", parsed.title.replace('"', " ")).strip()
-        title_query = normalize_article_title(safe_title)
-        if len(title_query) < 8:
-            return None
+    async def _search_candidates(self, query: str) -> list[dict[str, Any]]:
+        """Run one bounded PubMed search without a publication-year filter."""
+        page = await self._searcher.search_page(query, limit=SEARCH_CANDIDATE_LIMIT)
+        return self._validated_search_items(page)
 
-        min_year = int(parsed.year) if parsed.year.isdigit() else None
-        max_year = int(parsed.year) if parsed.year.isdigit() else None
-        page = await self._searcher.search_page(
-            f'"{safe_title}"[Title]',
-            limit=5,
-            min_year=min_year,
-            max_year=max_year,
-        )
-        results = self._validated_search_items(page)
-        return self._choose_best_candidate(parsed, results)
+    @staticmethod
+    def _citation_payload(parsed: ParsedReference) -> dict[str, str]:
+        """Build ECitMatch fields; the pipe-delimited protocol needs ASCII-safe values."""
+
+        def clean(value: str) -> str:
+            return _ECITMATCH_UNSAFE_RE.sub(" ", value).strip()
+
+        return {
+            "journal": clean(parsed.journal),
+            "year": clean(parsed.year),
+            "volume": clean(parsed.volume),
+            "first_page": clean(parsed.first_page),
+            "author": clean(fold_ascii(parsed.first_author)),
+            "title": clean(parsed.title),
+        }
 
     async def _fetch_article_by_pmid(
         self,
@@ -958,7 +1012,12 @@ class ReferenceVerificationService:
         return article
 
     async def _prefetch_citation_matches(self, parsed_entries: list[ParsedReference]) -> dict[int, str]:
-        """Batch-resolve citation-like references via the ECitMatch workflow."""
+        """Batch-resolve citation-like references via the ECitMatch workflow.
+
+        Returns ``{index: pmid}`` for matches and ``{index: ""}`` for rows the
+        batch checked without a match, so those rows are not re-sent to
+        ECitMatch individually. Rows missing from the mapping were not covered.
+        """
         if not hasattr(self._searcher, "verify_references"):
             return {}
 
@@ -968,17 +1027,7 @@ class ReferenceVerificationService:
         if not ecitmatch_candidates:
             return {}
 
-        payload = [
-            {
-                "journal": parsed.journal,
-                "year": parsed.year,
-                "volume": parsed.volume,
-                "first_page": parsed.first_page,
-                "author": parsed.first_author,
-                "title": parsed.title,
-            }
-            for parsed in ecitmatch_candidates
-        ]
+        payload = [self._citation_payload(parsed) for parsed in ecitmatch_candidates]
         try:
             matches = await self._searcher.verify_references(payload)
         except Exception:
@@ -994,6 +1043,8 @@ class ReferenceVerificationService:
             verified = match.get("verified")
             if pmid and (verified is True or verified == "True"):
                 prefetched[parsed.index] = pmid
+            elif not pmid and (verified is False or verified == "False"):
+                prefetched[parsed.index] = ""
         return prefetched
 
     async def _prefetch_articles(self, pmids: set[str]) -> dict[str, dict[str, Any]]:
@@ -1022,11 +1073,11 @@ class ReferenceVerificationService:
         self, parsed: ParsedReference, candidates: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
         """Choose the highest-scoring candidate from a small PubMed result set."""
-        scored: list[tuple[int, dict[str, Any]]] = []
+        scored: list[tuple[float, dict[str, Any]]] = []
         for article in candidates:
             if not isinstance(article, dict) or not str(article.get("pmid") or "").strip():
                 continue
-            score = self._score_candidate(parsed, article)
+            score = score_candidate(parsed, article, build_comparison(parsed, article))
             if score > 0:
                 scored.append((score, article))
 
@@ -1036,80 +1087,39 @@ class ReferenceVerificationService:
         scored.sort(key=lambda row: row[0], reverse=True)
         return scored[0][1]
 
-    def _score_candidate(self, parsed: ParsedReference, article: dict[str, Any]) -> int:
-        """Score one candidate article against parsed reference fields."""
-        comparison = self._build_comparison(parsed, article)
-        score = 0
-        weights = {
-            "pmid": 100,
-            "doi": 100,
-            "year": 35,
-            "journal": 30,
-            "volume": 20,
-            "first_page": 20,
-            "first_author": 15,
-            "title": 10,
-        }
-        for field, matched in comparison.items():
-            if matched is True:
-                score += weights.get(field, 0)
-        return score
+    def _select_search_candidate(self, parsed: ParsedReference, candidates: list[dict[str, Any]]) -> _SearchSelection:
+        """Pick the best year-tolerant search hit that passes the identity gate.
 
-    def _build_comparison(self, parsed: ParsedReference, article: dict[str, Any] | None) -> dict[str, bool | None]:
-        """Build field-level comparison evidence for a candidate article."""
-        if article is None:
-            return {
-                "pmid": None if not parsed.pmid else False,
-                "doi": None if not parsed.doi else False,
-                "year": None if not parsed.year else False,
-                "journal": None if not parsed.journal else False,
-                "volume": None if not parsed.volume else False,
-                "first_page": None if not parsed.first_page else False,
-                "first_author": None if not parsed.first_author else False,
-                "title": None if not parsed.title else False,
-            }
+        Ranking prefers the closest publication year, cited author order,
+        volume/page/issue agreement, and title similarity, so an updated
+        version of a review (same title, newer year) beats an older one when
+        the cited year is closer to it.
+        """
+        accepted: list[tuple[float, int, dict[str, Any]]] = []
+        rejected: list[tuple[float, int, dict[str, Any], str]] = []
+        for position, article in enumerate(candidates):
+            comparison = build_comparison(parsed, article)
+            score = score_candidate(parsed, article, comparison)
+            reason = search_candidate_rejection(parsed, article, comparison)
+            if reason is None:
+                accepted.append((score, position, article))
+            else:
+                rejected.append((score, position, article, reason))
 
-        comparisons: dict[str, bool | None] = {
-            "pmid": None,
-            "doi": None,
-            "year": None,
-            "journal": None,
-            "volume": None,
-            "first_page": None,
-            "first_author": None,
-            "title": None,
-        }
+        if not accepted:
+            if not rejected:
+                return _SearchSelection()
+            _score, _position, closest, reason = min(rejected, key=lambda row: (-row[0], row[1]))
+            return _SearchSelection(rejected_article=closest, rejected_reason=reason)
 
-        if parsed.pmid:
-            comparisons["pmid"] = parsed.pmid == str(article.get("pmid", ""))
-        if parsed.doi:
-            comparisons["doi"] = parsed.doi == normalize_article_doi(article.get("doi", ""))
-        if parsed.year:
-            comparisons["year"] = parsed.year == str(article.get("year", ""))
-        if parsed.journal:
-            journal_candidates = [article.get("journal", ""), article.get("journal_abbrev", "")]
-            normalized_journal = self._normalize_text(parsed.journal)
-            comparisons["journal"] = any(
-                normalized_journal and normalized_journal == self._normalize_text(candidate)
-                for candidate in journal_candidates
-            )
-        if parsed.volume:
-            comparisons["volume"] = self._normalize_text(parsed.volume) == self._normalize_text(
-                article.get("volume", "")
-            )
-        if parsed.first_page:
-            comparisons["first_page"] = self._normalize_text(parsed.first_page) == self._normalize_text(
-                self._extract_first_page(str(article.get("pages", "")))
-            )
-        if parsed.first_author:
-            comparisons["first_author"] = self._normalize_text(parsed.first_author) == self._normalize_text(
-                self._extract_article_first_author(article)
-            )
-        if parsed.title:
-            normalized_title = normalize_article_title(parsed.title)
-            comparisons["title"] = normalized_title == normalize_article_title(article.get("title", ""))
-
-        return comparisons
+        accepted.sort(key=lambda row: (-row[0], row[1]))
+        best_score, _position, best = accepted[0]
+        ambiguous = len(accepted) > 1 and best_score - accepted[1][0] < AMBIGUITY_SCORE_MARGIN
+        return _SearchSelection(
+            article=best,
+            alternatives=tuple(article for _score, _position, article in accepted[1:]),
+            ambiguous=ambiguous,
+        )
 
     def _determine_status(
         self,
@@ -1148,26 +1158,48 @@ class ReferenceVerificationService:
 
         return "unresolved"
 
+    @staticmethod
+    def _corrections_for(
+        parsed: ParsedReference,
+        outcome: _ResolutionOutcome,
+        comparison: dict[str, bool | None],
+        status: ReferenceStatus,
+    ) -> tuple[list[dict[str, str]], str]:
+        """Return field corrections, or the reason they were withheld."""
+        article = outcome.article
+        if article is None or status != "partial_match":
+            return [], ""
+        if not any(matched is False for matched in comparison.values()):
+            return [], ""
+        if not identity_supported(parsed, article, comparison):
+            if parsed.title:
+                return [], (
+                    f"the cited title does not match PMID {article.get('pmid', '')}; "
+                    "the identifier or locator may point to a different work"
+                )
+            return [], "too few cited fields agree with the PubMed record to confirm it is the cited work"
+        if outcome.selection is not None and outcome.selection.ambiguous:
+            return [], "several PubMed records match about equally well; confirm which one is intended"
+        return build_corrections(parsed, article, comparison), ""
+
     def _build_notes(
         self,
         parsed: ParsedReference,
-        article: dict[str, Any] | None,
-        method: ResolutionMethod | None,
+        outcome: _ResolutionOutcome,
         status: ReferenceStatus,
         matched_fields: list[str],
         mismatched_fields: list[str],
+        *,
+        corrections: list[dict[str, str]],
+        withheld_reason: str,
     ) -> list[str]:
         """Build concise evidence notes for one verification row."""
+        article = outcome.article
         notes: list[str] = []
-        if method:
-            notes.append(f"Resolved via {method}")
+        if outcome.method:
+            notes.append(f"Resolved via {outcome.method}")
         if article is None:
-            if parsed.doi:
-                notes.append("No PubMed candidate resolved from the provided DOI")
-            elif parsed.journal and parsed.year:
-                notes.append("ECitMatch did not resolve this citation")
-            else:
-                notes.append("Insufficient structured metadata for PubMed resolution")
+            notes.extend(self._unresolved_notes(parsed, outcome))
             return notes
 
         if status == "verified":
@@ -1181,9 +1213,55 @@ class ReferenceVerificationService:
             notes.append(f"Matched fields: {', '.join(matched_fields)}")
         if mismatched_fields:
             notes.append(f"Mismatched fields: {', '.join(mismatched_fields)}")
+        if corrections:
+            doi = str(article.get("doi") or "")
+            record = f"PMID {article.get('pmid', '')}" + (f" (DOI {doi})" if doi else "")
+            changes = "; ".join(f"{item['field']} {item['cited']} -> {item['pubmed']}" for item in corrections)
+            notes.append(f"Cited fields differ from PubMed {record}: {changes}")
+        elif withheld_reason:
+            notes.append(f"No field corrections proposed: {withheld_reason}")
+
+        selection = outcome.selection
+        if selection is not None and selection.alternatives:
+            others = ", ".join(
+                f"PMID {alternative.get('pmid', '')} ({alternative.get('year', '') or 'year unknown'})"
+                for alternative in selection.alternatives[:MAX_ALTERNATIVE_NOTES]
+            )
+            notes.append(f"Other PubMed records with a matching title: {others}")
         return notes
 
-    def _serialize_article(self, article: dict[str, Any] | None) -> dict[str, Any] | None:
+    @staticmethod
+    def _unresolved_notes(parsed: ParsedReference, outcome: _ResolutionOutcome) -> list[str]:
+        """Explain what was tried for a row with no accepted PubMed record."""
+        if not outcome.attempted:
+            return ["Insufficient structured metadata for PubMed resolution"]
+        notes: list[str] = []
+        if parsed.doi and "doi_search" in outcome.attempted:
+            notes.append("No PubMed candidate resolved from the provided DOI")
+        tried = "; ".join(_STRATEGY_LABELS[method] for method in outcome.attempted)
+        notes.append(f"No PubMed record was found after: {tried}")
+        not_run = [
+            f"{_STRATEGY_LABELS[method]} ({_STRATEGY_REQUIREMENTS[method]})"
+            for method in outcome.skipped
+            if method in _STRATEGY_REQUIREMENTS
+        ]
+        if not_run:
+            notes.append(f"Not attempted because the parsed reference lacks fields: {'; '.join(not_run)}")
+        selection = outcome.selection
+        if selection is not None and selection.rejected_article is not None:
+            rejected = selection.rejected_article
+            notes.append(
+                f"Closest PubMed search hit PMID {rejected.get('pmid', '')} was not accepted because "
+                f"{selection.rejected_reason}"
+            )
+        notes.append(
+            "Absence from PubMed does not by itself prove the reference is fabricated; check the DOI, "
+            "publisher site, or non-PubMed indexes before rejecting it"
+        )
+        return notes
+
+    @staticmethod
+    def _serialize_article(article: dict[str, Any] | None) -> dict[str, Any] | None:
         """Return the article subset used for user-facing evidence reporting."""
         if article is None:
             return None
@@ -1195,70 +1273,7 @@ class ReferenceVerificationService:
             "journal_abbrev": article.get("journal_abbrev", ""),
             "year": article.get("year", ""),
             "volume": article.get("volume", ""),
+            "issue": article.get("issue", ""),
             "pages": article.get("pages", ""),
-            "first_author": self._extract_article_first_author(article),
+            "first_author": article_first_author(article),
         }
-
-    @staticmethod
-    def _clean_reference_text(reference_text: str) -> str:
-        """Normalize whitespace and remove leading numbering markers."""
-        cleaned = _REFERENCE_MARKER_RE.sub("", reference_text.strip(), count=1)
-        return re.sub(r"\s+", " ", cleaned).strip()
-
-    @staticmethod
-    def _normalize_text(value: str | None) -> str:
-        """Normalize free-text bibliographic fields for comparison."""
-        if not value:
-            return ""
-        normalized = value.lower()
-        normalized = re.sub(r"[^\w\s]", "", normalized)
-        normalized = re.sub(r"\b(et|al)\b", "", normalized)
-        normalized = re.sub(r"\s+", " ", normalized)
-        return normalized.strip()
-
-    @staticmethod
-    def _extract_first_author(authors_segment: str) -> str:
-        """Extract the first author surname chunk from the author segment."""
-        if not authors_segment:
-            return ""
-        leading = authors_segment.split(",", 1)[0].strip()
-        tokens = re.sub(r"[^A-Za-z\s-]", " ", leading).split()
-        while len(tokens) > 1 and (len(tokens[-1]) == 1 or (tokens[-1].isupper() and len(tokens[-1]) <= 4)):
-            tokens.pop()
-        return " ".join(tokens).strip()
-
-    @staticmethod
-    def _extract_volume(after_year: str) -> str:
-        """Extract a conservative volume token from the post-year citation tail."""
-        if not after_year:
-            return ""
-        match = _VOLUME_RE.search(after_year)
-        if not match:
-            return ""
-        return match.group(1).strip(" .;")
-
-    @staticmethod
-    def _extract_first_page(text: str) -> str:
-        """Extract the first page token from a pages string or citation tail."""
-        if not text:
-            return ""
-        match = _FIRST_PAGE_RE.search(text)
-        if match:
-            return match.group(1)
-
-        fallback = re.search(r"\b([A-Za-z]?\d+)(?:[-–]\d+)?\b", text)
-        return fallback.group(1) if fallback else ""
-
-    @staticmethod
-    def _extract_article_first_author(article: dict[str, Any]) -> str:
-        """Extract the first author surname from a fetched article payload."""
-        authors_full = article.get("authors_full") or []
-        if authors_full and isinstance(authors_full[0], dict):
-            last_name = authors_full[0].get("last_name")
-            if isinstance(last_name, str) and last_name:
-                return last_name
-
-        authors = article.get("authors") or []
-        if authors:
-            return str(authors[0]).split(" ", 1)[0]
-        return ""
