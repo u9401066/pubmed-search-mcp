@@ -343,16 +343,20 @@ _COMMUNICATIONS = frozenset(
 )
 
 #: Text-pattern milestones that may refine a record whose study design PubMed
-#: already indexed, keyed by ``indexed_design_family``. PubMed indexing is the
-#: authority: a title or abstract pattern can add specificity the publication
-#: type vocabulary lacks (a trial phase), but cannot relabel an indexed trial,
-#: synthesis or cohort as a safety alert, approval, debate or breakthrough.
-#: Records without an indexed design accept every title pattern.
+#: publication types already state, keyed by ``indexed_design_family``. The
+#: publication type is the authority: a title or abstract pattern can add
+#: specificity the type vocabulary lacks (a trial phase), but cannot relabel an
+#: indexed trial or synthesis as a safety alert, approval, debate or
+#: breakthrough. An observational study may carry a trial phase (extension or
+#: post-marketing follow-up) or an explicit safety signal (pharmacovigilance),
+#: as it did before indexed designs were consulted. Records whose publication
+#: types state no design, including MeSH-only designs, accept every title
+#: pattern.
 TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneType]] = {
     "trial": _TRIAL_PHASES,
     "evidence_synthesis": _SYNTHESIS,
     "guidance": _GUIDANCE,
-    "observational": frozenset({MilestoneType.PHASE_4}),
+    "observational": _TRIAL_PHASES | {MilestoneType.SAFETY_ALERT},
     "review": _SYNTHESIS | _GUIDANCE | {MilestoneType.CONTROVERSY, MilestoneType.MECHANISM_DISCOVERY},
     "case_report": frozenset(),
     "commentary": _COMMUNICATIONS,

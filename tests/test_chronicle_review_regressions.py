@@ -11,8 +11,9 @@ and unknown citation counts displayed as zero.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,6 +23,7 @@ from pubmed_search.application.chronicle.highlights import (
     sentence_spans,
     verify_highlight,
 )
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.timeline import MilestoneDetector, TimelineBuilder
 from pubmed_search.domain.entities.timeline import EvidenceLevel, MilestoneType, ResearchTimeline
 from pubmed_search.domain.services.study_design import (
@@ -399,3 +401,133 @@ def test_protocol_entry_is_labelled_as_a_protocol_in_the_chronicle() -> None:
     assert entry.title == "Clinical Trial Protocol (randomized)"
     assert entry.provenance["milestone_type"] != MilestoneType.RANDOMIZED_TRIAL.value
     assert "randomized_trial" not in entry.tags
+
+
+# ── Milestones: no suppression relative to master ───────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("article", "expected"),
+    [
+        # An indexed observational study may still carry a trial phase...
+        (
+            {"publication_types": ["Observational Study"], "title": "Long-term outcomes of a phase 3 trial of X"},
+            MilestoneType.PHASE_3,
+        ),
+        # ...or an explicit safety communication / signal (pharmacovigilance).
+        (
+            {
+                "publication_types": ["Observational Study"],
+                "title": "Prescribing after the FDA boxed warning for X: a cohort study",
+            },
+            MilestoneType.SAFETY_ALERT,
+        ),
+        (
+            {"publication_types": ["Observational Study"], "title": "A hepatotoxicity safety signal for X in FAERS"},
+            MilestoneType.SAFETY_ALERT,
+        ),
+        # MeSH design descriptors are not authoritative enough to veto a milestone.
+        (
+            {
+                "publication_types": ["Journal Article"],
+                "mesh_terms": ["Prospective Studies", "Humans"],
+                "title": "A phase 2 trial of drug X",
+            },
+            MilestoneType.PHASE_2,
+        ),
+        (
+            {
+                "publication_types": ["Journal Article"],
+                "mesh_terms": ["Retrospective Studies"],
+                "title": "Outcomes after FDA approval of X",
+            },
+            MilestoneType.FDA_APPROVAL,
+        ),
+        (
+            {
+                "publication_types": ["Journal Article"],
+                "mesh_terms": ["Cohort Studies"],
+                "title": "X outcomes",
+                "abstract": "We performed a meta-analysis of individual cohort data.",
+            },
+            MilestoneType.META_ANALYSIS,
+        ),
+        # Indexed trials still cannot become safety alerts from wording.
+        (
+            {
+                "publication_types": ["Randomized Controlled Trial"],
+                "title": "A safety signal for X: a randomised trial",
+            },
+            MilestoneType.RANDOMIZED_TRIAL,
+        ),
+    ],
+)
+def test_observational_and_mesh_only_designs_keep_master_milestones(
+    article: dict[str, Any], expected: MilestoneType
+) -> None:
+    event = MilestoneDetector().detect_milestone({"pmid": "11", "year": 2018, **article})
+    assert event is not None
+    assert event.milestone_type is expected
+
+
+@pytest.mark.asyncio
+async def test_mesh_only_design_does_not_drop_a_phase_trial_from_the_topic_timeline() -> None:
+    items = [
+        {
+            "pmid": str(100 + index),
+            "title": f"Study {index}",
+            "year": str(2000 + index),
+            "abstract": "study",
+            "publication_types": ["Journal Article"],
+        }
+        for index in range(30)
+    ]
+    items.append(
+        {
+            "pmid": "999",
+            "title": "A phase 2 trial of drug X",
+            "year": "2015",
+            "publication_types": ["Journal Article"],
+            "mesh_terms": ["Prospective Studies"],
+        }
+    )
+    searcher = MagicMock()
+    searcher.search_page = AsyncMock(
+        return_value=SourceSearchPage(
+            source="pubmed",
+            items=items,
+            total=len(items),
+            query="x",
+            metadata={"physical_query": "x", "query_executed": True},
+        )
+    )
+    searcher.get_citation_metrics = AsyncMock(return_value={})
+
+    timeline = await TimelineBuilder(searcher).build_timeline("x", max_events=4, include_all=True)
+
+    kept = {event.pmid: event for event in timeline.events}
+    assert "999" in kept
+    assert kept["999"].milestone_type is MilestoneType.PHASE_2
+
+
+def _event_with(publication_types: list[str], milestone: MilestoneType, title: str) -> Any:
+    event = MilestoneDetector().detect_milestone({"pmid": "21", "year": 2019, "title": title, "publication_types": []})
+    assert event is not None
+    return replace(
+        event,
+        milestone_type=milestone,
+        metadata={**event.metadata, "publication_types": publication_types},
+    )
+
+
+def test_safety_category_on_an_observational_study_is_heuristic_not_a_conflict() -> None:
+    observational = _event_with(
+        ["Observational Study"], MilestoneType.SAFETY_ALERT, "A hepatotoxicity safety signal for X in FAERS"
+    )
+    trial = _event_with(["Randomized Controlled Trial"], MilestoneType.SAFETY_ALERT, "FDA safety communication on X")
+    snapshot = assemble_chronicle(topic="x", timeline=ResearchTimeline("x", [observational, trial]))
+    finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "study_design_labels")
+
+    conflicts = finding.details["category_conflicts_with_indexed_design"]
+    assert [row["indexed_design"] for row in conflicts] == ["Randomized Controlled Trial"]
+    assert finding.status == "warn"

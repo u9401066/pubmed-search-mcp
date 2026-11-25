@@ -573,14 +573,17 @@ def classify_study_design(
     return design
 
 
-def indexed_design_family(publication_types: Any = None, mesh_terms: Any = None) -> str | None:
-    """Return the design family PubMed indexing supports, or ``None``.
+def indexed_design_family(publication_types: Any = None) -> str | None:
+    """Return the design family PubMed publication types state, or ``None``.
 
     Text heuristics are deliberately ignored: this answers whether indexed
-    metadata already states what kind of publication a record is.
+    metadata already states what kind of publication a record is. MeSH
+    study-design descriptors are ignored too: indexers add descriptors such as
+    ``Prospective Studies`` to trials as well, so they refine a label but are
+    not authoritative enough to veto a milestone.
     """
-    design = classify_study_design(publication_types, mesh_terms)
-    return design.family if design.indexed else None
+    design = classify_study_design(publication_types)
+    return design.family if design.basis == BASIS_PUBLICATION_TYPE else None
 
 
 __all__ = [

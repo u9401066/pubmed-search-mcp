@@ -116,10 +116,11 @@ class MilestoneDetector:
         if not pmid or parse_publication_year(year) is None:
             return None
 
-        # PubMed indexing is authoritative about what kind of publication this
-        # is. Text patterns may refine an indexed design (a trial phase) but
-        # cannot relabel an indexed trial or cohort as, say, a safety alert.
-        design_family = indexed_design_family(article.get("publication_types"), article.get("mesh_terms"))
+        # PubMed publication types are authoritative about what kind of
+        # publication this is. Text patterns may refine an indexed design (a
+        # trial phase) but cannot relabel an indexed trial as, say, a safety
+        # alert. MeSH design descriptors alone never veto a text milestone.
+        design_family = indexed_design_family(article.get("publication_types"))
         if classify_study_design(article.get("publication_types"), title=title).family in NON_MILESTONE_DESIGN_FAMILIES:
             # A protocol (indexed or stated by its title) or an erratum/retraction
             # notice reports no results; it stays in the timeline as a

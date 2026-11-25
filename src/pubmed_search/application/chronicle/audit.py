@@ -457,10 +457,13 @@ def _audit_lineage_semantics(snapshot: ChronicleSnapshot) -> ChronicleAuditFindi
     )
 
 
-#: Event categories that a research design indexed by PubMed cannot carry
-#: on the strength of text patterns alone.
-_COMMUNICATION_ENTRY_TYPES = frozenset({ChronicleEntryType.SAFETY, ChronicleEntryType.CONTROVERSY})
-_COMMUNICATION_DESIGN_FAMILIES = frozenset({"commentary", "review"})
+#: Event categories that a research design indexed by PubMed cannot carry on
+#: the strength of text patterns alone, mapped to the design families that
+#: may. An observational (pharmacovigilance) study may report a safety signal.
+_COMMUNICATION_DESIGN_FAMILIES: dict[ChronicleEntryType, frozenset[str]] = {
+    ChronicleEntryType.SAFETY: frozenset({"commentary", "review", "observational"}),
+    ChronicleEntryType.CONTROVERSY: frozenset({"commentary", "review"}),
+}
 _TEXT_LABEL_MARKERS = ("milestone_detection:title_pattern", "milestone_detection:abstract_pattern")
 _AUDIT_SAMPLE = 20
 
@@ -496,8 +499,8 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
             )
         if (
             design.get("indexed") is True
-            and entry.entry_type in _COMMUNICATION_ENTRY_TYPES
-            and design.get("family") not in _COMMUNICATION_DESIGN_FAMILIES
+            and entry.entry_type in _COMMUNICATION_DESIGN_FAMILIES
+            and design.get("family") not in _COMMUNICATION_DESIGN_FAMILIES[entry.entry_type]
         ):
             conflicts.append(
                 {
