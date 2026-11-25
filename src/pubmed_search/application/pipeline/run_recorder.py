@@ -167,12 +167,12 @@ class PipelineRunRecorder:
         )
 
         if persist_run and exhaustive_run and pmids:
+            # Merge provider rows once: a per-PMID rebuild is quadratic (~12 s for 10k records).
+            native = collected_records(step_results)
             run.artifacts["records"] = self._store.save_run_records(
-                pipeline_name, run_id, self._records_for(pmids, articles, step_results)
+                pipeline_name, run_id, self._records_for(pmids, articles, step_results, native)
             )
-            run.artifacts["records"]["metadata_count"] = sum(
-                1 for pmid in pmids if pmid in collected_records(step_results)
-            )
+            run.artifacts["records"]["metadata_count"] = sum(1 for pmid in pmids if pmid in native)
 
         if diff_mode:
             report += "\n" + generate_pipeline_changes(articles, run, previous_run=previous_run)
@@ -191,8 +191,8 @@ class PipelineRunRecorder:
         pmids: list[str],
         articles: list[UnifiedArticle],
         step_results: Mapping[str, StepResult],
+        native: Mapping[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        native = collected_records(step_results)
         by_pmid: dict[str, UnifiedArticle] = {}
         for result in step_results.values():
             for article in result.articles:

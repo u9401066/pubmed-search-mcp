@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import nullcontext
 from datetime import datetime, timezone
@@ -77,7 +78,10 @@ class StoredPipelineRunner:
             with self._execution_context():
                 articles, step_results = await executor.execute(config)
             report = generate_pipeline_report(articles, step_results, config)
-            return recorder.record(
+            # Persisting a large record set and the SQLite screening observer
+            # are blocking file I/O; keep them off the scheduler's event loop.
+            return await asyncio.to_thread(
+                recorder.record,
                 pipeline_name=meta.name,
                 articles=articles,
                 step_results=step_results,
