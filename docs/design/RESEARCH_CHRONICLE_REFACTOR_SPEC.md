@@ -2,7 +2,7 @@
 
 > Status: implemented canonical architecture
 > Contract generation: v3 (strict, breaking)
-> Last reviewed: 2026-11-20
+> Last reviewed: 2026-11-25
 
 Research Chronicle is an evidence-backed, revisioned view of how a research
 topic developed. Its defining visualization is not a flat publication list and
@@ -38,6 +38,69 @@ applied, and sortable-count totals. Provider and response-validation failures
 are retained as allowlisted, query-safe diagnostics. The audit warns on
 outage, empty or partial coverage and fails contradictory ranking claims, so a
 requested enrichment can never be mistaken for a completed one.
+
+Explicit-PMID builds request the same validated iCite metrics in one batched,
+cached call and record the same envelope under
+`timeline_metadata.retrieval.citation_metrics`, with
+`evidence_selection="explicit_pmid_set_without_ranking"`: the requested set is
+never re-ranked or truncated, so it makes no ranking claim. Validated metrics
+feed landmark scores and citation-threshold milestones. When iCite returns no
+usable row, no landmark composite is computed; ranking falls back to stored
+citation counts and then chronology, and both the audit and the summary say
+so.
+
+## Evidence labels and extractive highlights
+
+Each entry records `provenance.study_design` (`study-design-label/v1`). PubMed
+`PublicationType` is the primary source (Randomized Controlled Trial, Clinical
+Trial, Meta-Analysis, Systematic Review, Guideline, Consensus Statement,
+Observational Study, Case Report, Review and others), refined by MeSH
+study-design descriptors such as `Prospective Studies`; `X as Topic`
+descriptors describe what a paper is about and are never used. Only when
+indexing states no design may a title or a self-describing abstract phrase
+supply one, with `basis="text_pattern_heuristic"` and a `[heuristic]` display
+marker; a `Review` type may be refined from its title to a systematic review.
+Retracted publications are flagged. The entry title and
+`EvidenceArticle.article_type` use this label, and `entry_label_basis` records
+where it came from.
+
+Indexed publication types outrank text-pattern milestone heuristics. A title
+or abstract pattern may add what the type vocabulary lacks, such as a trial
+phase, but cannot relabel an indexed trial, synthesis or cohort as a safety
+alert, approval, debate or breakthrough. Abstract patterns apply only to
+records without an indexed design and only to self-describing designs. A
+safety alert requires an explicit safety communication or boxed warning, not a
+mention of adverse events. The `study_design_labels` audit lists heuristic
+labels and warns on any safety or debate category attached to an indexed
+research design.
+
+`provenance.extractive_highlight` (`chronicle-extractive-highlight/v1`) quotes
+one sentence of the paper's own abstract: the first substantive sentence of a
+structured CONCLUSIONS section, else the last RESULTS sentence, else a
+conclusion-cue or final sentence. Registration, funding and copyright text is
+never quoted. `char_start` and `char_end` are Unicode code-point offsets into
+`EvidenceArticle.abstract`, pinned by `abstract_sha256` and length, so
+`abstract[char_start:char_end] == text` can be checked from the snapshot alone.
+The summary claim, the summary highlights and the narrative quote this text and
+label it extractive; it is not an interpretation. Entries without an abstract
+keep the conservative template claim. The `extractive_highlights` audit fails
+when any quote does not round-trip. Diffs reduce stored abstracts to a digest
+and a length.
+
+Lineage excludes descriptors that restate the topic before it selects
+branches: terms whose content words or multi-word acronym already occur in the
+topic query, terms present in every entry, and, once a revision has at least
+eight entries, descriptors on at least half of them whose co-occurrence with
+the other recurring descriptors is at least 0.8 of their base rate (they cut
+across lines instead of separating them).
+`lineage_diagnostics.excluded_topic_signals` records each exclusion with its
+share and reason. Branch signals are then chosen greedily by the
+inverse-frequency weight of the papers they newly cover
+(`signal_selection="greedy_marginal_coverage"`, MeSH winning ties), so every
+line starts with at least two papers that no earlier line claimed, and
+`cross_signal_links` keep the remaining multi-signal matches explicit.
+Insufficient discriminative signal still produces the warned research-stage
+fallback.
 
 ## Canonical MCP surface
 
@@ -358,7 +421,12 @@ The release gate covers:
 - semantic branch assignment, branch points, parent validation, and fallback
   disclosure;
 - requested-versus-effective ranking, iCite response validation, partial/empty/
-  outage coverage, and contradictory provenance claims;
+  outage coverage in topic and explicit-PMID modes, and contradictory
+  provenance claims;
+- PubMed-first study-design labels, disclosed heuristics, no text-pattern
+  safety category on indexed research designs, and verified extractive
+  highlight offsets;
+- exclusion of topic-restating descriptors from branch formation;
 - revision integrity, scope-aware diffing, narration, milestones, and compare;
 - strict discriminated request schemas and rejection of legacy shapes;
 - adversarial Mermaid labels, malformed projections, cycles, duplicate IDs,
