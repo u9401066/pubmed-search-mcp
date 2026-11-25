@@ -412,7 +412,12 @@ class MilestoneDetector:
             # Chronicle quote an exact, locatable sentence as evidence.
             "abstract": abstract or None,
             "abstract_truncated": isinstance(raw_abstract, str) and len(raw_abstract) > len(abstract),
-            "abstract_sections": _abstract_sections(article.get("abstract_sections"), len(abstract)),
+            "abstract_source_char_length": len(raw_abstract) if isinstance(raw_abstract, str) else None,
+            "abstract_sections": _abstract_sections(
+                article.get("abstract_sections"),
+                len(abstract),
+                source_length=len(raw_abstract) if isinstance(raw_abstract, str) else 0,
+            ),
         }
 
     def _build_title_policies(
@@ -490,8 +495,14 @@ class MilestoneDetector:
         return EvidenceLevel.UNKNOWN
 
 
-def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]:
-    """Keep only well-formed, ordered section offsets inside the stored abstract."""
+def _abstract_sections(value: Any, abstract_length: int, *, source_length: int) -> list[dict[str, Any]]:
+    """Keep well-formed, ordered section offsets, clipped to the stored abstract.
+
+    Offsets are validated against the retrieved abstract (*source_length*).
+    When only a prefix is stored, sections starting past the cut are dropped
+    and the section straddling it is clipped rather than discarding the whole
+    structure.
+    """
     if not isinstance(value, list):
         return []
     sections: list[dict[str, Any]] = []
@@ -505,9 +516,11 @@ def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]
             or not isinstance(end, int)
             or isinstance(start, bool)
             or isinstance(end, bool)
-            or not previous_end <= start <= end <= abstract_length
+            or not previous_end <= start <= end <= source_length
         ):
             return []
+        if start >= abstract_length and abstract_length < source_length:
+            break
         label = row.get("label")
         category = row.get("nlm_category")
         sections.append(
@@ -515,7 +528,7 @@ def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]
                 "label": str(label)[:120] if isinstance(label, str) and label.strip() else None,
                 "nlm_category": str(category)[:60] if isinstance(category, str) and category.strip() else None,
                 "start": start,
-                "end": end,
+                "end": min(end, abstract_length),
             }
         )
         previous_end = end

@@ -553,9 +553,21 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
     without_abstract = 0
     abstract_without_highlight = 0
     problems: list[dict[str, Any]] = []
+    truncated: list[dict[str, Any]] = []
     for entry in snapshot.entries:
         highlight = entry.provenance.get("extractive_highlight")
         articles = {article.evidence_id: article for article in entry.evidence.all_articles}
+        truncation = entry.provenance.get("abstract_truncation")
+        if isinstance(truncation, dict) and truncation.get("truncated") is True:
+            truncated.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": [article.evidence_id for article in entry.evidence.supporting_articles],
+                    "basis": truncation.get("basis") or [],
+                    "stored_char_length": truncation.get("stored_char_length"),
+                    "source_char_length": truncation.get("source_char_length"),
+                }
+            )
         if highlight is None:
             if any(article.abstract for article in articles.values()):
                 abstract_without_highlight += 1
@@ -577,6 +589,8 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
         "entries_without_stored_abstract": without_abstract,
         "entries_with_abstract_but_no_highlight": abstract_without_highlight,
         "integrity_problems": problems[:_AUDIT_SAMPLE],
+        "truncated_abstract_count": len(truncated),
+        "truncated_abstracts": truncated[:_AUDIT_SAMPLE],
         "offset_unit": "unicode_code_points",
     }
     if problems:
@@ -586,6 +600,18 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
             message=(
                 f"{len(problems)} quoted abstract sentences do not round-trip to their stored abstract; "
                 "do not cite those quotes."
+            ),
+            details=details,
+        )
+    if truncated:
+        return ChronicleAuditFinding(
+            check="extractive_highlights",
+            status="warn",
+            message=(
+                f"{verified} of {len(snapshot.entries)} entries quote a verified abstract sentence, but "
+                f"{len(truncated)} stored abstracts are truncated (PubMed truncation notice or the stored "
+                "character limit); their quotes come from the retained text, the cut fragment is never quoted, "
+                "and later sections such as the conclusions may be missing. Read the full record before citing."
             ),
             details=details,
         )
