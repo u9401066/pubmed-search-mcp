@@ -476,6 +476,34 @@ def _slugify(value: str, *, fallback: str, max_length: int) -> str:
     return (slug[:max_length].strip("-") or fallback).lower()
 
 
+def _registered_fulltext(article: dict[str, Any]) -> dict[str, str] | None:
+    """Return registered (supplied) fulltext facts attached by the caller, if valid.
+
+    Supplied text is never provider-verified; notes only record that it exists
+    and where it is stored, so a reader knows which evidence can be reopened.
+    """
+    raw = article.get("registered_fulltext")
+    if not isinstance(raw, dict) or raw.get("origin") not in {"agent_supplied", "user_supplied"}:
+        return None
+    return {
+        "origin": str(raw["origin"]),
+        "artifact_uri": str(raw.get("artifact_uri") or ""),
+        "retrieved_at": str(raw.get("retrieved_at") or ""),
+        "record_id": str(raw.get("record_id") or ""),
+    }
+
+
+def _registered_fulltext_front_matter(facts: dict[str, str] | None) -> list[str]:
+    if facts is None:
+        return []
+    lines = [f"fulltext_state: {_yaml_string(facts['origin'])}", "fulltext_provider_verified: false"]
+    if facts["artifact_uri"]:
+        lines.append(f"fulltext_artifact_uri: {_yaml_string(facts['artifact_uri'])}")
+    if facts["retrieved_at"]:
+        lines.append(f"fulltext_retrieved_at: {_yaml_string(facts['retrieved_at'])}")
+    return lines
+
+
 def _render_article_note(
     article: dict[str, Any],
     *,
@@ -518,6 +546,7 @@ def _render_article_note(
     safe_journal = escape_markdown_text(journal)
     safe_year = escape_markdown_text(year)
     safe_authors = "; ".join(escape_markdown_text(author) for author in authors)
+    registered = _registered_fulltext(article)
     lines = [
         "---",
         f"title: {_yaml_string(title)}",
@@ -532,6 +561,7 @@ def _render_article_note(
         f"created: {_yaml_string(created_at.isoformat())}",
         'tags: ["literature", "pubmed"]',
         f"aliases: {_yaml_list(aliases)}",
+        *_registered_fulltext_front_matter(registered),
         "---",
         "",
         f"# {safe_title}",
@@ -572,6 +602,11 @@ def _render_article_note(
 
     for link in _article_links(pmid, doi, pmc_id):
         lines.append(f"- {link}")
+    if registered is not None and registered["artifact_uri"]:
+        lines.append(
+            f"- Registered fulltext ({escape_markdown_text(registered['origin'])}, not provider-verified): "
+            f"`{registered['artifact_uri']}`"
+        )
 
     if include_abstract and article.get("abstract"):
         lines.extend(["", "## Abstract", "", escape_markdown_block(article.get("abstract", ""))])
@@ -759,6 +794,8 @@ def _render_custom_template(
         citation=_format_citation(article, authors),
         keywords=", ".join(_string_list(article.get("keywords"))),
         mesh_terms=", ".join(_string_list(article.get("mesh_terms"))),
+        fulltext_state=(_registered_fulltext(article) or {}).get("origin", "missing"),
+        fulltext_artifact_uri=(_registered_fulltext(article) or {}).get("artifact_uri", ""),
     )
     try:
         return template_text.format_map(context).rstrip() + "\n"
@@ -784,6 +821,10 @@ def _render_medpaper_note(
     aliases = _build_aliases(article, authors)
     if citation_key not in aliases:
         aliases.insert(0, citation_key)
+    registered = _registered_fulltext(article)
+    fulltext_lines = (
+        _registered_fulltext_front_matter(registered) if registered is not None else ['fulltext_state: "missing"']
+    )
 
     lines = [
         "---",
@@ -803,7 +844,7 @@ def _render_medpaper_note(
         'source_kind: "pubmed"',
         'trust_state: "unverified"',
         'analysis_state: "pending"',
-        'fulltext_state: "missing"',
+        *fulltext_lines,
         f"pmid: {_yaml_string(pmid)}",
         f"year: {_yaml_string(year)}",
         f"doi: {_yaml_string(doi)}",

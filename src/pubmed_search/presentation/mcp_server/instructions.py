@@ -408,6 +408,7 @@ search_clinvar("BRCA1", limit=10)
 
 ### 全文工具
 - get_fulltext: Enhanced multi-source fulltext retrieval.
+- register_fulltext: Register article fulltext obtained by the host agent or the user.
 - get_text_mined_terms: Get text-mined annotations from Europe PMC.
 
 ### NCBI 延伸

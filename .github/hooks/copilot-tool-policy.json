@@ -41,6 +41,7 @@
     ],
     "fulltext": [
       "get_fulltext",
+      "register_fulltext",
       "get_text_mined_terms"
     ],
     "figure": [
@@ -164,6 +165,7 @@
         "find_citing_articles",
         "get_article_references",
         "get_fulltext",
+        "register_fulltext",
         "get_text_mined_terms",
         "get_article_figures",
         "build_citation_tree",
@@ -191,6 +193,7 @@
       "get_article_references",
       "get_citation_metrics",
       "get_fulltext",
+      "register_fulltext",
       "get_text_mined_terms",
       "get_article_figures",
       "build_citation_tree",
@@ -217,6 +220,7 @@
       "get_article_references",
       "get_citation_metrics",
       "get_fulltext",
+      "register_fulltext",
       "get_text_mined_terms",
       "get_article_figures",
       "search_gene",
@@ -256,6 +260,7 @@
       "get_article_references",
       "get_citation_metrics",
       "get_fulltext",
+      "register_fulltext",
       "get_text_mined_terms",
       "get_article_figures",
       "search_gene",

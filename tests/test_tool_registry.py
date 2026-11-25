@@ -274,7 +274,7 @@ class TestValidateToolRegistry:
         declared = {name for category in TOOL_CATEGORIES.values() for name in category["tools"]}
 
         assert registered == declared
-        assert len(registered) == 43
+        assert len(registered) == 44
         assert "get_performance_metrics" not in registered
 
 

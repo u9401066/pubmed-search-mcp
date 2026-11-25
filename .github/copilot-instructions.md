@@ -394,7 +394,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **43 MCP Tools** for literature search and analysis
+- **44 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -495,11 +495,12 @@ unified_search(query="<combined_boolean_query>")
 
 
 ### 全文工具
-*全文取得與文本挖掘*
+*全文取得、代理/使用者提供全文登錄與文本挖掘*
 
 | Tool | Purpose |
 |------|---------|
 | `get_fulltext` | Enhanced multi-source fulltext retrieval. |
+| `register_fulltext` | Register article fulltext obtained by the host agent or the user. |
 | `get_text_mined_terms` | Get text-mined annotations from Europe PMC. |
 
 
