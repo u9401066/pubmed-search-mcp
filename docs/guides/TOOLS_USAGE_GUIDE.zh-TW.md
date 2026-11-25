@@ -133,6 +133,28 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
+#### PubMed 無法解析的 MeSH 標目
+
+PubMed 會在 ESearch 的 WarningList 與 ErrorList 回報無法解析的子句，例如
+`"Post-Anesthesia Care Units"[Mesh]` 會列為 `QuotedPhraseNotFound`。這種子句不會比對到任何紀錄，
+所以 `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` 得到 0 筆。PubMed 搜尋結果會在
+`query_diagnostics` 保留 PubMed 的轉譯與這兩份清單，`unified_search` 也會把每個問題列在
+`source_metadata.pubmed.warnings`。
+
+若沒有任何 MeSH 紀錄以主題片語為 preferred 或 entry term，`generate_search_queries` 會替最多兩個
+`unmapped_phrases`（多字片語優先）加上 `reason: "co_occurrence"` 的 `mesh_candidates`。做法是在
+MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的 MeSH 標目，排除 check tags
+（Humans、Male、Adult…）與研究設計標目，再以 `share`（召回估計）與 `estimated_precision`
+（`share x evidence_total / background_count`）的 F1 排序。每個片語需一次搜尋、一次 MEDLINE 擷取與
+最多八次標目計數，每次呼叫最多 16 個請求；實際執行內容見 `coverage.mesh_cooccurrence`。
+
+2026-11-25 實測 "Post-Anesthesia Care Units" 各變體共命中 3,717 筆 MEDLINE 紀錄。Anesthesia Recovery Period
+得分 0.141（share 18.7%，6,140 筆索引紀錄），Recovery Room 0.116（8.0%，1,394 筆）。
+Postoperative Pain 出現比例相近（17.3%），但有 57,605 筆紀錄使用該標目，因此只得 0.021。
+候選標目是相關概念而非同義詞，不會進入 `mesh_terms` 或 `suggested_queries`。採用時保留原詞：
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`。
+以片語各拼寫變體的 `[tiab]` 自由詞 OR 該標目，再 `AND delirium[tiab]`，得到 518 筆；原查詢為 0 筆。
+
 #### 比較 PubMed 概念組合
 
 PubMed 標記有問題的詞時，`warning_examples` 最多顯示兩段警告，可先核對保存的翻譯再修正式子。系統性搜尋 skill 隨附離線腳本，可列出差集樣本 PMID、選定的搜尋式和理由。[四題盲測與用法](../reports/mesh-preflight-2017/README.md)

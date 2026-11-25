@@ -146,6 +146,31 @@ Each feature family has a workflow diagram so users and developers can see where
 
 Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
+#### MeSH headings PubMed cannot resolve
+
+PubMed reports clauses it could not resolve in ESearch's WarningList and ErrorList, for example
+`"Post-Anesthesia Care Units"[Mesh]` as `QuotedPhraseNotFound`. Such a clause matches nothing,
+so `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` returns 0. PubMed search pages keep
+PubMed's translation and both lists in `query_diagnostics`, and `unified_search` lists each issue in
+`source_metadata.pubmed.warnings`.
+
+When no MeSH record has a topic phrase as a preferred or entry term, `generate_search_queries` adds
+`mesh_candidates` with `reason: "co_occurrence"` for up to two `unmapped_phrases` (multi-word first).
+It searches the phrase as `[tiab]` in MEDLINE-indexed records, counts the MeSH headings of a
+150-record sample, drops check tags (Humans, Male, Adult...) and study-design headings, and ranks
+headings by the F1 of `share` (recall estimate) and `estimated_precision`
+(`share x evidence_total / background_count`). Each phrase costs one search, one MEDLINE fetch and
+up to eight heading counts, at most 16 requests per call; `coverage.mesh_cooccurrence` lists what ran.
+
+On 2026-11-25 the variants of "Post-Anesthesia Care Units" matched 3,717 MEDLINE records. Anesthesia Recovery
+Period scored 0.141 (share 18.7%, 6,140 indexed records) and Recovery Room 0.116 (8.0%, 1,394).
+Postoperative Pain was as frequent (17.3%) but scored 0.021 because 57,605 records carry it.
+Candidates are related concepts, not synonyms; they never enter `mesh_terms` or
+`suggested_queries`. Keep the words when using one:
+`("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`.
+With the phrase's spelling variants as `[tiab]` words OR that heading, `AND delirium[tiab]` returned
+518 records where the original query returned 0.
+
 #### Compare PubMed concept blocks
 
 If PubMed flags a term, `warning_examples` shows up to two short excerpts. Inspect the stored translation before editing the clause. For offline peer review, the systematic-search skill can render the saved plan, differences, sample PMIDs and chosen query. [Four-review evaluation and usage](../reports/mesh-preflight-2017/README.md)
