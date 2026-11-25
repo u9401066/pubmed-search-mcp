@@ -17,14 +17,12 @@ from pubmed_search import __version__
 from pubmed_search.application.pipeline.executor import (
     PipelineOutcomeStatus,
     classify_pipeline_outcome,
-    collected_records,
-    final_record_set,
-    is_exhaustive_step,
     pipeline_outcome_message,
     pipeline_run_status,
     run_uses_exhaustive_retrieval,
 )
 from pubmed_search.application.pipeline.prisma_s import build_search_records, config_provenance
+from pubmed_search.application.pipeline.record_lineage import collected_records, final_record_set, retrieval_summary
 from pubmed_search.application.pipeline.report_generator import generate_pipeline_changes
 from pubmed_search.domain.entities.pipeline import PIPELINE_RUN_RECORD_VERSION, PipelineRun
 
@@ -74,46 +72,6 @@ def _summarize_articles(articles: list[UnifiedArticle], limit: int = 5) -> list[
         }
         for article in articles[:limit]
     ]
-
-
-def retrieval_summary(step_results: Mapping[str, StepResult], record_count: int) -> dict[str, Any]:
-    """Summarize retrieval completeness across all search steps of one run."""
-    exhaustive_steps: list[dict[str, Any]] = []
-    for step_id, result in step_results.items():
-        if not is_exhaustive_step(result):
-            continue
-        retrieval = dict(result.metadata.get("retrieval") or {})
-        exhaustive_steps.append(
-            {
-                "step_id": step_id,
-                "total_count": retrieval.get("total_count"),
-                "retrieved_count": retrieval.get("retrieved_count"),
-                "exhaustive": bool(retrieval.get("exhaustive")) and result.ok,
-                "cap": retrieval.get("cap"),
-                "metadata_count": retrieval.get("metadata_count"),
-                "metadata_complete": retrieval.get("metadata_complete"),
-                "metadata_error": retrieval.get("metadata_error"),
-                "terminal_reason": retrieval.get("terminal_reason"),
-            }
-        )
-    if not exhaustive_steps:
-        return {"mode": "bounded", "exhaustive": False, "record_count": record_count}
-    summary: dict[str, Any] = {
-        "mode": "exhaustive",
-        "exhaustive": all(step["exhaustive"] for step in exhaustive_steps),
-        "record_count": record_count,
-        "steps": exhaustive_steps,
-    }
-    if len(exhaustive_steps) == 1:
-        only = exhaustive_steps[0]
-        summary.update(
-            {
-                "total_count": only["total_count"],
-                "retrieved_count": only["retrieved_count"],
-                "metadata_count": only["metadata_count"],
-            }
-        )
-    return summary
 
 
 class PipelineRunRecorder:

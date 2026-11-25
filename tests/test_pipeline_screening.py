@@ -149,6 +149,7 @@ def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) ->
     assert flow["identification"] == {
         "records_identified": 10,
         "records_identified_by_database": {"PubMed": 10},
+        "records_marked_ineligible_by_automation": 0,
         "duplicate_records_removed": 3,
         "records_after_duplicates_removed": 7,
     }
@@ -168,6 +169,61 @@ def test_update_run_queues_only_new_records_and_prisma_counts(tmp_path: Path) ->
     assert "Records identified from databases: 10 (PubMed: 10)" in markdown
     assert "Duplicate records removed (across runs): 3" in markdown
     assert "  - wrong comparator: 1" in markdown
+
+
+def test_identification_counts_records_removed_by_pipeline_filters(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    run = _run("run1", ["1", "2"])
+    run.retrieval.update({"identified_count": 5, "removed_by_filters": 3})
+    assert service.register_run(run)["identified_count"] == 5
+    assert service.register_run(run)["replayed"] is True
+    service.register_run(_run("run2", ["2", "3"]))
+
+    flow = service.flow()
+
+    assert flow["identification"] == {
+        "records_identified": 7,
+        "records_identified_by_database": {"PubMed": 7},
+        "records_marked_ineligible_by_automation": 3,
+        "duplicate_records_removed": 1,
+        "records_after_duplicates_removed": 3,
+    }
+    assert [run["records_marked_ineligible_by_automation"] for run in flow["runs"]] == [3, 0]
+    markdown = render_prisma_flow_markdown("review", flow)
+    assert "Records marked ineligible by automation tools (pipeline filter steps): 3" in markdown
+
+
+def test_version_1_screening_log_is_migrated_in_place(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "review.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE runs (run_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE, database TEXT NOT NULL,
+                identified_count INTEGER NOT NULL, new_count INTEGER NOT NULL, exhaustive INTEGER NOT NULL,
+                run_started TEXT, registered_at TEXT NOT NULL);
+            CREATE TABLE records (pmid TEXT PRIMARY KEY, first_run_id TEXT NOT NULL REFERENCES runs(run_id),
+                identified_at TEXT NOT NULL);
+            CREATE TABLE decisions (sequence INTEGER PRIMARY KEY AUTOINCREMENT, decision_id TEXT NOT NULL UNIQUE,
+                pmid TEXT NOT NULL REFERENCES records(pmid), stage TEXT NOT NULL, decision TEXT NOT NULL,
+                reason TEXT, reviewer TEXT NOT NULL, decided_at TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE INDEX decisions_by_stage ON decisions(stage, pmid, sequence);
+            CREATE INDEX records_by_run ON records(first_run_id);
+            INSERT INTO runs VALUES ('run1', 1, 'PubMed', 2, 2, 1, NULL, '2026-01-01T00:00:00Z');
+            INSERT INTO records VALUES ('1', 'run1', '2026-01-01T00:00:00Z'), ('2', 'run1', '2026-01-01T00:00:00Z');
+            PRAGMA user_version=1;
+            """
+        )
+    service = ScreeningService(SQLiteScreeningStore(path))
+
+    service.record([_decide("1", "exclude")])
+
+    flow = service.flow()
+    assert flow["identification"]["records_identified"] == 2
+    assert flow["identification"]["records_marked_ineligible_by_automation"] == 0
+    assert flow["screening"]["records_excluded"] == 1
+    assert service.register_run(_run("run1", ["1", "2"]))["replayed"] is True
 
 
 def test_bounded_runs_are_not_auto_registered(tmp_path: Path) -> None:

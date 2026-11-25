@@ -427,8 +427,11 @@ def _history_unavailable(tool_name: str) -> str:
 def _retrieval_cells(run: PipelineRun) -> tuple[str, str]:
     """Return (mode, PubMed total) cells for one run row."""
     retrieval = run.retrieval or {}
-    if retrieval.get("mode") == "exhaustive":
-        label = "exhaustive" if retrieval.get("exhaustive") else "exhaustive (incomplete)"
+    if retrieval.get("mode") in {"exhaustive", "mixed"}:
+        if retrieval.get("mode") == "mixed":
+            label = "mixed (not exhaustive)"
+        else:
+            label = "exhaustive" if retrieval.get("exhaustive") else "exhaustive (incomplete)"
         total = retrieval.get("total_count")
         return label, "-" if total is None else str(total)
     if run.record_version >= 2:

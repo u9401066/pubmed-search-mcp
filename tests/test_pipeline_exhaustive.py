@@ -549,3 +549,156 @@ def test_history_records_view_pages_the_persisted_set(store: PipelineStore) -> N
     assert [row["pmid"] for row in page["records"]][:2] == ["201", "202"]
     assert len(page["records"]) == 50
     assert page["next_offset"] is None
+
+
+# ---------------------------------------------------------------------------
+# Completeness claims cover every search feeding the final record set
+# ---------------------------------------------------------------------------
+
+
+class _MixedSearcher(FakeHistorySearcher):
+    """Exhaustive history paging plus a bounded relevance window (PubMed counts 5000, returns limit)."""
+
+    async def search_page(self, *, query: str, limit: int, **kwargs: Any) -> Any:
+        from pubmed_search.application.search.source_models import SourceSearchPage
+
+        rows = [_pubmed_row(str(900_000 + index)) for index in range(limit)]
+        return SourceSearchPage(source="pubmed", items=rows, total=5000, query=query)
+
+
+def _config(steps: list[dict[str, Any]]) -> PipelineConfig:
+    result = parse_and_validate_config({"steps": steps, "output": {"format": "json", "limit": 20}})
+    assert result.valid and result.config is not None, result.errors
+    return result.config
+
+
+_EXHAUSTIVE_STEP = {"id": "ex", "action": "search", "params": {"query": QUERY, "retrieval": "exhaustive"}}
+_BOUNDED_STEP = {"id": "bd", "action": "search", "params": {"query": "other topic", "sources": ["pubmed"], "limit": 10}}
+
+
+async def test_bounded_search_feeding_the_final_set_is_never_claimed_exhaustive(store: PipelineStore) -> None:
+    from pubmed_search.application.pipeline.screening import run_is_complete_identification
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    store.save(
+        "mixed",
+        _config(
+            [
+                _EXHAUSTIVE_STEP,
+                _BOUNDED_STEP,
+                {"id": "m", "action": "merge", "inputs": ["ex", "bd"], "params": {"method": "union"}},
+            ]
+        ),
+        scope="workspace",
+    )
+    searcher = _MixedSearcher([str(5000 + index) for index in range(30)])
+
+    outcome = await _execute_pipeline_mode_outcome("saved:mixed", "json", searcher, pipeline_store=store)
+
+    payload = json.loads(outcome.response)
+    assert outcome.exhaustive is False
+    retrieval = payload["retrieval"]
+    assert (retrieval["mode"], retrieval["exhaustive"]) == ("mixed", False)
+    assert [row["step_id"] for row in retrieval["steps"]] == ["ex"]
+    assert [row["step_id"] for row in retrieval["bounded_steps"]] == ["bd"]
+    assert retrieval["bounded_steps"][0]["total_count"] == 5000
+    assert any("bounded" in warning and "not a complete record set" in warning for warning in payload["warnings"])
+    run = store.get_run("mixed")
+    assert run.retrieval["exhaustive"] is False
+    assert len(run.pmids) == 40
+    assert run_is_complete_identification(run) is False
+    assert not store.screening_db_path("mixed").exists()  # never auto-registered as complete identification
+    markdown = await _execute_pipeline_mode_outcome("saved:mixed", "markdown", searcher, pipeline_store=store)
+    assert "mixed" in markdown.response and "not a complete record set" in markdown.response
+
+
+async def test_bounded_search_outside_the_final_record_flow_keeps_the_exhaustive_claim() -> None:
+    from pubmed_search.application.pipeline.run_recorder import retrieval_summary
+
+    executor = PipelineExecutor(searcher=_MixedSearcher([str(5000 + index) for index in range(30)]))
+    _articles, results = await executor.execute(
+        _config([_BOUNDED_STEP, _EXHAUSTIVE_STEP, {"id": "blocks", "action": "block_analysis", "inputs": ["ex"]}])
+    )
+
+    _step, pmids = final_record_set(results)
+    summary = retrieval_summary(results, len(pmids))
+    assert (summary["mode"], summary["exhaustive"]) == ("exhaustive", True)
+    assert summary["identified_count"] == 30
+    assert "bounded_steps" not in summary
+
+
+async def test_filters_keep_metadata_less_records_and_report_them() -> None:
+    from pubmed_search.application.pipeline.run_recorder import retrieval_summary
+
+    executor = PipelineExecutor(searcher=FakeHistorySearcher([str(5000 + index) for index in range(30)]))
+    steps = [
+        {**_EXHAUSTIVE_STEP, "params": {**_EXHAUSTIVE_STEP["params"], "fetch_metadata": False}},
+        {"id": "years", "action": "filter", "inputs": ["ex"], "params": {"min_year": 2010, "max_year": 2020}},
+        {
+            "id": "types",
+            "action": "filter",
+            "inputs": ["years"],
+            "params": {"article_types": ["randomized-controlled-trial"]},
+        },
+        {"id": "rest", "action": "filter", "inputs": ["types"], "params": {"has_abstract": True, "min_citations": 5}},
+    ]
+
+    _articles, results = await executor.execute(_config(steps))
+
+    _final, pmids = final_record_set(results)
+    assert len(pmids) == 30
+    for step_id in ("years", "types", "rest"):
+        metadata = results[step_id].metadata
+        assert metadata["removal_reasons"] == {}
+        assert metadata["metadata_missing"]["count"] == 30
+        assert len(metadata["metadata_missing"]["pmid_preview"]) == 20
+        assert "without metadata" in metadata["warning"]
+    summary = retrieval_summary(results, len(pmids))
+    assert summary["exhaustive"] is True
+    assert (summary["identified_count"], summary["removed_by_filters"]) == (30, 0)
+    assert any("without metadata" in warning for warning in summary["warnings"])
+
+
+class _MixedYearSearcher(FakeHistorySearcher):
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        rows = await super().fetch_details(pmids)
+        for row in rows:
+            row["year"] = "2010" if int(row["pmid"]) % 2 else "2024"
+        return rows
+
+
+async def test_identification_counts_records_before_pipeline_filters(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    from pubmed_search.application.pipeline.run_recorder import PipelineRunRecorder
+    from pubmed_search.application.pipeline.screening import ScreeningService
+    from pubmed_search.infrastructure.pipeline_screening import SQLiteScreeningStore
+
+    store = PipelineStore(global_data_dir=tmp_path / "global")
+    config = _config(
+        [_EXHAUSTIVE_STEP, {"id": "recent", "action": "filter", "inputs": ["ex"], "params": {"min_year": 2020}}]
+    )
+    store.save("filtered", config)
+    _articles, results = await PipelineExecutor(
+        searcher=_MixedYearSearcher([str(5000 + index) for index in range(30)])
+    ).execute(config)
+
+    run = PipelineRunRecorder(store).record(
+        pipeline_name="filtered",
+        articles=_articles,
+        step_results=results,
+        report="r",
+        started=datetime.now(timezone.utc),
+        executed_config=config,
+    )
+
+    assert len(run.pmids) == 15
+    assert run.retrieval["exhaustive"] is True
+    assert (run.retrieval["identified_count"], run.retrieval["removed_by_filters"]) == (30, 15)
+    service = ScreeningService(SQLiteScreeningStore(store.screening_db_path("filtered")))
+    service.register_run(run)
+    identification = service.flow()["identification"]
+    assert identification["records_identified"] == 30
+    assert identification["records_marked_ineligible_by_automation"] == 15
+    assert identification["duplicate_records_removed"] == 0
+    assert identification["records_after_duplicates_removed"] == 15

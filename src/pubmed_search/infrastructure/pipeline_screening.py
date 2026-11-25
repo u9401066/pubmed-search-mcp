@@ -23,12 +23,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SCHEMA = (
     """CREATE TABLE runs (
         run_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL UNIQUE, database TEXT NOT NULL,
         identified_count INTEGER NOT NULL, new_count INTEGER NOT NULL, exhaustive INTEGER NOT NULL,
-        run_started TEXT, registered_at TEXT NOT NULL
+        run_started TEXT, registered_at TEXT NOT NULL, automation_removed INTEGER NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE records (
         pmid TEXT PRIMARY KEY, first_run_id TEXT NOT NULL REFERENCES runs(run_id), identified_at TEXT NOT NULL
@@ -41,6 +41,9 @@ _SCHEMA = (
     "CREATE INDEX decisions_by_stage ON decisions(stage, pmid, sequence)",
     "CREATE INDEX records_by_run ON records(first_run_id)",
 )
+# Version 1 counted only the records a run handed to screening; version 2 also
+# keeps how many identified records pipeline filters removed before screening.
+_MIGRATIONS = {1: ("ALTER TABLE runs ADD COLUMN automation_removed INTEGER NOT NULL DEFAULT 0",)}
 
 _LATEST = """
     SELECT d.pmid, d.decision, d.reason FROM decisions d
@@ -133,13 +136,20 @@ class SQLiteScreeningStore:
         with closing(sqlite3.connect(self._path, timeout=10, isolation_level=None)) as db:
             db.row_factory = sqlite3.Row
             db.execute("PRAGMA foreign_keys=ON")
-            first_open = db.execute("PRAGMA user_version").fetchone()[0] == 0
+            # A first open or a migration writes the schema, so it takes the write lock.
+            needs_schema = db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION
             with db:
-                db.execute("BEGIN IMMEDIATE" if write or first_open else "BEGIN")
+                db.execute("BEGIN IMMEDIATE" if write or needs_schema else "BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
                 if version == 0:
                     for statement in _SCHEMA:
                         db.execute(statement)
+                    db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
+                elif version in _MIGRATIONS:
+                    while version != _SCHEMA_VERSION:
+                        for statement in _MIGRATIONS[version]:
+                            db.execute(statement)
+                        version += 1
                     db.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                 elif version != _SCHEMA_VERSION:
                     raise ValueError(f"Unsupported screening database version {version}")
@@ -166,19 +176,30 @@ class SQLiteScreeningStore:
         pmids: list[str],
         run_started: str | None,
         exhaustive: bool,
+        identified_count: int | None = None,
     ) -> dict[str, Any]:
-        """Add one run's identified records; records first seen here become unscreened."""
+        """Add one run's records; records first seen here become unscreened.
+
+        ``pmids`` is the set handed to screening. ``identified_count`` is how
+        many records the run's searches identified before pipeline filters
+        (default: ``len(pmids)``); the difference is reported as records
+        marked ineligible by automation tools, not as duplicates.
+        """
+        identified = max(len(pmids), identified_count if identified_count is not None else len(pmids))
+        automation_removed = identified - len(pmids)
         with self._transaction(write=True) as db:
             existing = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if existing is not None:
-                if existing["identified_count"] != len(pmids):
+                if (existing["identified_count"], existing["automation_removed"]) != (identified, automation_removed):
                     raise ValueError("run_id is already registered with a different record set")
                 return {"run_id": run_id, **dict(existing), "replayed": True}
             sequence = db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM runs").fetchone()[0]
             now = _now()
             db.execute(
-                "INSERT INTO runs VALUES(?,?,?,?,?,?,?,?)",
-                (run_id, sequence, database, len(pmids), 0, int(exhaustive), run_started, now),
+                """INSERT INTO runs(run_id, sequence, database, identified_count, new_count, exhaustive,
+                                    run_started, registered_at, automation_removed)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (run_id, sequence, database, identified, 0, int(exhaustive), run_started, now, automation_removed),
             )
             before = db.total_changes
             db.executemany(

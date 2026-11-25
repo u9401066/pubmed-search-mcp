@@ -53,6 +53,17 @@ from pubmed_search.application.pipeline.mesh_suggestions import (
     diagnostics_from_snapshot,
     suggest_mesh_correction,
 )
+
+# Record-set helpers live in record_lineage; ``__all__`` re-exports them for existing callers.
+from pubmed_search.application.pipeline.record_lineage import (
+    FINAL_STEP_METADATA_KEY,
+    RECORD_LINEAGE_METADATA_KEY,
+    article_lacks_metadata,
+    collected_records,
+    final_record_set,
+    is_exhaustive_step,
+    record_lineage,
+)
 from pubmed_search.application.pipeline.scheduling import run_ready_steps
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.source_models import SourceSearchPage
@@ -98,18 +109,9 @@ _PIPELINE_ALTERNATE_SOURCES = frozenset(PIPELINE_SEARCH_SOURCES - {"pubmed"})
 PipelineOutcomeStatus = Literal["completed", "partial", "failed"]
 
 
-FINAL_STEP_METADATA_KEY = "pipeline_final_step"
-
-
 def _utc_now_iso() -> str:
     """Return a second-resolution UTC timestamp for search provenance."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def is_exhaustive_step(result: StepResult) -> bool:
-    """Whether a step ran PubMed exhaustive retrieval (successfully or not)."""
-    retrieval = result.metadata.get("retrieval")
-    return isinstance(retrieval, dict) and retrieval.get("mode") == "exhaustive"
 
 
 def config_requests_exhaustive_retrieval(config: PipelineConfig) -> bool:
@@ -120,25 +122,6 @@ def config_requests_exhaustive_retrieval(config: PipelineConfig) -> bool:
 def run_uses_exhaustive_retrieval(step_results: Mapping[str, StepResult]) -> bool:
     """Whether any step in a run requested exhaustive PubMed retrieval."""
     return any(is_exhaustive_step(result) for result in step_results.values())
-
-
-def final_record_set(step_results: Mapping[str, StepResult]) -> tuple[str | None, list[str]]:
-    """Return the final step ID and its complete PMID set before ranking/limits."""
-    for step_id, result in step_results.items():
-        if result.metadata.get(FINAL_STEP_METADATA_KEY) is True:
-            if not result.ok:
-                return step_id, []
-            return step_id, list(dict.fromkeys(result.pmids or [a.pmid for a in result.articles if a.pmid]))
-    return None, []
-
-
-def collected_records(step_results: Mapping[str, StepResult]) -> dict[str, dict[str, Any]]:
-    """Merge provider-native records gathered by exhaustive steps, keyed by PMID."""
-    records: dict[str, dict[str, Any]] = {}
-    for result in step_results.values():
-        for pmid, row in result.records.items():
-            records.setdefault(pmid, row)
-    return records
 
 
 def classify_pipeline_outcome(
@@ -312,6 +295,12 @@ class PipelineExecutor:
                 # Persistence uses the complete final-step set; ranking and
                 # output.limit only shape the response preview below.
                 results[final_step_id].metadata[FINAL_STEP_METADATA_KEY] = True
+                if run_uses_exhaustive_retrieval(results):
+                    # Completeness and identification claims cover only the
+                    # sources whose records reach this final set.
+                    results[final_step_id].metadata[RECORD_LINEAGE_METADATA_KEY] = record_lineage(
+                        steps_to_run, results, final_step_id
+                    )
 
             # Apply ranking & limit from output config
             if final_articles:
@@ -1744,28 +1733,40 @@ class PipelineExecutor:
         filtered: list[UnifiedArticle] = []
         reason_counter: Counter[str] = Counter()
         excluded_examples: list[dict[str, Any]] = []
+        # Identifier-only records (metadata never fetched) cannot be judged by
+        # bibliographic criteria: every filter type keeps them unevaluated and
+        # reports them, rather than one filter keeping and another dropping them.
+        metadata_missing: list[str] = []
+        bibliographic_criteria = min_year is not None or max_year is not None or bool(requested_article_types)
+        bibliographic_criteria = bibliographic_criteria or bool(require_abstract)
         for a in articles:
             reasons: list[str] = []
+            lacks_metadata = article_lacks_metadata(a)
+            unevaluated = lacks_metadata and bibliographic_criteria
             year = getattr(a, "year", None)
-            if min_year is not None and year and year < min_year:
-                reasons.append("year_before_min")
-            if max_year is not None and year and year > max_year:
-                reasons.append("year_after_max")
-            if requested_article_types:
-                type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
-                if type_val not in requested_article_types:
-                    reasons.append("article_type_mismatch")
+            if not lacks_metadata:
+                if min_year is not None and year and year < min_year:
+                    reasons.append("year_before_min")
+                if max_year is not None and year and year > max_year:
+                    reasons.append("year_after_max")
+                if requested_article_types:
+                    type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
+                    if type_val not in requested_article_types:
+                        reasons.append("article_type_mismatch")
+                if require_abstract and not getattr(a, "abstract", None):
+                    reasons.append("missing_abstract")
             if min_citations is not None:
-                cc = self._article_citation_count(a)
-                if cc < min_citations:
+                if lacks_metadata and not self._has_citation_count(a):
+                    unevaluated = True
+                elif self._article_citation_count(a) < min_citations:
                     reasons.append("citation_count_below_min")
-            if require_abstract and not getattr(a, "abstract", None):
-                reasons.append("missing_abstract")
             if reasons:
                 reason_counter.update(reasons)
                 if len(excluded_examples) < 5:
                     excluded_examples.append(self._excluded_article_example(a, reasons))
                 continue
+            if unevaluated and a.pmid:
+                metadata_missing.append(a.pmid)
             filtered.append(a)
 
         pmids = [a.pmid for a in filtered if a.pmid]
@@ -1784,9 +1785,39 @@ class PipelineExecutor:
             "removal_reasons": dict(reason_counter),
             "excluded_examples": excluded_examples,
         }
+        warnings: list[str] = []
         if articles and requested_article_types and not filtered:
-            metadata["warning"] = "Article type filter removed all articles. Check article_types and removal_reasons."
+            warnings.append("Article type filter removed all articles. Check article_types and removal_reasons.")
+        if metadata_missing:
+            metadata["metadata_missing"] = {
+                "count": len(metadata_missing),
+                "pmid_preview": metadata_missing[:20],
+                "policy": "kept_unevaluated",
+            }
+            warnings.append(
+                f"{len(metadata_missing)} records without metadata could not be evaluated and were kept; "
+                "fetch their metadata (fetch_metadata: true, or prepare_export backfill) before filtering on it"
+            )
+        if warnings:
+            metadata["warning"] = " ".join(warnings)
         return StepResult(step_id=step.id, action="filter", articles=filtered, pmids=pmids, metadata=metadata)
+
+    @staticmethod
+    def _has_citation_count(article: UnifiedArticle) -> bool:
+        """Whether a citation count is known (as opposed to defaulting to zero)."""
+        metrics = getattr(article, "citation_metrics", None)
+        pipeline_metrics = getattr(article, "_pipeline_metrics", None)
+        return (
+            getattr(article, "citation_count", None) is not None
+            or (metrics is not None and getattr(metrics, "citation_count", None) is not None)
+            or (
+                isinstance(pipeline_metrics, dict)
+                and any(
+                    pipeline_metrics.get(key) is not None
+                    for key in ("citation_count", "citations", "cited_by_count", "citedByCount")
+                )
+            )
+        )
 
     @classmethod
     def _article_citation_count(cls, article: UnifiedArticle) -> int:
@@ -2027,3 +2058,19 @@ class PipelineExecutor:
         }
         factory = preset_map.get(config.output.ranking, RankingConfig.default)
         return ResultAggregator().rank(articles, factory(), query=query)
+
+
+__all__ = [
+    "FINAL_STEP_METADATA_KEY",
+    "AlternateSearchAdapterFn",
+    "PipelineExecutor",
+    "PipelineOutcomeStatus",
+    "classify_pipeline_outcome",
+    "collected_records",
+    "config_requests_exhaustive_retrieval",
+    "final_record_set",
+    "is_exhaustive_step",
+    "pipeline_outcome_message",
+    "pipeline_run_status",
+    "run_uses_exhaustive_retrieval",
+]

@@ -575,6 +575,7 @@ def _format_exhaustive_pipeline_json(
 
     preview = min(config.output.limit, PIPELINE_EXHAUSTIVE_PREVIEW)
     final_pmids = run.pmids if run is not None else []
+    retrieval = run.retrieval if run is not None else retrieval_summary(step_results, len(final_pmids))
     data: dict[str, Any] = {
         "type": "pipeline_result",
         "status": status,
@@ -588,7 +589,7 @@ def _format_exhaustive_pipeline_json(
                 "ranking": config.output.ranking,
             },
         },
-        "retrieval": run.retrieval if run is not None else retrieval_summary(step_results, len(final_pmids)),
+        "retrieval": retrieval,
         "run": None
         if run is None
         else {
@@ -616,7 +617,7 @@ def _format_exhaustive_pipeline_json(
         },
         "next": _exhaustive_next_steps(run),
     }
-    warnings = mesh_correction_warnings(step_results)
+    warnings = [*(retrieval.get("warnings") or []), *mesh_correction_warnings(step_results)]
     if warnings:
         data["warnings"] = warnings
     return json.dumps(data, ensure_ascii=False, indent=2, default=str)
@@ -631,12 +632,21 @@ def _format_exhaustive_pipeline_markdown(
     status: PipelineOutcomeStatus,
 ) -> str:
     """Render the same bounded summary as Markdown."""
+    from pubmed_search.application.pipeline.record_lineage import final_record_set, retrieval_summary
     from pubmed_search.shared.markdown import escape_markdown_text
 
     preview = min(config.output.limit, PIPELINE_EXHAUSTIVE_PREVIEW)
     title = escape_markdown_text(config.name or "pipeline")
+    retrieval = (
+        run.retrieval if run is not None else retrieval_summary(step_results, len(final_record_set(step_results)[1]))
+    )
     parts = [f"# Exhaustive PubMed retrieval: {title}", ""]
     parts.append(f"- Status: {status}")
+    parts.append(
+        f"- Record set: {retrieval.get('mode')} retrieval, complete record set "
+        f"{'yes' if retrieval.get('exhaustive') is True else 'no'}"
+    )
+    parts.extend(f"- ⚠️ {escape_markdown_text(warning)}" for warning in retrieval.get("warnings") or [])
     for step in config.steps:
         result = step_results.get(step.id)
         if result is None or not is_exhaustive_step(result):

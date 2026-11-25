@@ -17,8 +17,12 @@ replay even after later decisions, and reusing it for different content fails.
 
 PRISMA 2020 mapping (identification via databases):
 
-* records identified = sum of records identified by every registered run;
-* duplicate records removed = identified − unique PMIDs across runs;
+* records identified = sum of records identified by every registered run's
+  searches (``retrieval.identified_count``: the search/merge result before
+  pipeline ``filter`` steps; a run without it counts its persisted records);
+* records marked ineligible by automation tools = identified records that the
+  run's pipeline filters removed before screening;
+* duplicate records removed = identified − automation removals − unique PMIDs;
 * records screened = unique PMIDs (title/abstract stage);
 * records excluded = latest title/abstract decision ``exclude``;
 * reports sought for retrieval = title/abstract ``include`` or ``maybe``;
@@ -58,6 +62,7 @@ class ScreeningStore(Protocol):
         pmids: list[str],
         run_started: str | None,
         exhaustive: bool,
+        identified_count: int | None = None,
     ) -> dict[str, Any]: ...
 
     def record_decisions(self, decisions: list[dict[str, Any]]) -> dict[str, Any]: ...
@@ -72,13 +77,23 @@ class ScreeningStore(Protocol):
 
 
 def run_is_complete_identification(run: PipelineRun) -> bool:
-    """Whether a run identified a complete record set (exhaustive, all PMIDs)."""
+    """Whether a run identified a complete record set.
+
+    ``retrieval.exhaustive`` is true only when every search feeding the final
+    record set was an exhaustive PubMed step that collected all of its PMIDs;
+    a ``mixed`` run (any bounded source upstream) is never complete.
+    """
     return (
         run.record_basis == "final_step_full"
         and run.retrieval.get("exhaustive") is True
         and run.status in {"success", "partial"}
         and bool(run.pmids)
     )
+
+
+def _identified_count(run: PipelineRun) -> int | None:
+    value = run.retrieval.get("identified_count")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def _run_database(run: PipelineRun) -> str:
@@ -160,6 +175,7 @@ class ScreeningService:
             pmids=list(dict.fromkeys(run.pmids)),
             run_started=run.started.isoformat() if run.started else None,
             exhaustive=run_is_complete_identification(run),
+            identified_count=_identified_count(run),
         )
         result["exhaustive"] = bool(result.get("exhaustive"))
         return result
@@ -198,6 +214,7 @@ class ScreeningService:
         raw = self._store.flow_counts()
         runs = list(raw["runs"])
         identified = sum(int(run["identified_count"]) for run in runs)
+        automation = sum(int(run.get("automation_removed") or 0) for run in runs)
         unique = int(raw["unique_records"])
         ta = raw["title_abstract"]
         ft = raw["full_text"]
@@ -223,7 +240,8 @@ class ScreeningService:
             "identification": {
                 "records_identified": identified,
                 "records_identified_by_database": by_database,
-                "duplicate_records_removed": identified - unique,
+                "records_marked_ineligible_by_automation": automation,
+                "duplicate_records_removed": identified - automation - unique,
                 "records_after_duplicates_removed": unique,
             },
             "screening": {
@@ -248,6 +266,7 @@ class ScreeningService:
                     "run_started": run["run_started"],
                     "registered_at": run["registered_at"],
                     "records_identified": run["identified_count"],
+                    "records_marked_ineligible_by_automation": int(run.get("automation_removed") or 0),
                     "new_records": run["new_count"],
                     "new_records_unscreened": int(raw["unscreened_by_run"].get(run["run_id"], 0)),
                     "exhaustive": bool(run["exhaustive"]),
@@ -278,6 +297,8 @@ def render_prisma_flow_markdown(name: str, flow: dict[str, Any]) -> str:
             if ident["records_identified_by_database"]
             else ""
         ),
+        "- Records marked ineligible by automation tools (pipeline filter steps): "
+        f"{ident['records_marked_ineligible_by_automation']}",
         f"- Duplicate records removed (across runs): {ident['duplicate_records_removed']}",
         "",
         "**Screening**",
