@@ -377,10 +377,42 @@ def cooccurrence_confidence(
     return "low"
 
 
+def _closed_compound(text: str) -> str:
+    """Join hyphenated words with the joined parts lowercased: Post-Anesthesia -> Postanesthesia."""
+    return " ".join(
+        parts[0] + "".join(part.lower() for part in parts[1:]) if len(parts := token.split("-")) > 1 else token
+        for token in text.split()
+    )
+
+
+def pubmed_text_key(text: str) -> str:
+    """Key under which PubMed's phrase index treats two text words as the same.
+
+    PubMed searches ``post-anesthesia`` and ``post anesthesia`` identically
+    (its translation shows both as ``"post anesthesia ..."[Title/Abstract]``)
+    and ignores case, so hyphens and spaces are folded together.
+    """
+    return " ".join(re.split(r"[\s\-]+", text.casefold())).strip()
+
+
 def text_word_variants(phrase: str, limit: int = MAX_TEXT_WORD_VARIANTS) -> tuple[str, ...]:
-    """Surface forms of a phrase to search as text words (hyphen spaced/closed, plural toggled)."""
+    """Distinct text-word forms of a phrase: as written, hyphen-closed, each with the plural toggled.
+
+    Forms PubMed treats as identical (hyphen vs. space, case) are emitted
+    once, and closed compounds use a canonical casing (``Postanesthesia``,
+    never ``PostAnesthesia``).
+    """
     cleaned = " ".join(phrase.replace('"', " ").split())
-    return lookup_variants(cleaned)[:limit] if cleaned else ()
+    if not cleaned:
+        return ()
+    canonical: dict[str, str] = {}
+    if "-" in cleaned:
+        canonical = {variant.casefold(): variant for variant in lookup_variants(_closed_compound(cleaned))}
+    variants: dict[str, str] = {}
+    for raw in lookup_variants(cleaned):
+        variant = canonical.get(raw.casefold(), raw)
+        variants.setdefault(pubmed_text_key(variant), variant)
+    return tuple(variants.values())[:limit]
 
 
 def text_word_clauses(variants: Sequence[str], field_tag: str = TEXT_WORD_FIELD) -> list[str]:
@@ -450,6 +482,7 @@ __all__ = [
     "normalize_heading",
     "or_block",
     "phrase_priority",
+    "pubmed_text_key",
     "rank_descriptors",
     "score_descriptor",
     "text_word_block",

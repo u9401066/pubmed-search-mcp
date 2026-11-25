@@ -1,10 +1,8 @@
 """Automatic, disclosed MeSH correction through a deterministic NCBI boundary.
 
-``FakeEntrez`` stands in for Bio.Entrez only: the production gateway, the
-strategy generator's exact MeSH lookup, MEDLINE parsing, the transport kernel
-and the application service all run for real.
-
-Fixture provenance (2026-11-25):
+``tests/fixtures/mesh_entrez.FakeEntrez`` stands in for Bio.Entrez only; the
+production gateway, exact MeSH lookup, MEDLINE parsing, transport kernel and
+services run for real. Fixture provenance (2026-11-25), see the fixture module:
 
 - Diagnostics shapes are live: ``"Post-Anesthesia Care Units"[Mesh]``,
   ``"Emergence Deliriums"[Mesh]``, ``"Recovery Rooms"[mesh:noexp]`` and
@@ -27,9 +25,6 @@ Fixture provenance (2026-11-25):
 from __future__ import annotations
 
 import json
-import re
-from contextlib import ExitStack, contextmanager
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -49,219 +44,21 @@ from pubmed_search.domain.services.mesh_correction import (
     flag_unresolved_terms,
     rank_descriptors,
     score_descriptor,
+    text_word_variants,
 )
 from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
-from pubmed_search.infrastructure.ncbi.mesh_evidence import NCBIMeshEvidenceGateway
-from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+from tests.fixtures.mesh_entrez import (
+    BACKGROUND_COUNTS,
+    EVIDENCE_TOTAL,
+    PACU,
+    PACU_DISTRIBUTION,
+    PACU_QUERY,
+    FakeEntrez,
+    make_service,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-PACU = '"Post-Anesthesia Care Units"[Mesh]'
-PACU_QUERY = f"{PACU} AND delirium[tiab]"
-EVIDENCE_TOTAL = 3717
-FIXED_NOW = datetime(2026, 11, 25, 8, 30, tzinfo=timezone.utc)
-_EXACT_CLAUSE = re.compile(r'"([^"]+)"\[(MeSH Terms|Substance Name)\]')
-_BACKGROUND = re.compile(r'^"([^"]+)"\[mh:noexp\]$')
-_QUOTED_MESH = re.compile(r'"[^"]+"\[(?:mesh|mh|majr|mesh terms|mesh major topic)(?::noexp)?\]', re.IGNORECASE)
-
-# Headings per sampled record: (descriptor, records) over 93 indexed records.
-PACU_DISTRIBUTION = [
-    ("Humans", 93),
-    ("Female", 75),
-    ("Male", 67),
-    ("Middle Aged", 59),
-    ("Adult", 48),
-    ("Aged", 41),
-    ("Postoperative Pain", 32),
-    ("Anesthesia Recovery Period", 24),
-    ("Retrospective Studies", 20),
-    ("Postoperative Complications", 20),
-    ("Prospective Studies", 20),
-    ("Anesthesia, General", 19),
-    ("Treatment Outcome", 12),
-    ("Length of Stay", 10),
-    ("Pain Measurement", 8),
-    ("Recovery Room", 6),
-]
-BACKGROUND_COUNTS = {
-    "Anesthesia Recovery Period": 6140,
-    "Postoperative Pain": 59724,
-    "Postoperative Complications": 690806,
-    "Anesthesia, General": 25000,
-    "Length of Stay": 120182,
-    "Pain Measurement": 70000,
-    "Recovery Room": 1394,
-}
-
-
-def _doc(uid: str, *terms: str, trees: tuple[str, ...] = ("X00",), scr: bool = False) -> dict[str, Any]:
-    return {
-        "Id": uid,
-        "DS_MeshTerms": list(terms),
-        "DS_IdxLinks": [{"TreeNum": tree} for tree in trees],
-        "DS_HeadingMappedToList": [68001569] if scr else [],
-        "DS_PaList": [],
-    }
-
-
-MESH_DOCS = [
-    _doc(
-        "2016453",
-        "Emergence Delirium",
-        "Delirium, Emergence",
-        "Anesthesia Emergence Delirium",
-        "Postoperative Delirium",
-        "Post-Operative Delirium",
-        trees=("C10.597.606.337.500.500",),
-    ),
-    _doc("68003693", "Delirium", "Deliriums", trees=("F01.700.250.500",)),
-    _doc("68011997", "Recovery Room", "Recovery Rooms", "Hospital Recovery Room", trees=("N02.278.388.493.592",)),
-    _doc("68019990", "Anesthesia Recovery Period", "Recovery Period, Anesthesia", trees=("E03.155.086",)),
-    _doc("67522201", "remimazolam", "CNS 7056", trees=("@167407",), scr=True),
-]
-
-
-def _pacu_headings() -> dict[str, list[str]]:
-    """150 PMIDs; the first 93 carry the distribution above, the rest no MeSH."""
-    pmids = [str(40_000_000 + index) for index in range(150)]
-    headings: dict[str, list[str]] = {pmid: [] for pmid in pmids}
-    for descriptor, records in PACU_DISTRIBUTION:
-        for pmid in pmids[:records]:
-            prefix = "*" if descriptor == "Anesthesia Recovery Period" else ""
-            headings[pmid].append(f"{prefix}{descriptor}/statistics & numerical data" if prefix else descriptor)
-    return headings
-
-
-class _Handle:
-    def __init__(self, payload: Any) -> None:
-        self.payload = payload
-
-    def read(self) -> Any:
-        return self.payload
-
-    def close(self) -> None:
-        return None
-
-
-class FakeEntrez:
-    """PubMed ESearch with diagnostics, exact-term MeSH index and MEDLINE EFetch."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str]] = []
-        self.mesh_docs = {doc["Id"]: doc for doc in MESH_DOCS}
-        self.bad_quoted = {
-            '"post-anesthesia care units"[mesh]',
-            '"emergence deliriums"[mesh]',
-            '"recovery rooms"[mesh:noexp]',
-            '"remimazolam"[mesh]',
-            '"post-operative deliriums"[majr]',
-            '"postanesthesia recovery wards"[mesh]',
-        }
-        self.bad_bare = {"pacu": "PACU", "units": "units"}
-        self.headings = _pacu_headings()
-        self.evidence_total = EVIDENCE_TOTAL
-        self.background = dict(BACKGROUND_COUNTS)
-        self.counts: dict[str, int] = {}
-        self.medline_extra_pmid: str | None = None
-        self.fail_probe = False
-
-    # -- PubMed -------------------------------------------------------------
-    def _pubmed(self, term: str, retmax: int) -> dict[str, Any]:
-        record: dict[str, Any] = {"Count": "0", "IdList": [], "TranslationSet": [], "QueryTranslation": term}
-        if term.endswith("AND medline[sb]"):
-            if "processed" in term:
-                record["Count"] = "250000"
-                record["IdList"] = [str(30_000_000 + index) for index in range(retmax)]
-                return record
-            pmids = list(self.headings)[:retmax]
-            record["Count"], record["IdList"] = str(self.evidence_total), pmids
-            if '"PostAnesthesia Care Unit"[tiab]' in term:
-                record["WarningList"] = {
-                    "QuotedPhraseNotFound": ['"PostAnesthesia Care Unit"[tiab]'],
-                    "PhraseIgnored": [],
-                    "OutputMessage": [],
-                }
-            return record
-        background = _BACKGROUND.match(term)
-        if background:
-            record["Count"] = str(self.background.get(background.group(1), 0))
-            return record
-        if self.fail_probe:
-            raise RuntimeError("probe outage")
-        quoted_missing = [clause for clause in _QUOTED_MESH.findall(term) if clause.casefold() in self.bad_quoted]
-        bare_missing = [
-            self.bad_bare[word.casefold()]
-            for word in re.findall(r"([\w-]+)\[mh\]", term)
-            if word.casefold() in self.bad_bare
-        ]
-        if quoted_missing or bare_missing:
-            record["WarningList"] = {
-                "QuotedPhraseNotFound": quoted_missing,
-                "PhraseIgnored": [],
-                "OutputMessage": ["No items found."],
-            }
-            if bare_missing:
-                record["ErrorList"] = {"PhraseNotFound": bare_missing, "FieldNotFound": []}
-            return record
-        record["Count"] = str(self.counts.get(term, 412))
-        return record
-
-    def esearch(self, *, db: str, term: str, retmax: int = 20, **_: Any) -> _Handle:
-        self.calls.append(("esearch", db, term))
-        if db == "pubmed":
-            return _Handle(self._pubmed(term, retmax))
-        assert db == "mesh"
-        hits: list[str] = []
-        for clause in term.split(" OR "):
-            match = _EXACT_CLAUSE.fullmatch(clause)
-            assert match, f"non-exact MeSH search issued: {clause!r}"
-            phrase, field = match.groups()
-            for uid, doc in self.mesh_docs.items():
-                if (field == "Substance Name") != bool(doc["DS_HeadingMappedToList"]):
-                    continue
-                if any(name.casefold() == phrase.casefold() for name in doc["DS_MeshTerms"]):
-                    hits.append(uid)
-        unique = list(dict.fromkeys(hits))
-        return _Handle({"Count": str(len(unique)), "IdList": unique[:retmax]})
-
-    def esummary(self, *, db: str, id: str, **_: Any) -> _Handle:  # noqa: A002 - Entrez keyword
-        assert db == "mesh"
-        self.calls.append(("esummary", db, id))
-        return _Handle([self.mesh_docs[uid] for uid in id.split(",")])
-
-    def efetch(self, *, db: str, id: str, rettype: str, retmode: str, **_: Any) -> _Handle:  # noqa: A002
-        assert (db, rettype, retmode) == ("pubmed", "medline", "text")
-        self.calls.append(("efetch", db, id))
-        pmids = id.split(",")
-        if self.medline_extra_pmid:
-            pmids.append(self.medline_extra_pmid)
-        blocks = []
-        for pmid in pmids:
-            lines = [f"PMID- {pmid}", "TI  - Synthetic record"]
-            lines.extend(f"MH  - {heading}" for heading in self.headings.get(pmid, []))
-            blocks.append("\n".join(lines))
-        return _Handle("\n\n".join(blocks) + "\n")
-
-    def count(self, kind: str, db: str | None = None) -> int:
-        return sum(1 for call_kind, call_db, _ in self.calls if call_kind == kind and db in {None, call_db})
-
-    @contextmanager
-    def installed(self) -> Iterator[FakeEntrez]:
-        with ExitStack() as stack:
-            stack.enter_context(patch("Bio.Entrez.esearch", side_effect=self.esearch))
-            stack.enter_context(patch("Bio.Entrez.esummary", side_effect=self.esummary))
-            stack.enter_context(patch("Bio.Entrez.efetch", side_effect=self.efetch))
-            stack.enter_context(patch("Bio.Entrez.read", side_effect=lambda handle: handle.payload))
-            yield self
-
-
-def _service(policy: MeshCorrectionPolicy | None = None) -> MeshCorrectionService:
-    vocabulary = SearchStrategyGenerator(email="test@example.com", api_key="test-key")
-    gateway = NCBIMeshEvidenceGateway(
-        email="test@example.com", api_key="test-key", vocabulary=vocabulary, clock=lambda: FIXED_NOW
-    )
-    return MeshCorrectionService(gateway, policy)
 
 
 @pytest.fixture
@@ -348,6 +145,17 @@ def test_background_aware_score_prefers_the_specific_heading_over_the_frequent_o
     assert best.estimated_precision == pytest.approx(24 / 93 * EVIDENCE_TOTAL / 6140)
 
 
+def test_text_word_variants_fold_hyphen_space_duplicates_and_use_canonical_casing():
+    assert text_word_variants("Post-Anesthesia Care Units") == (
+        "Post-Anesthesia Care Units",
+        "Post-Anesthesia Care Unit",
+        "Postanesthesia Care Units",
+        "Postanesthesia Care Unit",
+    )
+    assert text_word_variants("PACU") == ("PACU",)
+    assert all("PostAnesthesia" not in variant for variant in text_word_variants("Post-Anesthesia care unit"))
+
+
 def test_overlapping_replacements_are_rejected():
     with pytest.raises(ValueError, match="overlap"):
         apply_replacements("abcdef", [(0, 3, "x"), (2, 4, "y")])
@@ -359,7 +167,7 @@ def test_overlapping_replacements_are_rejected():
 
 
 async def test_pacu_heading_is_rescued_by_cooccurrence_with_full_disclosure(fake: FakeEntrez):
-    result = await _service().correct_query(PACU_QUERY)
+    result = await make_service().correct_query(PACU_QUERY)
 
     assert result.status == "corrected" and result.detection == "ncbi_diagnostics"
     (correction,) = result.corrections
@@ -368,13 +176,13 @@ async def test_pacu_heading_is_rescued_by_cooccurrence_with_full_disclosure(fake
     assert correction.reason == 'NCBI WarningList.QuotedPhraseNotFound: "Post-Anesthesia Care Units"[Mesh]'
     assert correction.confidence == "low"  # a related heading is never "high"
     # The concept is kept as the agent's own words; the heading is OR-ed in.
+    # Hyphen/space duplicates are folded; the variant PubMed did not find is pruned.
     assert result.corrected_query == (
         '("Post-Anesthesia Care Units"[tiab] OR "Post-Anesthesia Care Unit"[tiab] OR '
-        '"Post Anesthesia Care Units"[tiab] OR "Post Anesthesia Care Unit"[tiab] OR '
-        '"PostAnesthesia Care Units"[tiab] OR "Anesthesia Recovery Period"[Mesh]) AND delirium[tiab]'
+        '"Postanesthesia Care Units"[tiab] OR "Anesthesia Recovery Period"[Mesh]) AND delirium[tiab]'
     )
     evidence = correction.evidence
-    assert evidence["query"].endswith("AND medline[sb]") and '"PostAnesthesia Care Unit"[tiab]' in evidence["query"]
+    assert evidence["query"].endswith("AND medline[sb]") and '"Postanesthesia Care Unit"[tiab]' in evidence["query"]
     assert (evidence["evidence_total"], evidence["sample_size"], evidence["records_with_mesh"]) == (3717, 150, 93)
     assert evidence["retrieved_at"] == "2026-11-25T08:30:00+00:00" and evidence["sort"] == "relevance"
     candidates = evidence["candidates"]
@@ -395,7 +203,7 @@ async def test_pacu_heading_is_rescued_by_cooccurrence_with_full_disclosure(fake
 async def test_plural_hyphen_and_noexp_variants_are_fixed_by_exact_lookup(fake: FakeEntrez):
     query = '"Emergence Deliriums"[Mesh] AND "Post-Operative Deliriums"[Majr] AND "Recovery Rooms"[mesh:noexp]'
 
-    result = await _service().correct_query(query)
+    result = await make_service().correct_query(query)
 
     assert result.corrected_query == (
         '"Emergence Delirium"[Mesh] AND "Emergence Delirium"[Majr] AND "Recovery Room"[mesh:noexp]'
@@ -410,7 +218,7 @@ async def test_plural_hyphen_and_noexp_variants_are_fixed_by_exact_lookup(fake: 
 
 
 async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):
-    result = await _service().correct_query('"remimazolam"[Mesh] AND sedation[tiab]')
+    result = await make_service().correct_query('"remimazolam"[Mesh] AND sedation[tiab]')
 
     assert result.corrected_query == '"remimazolam"[Supplementary Concept] AND sedation[tiab]'
     assert result.corrections[0].evidence["record_type"] == "supplementary_concept"
@@ -419,7 +227,7 @@ async def test_supplementary_concept_moves_to_its_own_field(fake: FakeEntrez):
 async def test_valid_headings_are_never_touched(fake: FakeEntrez):
     query = '"Delirium"[Mesh] AND "Recovery Room"[Mesh]'
 
-    result = await _service().correct_query(query)
+    result = await make_service().correct_query(query)
 
     assert (result.status, result.corrected_query, result.corrections) == ("valid", query, ())
     assert result.valid_terms == ('"Delirium"[Mesh]', '"Recovery Room"[Mesh]')
@@ -427,14 +235,14 @@ async def test_valid_headings_are_never_touched(fake: FakeEntrez):
 
 
 async def test_only_the_unresolved_clause_changes_in_a_mixed_query(fake: FakeEntrez):
-    result = await _service().correct_query('"Delirium"[Mesh] AND "Emergence Deliriums"[Mesh]')
+    result = await make_service().correct_query('"Delirium"[Mesh] AND "Emergence Deliriums"[Mesh]')
 
     assert result.corrected_query == '"Delirium"[Mesh] AND "Emergence Delirium"[Mesh]'
     assert result.valid_terms == ('"Delirium"[Mesh]',)
 
 
 async def test_query_without_mesh_tags_costs_nothing(fake: FakeEntrez):
-    result = await _service().correct_query("delirium[tiab] AND recovery")
+    result = await make_service().correct_query("delirium[tiab] AND recovery")
 
     assert result.status == "not_applicable" and fake.calls == []
 
@@ -442,7 +250,9 @@ async def test_query_without_mesh_tags_costs_nothing(fake: FakeEntrez):
 async def test_caller_supplied_diagnostics_skip_the_first_probe(fake: FakeEntrez):
     diagnostics = PubMedQueryDiagnostics(quoted_phrases_not_found=('"Emergence Deliriums"[Mesh]',))
 
-    result = await _service().correct_query('"Emergence Deliriums"[Mesh]', diagnostics=diagnostics, observed_count=0)
+    result = await make_service().correct_query(
+        '"Emergence Deliriums"[Mesh]', diagnostics=diagnostics, observed_count=0
+    )
 
     assert result.corrected_query == '"Emergence Delirium"[Mesh]'
     assert [call for call in fake.calls if call[:2] == ("esearch", "pubmed")] == [
@@ -451,7 +261,7 @@ async def test_caller_supplied_diagnostics_skip_the_first_probe(fake: FakeEntrez
 
 
 async def test_unquoted_heading_flagged_by_error_list_is_corrected(fake: FakeEntrez):
-    result = await _service().correct_query("post-anesthesia care units[mh] AND delirium[tiab]")
+    result = await make_service().correct_query("post-anesthesia care units[mh] AND delirium[tiab]")
 
     (correction,) = result.corrections
     assert correction.reason == "NCBI ErrorList.PhraseNotFound: units"
@@ -462,7 +272,7 @@ async def test_unquoted_heading_flagged_by_error_list_is_corrected(fake: FakeEnt
 async def test_budget_truncation_is_disclosed_and_respected(fake: FakeEntrez):
     policy = MeshCorrectionPolicy(max_ncbi_requests=8)
 
-    result = await _service(policy).correct_query(PACU_QUERY)
+    result = await make_service(policy).correct_query(PACU_QUERY)
 
     issued = len(fake.calls)
     assert issued <= 8
@@ -476,7 +286,7 @@ async def test_budget_truncation_is_disclosed_and_respected(fake: FakeEntrez):
 async def test_headings_beyond_max_terms_fall_back_to_text_words(fake: FakeEntrez):
     policy = MeshCorrectionPolicy(max_terms=1)
 
-    result = await _service(policy).correct_query(f'"Emergence Deliriums"[Mesh] AND {PACU}')
+    result = await make_service(policy).correct_query(f'"Emergence Deliriums"[Mesh] AND {PACU}')
 
     tiers = {item.original: item.tier for item in result.corrections}
     assert tiers == {'"Emergence Deliriums"[Mesh]': "exact", PACU: "text_words"}
@@ -488,7 +298,7 @@ async def test_without_diagnostics_exact_lookup_detects_unknown_headings(fake: F
     fake.fail_probe = True
 
     with patch("pubmed_search.infrastructure.ncbi.mesh_evidence.MAX_ATTEMPTS", 1):
-        result = await _service().correct_query('"Delirium"[Mesh] AND "Postanesthesia Recovery Wards"[Mesh]')
+        result = await make_service().correct_query('"Delirium"[Mesh] AND "Postanesthesia Recovery Wards"[Mesh]')
 
     assert result.detection == "exact_lookup"
     assert result.valid_terms == ('"Delirium"[Mesh]',)
@@ -513,7 +323,7 @@ async def test_malformed_medline_degrades_to_text_words_with_a_warning(fake: Fak
     fake.medline_extra_pmid = "999"
 
     with patch("pubmed_search.infrastructure.ncbi.mesh_evidence.MAX_ATTEMPTS", 1):
-        result = await _service().correct_query(PACU_QUERY)
+        result = await make_service().correct_query(PACU_QUERY)
 
     (correction,) = result.corrections
     assert correction.tier == "text_words" and correction.replacement_mesh is None
@@ -522,7 +332,7 @@ async def test_malformed_medline_degrades_to_text_words_with_a_warning(fake: Fak
 
 
 async def test_evidence_is_cached_across_calls(fake: FakeEntrez):
-    service = _service()
+    service = make_service()
     await service.correct_query(PACU_QUERY)
     first = len(fake.calls)
 
@@ -550,7 +360,7 @@ def _materials() -> dict[str, Any]:
 
 
 async def test_unmapped_phrases_get_labeled_cooccurrence_candidates(fake: FakeEntrez):
-    materials = await attach_cooccurrence_candidates(_materials(), _service())
+    materials = await attach_cooccurrence_candidates(_materials(), make_service())
 
     (entry,) = materials["mesh_candidates"]
     assert entry["input"] == "post-anesthesia care unit" and entry["reason"] == "co_occurrence"
@@ -596,7 +406,7 @@ async def test_generate_search_queries_tool_attaches_candidates(fake: FakeEntrez
 
     with (
         patch(f"{module}.get_strategy_generator", return_value=generator),
-        patch(f"{module}.get_mesh_correction_service", return_value=_service()),
+        patch(f"{module}.get_mesh_correction_service", return_value=make_service()),
     ):
         payload = json.loads(await tools["generate_search_queries"](topic="PACU delirium"))
 
@@ -630,7 +440,7 @@ def test_candidate_entry_shape_is_stable():
     }
 
 
-def test_server_runtime_installs_the_correction_service(tmp_path):
+def test_server_runtime_installs_the_correctionmake_service(tmp_path):
     from pubmed_search.presentation.mcp_server.server import create_server
 
     server = create_server(email="test@example.com", data_dir=str(tmp_path), mode="local")
