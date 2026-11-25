@@ -3,12 +3,12 @@
 This is the canonical English audit of the public MCP tool surface. The runtime
 registry in `tool_registry.py` is the source of truth; the companion test reads
 that registry and fails if this inventory drifts. At this revision the server
-publishes **42 tools in 16 categories**. Removed aliases are intentionally not
+publishes **43 tools in 16 categories**. Removed aliases are intentionally not
 part of the contract.
 
 | Audit fact | Canonical value |
 | --- | --- |
-| Public tools | 42 |
+| Public tools | 43 |
 | Registry categories | 16 |
 | MCP contract metadata | `contractVersion: 4` |
 | Maximum textual response | 500,000 Unicode characters across all text blocks |
@@ -109,7 +109,7 @@ fail-closed baseline:
 - The server does not advertise a misleading structured output schema while
   tools return Markdown, JSON/TOON encoded text, or multimodal content.
 
-The final runtime-derived schema audit found 42 unique tool owners with no
+The final runtime-derived schema audit found 43 unique tool owners with no
 registry missing/extra entries. All 74 object schemas are recursively closed;
 all 215 string, array, integer, and number nodes have explicit bounds; all 10
 tagged unions have an exact discriminator mapping, required tag, and constant
@@ -211,7 +211,7 @@ capacity, rather than maintaining another detached-task lifecycle.
 
 The registry has no environment-dependent hidden tools. The former profiling
 monkeypatch and `get_performance_metrics` tool were removed, so an old profiling
-environment variable cannot change the 42-tool contract. The unused standalone
+environment variable cannot change the 43-tool contract. The unused standalone
 FastAPI presentation tree and stdio background-HTTP launcher were also deleted;
 supported HTTP transport is built from the canonical MCP server, with explicit
 tenant-guarded companion cache/session routes.
@@ -384,7 +384,7 @@ above.
 | --- | --- | --- | --- |
 | `search_biomedical_images` | Search bounded biomedical image records using English scientific terms. | NLM Open-i adapter, strict provider page/row result, typed source coverage, image aggregation kernel, and normalized image entities. | none; strict bounded query, collection and image-type filters; read-only, idempotent, open-world. |
 
-### 16. `pipeline` — seven single-purpose persistence tools
+### 16. `pipeline` — eight single-purpose persistence and screening tools
 
 | Tool | Role | Main dependencies and relationships | Side effects and contract |
 | --- | --- | --- | --- |
@@ -392,9 +392,10 @@ above.
 | `list_pipelines` | List saved pipeline summaries. | Workspace-scoped `PipelineStore` index. | none; strict filters and cap; read-only, idempotent, local-only. |
 | `load_pipeline` | Load one named pipeline definition for inspection or execution. | `PipelineStore` current or versioned record; consumed by `unified_search` pipeline mode. | none; strict name and optional version; read-only, idempotent, local-only. |
 | `delete_pipeline` | Delete one named persisted pipeline. | `PipelineStore` deletion boundary and schedule consistency checks. | destructive; strict name; idempotent, local-only; removes persistent state. |
-| `get_pipeline_history` | Read version history for one pipeline. | `PipelineStore` immutable history records. | none; strict name and cap; read-only, idempotent, local-only. |
+| `get_pipeline_history` | Read run history, one run's PRISMA-S provenance, or a page of its persisted record set. | `PipelineStore` immutable run records and record artifacts. | none; strict name and cap; read-only, idempotent, local-only. |
 | `schedule_pipeline` | Create or replace a validated APScheduler trigger for a stored pipeline. | Stored pipeline runner, APScheduler adapter, scheduler persistence and pipeline validator. | destructive; strict schedule and pipeline name; non-idempotent, open-world; changes durable scheduling and future provider calls. |
 | `unschedule_pipeline` | Remove the scheduled trigger for one pipeline without deleting its definition. | APScheduler adapter and schedule store; paired only with `schedule_pipeline`. | destructive; strict pipeline name; idempotent, local-only; removes scheduling state. |
+| `pipeline_screening` | Record per-PMID screening decisions for a saved pipeline and report PRISMA 2020 flow counts. | Per-pipeline SQLite screening log fed by exhaustive run records; run artifacts supply titles for the queue. | write; discriminated record/queue/flow/log/register_run request, retries keyed by decision ID; idempotent, local-only. |
 
 ## Breaking deduplication delivered
 

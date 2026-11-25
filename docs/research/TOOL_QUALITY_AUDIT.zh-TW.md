@@ -2,11 +2,11 @@
 
 這是公開 MCP 工具介面的 canonical 繁體中文稽核。唯一真相來源是
 `tool_registry.py` 的 runtime registry；配套測試會直接讀取該 registry，文件一旦
-漂移就會失敗。本修訂版公開 **16 類、42 個工具**，已刪除的 alias 不再屬於契約。
+漂移就會失敗。本修訂版公開 **16 類、43 個工具**，已刪除的 alias 不再屬於契約。
 
 | 稽核項目 | Canonical 值 |
 | --- | --- |
-| 公開工具 | 42 |
+| 公開工具 | 43 |
 | Registry 類別 | 16 |
 | MCP 契約 metadata | `contractVersion: 4` |
 | 文字回應上限 | 所有文字區塊合計 500,000 個 Unicode 字元 |
@@ -99,7 +99,7 @@ provider；「local-only」表示工具契約不需要這類存取。
 - 目前工具回傳 Markdown、JSON/TOON encoded text 或 multimodal content，因此
   不發布會誤導 client 的 structured output schema。
 
-最終 runtime-derived schema audit 確認 42 個 tool 各有唯一 owner，registry 沒有
+最終 runtime-derived schema audit 確認 43 個 tool 各有唯一 owner，registry 沒有
 missing/extra。74 個 object schema 全部遞迴封閉；215 個 string、array、integer、
 number node 全有明確上界；10 個 tagged union 全都有精確 discriminator mapping、
 required tag 與 constant variant value。每個 required parameter 都存在、每個
@@ -187,7 +187,7 @@ cancel，拒絕 cancellation 的工作則隔離在每個 server 最多 32 個項
 不再重造 detached-task lifecycle。
 
 Registry 不包含會隨環境變數出現的隱藏工具。舊 profiling monkeypatch 與
-`get_performance_metrics` 已刪除，舊 profiling env 無法改變 42-tool 契約。
+`get_performance_metrics` 已刪除，舊 profiling env 無法改變 43-tool 契約。
 未使用的 standalone FastAPI presentation tree 與 stdio background-HTTP launcher 也已移除；
 支援的 HTTP transport 來自 canonical MCP server，只額外 mount 明確、tenant-guarded
 的 cache/session companion routes。
@@ -354,7 +354,7 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | --- | --- | --- | --- |
 | `search_biomedical_images` | 以英文 scientific term 搜尋有界 biomedical image record。 | NLM Open-i adapter、strict provider page/row result、typed source coverage、image aggregation kernel 與正規化 image entity。 | none；strict bounded query、collection 與 image-type filter；read-only、idempotent、open-world。 |
 
-### 16. `pipeline` — 七個單一用途持久化工具
+### 16. `pipeline` — 八個單一用途持久化與篩選工具
 
 | Tool | 角色 | 主要依賴與關係 | Side effect 與契約 |
 | --- | --- | --- | --- |
@@ -362,9 +362,10 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | `list_pipelines` | 列出已保存 pipeline summary。 | Workspace-scoped `PipelineStore` index。 | none；strict filter 與 cap；read-only、idempotent、local-only。 |
 | `load_pipeline` | 載入具名 pipeline definition 以檢視或執行。 | `PipelineStore` current 或 versioned record；供 `unified_search` pipeline mode 使用。 | none；strict name 與 optional version；read-only、idempotent、local-only。 |
 | `delete_pipeline` | 刪除一份具名 persisted pipeline。 | `PipelineStore` deletion boundary 與 schedule consistency check。 | destructive；strict name；idempotent、local-only；移除 persistent state。 |
-| `get_pipeline_history` | 讀取單一 pipeline 的 version history。 | `PipelineStore` immutable history record。 | none；strict name 與 cap；read-only、idempotent、local-only。 |
+| `get_pipeline_history` | 讀取 run 歷史、單一 run 的 PRISMA-S 來源資訊，或分頁讀取保存的紀錄集。 | `PipelineStore` immutable run record 與紀錄集 artifact。 | none；strict name 與 cap；read-only、idempotent、local-only。 |
 | `schedule_pipeline` | 為 stored pipeline 建立或取代已驗證 APScheduler trigger。 | Stored pipeline runner、APScheduler adapter、scheduler persistence 與 pipeline validator。 | destructive；strict schedule 與 pipeline name；non-idempotent、open-world；改變 durable scheduling 與未來 provider call。 |
 | `unschedule_pipeline` | 移除單一 pipeline 的 schedule trigger，但不刪 definition。 | APScheduler adapter 與 schedule store；只和 `schedule_pipeline` 配對。 | destructive；strict pipeline name；idempotent、local-only；移除 scheduling state。 |
+| `pipeline_screening` | 記錄已保存 pipeline 的逐篇篩選決策，並產出 PRISMA 2020 流程數字。 | 每個 pipeline 一個 SQLite 篩選紀錄，由 exhaustive run 紀錄自動登記；待篩佇列標題取自 run artifact。 | write；判別式 record/queue/flow/log/register_run request，以 decision ID 冪等重送；idempotent、local-only。 |
 
 ## 本輪已完成的去重與 breaking 修正
 
