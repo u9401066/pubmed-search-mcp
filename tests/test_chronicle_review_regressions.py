@@ -388,6 +388,37 @@ def test_protocol_publication_type_outranks_rct_and_phase_types() -> None:
     assert (rct.key, rct.display_label) == ("rct", "Randomized Controlled Trial (multicenter)")
 
 
+@pytest.mark.parametrize(
+    ("publication_types", "title"),
+    [
+        (["Journal Article"], "Protocol for a systematic review and meta-analysis of ketamine"),
+        (["Journal Article"], "Ketamine for depression: a protocol for a systematic review and network meta-analysis"),
+        (["Review"], "Ketamine for depression: protocol of a scoping review"),
+        (["Review"], "Protocol for a systematic review and meta-analysis of ketamine"),
+    ],
+)
+def test_review_protocols_are_not_reviews_or_milestones(publication_types: list[str], title: str) -> None:
+    design = classify_study_design(publication_types, [], title=title)
+    assert (design.key, design.label, design.family, design.basis) == (
+        "review_protocol",
+        "Systematic Review Protocol",
+        FAMILY_PROTOCOL,
+        BASIS_TEXT,
+    )
+    assert (
+        MilestoneDetector().detect_milestone(
+            {"pmid": "61", "year": 2023, "publication_types": publication_types, "title": title}
+        )
+        is None
+    )
+
+    # A review *of* protocols is still a review.
+    review = classify_study_design(
+        ["Journal Article"], [], title="A systematic review and meta-analysis of ketamine protocols for depression"
+    )
+    assert review.key == "systematic_review_meta_analysis"
+
+
 @pytest.mark.parametrize("notice", ["Published Erratum", "Retraction of Publication", "Expression of Concern"])
 def test_publication_notices_have_their_own_family(notice: str) -> None:
     design = classify_study_design([notice, "Randomized Controlled Trial"], title="Erratum: Phase 3 trial of X")

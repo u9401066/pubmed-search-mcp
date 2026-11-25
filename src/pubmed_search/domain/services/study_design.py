@@ -305,6 +305,15 @@ _SR_MA = ("systematic_review_meta_analysis", "Systematic Review & Meta-Analysis"
 # Titles state the design deliberately, so they may label an unindexed record
 # or refine a coarse "Review" publication type.
 _TITLE_RULES: tuple[_TextRule, ...] = (
+    # A review protocol announces a synthesis; it reports no pooled results.
+    _text_rule(
+        "review_protocol",
+        "Systematic Review Protocol",
+        FAMILY_PROTOCOL,
+        r"\bprotocol\s+(?:for|of)\s+(?:a|an|the)\s+(?:[\w,-]+\s+){0,5}?"
+        r"(?:(?:systematic|scoping|umbrella|rapid|living)\s+(?:literature\s+)?review|(?:network\s+)?meta-?\s?analys[ie]s)\b"
+        r"|\b(?:systematic|scoping|umbrella)\s+review\s+protocol\b",
+    ),
     # A protocol announces a design; it reports no results. "Protocol-driven"
     # or "protocol-based" care is an intervention, not a protocol paper.
     _text_rule(
@@ -534,13 +543,14 @@ def classify_study_design(
                 indexed_publication_types=design.indexed_publication_types,
             )
     if design is not None and design.family == FAMILY_REVIEW and title:
-        # PubMed often indexes new systematic reviews as "Review" until full
-        # MEDLINE indexing completes; an explicit title may refine that.
+        # PubMed often indexes new systematic reviews (and their protocols) as
+        # "Review" until full MEDLINE indexing completes; an explicit title
+        # may refine that.
         refined = _text_design(
             _TITLE_RULES,
             title,
             field="title",
-            allowed_families=frozenset({FAMILY_SYNTHESIS}),
+            allowed_families=frozenset({FAMILY_SYNTHESIS, FAMILY_PROTOCOL}),
             indexed_types=design.matched,
         )
         design = refined or design
