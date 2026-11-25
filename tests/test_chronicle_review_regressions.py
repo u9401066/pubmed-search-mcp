@@ -426,6 +426,15 @@ def test_protocol_entry_is_labelled_as_a_protocol_in_the_chronicle() -> None:
             {"publication_types": ["Observational Study"], "title": "A hepatotoxicity safety signal for X in FAERS"},
             MilestoneType.SAFETY_ALERT,
         ),
+        # Generic indexed types (comparative, multicenter...) do not block it either.
+        (
+            {"publication_types": ["Multicenter Study"], "title": "A hepatotoxicity safety signal for X in FAERS"},
+            MilestoneType.SAFETY_ALERT,
+        ),
+        (
+            {"publication_types": ["Comparative Study"], "title": "Prescribing after the FDA boxed warning for X"},
+            MilestoneType.SAFETY_ALERT,
+        ),
         # MeSH design descriptors are not authoritative enough to veto a milestone.
         (
             {
@@ -510,8 +519,8 @@ async def test_mesh_only_design_does_not_drop_a_phase_trial_from_the_topic_timel
     assert kept["999"].milestone_type is MilestoneType.PHASE_2
 
 
-def _event_with(publication_types: list[str], milestone: MilestoneType, title: str) -> Any:
-    event = MilestoneDetector().detect_milestone({"pmid": "21", "year": 2019, "title": title, "publication_types": []})
+def _event_with(pmid: str, publication_types: list[str], milestone: MilestoneType, title: str) -> Any:
+    event = MilestoneDetector().detect_milestone({"pmid": pmid, "year": 2019, "title": title, "publication_types": []})
     assert event is not None
     return replace(
         event,
@@ -521,11 +530,13 @@ def _event_with(publication_types: list[str], milestone: MilestoneType, title: s
 
 
 def test_safety_category_on_an_observational_study_is_heuristic_not_a_conflict() -> None:
-    observational = _event_with(
-        ["Observational Study"], MilestoneType.SAFETY_ALERT, "A hepatotoxicity safety signal for X in FAERS"
+    signal = "A hepatotoxicity safety signal for X in FAERS"
+    observational = _event_with("21", ["Observational Study"], MilestoneType.SAFETY_ALERT, signal)
+    multicenter = _event_with("22", ["Multicenter Study"], MilestoneType.SAFETY_ALERT, signal)
+    trial = _event_with(
+        "23", ["Randomized Controlled Trial"], MilestoneType.SAFETY_ALERT, "FDA safety communication on X"
     )
-    trial = _event_with(["Randomized Controlled Trial"], MilestoneType.SAFETY_ALERT, "FDA safety communication on X")
-    snapshot = assemble_chronicle(topic="x", timeline=ResearchTimeline("x", [observational, trial]))
+    snapshot = assemble_chronicle(topic="x", timeline=ResearchTimeline("x", [observational, multicenter, trial]))
     finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "study_design_labels")
 
     conflicts = finding.details["category_conflicts_with_indexed_design"]

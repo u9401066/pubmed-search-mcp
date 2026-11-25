@@ -347,9 +347,9 @@ _COMMUNICATIONS = frozenset(
 #: publication type is the authority: a title or abstract pattern can add
 #: specificity the type vocabulary lacks (a trial phase), but cannot relabel an
 #: indexed trial or synthesis as a safety alert, approval, debate or
-#: breakthrough. An observational study may carry a trial phase (extension or
-#: post-marketing follow-up) or an explicit safety signal (pharmacovigilance),
-#: as it did before indexed designs were consulted. Records whose publication
+#: breakthrough. An observational or generic ("other") study may carry a trial
+#: phase (extension or post-marketing follow-up) or an explicit safety signal
+#: (pharmacovigilance), as it did before indexed designs were consulted. Records whose publication
 #: types state no design, including MeSH-only designs, accept every title
 #: pattern.
 TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneType]] = {
@@ -362,7 +362,12 @@ TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneTyp
     "commentary": _COMMUNICATIONS,
     "protocol": frozenset(),
     "publication_notice": frozenset(),
-    "other": _TRIAL_PHASES | _SYNTHESIS | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL},
+    # Comparative, multicenter, validation and evaluation studies, pilots and
+    # preprints: generic types that, like observational studies, may report
+    # an explicit safety signal.
+    "other": _TRIAL_PHASES
+    | _SYNTHESIS
+    | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL, MilestoneType.SAFETY_ALERT},
 }
 
 #: Design families that report no results of their own: a trial protocol or a

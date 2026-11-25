@@ -459,9 +459,10 @@ def _audit_lineage_semantics(snapshot: ChronicleSnapshot) -> ChronicleAuditFindi
 
 #: Event categories that a research design indexed by PubMed cannot carry on
 #: the strength of text patterns alone, mapped to the design families that
-#: may. An observational (pharmacovigilance) study may report a safety signal.
+#: may. An observational or generic (comparative, multicenter...) study may
+#: report a safety signal, for example from pharmacovigilance data.
 _COMMUNICATION_DESIGN_FAMILIES: dict[ChronicleEntryType, frozenset[str]] = {
-    ChronicleEntryType.SAFETY: frozenset({"commentary", "review", "observational"}),
+    ChronicleEntryType.SAFETY: frozenset({"commentary", "review", "observational", "other"}),
     ChronicleEntryType.CONTROVERSY: frozenset({"commentary", "review"}),
 }
 _TEXT_LABEL_MARKERS = ("milestone_detection:title_pattern", "milestone_detection:abstract_pattern")
