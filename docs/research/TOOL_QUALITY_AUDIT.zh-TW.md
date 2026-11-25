@@ -2,11 +2,11 @@
 
 這是公開 MCP 工具介面的 canonical 繁體中文稽核。唯一真相來源是
 `tool_registry.py` 的 runtime registry；配套測試會直接讀取該 registry，文件一旦
-漂移就會失敗。本修訂版公開 **16 類、43 個工具**，已刪除的 alias 不再屬於契約。
+漂移就會失敗。本修訂版公開 **16 類、44 個工具**，已刪除的 alias 不再屬於契約。
 
 | 稽核項目 | Canonical 值 |
 | --- | --- |
-| 公開工具 | 43 |
+| 公開工具 | 44 |
 | Registry 類別 | 16 |
 | MCP 契約 metadata | `contractVersion: 4` |
 | 文字回應上限 | 所有文字區塊合計 500,000 個 Unicode 字元 |
@@ -99,7 +99,7 @@ provider；「local-only」表示工具契約不需要這類存取。
 - 目前工具回傳 Markdown、JSON/TOON encoded text 或 multimodal content，因此
   不發布會誤導 client 的 structured output schema。
 
-最終 runtime-derived schema audit 確認 43 個 tool 各有唯一 owner，registry 沒有
+最終 runtime-derived schema audit 確認 44 個 tool 各有唯一 owner，registry 沒有
 missing/extra。74 個 object schema 全部遞迴封閉；215 個 string、array、integer、
 number node 全有明確上界；10 個 tagged union 全都有精確 discriminator mapping、
 required tag 與 constant variant value。每個 required parameter 都存在、每個
@@ -187,7 +187,7 @@ cancel，拒絕 cancellation 的工作則隔離在每個 server 最多 32 個項
 不再重造 detached-task lifecycle。
 
 Registry 不包含會隨環境變數出現的隱藏工具。舊 profiling monkeypatch 與
-`get_performance_metrics` 已刪除，舊 profiling env 無法改變 43-tool 契約。
+`get_performance_metrics` 已刪除，舊 profiling env 無法改變 44-tool 契約。
 未使用的 standalone FastAPI presentation tree 與 stdio background-HTTP launcher 也已移除；
 支援的 HTTP transport 來自 canonical MCP server，只額外 mount 明確、tenant-guarded
 的 cache/session companion routes。
@@ -278,7 +278,8 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 
 | Tool | 角色 | 主要依賴與關係 | Side effect 與契約 |
 | --- | --- | --- | --- |
-| `get_fulltext` | 依 explicit source 與 access policy 解析並取得全文。 | Fulltext service 與 registry、PMC、Europe PMC、Unpaywall、CORE、institutional adapter 與 immutable typed link discovery；partial source coverage 會一路進入 artifact persistence。 | write；判別式 `source`；non-idempotent、open-world；可能保存大型 full-text artifact；回傳精確 coverage status、completed/attempted source key 與 sanitized source error。 |
+| `get_fulltext` | 依 explicit source 與 access policy 解析並取得全文。 | Fulltext service 與 registry、已登錄（supplied）全文、PMC、Europe PMC、單篇才讀的 PMC 文章頁、Unpaywall、CORE、institutional adapter 與 immutable typed link discovery；partial source coverage 會一路進入 artifact persistence。 | write；判別式 `source`；non-idempotent、open-world；可能保存大型 full-text artifact；回傳精確 coverage status、completed/attempted source key、sanitized source error、取得出處，沒有可用正文時另附有序的 `fulltext_plan`。 |
+| `register_fulltext` | 以必填 provenance 保存 host agent 或使用者取得的文章文字，供後續重用。 | Application intake service 與 tenant supplied-fulltext store；與 provider 路徑共用 JATS／HTML／PDF adapter；由 `get_fulltext`、筆記匯出與 Chronicle 證據查詢讀回。 | write；判別式 `source`、封閉的 provenance 物件、有上界的 content 或允許清單內的本機檔案；non-idempotent、local-only；保存 artifact；從不標為 provider 驗證。 |
 | `get_text_mined_terms` | 取得單一 explicit article source 的 provider text-mined annotations。 | Europe PMC annotation client 與共用 article-source normalization。 | none；判別式 `source`；read-only、idempotent、open-world。 |
 
 ### 6. `figure` — 論文圖表擷取
