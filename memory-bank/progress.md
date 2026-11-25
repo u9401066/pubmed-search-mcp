@@ -8,6 +8,11 @@
   with field corrections; MeSH topic mapping from ~45 to 3 NCBI requests; the
   405-hit PACU strategy retrieved 405/405 in 17.9 s (response 24.6 KB vs 403 KB);
   `"Post-Anesthesia Care Units"[Mesh] AND delirium[tiab]` corrected 0 → 518 hits.
+- Done: independent review of the merged release found 3 high and ~20 medium/low issues
+  (corrections without corroboration, screening reversals dropped as replays,
+  incomplete runs claimed exhaustive, MeSH rewrites changing NOT/qualifier meaning,
+  fulltext 200-<ERROR> as complete, Chronicle quoting boilerplate); all fixed on
+  `fix/review-*` branches with failing-first regression tests before release.
 - Known: Windows `test_release_transport_smoke` HTTP health check is flaky
   (WinError 64) on base and branch alike.
 
