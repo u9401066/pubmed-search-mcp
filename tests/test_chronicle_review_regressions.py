@@ -364,6 +364,14 @@ def test_abstract_heuristics_ignore_background_randomized_trials() -> None:
         ["Journal Article"], [], title="Ketamine", abstract="Ninety adults were randomized to ketamine or placebo."
     )
     assert (own.key, own.basis) == ("rct", BASIS_TEXT)
+    # "Previously treated" describes the patients, not another study.
+    treated = classify_study_design(
+        ["Journal Article"],
+        [],
+        title="Drug X in lung cancer",
+        abstract="Patients previously treated with platinum were randomized to drug X or docetaxel.",
+    )
+    assert (treated.key, treated.basis) == ("rct", BASIS_TEXT)
 
 
 def test_protocol_publication_type_outranks_rct_and_phase_types() -> None:
@@ -593,6 +601,11 @@ def test_abstract_background_mentions_are_not_milestones(abstract: str) -> None:
         (
             ["Journal Article"],
             "In this multicentre, double-blind, phase 2 study, 80 adults were enrolled.",
+            MilestoneType.PHASE_2,
+        ),
+        (
+            ["Journal Article"],
+            "In the past decade, we conducted a phase 2 study of X in 50 previously treated adults.",
             MilestoneType.PHASE_2,
         ),
         (

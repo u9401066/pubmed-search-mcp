@@ -264,10 +264,17 @@ _DASHES = r"[\s\-\u2010-\u2013]?"
 _RANDOMIZATION = re.compile(r"randomi[sz]", re.IGNORECASE)
 # "non-randomized", "quasi-randomised", "pseudo-randomized", "not randomized".
 _NEGATED_RANDOMIZATION_PREFIX = re.compile(rf"(?:\b(?:non|quasi|pseudo){_DASHES}|\bnot\s+)$", re.IGNORECASE)
-# Wording that refers to other studies rather than to the paper itself.
+# Wording that refers to other studies rather than to the paper itself: a
+# temporal or citing qualifier on a study noun ("a previous randomized trial",
+# "recent meta-analyses"), a sentence-initial "Earlier,", or literature-search
+# phrasing. A qualifier on patients ("previously treated adults") is not one.
 _BACKGROUND_CUE = re.compile(
-    r"\b(?:previous(?:ly)?|prior|earlier|recent(?:ly)?|past|published|existing|landmark|seminal|"
-    r"(?:trials|studies|RCTs)\s+(?:in\s+which|where|that)|we\s+searched)\b",
+    r"\b(?:previous(?:ly)?|prior|earlier|recent(?:ly)?|past|published|existing|landmark|seminal|other)\s+"
+    r"(?:[\w-]+\s+){0,3}?(?:trials?|stud(?:y|ies)|meta-?\s?analys[ie]s|(?:systematic\s+)?reviews?|work|"
+    r"research|reports?|literature|evidence|data|RCTs?)\b"
+    r"|\b(?:earlier|previously|recently)\s*,"
+    r"|\b(?:trials|studies|RCTs)\s+(?:in\s+which|where|that)\b|\bwe\s+searched\b"
+    r"|\b(?:has|have)\s+been\s+(?:shown|reported|demonstrated|suggested)\b",
     re.IGNORECASE,
 )
 
