@@ -7,6 +7,12 @@ The unified planner chooses whether to use this optional enhancement; resolver
 failure preserves baseline search. Expected precision/recall fields are static
 planning hints, not measurements against relevance judgments.
 
+Every variant carries a precision ``tier``.  Unified deep search is
+precision-first: ``exact`` strategies (the caller's own query) run first with
+the full per-source budget, and ``semantic``/``broad`` strategies only fill the
+slots the exact tier left empty.  ``narrow`` strategies are strict subsets of
+the exact query and therefore can never fill such a gap.
+
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ import hmac
 import logging
 import secrets
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pubmed_search.shared.tenancy import current_tenant_id
 
@@ -93,6 +99,19 @@ class ExpandedTerm:
         return f'"{self.term}"'
 
 
+StrategyTier = Literal["exact", "narrow", "semantic", "broad"]
+"""Precision tier of one strategy.
+
+``exact``: the caller's own query for a source (authoritative).
+``narrow``: a strict subset of the exact query; it cannot add records.
+``semantic``: an entity-based reformulation that may drop unresolved concepts.
+``broad``: a high-recall OR/title-abstract variant.
+"""
+
+STRATEGY_TIER_RANKS: dict[str, int] = {"exact": 0, "semantic": 1, "broad": 2}
+"""Execution order of fill tiers; ``narrow`` is never executed for filling."""
+
+
 @dataclass
 class SearchPlan:
     """A search strategy with query and metadata."""
@@ -100,9 +119,10 @@ class SearchPlan:
     name: str  # "original", "mesh_expanded", "entity_semantic", "fulltext"
     query: str  # Actual search query
     source: str  # Target source: "pubmed", "europe_pmc", "core"
-    priority: int = 1  # Higher = execute first
+    priority: int = 1  # Higher = preferred within its tier
     expected_precision: float = 0.5  # Estimated precision
     expected_recall: float = 0.5  # Estimated recall
+    tier: StrategyTier = "exact"  # Precision tier; non-exact variants must say so
 
     def __lt__(self, other: SearchPlan) -> bool:
         """Sort by priority (descending)."""
@@ -430,9 +450,13 @@ class SemanticEnhancer:
         terms: list[ExpandedTerm],
     ) -> list[SearchPlan]:
         """
-        Generate multiple search strategies for deep+wide search.
+        Generate tiered search strategies for precision-first deep search.
 
-        Always generates multiple strategies to ensure comprehensive coverage.
+        The original query is the authoritative ``exact`` tier. Semantic and
+        broad variants are declared as lower-precision fill tiers; the unified
+        broker executes them only when the exact tier under-fills the request.
+        The returned order is by priority, so ``strategies[0]`` keeps its
+        historical meaning for callers such as the pipeline ``expand`` action.
         """
         strategies: list[SearchPlan] = []
 
@@ -460,6 +484,9 @@ class SemanticEnhancer:
                     priority=2,
                     expected_precision=0.8,
                     expected_recall=0.7,
+                    # (MeSH) AND (original) is a strict subset of the original
+                    # query, so it can never fill slots the original left empty.
+                    tier="narrow",
                 )
             )
 
@@ -474,6 +501,9 @@ class SemanticEnhancer:
                     priority=3,
                     expected_precision=0.9,
                     expected_recall=0.4,
+                    # Unresolved concepts are dropped, so this reformulation
+                    # can match records the caller's query would not.
+                    tier="semantic",
                 )
             )
 
@@ -500,6 +530,7 @@ class SemanticEnhancer:
                     priority=0,
                     expected_precision=0.4,
                     expected_recall=0.9,
+                    tier="broad",
                 )
             )
 
@@ -586,6 +617,7 @@ class SemanticEnhancer:
 
 
 __all__ = [
+    "STRATEGY_TIER_RANKS",
     "EnhancedQuery",
     "EntityCachePort",
     "EntityResolverPort",
@@ -593,4 +625,5 @@ __all__ = [
     "ResolvedEntity",
     "SearchPlan",
     "SemanticEnhancer",
+    "StrategyTier",
 ]

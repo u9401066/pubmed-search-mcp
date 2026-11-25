@@ -195,9 +195,11 @@ compiled query、continuation 與 cost/rate diagnostics。
 `options="native_semantic"` 與 `options="systematic"` 互斥並關閉多策略 deep
 expansion；public per-source `limit` 仍最多 100。因此 systematic 是 bounded
 retrieval policy，不代表已下載全 corpus 或保證 systematic-review exhaustiveness。
-一般 deep mode 則把同一個 per-source `limit` 分配到該來源的所有 strategies，
-並以全域／每來源 semaphore、strategy timeout 與 clipping 保證 budget 不因 query
-expansion 倍增。單一來源失敗只形成 source-scoped error，其他成功來源仍可形成
+一般 deep mode 則採精準優先（precision-first）：使用者原始查詢（exact tier）先以
+每個來源完整的 `limit` 執行；只有 exact tier 的 eligible unique 結果不足 `limit` 時，
+才先在同一查詢往下取，再依精準度遞減逐一執行 semantic／broad 策略，且只補剩餘名額。
+是否放寬、原因與每個策略的貢獻都揭露在 `broadening`，放寬取得的紀錄一律排在 exact
+紀錄之後；全域／每來源 semaphore、strategy timeout 與 clipping 仍然有效。單一來源失敗只形成 source-scoped error，其他成功來源仍可形成
 partial response。
 
 Structured `search_status` 明確回報 `completed`／`empty`／`partial`／`failed`、

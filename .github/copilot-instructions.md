@@ -628,6 +628,8 @@ unified_search(query="remimazolam ICU sedation", limit=10)
 
 For iterative normal searches, `options="exclude_seen"` filters PMID/normalized DOI identities returned by earlier completed/partial searches in this session before `limit`; report the count or history warning. It is rejected with `pipeline=`.
 
+Deep search is precision-first. Read `broadening.summary` (Markdown **Broadening** line) before interpreting results: records with `retrieval.broadened=true` (Markdown 🔻) came only from a lower-precision fill query or zero-result relaxation and are ranked after exact-query matches. `options="no_relax"` disables all automatic broadening.
+
 ### 2. Explore from a Key Paper
 ```python
 # Found an important paper (PMID: 12345678)

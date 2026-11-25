@@ -12,6 +12,7 @@ from .article import (
     CitationMetrics,
     OpenAccessLink,
     OpenAccessStatus,
+    RetrievalProvenance,
     SourceMetadata,
     UnifiedArticle,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "Author",
     "OpenAccessLink",
     "CitationMetrics",
+    "RetrievalProvenance",
     "SourceMetadata",
     # Figure entities
     "ArticleFigure",

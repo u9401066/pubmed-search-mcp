@@ -1,8 +1,9 @@
 """
 Unified Search — Source Search & Deep Search Module.
 
-Contains typed per-source adapters, deep multi-strategy execution, and
-auto-relaxation logic.
+Contains typed per-source adapters, precision-first tiered deep execution,
+and auto-relaxation logic. The tier policy itself is application-owned
+(``application/unified/tiering.py``); this module only drives provider I/O.
 """
 
 from __future__ import annotations
@@ -15,10 +16,26 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.unified.helpers import (
+    DeepTierOutcome,
     RelaxationResult,
     SearchDepthMetrics,
     StrategyResult,
     _generate_relaxation_steps,
+)
+from pubmed_search.application.unified.tiering import (
+    BLOCKED_NO_BROADER_STRATEGY,
+    DEEP_FILL_MAX_REQUEST,
+    SKIP_BROADENING_DISABLED,
+    SKIP_DEADLINE_EXHAUSTED,
+    SKIP_EXACT_TIER_FAILED,
+    SKIP_LIMIT_FILLED,
+    SKIP_NARROWS_EXACT_QUERY,
+    DeepFillTracker,
+    FillAdmission,
+    precision_first_order,
+    provenance_for,
+    strategy_tier,
+    strategy_tier_rank,
 )
 from pubmed_search.domain.services.article_mapper import (
     article_from_core,
@@ -212,37 +229,8 @@ async def _auto_relax_search(
 
 
 # ============================================================================
-# Deep Multi-Strategy Search
+# Deep Multi-Strategy Search (precision-first tiers)
 # ============================================================================
-
-
-def _allocate_deep_strategy_budgets(
-    strategies: list[SearchPlan],
-    *,
-    per_source_limit: int,
-) -> list[int]:
-    """Allocate one public per-source limit across that source's strategies.
-
-    ``unified_search(limit=N)`` promises a source budget, not ``N`` requests
-    for every semantic variant.  Allocation is stable because callers sort by
-    priority before invoking this helper; any remainder goes to earlier
-    (higher-priority) strategies.
-    """
-
-    if per_source_limit < 1:
-        msg = "per_source_limit must be positive"
-        raise ValueError(msg)
-
-    indices_by_source: dict[str, list[int]] = {}
-    for index, strategy in enumerate(strategies):
-        indices_by_source.setdefault(strategy.source, []).append(index)
-
-    budgets = [0] * len(strategies)
-    for indices in indices_by_source.values():
-        base, remainder = divmod(per_source_limit, len(indices))
-        for position, index in enumerate(indices):
-            budgets[index] = base + (1 if position < remainder else 0)
-    return budgets
 
 
 def build_default_search_functions(searcher: LiteratureSearcher) -> dict[str, Any]:
@@ -287,6 +275,8 @@ class UnifiedSourceBroker:
         advanced_filters: dict[str, Any],
         *,
         strategies: list[SearchPlan],
+        eligibility: Callable[[UnifiedArticle], bool] | None = None,
+        allow_broadening: bool = True,
     ) -> tuple[
         list[list[UnifiedArticle]],
         SearchDepthMetrics,
@@ -294,7 +284,7 @@ class UnifiedSourceBroker:
         dict[str, tuple[int, int | None]],
         list[SourceAdapterError],
     ]:
-        """Execute the canonical bounded deep-search strategy set."""
+        """Execute the canonical precision-first deep-search strategy set."""
         return await _execute_deep_search(
             self.searcher,
             enhanced_query,
@@ -304,6 +294,8 @@ class UnifiedSourceBroker:
             advanced_filters,
             strategies=strategies,
             search_functions=self.build_search_functions(),
+            eligibility=eligibility,
+            allow_broadening=allow_broadening,
         )
 
     async def auto_relax(
@@ -339,6 +331,29 @@ def _require_deep_runner(runners: Mapping[str, Any], source: str) -> Any:
     return runner
 
 
+@dataclass(slots=True)
+class _DeepAttempt:
+    """One provider attempt awaiting fill admission."""
+
+    strategy: SearchPlan
+    phase: str
+    result: StrategyResult
+    articles: list[UnifiedArticle]
+    errors: list[SourceAdapterError]
+
+
+def _error_rows(errors: list[SourceAdapterError]) -> list[dict[str, Any]]:
+    return [
+        {
+            "kind": error.kind,
+            "retryable": error.retryable,
+            "status_code": error.status_code,
+            "message": error.message,
+        }
+        for error in errors
+    ]
+
+
 async def _execute_deep_search(
     searcher: LiteratureSearcher,
     enhanced_query: EnhancedQuery,
@@ -352,6 +367,9 @@ async def _execute_deep_search(
     max_concurrency: int = DEEP_SEARCH_MAX_CONCURRENCY,
     per_source_concurrency: int = DEEP_SEARCH_PER_SOURCE_CONCURRENCY,
     strategy_timeout: float = DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS,
+    total_timeout: float | None = None,
+    eligibility: Callable[[UnifiedArticle], bool] | None = None,
+    allow_broadening: bool = True,
 ) -> tuple[
     list[list[UnifiedArticle]],
     SearchDepthMetrics,
@@ -359,73 +377,71 @@ async def _execute_deep_search(
     dict[str, tuple[int, int | None]],
     list[SourceAdapterError],
 ]:
-    """
-    Execute true deep search using ALL strategies from SemanticEnhancer.
+    """Execute precision-first tiered deep search.
 
-    This is the core of "deep search" - we don't just throw keywords at API,
-    we execute multiple semantically-aware strategies in parallel.
+    The caller's query is authoritative; lower-precision variants only fill
+    slots it cannot fill (policy: :mod:`pubmed_search.application.unified.tiering`).
 
-    Args:
-        searcher: PubMed searcher instance
-        enhanced_query: Result from SemanticEnhancer with entities and strategies
-        limit: Max aggregate results requested from each source
-        min_year, max_year: Year filters
-        advanced_filters: Additional PubMed filters
+    1. **exact** -- every exact-tier strategy (the caller's query for each
+       planned source) runs concurrently with the full per-source ``limit``.
+    2. **deepen** -- if eligible unique records are still fewer than ``limit``
+       (e.g. after exclude_seen), re-request an exact query whose provider
+       total exceeds what was requested; only new eligible records are kept.
+    3. **broaden** -- if still under-filled and ``allow_broadening``, run
+       semantic then broad strategies one at a time; each contributes at most
+       the remaining slots, and execution stops once the limit is filled.
+       A source whose exact query failed is never broadened, so a provider
+       failure is not silently replaced by lower-precision records.
+
+    Every executed or skipped strategy is recorded in
+    ``SearchDepthMetrics.strategy_results`` and the fill accounting in
+    ``SearchDepthMetrics.tier_outcome``; contributed records carry
+    :class:`RetrievalProvenance`. ``total_timeout`` (default twice the
+    per-strategy timeout) bounds the sequential fill phases.
 
     Returns:
         Tuple of (all_results, depth_metrics, pubmed_total_count, source_api_counts, source_errors)
     """
     import time
 
-    metrics = SearchDepthMetrics()
+    if not strategies:
+        raise ValueError("Deep search requires at least one finalized strategy")
+    if limit < 1:
+        msg = "per_source_limit must be positive"
+        raise ValueError(msg)
 
-    # Populate metrics from enhanced_query
+    metrics = SearchDepthMetrics()
     metrics.entities_resolved = len(enhanced_query.entities)
     metrics.mesh_terms_used = len([e for e in enhanced_query.entities if e.mesh_id])
     metrics.synonyms_expanded = len([t for t in enhanced_query.expanded_terms if t.source != "original"])
-
-    all_results: list[list[UnifiedArticle]] = []
-    pubmed_total_count: int | None = None
-    source_errors: list[SourceAdapterError] = []
-    if not strategies:
-        raise ValueError("Deep search requires at least one finalized strategy")
     metrics.strategies_generated = len(strategies)
 
-    # Sort by priority (highest first)
-    strategies = sorted(strategies, key=lambda s: s.priority, reverse=True)
-    strategy_budgets = _allocate_deep_strategy_budgets(strategies, per_source_limit=limit)
+    ordered = precision_first_order(strategies)
     runners = dict(build_default_search_functions(searcher) if search_functions is None else search_functions)
     global_semaphore = asyncio.Semaphore(max(1, max_concurrency))
     source_semaphores = {
-        source: asyncio.Semaphore(max(1, per_source_concurrency)) for source in {s.source for s in strategies}
+        source: asyncio.Semaphore(max(1, per_source_concurrency)) for source in {s.source for s in ordered}
     }
-    attempt_started = [False] * len(strategies)
+    loop = asyncio.get_running_loop()
+    # The exact tier always receives the full per-strategy timeout; sequential
+    # fill phases share whatever remains of the overall deep-search deadline.
+    deadline = loop.time() + (total_timeout if total_timeout is not None else 2 * strategy_timeout)
 
-    async def execute_strategy(
-        index: int,
+    tracker = DeepFillTracker(limit, eligibility)
+    outcome = DeepTierOutcome(requested_limit=limit, broadening_enabled=allow_broadening)
+    all_results: list[list[UnifiedArticle]] = []
+    source_errors: list[SourceAdapterError] = []
+    passed_by_source: dict[str, int] = {}
+    executed_strategies: set[int] = set()
+    contributing_strategies: set[int] = set()
+
+    async def execute_attempt(
         strategy: SearchPlan,
-        allocated_limit: int,
+        request_limit: int,
+        started: list[bool],
     ) -> tuple[StrategyResult, list[UnifiedArticle], list[SourceAdapterError]]:
         """Execute one typed adapter attempt and retain exact provenance."""
         start_time = time.perf_counter()
-        if allocated_limit <= 0:
-            return (
-                StrategyResult(
-                    strategy_name=strategy.name,
-                    query=strategy.query,
-                    source=strategy.source,
-                    articles_count=0,
-                    expected_precision=strategy.expected_precision,
-                    expected_recall=strategy.expected_recall,
-                    status="skipped_budget",
-                    allocated_limit=0,
-                    query_executed=False,
-                    metadata={"skip_reason": "per_source_budget_exhausted"},
-                ),
-                [],
-                [],
-            )
-
         try:
             runner = _require_deep_runner(runners, strategy.source)
             options = dict(advanced_filters)
@@ -433,10 +449,10 @@ async def _execute_deep_search(
             # Acquire the source gate first so queued variants from one
             # provider cannot occupy every global slot and starve other APIs.
             async with source_semaphores[strategy.source], global_semaphore:
-                attempt_started[index] = True
+                started[0] = True
                 raw_outcome = await runner(
                     strategy.query,
-                    allocated_limit,
+                    request_limit,
                     min_year,
                     max_year,
                     options,
@@ -459,7 +475,7 @@ async def _execute_deep_search(
                 metadata={
                     "logical_query": strategy.query,
                     "physical_query": None,
-                    "query_executed": attempt_started[index],
+                    "query_executed": started[0],
                 },
             )
 
@@ -470,25 +486,15 @@ async def _execute_deep_search(
             metadata["physical_query"] = (
                 metadata.get("canonical_query") or strategy.query if metadata["query_executed"] else None
             )
-        metadata["allocated_limit"] = allocated_limit
+        metadata["allocated_limit"] = request_limit
         if adapter_result.errors:
-            metadata["errors"] = [
-                {
-                    "kind": error.kind,
-                    "retryable": error.retryable,
-                    "status_code": error.status_code,
-                    "message": error.message,
-                }
-                for error in adapter_result.errors
-            ]
+            metadata["errors"] = _error_rows(list(adapter_result.errors))
 
-        articles = list(adapter_result.items[:allocated_limit])
-        if len(adapter_result.items) > allocated_limit:
+        articles = list(adapter_result.items[:request_limit])
+        if len(adapter_result.items) > request_limit:
             warnings = metadata.setdefault("warnings", [])
             if isinstance(warnings, list):
-                warnings.append(
-                    "Adapter returned more items than its allocated deep-search budget; results were clipped"
-                )
+                warnings.append("Adapter returned more items than its deep-search request limit; results were clipped")
         raw_total = metadata.get("total_available")
         if "total_available" not in metadata and adapter_result.status != "error":
             # ``total_count`` is part of the typed adapter contract.  Adapter
@@ -498,8 +504,6 @@ async def _execute_deep_search(
             metadata["total_available"] = raw_total
         total_available = raw_total if isinstance(raw_total, int) and not isinstance(raw_total, bool) else None
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000
-
         result = StrategyResult(
             strategy_name=strategy.name,
             query=strategy.query,
@@ -507,28 +511,33 @@ async def _execute_deep_search(
             articles_count=len(articles),
             expected_precision=strategy.expected_precision,
             expected_recall=strategy.expected_recall,
-            execution_time_ms=elapsed_ms,
+            execution_time_ms=(time.perf_counter() - start_time) * 1000,
             status=adapter_result.status,
-            allocated_limit=allocated_limit,
+            allocated_limit=request_limit,
             total_available=total_available,
             physical_query=metadata.get("physical_query") if isinstance(metadata.get("physical_query"), str) else None,
             query_executed=metadata.get("query_executed") is True,
             metadata=metadata,
         )
-
         return result, articles, list(adapter_result.errors)
 
-    # The timeout encloses semaphore wait plus I/O, so queued lower-priority
-    # variants cannot extend the broker's wall-clock budget indefinitely.
-    tasks = [
-        asyncio.wait_for(execute_strategy(index, strategy, strategy_budgets[index]), timeout=strategy_timeout)
-        for index, strategy in enumerate(strategies)
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    for index, (strategy, result) in enumerate(zip(strategies, results)):
-        if isinstance(result, BaseException):
-            if isinstance(result, asyncio.CancelledError):
+    async def run_attempts(batch: list[tuple[SearchPlan, int, str]], *, timeout: float) -> list[_DeepAttempt]:
+        """Run attempts concurrently; the timeout encloses semaphore wait plus I/O."""
+        started_flags = [[False] for _ in batch]
+        raw_results = await asyncio.gather(
+            *(
+                asyncio.wait_for(execute_attempt(strategy, request_limit, started), timeout=timeout)
+                for (strategy, request_limit, _phase), started in zip(batch, started_flags)
+            ),
+            return_exceptions=True,
+        )
+        attempts: list[_DeepAttempt] = []
+        for (strategy, request_limit, phase), started, raw in zip(batch, started_flags, raw_results):
+            if not isinstance(raw, BaseException):
+                strategy_result, articles, errors = raw
+                attempts.append(_DeepAttempt(strategy, phase, strategy_result, articles, errors))
+                continue
+            if isinstance(raw, asyncio.CancelledError):
                 source_error = SourceAdapterError(
                     source=strategy.source,
                     operation="deep_search",
@@ -536,98 +545,185 @@ async def _execute_deep_search(
                     kind="timeout",
                     retryable=True,
                 )
-            elif isinstance(result, Exception):
-                source_error = normalize_source_adapter_error(strategy.source, "deep_search", result)
+            elif isinstance(raw, Exception):
+                source_error = normalize_source_adapter_error(strategy.source, "deep_search", raw)
             else:
-                raise result
-            source_errors.append(source_error)
-            metrics.strategy_results.append(
-                StrategyResult(
-                    strategy_name=strategy.name,
-                    query=strategy.query,
-                    source=strategy.source,
-                    articles_count=0,
-                    expected_precision=strategy.expected_precision,
-                    expected_recall=strategy.expected_recall,
-                    execution_time_ms=strategy_timeout * 1000,
-                    status="error",
-                    allocated_limit=strategy_budgets[index],
-                    physical_query=None,
-                    query_executed=attempt_started[index],
-                    metadata={
-                        "logical_query": strategy.query,
-                        "physical_query": None,
-                        "query_executed": attempt_started[index],
-                        "allocated_limit": strategy_budgets[index],
-                        "errors": [
-                            {
-                                "kind": source_error.kind,
-                                "retryable": source_error.retryable,
-                                "status_code": source_error.status_code,
-                                "message": source_error.message,
-                            }
-                        ],
-                    },
-                )
+                raise raw
+            failed = StrategyResult(
+                strategy_name=strategy.name,
+                query=strategy.query,
+                source=strategy.source,
+                articles_count=0,
+                expected_precision=strategy.expected_precision,
+                expected_recall=strategy.expected_recall,
+                execution_time_ms=timeout * 1000,
+                status="error",
+                allocated_limit=request_limit,
+                physical_query=None,
+                query_executed=started[0],
+                metadata={
+                    "logical_query": strategy.query,
+                    "physical_query": None,
+                    "query_executed": started[0],
+                    "allocated_limit": request_limit,
+                    "errors": _error_rows([source_error]),
+                },
             )
-            metrics.strategies_executed += 1
+            attempts.append(_DeepAttempt(strategy, phase, failed, [], [source_error]))
+        return attempts
+
+    def record_attempt(attempt: _DeepAttempt, admission: FillAdmission) -> None:
+        provenance = provenance_for(attempt.strategy)
+        row = attempt.result
+        row.tier = provenance.tier
+        row.tier_rank = provenance.tier_rank
+        row.phase = attempt.phase
+        row.new_unique = admission.new_unique
+        row.contributed = admission.new_unique if attempt.phase == "exact" else len(admission.accepted)
+        row.duplicates = admission.duplicates
+        row.ineligible = admission.ineligible
+        row.surplus_discarded = admission.surplus_discarded
+        metrics.strategy_results.append(row)
+        source_errors.extend(attempt.errors)
+        executed_strategies.add(id(attempt.strategy))
+        if row.contributed:
+            contributing_strategies.add(id(attempt.strategy))
+        if admission.accepted:
+            all_results.append(admission.accepted)
+            passed_by_source[row.source] = passed_by_source.get(row.source, 0) + len(admission.accepted)
+
+    def record_skip(strategy: SearchPlan, reason: str) -> None:
+        metrics.strategy_results.append(
+            StrategyResult(
+                strategy_name=strategy.name,
+                query=strategy.query,
+                source=strategy.source,
+                articles_count=0,
+                expected_precision=strategy.expected_precision,
+                expected_recall=strategy.expected_recall,
+                status="skipped",
+                allocated_limit=0,
+                query_executed=False,
+                metadata={"skip_reason": reason},
+                tier=strategy_tier(strategy),
+                tier_rank=strategy_tier_rank(strategy) or 0,
+                phase="skipped",
+                skip_reason=reason,
+            )
+        )
+
+    def fill_timeout() -> float:
+        """Per-attempt timeout for sequential fill phases, bounded by the deadline."""
+        return min(strategy_timeout, deadline - loop.time())
+
+    # Phase 1: the caller's query on every planned source, full budget each.
+    exact_strategies = [strategy for strategy in ordered if strategy_tier(strategy) == "exact"]
+    exact_attempts = await run_attempts(
+        [(strategy, limit, "exact") for strategy in exact_strategies],
+        timeout=strategy_timeout,
+    )
+    for attempt in exact_attempts:
+        record_attempt(attempt, tracker.admit_exact(attempt.articles, provenance_for(attempt.strategy)))
+    outcome.exact_eligible_unique = tracker.eligible_unique
+
+    # Phase 2: fetch deeper into an exact query before any broadening.
+    for attempt in exact_attempts:
+        if tracker.filled or fill_timeout() <= 0:
+            break
+        row = attempt.result
+        total = row.total_available
+        if row.status not in {"ok", "partial"} or total is None or total <= row.allocated_limit:
             continue
+        deeper_limit = min(DEEP_FILL_MAX_REQUEST, total, row.allocated_limit + limit)
+        if deeper_limit <= row.allocated_limit:
+            continue
+        (deeper,) = await run_attempts([(attempt.strategy, deeper_limit, "deepen")], timeout=fill_timeout())
+        admission = tracker.admit_fill(deeper.articles, provenance_for(attempt.strategy))
+        record_attempt(deeper, admission)
+        outcome.deepened_records += len(admission.accepted)
 
-        strategy_result, articles, attempt_errors = result
-        metrics.strategy_results.append(strategy_result)
-        if strategy_result.status != "skipped_budget":
-            metrics.strategies_executed += 1
-        source_errors.extend(attempt_errors)
+    # Phase 3: lower-precision tiers fill only the remaining slots.
+    outcome.broadening_needed = not tracker.filled
+    failed_exact_sources = {attempt.strategy.source for attempt in exact_attempts if attempt.result.status == "error"}
+    broadened_any = False
+    for strategy in ordered:
+        if strategy_tier(strategy) == "exact":
+            continue
+        skip_reason: str | None = None
+        if strategy_tier_rank(strategy) is None:
+            skip_reason = SKIP_NARROWS_EXACT_QUERY
+        elif tracker.filled:
+            skip_reason = SKIP_LIMIT_FILLED
+        elif not allow_broadening:
+            skip_reason = SKIP_BROADENING_DISABLED
+        elif strategy.source in failed_exact_sources:
+            skip_reason = SKIP_EXACT_TIER_FAILED
+        elif fill_timeout() <= 0:
+            skip_reason = SKIP_DEADLINE_EXHAUSTED
+        if skip_reason is not None:
+            record_skip(strategy, skip_reason)
+            if skip_reason not in {SKIP_NARROWS_EXACT_QUERY, SKIP_LIMIT_FILLED}:
+                outcome.broadening_blocked_reason = outcome.broadening_blocked_reason or skip_reason
+            continue
+        (broader,) = await run_attempts(
+            [(strategy, tracker.fill_request_limit(), "broaden")],
+            timeout=fill_timeout(),
+        )
+        admission = tracker.admit_fill(broader.articles, provenance_for(strategy))
+        record_attempt(broader, admission)
+        outcome.broadened_records += len(admission.accepted)
+        broadened_any = True
+    if outcome.broadening_needed and not broadened_any and outcome.broadening_blocked_reason is None:
+        outcome.broadening_blocked_reason = BLOCKED_NO_BROADER_STRATEGY
+    outcome.eligible_unique = tracker.eligible_unique
+    metrics.tier_outcome = outcome
 
-        if (
-            strategy_result.source == "pubmed"
-            and strategy_result.total_available is not None
-            and pubmed_total_count is None
-        ):
-            pubmed_total_count = strategy_result.total_available
-
-        if articles:
-            all_results.append(articles)
-            metrics.strategies_with_results += 1
-
-    # Calculate combined metrics
-    if metrics.strategies_with_results > 0:
-        # Combined recall: 1 - (1-r1)(1-r2)... (probability of finding at least once)
-        combined_recall = 1.0
-        for sr in metrics.strategy_results:
-            if sr.articles_count > 0:
-                combined_recall *= 1 - sr.expected_recall
-        metrics.heuristic_recall_proxy = 1 - combined_recall
-
-        # Average precision (weighted by articles found)
-        total_articles = sum(sr.articles_count for sr in metrics.strategy_results)
-        if total_articles > 0:
-            weighted_precision = sum(sr.expected_precision * sr.articles_count for sr in metrics.strategy_results)
-            metrics.heuristic_precision_proxy = weighted_precision / total_articles
+    metrics.strategies_executed = len(executed_strategies)
+    metrics.strategies_with_results = len(contributing_strategies)
+    contributing_rows = [row for row in metrics.strategy_results if row.executed and row.contributed > 0]
+    if contributing_rows:
+        # Combined recall: 1 - (1-r1)(1-r2)... over distinct contributing strategies.
+        combined_miss = 1.0
+        for recall in {(row.strategy_name, row.source): row.expected_recall for row in contributing_rows}.values():
+            combined_miss *= 1 - recall
+        metrics.heuristic_recall_proxy = 1 - combined_miss
+        total_contributed = sum(row.contributed for row in contributing_rows)
+        metrics.heuristic_precision_proxy = (
+            sum(row.expected_precision * row.contributed for row in contributing_rows) / total_contributed
+        )
     else:
         metrics.heuristic_recall_proxy = 0.0
         metrics.heuristic_precision_proxy = 0.0
-
     metrics.calculate_depth_score()
 
     logger.info(
-        f"Deep search: {metrics.strategies_executed} strategies, "
-        f"{metrics.strategies_with_results} with results, "
-        f"depth score: {metrics.depth_score:.0f}"
+        "Deep search: %s/%s strategies executed, %s contributed, eligible %s/%s, broadened %s",
+        metrics.strategies_executed,
+        metrics.strategies_generated,
+        metrics.strategies_with_results,
+        outcome.eligible_unique,
+        limit,
+        outcome.broadened_records,
     )
 
-    # Aggregate bounded per-source counts. Totals from different query
-    # variants are not additive; only expose one when exactly one attempt ran.
+    pubmed_total_count = next(
+        (
+            row.total_available
+            for row in metrics.strategy_results
+            if row.source == "pubmed" and row.phase == "exact" and row.total_available is not None
+        ),
+        None,
+    )
+
+    # Totals from different query variants are not additive; expose a total
+    # only when every executed attempt for a source ran the same query.
     source_api_counts: dict[str, tuple[int, int | None]] = {}
-    for source in {strategy.source for strategy in strategies}:
-        source_attempts = [
-            result
-            for result in metrics.strategy_results
-            if result.source == source and result.status != "skipped_budget"
-        ]
-        returned = sum(result.articles_count for result in source_attempts)
-        total_available = source_attempts[0].total_available if len(source_attempts) == 1 else None
-        source_api_counts[source] = (returned, total_available)
+    for source in dict.fromkeys(strategy.source for strategy in ordered):
+        source_rows = [row for row in metrics.strategy_results if row.source == source and row.executed]
+        queries = {row.query for row in source_rows}
+        totals = [row.total_available for row in source_rows if row.total_available is not None]
+        total_available = totals[-1] if len(queries) == 1 and totals else None
+        source_api_counts[source] = (passed_by_source.get(source, 0), total_available)
 
     return all_results, metrics, pubmed_total_count, source_api_counts, source_errors
 

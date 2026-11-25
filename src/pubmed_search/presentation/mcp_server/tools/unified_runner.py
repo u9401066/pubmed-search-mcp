@@ -156,6 +156,7 @@ async def persist_unified_search_artifact(
             clinical_trials_coverage=execution.clinical_trials_coverage,
             prefetched_trials=execution.prefetched_trials,
             exclude_seen_message=getattr(execution, "exclude_seen_message", None),
+            broadening=getattr(execution, "broadening", None),
         )
     except Exception as exc:
         logger.warning("Failed to prepare unified_search artifact payload (%s)", type(exc).__name__)
@@ -495,6 +496,7 @@ async def run_unified_search(
                 exclude_seen_message=execution.exclude_seen_message,
                 clinical_trials_coverage=execution.clinical_trials_coverage,
                 prefetched_trials=execution.prefetched_trials,
+                broadening=execution.broadening,
             )
 
         markdown_response = await _format_unified_results(
@@ -521,6 +523,7 @@ async def run_unified_search(
             counts_first=request.counts_first,
             result_filter_counts=execution.result_filter_counts,
             exclude_seen_message=execution.exclude_seen_message,
+            broadening=execution.broadening,
         )
         # Markdown rendering can add a typed adjunct-format failure. Refresh
         # the provisional terminal state before embedding it in the artifact.

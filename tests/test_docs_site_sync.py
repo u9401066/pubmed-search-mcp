@@ -265,7 +265,7 @@ def test_docs_site_exposes_recoverable_bounded_unified_search_contract() -> None
     overview = embedded_pages["overview"]
     for term in [
         "exactly one MCP",
-        "divided across that source's query strategies",
+        "lower-precision strategies only fill missing slots, disclosed in `broadening`",
         "search-run/v1",
         'read_session(request={"action":"replay_search"',
         "no public cursor-resume parameter yet",
@@ -277,7 +277,7 @@ def test_docs_site_exposes_recoverable_bounded_unified_search_contract() -> None
     overview_zh = embedded_pages["overview-zh"]
     for term in [
         "固定只有一個 MCP tool",
-        "所有 query strategies 的**總額度**",
+        "原始查詢先取得每個來源的**完整 limit**",
         "可回復的 search runs",
         "`replay_search` 只回傳原本、已移除 credential",
     ]:

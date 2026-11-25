@@ -195,10 +195,31 @@ Source identifiers must be exact canonical keys such as `semantic_scholar`,
 `europe_pmc`, and `web_of_science`; aliases, case variants, surrounding token
 whitespace, empty tokens, and duplicates are rejected. Canonical filter keys
 are `year`, `age_group`, `sex`, `species`, `language`, and `clinical_query`.
-In normal deep mode, the same public `limit` is the **total budget for one source across
-all of its generated strategies**. The broker allocates that budget across the
-strategies, clips over-returning adapters, and applies bounded global and
-per-source concurrency plus strategy deadlines.
+Normal deep mode is **precision-first**. Your query (the `exact` tier) runs on
+every planned source with that source's full `limit`; a field-tagged or Boolean
+expert query is never diluted when it already fills the limit. Only when the
+exact tier returns fewer eligible unique records than `limit` (after
+deduplication and the `exclude_seen` / detected-preprint filters) does the
+broker fetch deeper into the same exact query and then run lower-precision
+strategies (`semantic`, then `broad`) one at a time, each filling only the
+remaining slots. A source whose exact query failed is never broadened, and
+`options="no_relax"` disables both this fill and zero-result auto-relaxation.
+Bounded global and per-source concurrency, adapter clipping, and strategy
+deadlines still apply.
+
+Read the `broadening` object (JSON/TOON, artifact `query_strategy.json`, and the
+Markdown **Broadening** line) before interpreting a deep or relaxed result:
+
+| Field | Meaning |
+| --- | --- |
+| `needed` / `applied` | Whether the exact tier under-filled `limit`, and whether a lower-precision query actually ran |
+| `summary` | One-line reason, e.g. `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` or `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | Per strategy: `tier`, `phase`, executed query, `total_available`, `returned`, `contributed` after deduplication, and `skip_reason` |
+| `articles[].retrieval` | Record provenance; `broadened=true` (Markdown 🔻) means only a lower-precision query found the record |
+
+Broadened records are always ranked after records that match the original query.
+Zero-result auto-relaxation reports through the same object with
+`mechanisms=["auto_relax"]` and `tier="relaxed"`.
 
 JSON/TOON output and persistent artifacts preserve `retrieval_mode` and
 per-source `source_metadata`, including requested/provider mode, canonical or

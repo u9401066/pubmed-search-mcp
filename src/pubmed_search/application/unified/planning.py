@@ -25,6 +25,7 @@ from pubmed_search.application.search.result_aggregator import RankingConfig
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
 
 from .helpers import DispatchStrategy, detect_and_expand_icd_codes, expand_icd_matches
+from .tiering import strategy_tier
 from .use_case import SourceSelectionError as _SourceSelectionError
 
 if TYPE_CHECKING:
@@ -83,7 +84,13 @@ def _build_deep_strategies(
 
     Semantic enhancement contributes query variants; it must not silently
     narrow the source set selected by the planner.  Each planned primary or
-    preprint source therefore receives at least one baseline strategy.
+    preprint source therefore receives at least one ``exact`` baseline
+    strategy carrying the caller's query.
+
+    Deep search is precision-first, so the finalized plan omits variants that
+    can never fill a gap the exact query left: ``narrow`` strategies (strict
+    subsets of the exact query) and fill-tier strategies whose query is
+    identical to that source's exact query.
     """
     if enhanced_query is None:
         return []
@@ -96,7 +103,7 @@ def _build_deep_strategies(
     neutral_query = provider_neutral_query or query
     strategies = []
     for strategy in enhanced_query.strategies:
-        if strategy.source not in primary_sources:
+        if strategy.source not in primary_sources or strategy_tier(strategy) == "narrow":
             continue
         # SemanticEnhancer currently receives the PubMed-shaped query.  Its
         # baseline Europe PMC strategy therefore carries that exact string as
@@ -106,7 +113,7 @@ def _build_deep_strategies(
             strategies.append(replace(strategy, query=neutral_query))
         else:
             strategies.append(strategy)
-    covered_sources = {strategy.source for strategy in strategies}
+    covered_sources = {strategy.source for strategy in strategies if strategy_tier(strategy) == "exact"}
 
     for source in primary_sources:
         if source in covered_sources:
@@ -119,10 +126,16 @@ def _build_deep_strategies(
                 priority=1,
                 expected_precision=0.5,
                 expected_recall=0.5,
+                tier="exact",
             )
         )
 
-    return strategies
+    exact_queries = {(strategy.source, strategy.query) for strategy in strategies if strategy_tier(strategy) == "exact"}
+    return [
+        strategy
+        for strategy in strategies
+        if strategy_tier(strategy) == "exact" or (strategy.source, strategy.query) not in exact_queries
+    ]
 
 
 def _apply_retrieval_capabilities(

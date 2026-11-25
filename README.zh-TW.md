@@ -40,7 +40,7 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 ## 搜尋邊界與可回復的 search runs
 
-一般文獻發現對外固定只有一個 MCP tool，入口是 `unified_search`。每個來源的 limit 是該來源所有 query strategies 的**總額度**。解讀零筆或少量結果前，先看 `search_status` 和來源紀錄。全文是否可讀取取決於公開識別碼、機構授權與可用的本機文件。
+一般文獻發現對外固定只有一個 MCP tool，入口是 `unified_search`。Deep search 採精準優先：原始查詢先取得每個來源的**完整 limit**，不足時才由較低精準度策略補足剩餘名額，並在 `broadening` 揭露。解讀零筆或少量結果前，先看 `search_status` 和來源紀錄。全文是否可讀取取決於公開識別碼、機構授權與可用的本機文件。
 
 `search-run/v1` 保留檢索紀錄。`replay_search` 只回傳原本、已移除 credential 的參數。重新提交會開始一次有界搜尋，目前沒有對外的 provider cursor 續傳參數。遇到 `history_unavailable` 時，該次搜尋沒有可保證復原的紀錄。[恢復流程與 artifact](docs/guides/TOOLS_USAGE_GUIDE.zh-TW.md)
 

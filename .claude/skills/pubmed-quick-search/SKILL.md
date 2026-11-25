@@ -132,13 +132,21 @@ options="preprints,shallow"
 - `no_oa`: 不做 OA 連結補強
 - `no_analysis`: 不顯示查詢分析
 - `no_scores`: 不顯示分數
-- `no_relax`: 關閉零結果時的自動放寬
+- `no_relax`: 關閉所有自動放寬（deep 補足與零結果放寬）
 - `shallow`: 關閉深搜，速度較快
 - `exclude_seen`: 排除本 session 先前 completed／partial 搜尋已回傳的 PMID 或正規化 DOI；在 `limit` 截斷前過濾，回報排除數量或無歷史／歷史不可用提示。不可搭配 `pipeline=`。
 
 ```python
 unified_search(query="remimazolam ICU sedation", options="exclude_seen", limit=10)
 ```
+
+### 解讀自動放寬
+
+Deep search 採精準優先：原始查詢先以完整 `limit` 執行，只有不足時才用較低精準度策略補足剩餘名額。
+回報前先看 `broadening.summary`（Markdown 的 **Broadening** 行）：例如
+`no broadening needed (original total 45 ≥ limit 15)`，或
+`original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)`。
+`retrieval.broadened=true`（Markdown 🔻）的紀錄只由放寬查詢找到，排在原始查詢結果之後，需另行確認相關性。
 
 ---
 

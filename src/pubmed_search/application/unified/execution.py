@@ -38,12 +38,19 @@ from .clinical_trials import (
     validate_clinical_trials_rows,
 )
 from .helpers import DispatchStrategy, RelaxationResult, SearchDepthMetrics
-from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint
+from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint, is_seen_article
+from .tiering import (
+    build_broadening_disclosure,
+    order_by_retrieval_tier,
+    relaxation_provenance,
+    tag_retrieval,
+)
 
 if TYPE_CHECKING:
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
 
     from .planning import ProgressReporter, UnifiedSearchPlan
+    from .request import UnifiedSearchRequest
     from .use_case import EnrichmentPort, SourceBrokerPort
 
 logger = logging.getLogger(__name__)
@@ -62,9 +69,30 @@ def _rank_articles_deterministically(
     ranking_config: Any,
     query: str,
 ) -> list[UnifiedArticle]:
-    """Rank from a canonical identity order so score ties ignore arrival order."""
+    """Rank within retrieval tiers from a canonical identity order.
+
+    Score ties ignore arrival order, and records surfaced only by automatic
+    broadening are always ordered after records matching the caller's query.
+    """
     stable_input = sorted(articles, key=canonical_article_key)
-    return aggregator.rank(stable_input, ranking_config, query)
+    return order_by_retrieval_tier(aggregator.rank(stable_input, ranking_config, query))
+
+
+def _retrieval_eligibility(request: UnifiedSearchRequest) -> Callable[[UnifiedArticle], bool] | None:
+    """Mirror the post-retrieval filters so deep fill counts only returnable records."""
+    exclude_preprints = request.exclude_detected_preprints
+    exclude_seen = request.exclude_seen and request.seen_search_count is not None
+    if not (exclude_preprints or exclude_seen):
+        return None
+
+    from pubmed_search.domain.entities.article import ArticleType
+
+    def eligible(article: UnifiedArticle) -> bool:
+        if exclude_preprints and is_preprint(article, ArticleType):
+            return False
+        return not (exclude_seen and is_seen_article(article, request.seen_pmids, request.seen_dois))
+
+    return eligible
 
 
 @dataclass
@@ -86,6 +114,7 @@ class UnifiedSearchExecutionResult:
     result_filter_counts: dict[str, int]
     enrichment_metadata: dict[str, Any]
     exclude_seen_message: str | None = None
+    broadening: dict[str, Any] | None = None
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -216,13 +245,16 @@ async def execute_unified_search(
                 plan.effective_max_year,
                 request.advanced_filters,
                 strategies=plan.deep_strategies,
+                eligibility=_retrieval_eligibility(request),
+                # The no_relax option opts out of every automatic broadening path.
+                allow_broadening=request.auto_relax,
             )
             for error in deep_source_errors:
                 logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
                 source_errors.append(_source_error_payload(error))
             for source, (returned, _total) in source_api_counts.items():
                 attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
-                executed_attempts = [attempt for attempt in attempts if attempt.status != "skipped_budget"]
+                executed_attempts = [attempt for attempt in attempts if attempt.executed]
                 attempt_statuses = {attempt.status for attempt in executed_attempts}
                 has_failure = "error" in attempt_statuses
                 has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
@@ -259,20 +291,31 @@ async def execute_unified_search(
                     "query_executed": any(attempt.query_executed for attempt in executed_attempts),
                     "warnings": warnings,
                     "budget": {
+                        "policy": "precision_first",
                         "per_source_limit": request.limit,
-                        "allocated": sum(attempt.allocated_limit for attempt in attempts),
+                        "requested": sum(attempt.allocated_limit for attempt in executed_attempts),
+                        "fetched": sum(attempt.articles_count for attempt in executed_attempts),
                         "returned": returned,
                     },
                     "attempts": [
                         {
                             "strategy": attempt.strategy_name,
+                            "tier": attempt.tier,
+                            "tier_rank": attempt.tier_rank,
+                            "phase": attempt.phase,
                             "status": attempt.status,
+                            "skip_reason": attempt.skip_reason,
                             "logical_query": attempt.query,
                             "physical_query": attempt.physical_query,
                             "query_executed": attempt.query_executed,
                             "allocated_limit": attempt.allocated_limit,
                             "returned": attempt.articles_count,
                             "total_available": attempt.total_available,
+                            "new_unique": attempt.new_unique,
+                            "contributed": attempt.contributed,
+                            "duplicates": attempt.duplicates,
+                            "ineligible": attempt.ineligible,
+                            "surplus_discarded": attempt.surplus_discarded,
                             "metadata": dict(attempt.metadata),
                         }
                         for attempt in attempts
@@ -402,6 +445,7 @@ async def execute_unified_search(
         aggregator = ResultAggregator(plan.ranking_config)
         articles, stats = aggregator.aggregate(all_results)
         logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
+        exact_pubmed_total = source_api_counts.get("pubmed", (0, None))[1]
 
         if (
             request.auto_relax
@@ -451,6 +495,7 @@ async def execute_unified_search(
                     source_statuses["pubmed"] = "partial"
             if relaxation_result and relaxation_result.successful_step:
                 step = relaxation_result.successful_step
+                tag_retrieval(relaxation_result.articles, relaxation_provenance(step.action))
                 all_results = [relaxation_result.articles]
                 articles, stats = aggregator.aggregate(all_results)
                 pubmed_total_count = relaxation_result.total_results
@@ -537,6 +582,13 @@ async def execute_unified_search(
                 )
         if request.limit and len(ranked) > request.limit:
             ranked = ranked[: request.limit]
+        broadening = build_broadening_disclosure(
+            requested_limit=request.limit,
+            deep_metrics=deep_search_metrics,
+            relaxation=relaxation_result,
+            broadening_enabled=request.auto_relax,
+            exact_pubmed_total=exact_pubmed_total,
+        )
 
         result_filter_counts = {
             "retrieved_unique": retrieved_unique,
@@ -630,6 +682,7 @@ async def execute_unified_search(
             source_metadata=source_metadata,
             result_filter_counts=result_filter_counts,
             enrichment_metadata=enrichment_metadata,
+            broadening=broadening,
         )
     finally:
         if clinical_trials_task is not None and not clinical_trials_task.done():
