@@ -39,7 +39,8 @@ MAX_TOPIC_TOKENS = 48
 MAX_INVERTED_COMMAS = 2
 MAX_INVERTED_PART_TOKENS = 3
 _MIN_SINGLE_TOKEN_CHARS = 2
-# Plural folding only touches alphabetic words longer than this ("gas", "bus" stay intact).
+# Plural folding needs both the singular and the plural to have at least this many letters
+# ("gas", "bus" and "news" stay intact, so "new" never shares a key with "news").
 _MIN_PLURAL_CHARS = 4
 
 RecordType = Literal["descriptor", "supplementary_concept", "publication_type"]

@@ -266,6 +266,11 @@ class TermCorrection:
     notes: tuple[str, ...] = ()
     evidence_complete: bool = True
 
+    @property
+    def equivalent(self) -> bool:
+        """An exact heading fix that keeps every restriction: safe even inside a NOT operand."""
+        return self.tier == "exact" and not self.evidence.get("dropped_restrictions")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "original": self.original,
@@ -643,7 +648,7 @@ class MeshCorrectionService:
                         "The exact MeSH lookup was unavailable, so an equivalent heading may exist.",
                     ),
                 )
-            if negated and (correction.tier != "exact" or correction.evidence.get("dropped_restrictions")):
+            if negated and not correction.equivalent:
                 suggestions.append(replace(correction, notes=(*correction.notes, NOT_OPERAND_NOTE)))
                 warnings.append(
                     f"{clause} is inside a NOT operand and PubMed cannot resolve it, so this exclusion currently "
