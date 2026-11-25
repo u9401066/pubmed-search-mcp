@@ -64,6 +64,10 @@ class OutboundResponseTooLargeError(SafeOutboundError):
     """Raised when declared or streamed response bytes exceed the hard cap."""
 
 
+class DisallowedOutboundHostError(UnsafeOutboundURLError):
+    """Raised when a URL or redirect hop leaves the policy's allowed hosts."""
+
+
 @dataclass(frozen=True, slots=True)
 class SafeFetchPolicy:
     """Limits applied to one complete outbound fetch, including redirects."""
@@ -71,6 +75,8 @@ class SafeFetchPolicy:
     max_bytes: int
     total_timeout: float = 20.0
     max_redirects: int = 5
+    allowed_hosts: tuple[str, ...] = ()
+    """Exact hosts, or ``.suffix`` entries for subdomains; empty allows any public host."""
 
     def __post_init__(self) -> None:
         if isinstance(self.max_bytes, bool) or not isinstance(self.max_bytes, int) or self.max_bytes < 1:
@@ -213,6 +219,16 @@ async def validate_public_url(
     return (await _resolve_public_url(url, resolver=resolver)).url
 
 
+def _host_allowed(url: str | httpx.URL, allowed: tuple[str, ...]) -> bool:
+    try:
+        host = (httpx.URL(str(url)).host or "").rstrip(".").lower()
+    except (TypeError, ValueError, httpx.InvalidURL):
+        return False
+    return bool(host) and any(
+        host == entry.lower() or (entry.startswith(".") and host.endswith(entry.lower())) for entry in allowed
+    )
+
+
 def _origin(url: httpx.URL) -> tuple[str, str, int]:
     scheme = url.scheme.lower()
     return (scheme, (url.host or "").lower(), url.port or _ALLOWED_SCHEME_PORTS[scheme])
@@ -303,6 +319,9 @@ async def _fetch_public_url(
     chain: list[str] = []
 
     for hop in range(policy.max_redirects + 1):
+        if policy.allowed_hosts and not _host_allowed(current, policy.allowed_hosts):
+            # Checked before DNS, connection or any status handling of the hop.
+            raise DisallowedOutboundHostError("Outbound URL left the allowed hosts", redirect_chain=chain)
         try:
             target = await _resolve_public_url(current, resolver=resolver)
         except UnsafeOutboundURLError as exc:
@@ -417,6 +436,7 @@ async def fetch_public_url(
 
 
 __all__ = [
+    "DisallowedOutboundHostError",
     "OutboundResponseTooLargeError",
     "SafeFetchPolicy",
     "SafeFetchResult",

@@ -61,6 +61,8 @@ _WRITE_TOOLS = {
 _DESTRUCTIVE_TOOLS = {
     "configure_institutional_access",
     "delete_pipeline",
+    # Replaces the text served for an article and evicts the oldest records.
+    "register_fulltext",
     "save_literature_notes",
     "save_pipeline",
     "schedule_pipeline",

@@ -66,6 +66,13 @@ class AppSettings(BaseSettings):
     # Public PMC article page, read only for explicit single-article get_fulltext requests
     # (never by search prefetch or batch paths) when the XML sources yield no body.
     fulltext_pmc_html: bool = Field(default=True, alias="PUBMED_FULLTEXT_PMC_HTML")
+    # Rolling hourly caps on PMC article-page fetches (cache hits do not count).
+    fulltext_pmc_html_hourly_limit: int = Field(
+        default=60, alias="PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT", ge=1, le=3_600
+    )
+    fulltext_pmc_html_tenant_hourly_limit: int = Field(
+        default=20, alias="PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT", ge=1, le=3_600
+    )
     # Extra local roots (os.pathsep-separated) from which register_fulltext may read files,
     # in addition to the workspace, notes directory and tenant data directory.
     fulltext_intake_roots_raw: str = Field(default="", alias="PUBMED_FULLTEXT_INTAKE_ROOTS")

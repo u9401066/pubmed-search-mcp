@@ -201,7 +201,11 @@ def test_a_usable_body_needs_no_plan() -> None:
 
 
 def test_text_extracted_from_a_pdf_gets_a_citation_ready_ingest_step() -> None:
-    result = _result(doi="10.1000/x", attempted=["pdf_retrieval_fallback"])
+    result = _result(
+        doi="10.1000/x",
+        attempted=["pdf_retrieval_fallback"],
+        pdf_links=[{"source": "Unpaywall", "url": "https://repo.example/a.pdf", "type": "pdf", "access": "green"}],
+    )
     result.fulltext_content = "flat pdf text"
     result.fulltext_provenance = "derived"
     result.fulltext_origin = "provider"
@@ -231,3 +235,125 @@ def test_supplied_text_is_never_planned_over() -> None:
 
     assert build_fulltext_plan(result, FulltextRequest(pmid="1"), FulltextAccessContext()) == ([], None)
     assert make_notice("registered_fulltext", "supplied_not_verified").message.startswith("Served text registered")
+
+
+# ----------------------------------------------------------------------------
+# Review M4 / L11: access-aware wording and caller capabilities (repro r2)
+# ----------------------------------------------------------------------------
+
+
+def test_unknown_and_licensed_pdfs_never_get_open_access_wording() -> None:
+    result = _result(
+        doi="10.1016/s0140-6736(19)32315-3",
+        attempted=["extended"],
+        extended_sources_attempted=True,
+        pdf_links=[
+            {
+                "source": "CrossRef",
+                "url": "https://www.thelancet.com/action/showPdf?pii=X",
+                "type": "pdf",
+                "access": "unknown",
+            },
+            {
+                "source": "Broker",
+                "url": "https://publisher.example/licensed.pdf",
+                "type": "pdf",
+                "access": "subscription",
+            },
+            {
+                "source": "PubMed Central",
+                "url": "https://pmc.example/pdf/a.pdf",
+                "type": "pdf",
+                "access": "free_to_read",
+            },
+            {
+                "source": "Unpaywall (repository)",
+                "url": "https://repo.example.org/green",
+                "type": "landing_page",
+                "access": "green_oa",
+            },
+        ],
+    )
+
+    plan, _ = build_fulltext_plan(result, FulltextRequest(doi="10.1016/s0140-6736(19)32315-3"), FulltextAccessContext())
+    by_url = {step.get("url"): step for step in plan}
+
+    unknown = by_url["https://www.thelancet.com/action/showPdf?pii=X"]
+    assert unknown["step"] == "check_access"
+    assert "Open-access" not in unknown["legal"]
+    assert "https://publisher.example/licensed.pdf" not in by_url
+    free = by_url["https://pmc.example/pdf/a.pdf"]
+    assert free["step"] == "download_pdf"
+    assert "Open-access" not in free["legal"]
+    green = by_url["https://repo.example.org/green"]
+    assert green["step"] == "host_fetch"
+    assert all(step["step"] != "download_oa_pdf" for step in plan)
+
+
+@pytest.mark.parametrize(
+    ("notice_source", "links", "expected_step", "expected_legal"),
+    [
+        ("browser_session", [], "download_pdf", "institutional entitlement"),
+        (
+            "unpaywall",
+            [{"type": "pdf", "url": "https://publisher.example.com/doi/pdf/10.1/x", "access": "subscription"}],
+            "download_pdf",
+            "institutional entitlement",
+        ),
+        (
+            "crossref",
+            [{"type": "pdf", "url": "https://publisher.example.com/doi/pdf/10.1/x", "access": "unknown"}],
+            "check_access",
+            "entitled",
+        ),
+        (
+            "unpaywall",
+            [{"type": "pdf", "url": "https://publisher.example.com/doi/pdf/10.1/x", "access": "gold"}],
+            "download_oa_pdf",
+            "Open-access",
+        ),
+    ],
+    ids=["broker", "subscription", "unknown", "gold"],
+)
+def test_unstructured_text_step_matches_the_access_of_the_pdf(
+    notice_source: str, links: list[dict[str, str]], expected_step: str, expected_legal: str
+) -> None:
+    result = _result(doi="10.1/x", attempted=["pdf_retrieval_fallback"], pdf_links=links)
+    result.fulltext_content = "text"
+    result.fulltext_provenance = "derived"
+    result.fulltext_origin = "provider"
+    result.fallback_notice = FulltextDownloadNotice(
+        source=notice_source,
+        source_name=notice_source,
+        retrieved_url="https://publisher.example.com/doi/pdf/10.1/x",
+        has_text=True,
+        error=False,
+    )
+
+    plan, reason = build_fulltext_plan(result, FulltextRequest(doi="10.1/x"), FulltextAccessContext())
+
+    assert reason == "unstructured_text"
+    assert plan[0]["step"] == expected_step
+    assert expected_legal in plan[0]["legal"]
+
+
+def test_plan_only_offers_registration_routes_the_caller_can_use() -> None:
+    result = _result(pmcid="PMC1", pmid="1", attempted=["europe_pmc"])
+    remote, _ = build_fulltext_plan(
+        result,
+        FulltextRequest(pmcid="PMC1"),
+        FulltextAccessContext(article_page_enabled=True, file_intake_allowed=False),
+    )
+    anonymous, _ = build_fulltext_plan(
+        result,
+        FulltextRequest(pmcid="PMC1"),
+        FulltextAccessContext(article_page_enabled=True, registration_allowed=False),
+    )
+
+    for step in remote:
+        arguments = (step.get("register_with") or {}).get("arguments", {})
+        assert "file_path" not in arguments
+        assert "file_path" not in step.get("then", "")
+    assert any("content" in (step.get("register_with") or {}).get("arguments", {}) for step in remote)
+    assert all("register_with" not in step for step in anonymous)
+    assert all("register_fulltext" not in step.get("then", "") for step in anonymous)

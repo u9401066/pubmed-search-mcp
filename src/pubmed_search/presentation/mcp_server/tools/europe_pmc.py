@@ -180,7 +180,7 @@ def _format_get_fulltext_json(
     next_commands: list[str],
     fulltext_source: str | None,
     fulltext_canonical_host: str | None,
-    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None,
+    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed", "supplied"] | None,
     include_figures: bool,
     figures: list[dict[str, Any]],
     output_format: OutputFormat = "json",
@@ -194,6 +194,7 @@ def _format_get_fulltext_json(
     fulltext_retrieval: dict[str, Any] | None = None,
     fulltext_plan: list[dict[str, Any]] | None = None,
     fulltext_plan_reason: str | None = None,
+    supplied_fulltext: dict[str, Any] | None = None,
 ) -> str:
     """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
     section_provenance: dict[str, dict[str, Any]] = {
@@ -272,6 +273,7 @@ def _format_get_fulltext_json(
         "fulltext_retrieval": fulltext_retrieval,
         "fulltext_plan": fulltext_plan or [],
         "fulltext_plan_reason": fulltext_plan_reason,
+        "supplied_fulltext": supplied_fulltext,
         "sources_tried": sources_tried,
         "sources_completed": sources_completed,
         "source_errors": source_errors,
@@ -394,6 +396,18 @@ def _format_fulltext_plan_markdown(plan: list[dict[str, Any]], reason: str | Non
         if step.get("retry_after_seconds") is not None:
             lines.append(f"   - Retry after: {escape_markdown_text(step['retry_after_seconds'])} s")
     return "\n".join(lines) + "\n\n"
+
+
+def _format_supplied_note_markdown(note: dict[str, Any] | None) -> str:
+    """Mention a registration that was not served because it has no body text."""
+    if not note:
+        return ""
+    location = note.get("source_url") or note.get("source_file") or ""
+    return (
+        f"🧾 A {escape_markdown_text(note.get('origin', ''))} registration exists "
+        f"({escape_markdown_text(note.get('registered_at', ''))}, from {escape_markdown_text(location)}) "
+        "but has no body text, so providers were queried instead.\n\n"
+    )
 
 
 def _format_retrieval_markdown(origin: str | None, retrieval: dict[str, Any] | None) -> str:
@@ -723,7 +737,10 @@ def register_europe_pmc_tools(mcp: MCPServer):
             InstitutionalFulltextClient,
         )
         from pubmed_search.infrastructure.sources.ncbi_pmc import get_ncbi_pmc_client
-        from pubmed_search.infrastructure.sources.pmc_html import get_pmc_article_page_client
+        from pubmed_search.infrastructure.sources.pmc_html import (
+            configured_page_contact,
+            get_pmc_article_page_client,
+        )
 
         _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
         _ncbi_pmc_factory = get_ncbi_pmc_client if settings.fulltext_ncbi_pmc_fallback else None
@@ -734,10 +751,16 @@ def register_europe_pmc_tools(mcp: MCPServer):
         get_source_runtime()
         europe_pmc_client = get_europe_pmc_client()
         _structured_xml = bind_cached_fulltext_fetcher(europe_pmc_client.get_fulltext_xml)
+        # The PMC page is read only with an operator contact (NCBI_EMAIL); a
+        # placeholder address is never sent, the source is skipped instead.
+        _page_contact = configured_page_contact() if settings.fulltext_pmc_html else None
         _article_page = (
-            bind_cached_article_page_fetcher(get_pmc_article_page_client().fetch_article_document)
-            if settings.fulltext_pmc_html
+            bind_cached_article_page_fetcher(get_pmc_article_page_client(_page_contact).fetch_article_document)
+            if _page_contact
             else None
+        )
+        _page_unavailable: Literal["disabled", "not_configured"] | None = (
+            None if _page_contact else "not_configured" if settings.fulltext_pmc_html else "disabled"
         )
 
         service = FulltextService(
@@ -750,8 +773,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
             structured_xml_fetcher=_structured_xml,
             ncbi_pmc_client_factory=_ncbi_pmc_factory,
             article_page_fetcher=_article_page,
+            article_page_unavailable=_page_unavailable,
             supplied_fulltext_lookup=bind_supplied_fulltext_lookup(),
-            access_context=build_fulltext_access_context(settings),
+            access_context=build_fulltext_access_context(settings, article_page_enabled=_page_contact is not None),
             deadline_seconds=settings.fulltext_deadline_seconds,
         )
         try:
@@ -843,6 +867,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "fulltext_retrieval": retrieval.fulltext_retrieval,
             "fulltext_plan": retrieval.fulltext_plan,
             "fulltext_plan_reason": retrieval.fulltext_plan_reason,
+            "supplied_fulltext": retrieval.supplied_fulltext,
             "include_figures": include_figures,
             "figures": retrieval.figures,
         }
@@ -965,7 +990,8 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     output_format=normalized_output_format,
                     tool_name="get_fulltext",
                 )
-            no_results_response += "\n\n" + _format_fulltext_plan_markdown(
+            no_results_response += "\n\n" + _format_supplied_note_markdown(retrieval.supplied_fulltext)
+            no_results_response += _format_fulltext_plan_markdown(
                 retrieval.fulltext_plan, retrieval.fulltext_plan_reason
             )
             artifact = None
@@ -1025,6 +1051,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             if license_label:
                 output += f"📜 Declared article license: {escape_markdown_text(license_label)}\n\n"
         output += _format_retrieval_markdown(retrieval.fulltext_origin, retrieval.fulltext_retrieval)
+        output += _format_supplied_note_markdown(retrieval.supplied_fulltext)
         output += _format_fulltext_plan_markdown(retrieval.fulltext_plan, retrieval.fulltext_plan_reason)
 
         download_note = _format_download_notice(retrieval.fallback_notice)

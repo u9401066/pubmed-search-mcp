@@ -57,8 +57,9 @@ _SUGGESTIONS = {
     "content_required": "Send exactly one of content or file_path.",
     "content_too_large": "Register the relevant sections only, or save the text to a file inside the workspace.",
     "file_not_allowed": (
-        "Save the file inside the workspace (PUBMED_WORKSPACE_DIR), the notes directory or a directory listed in "
-        "PUBMED_FULLTEXT_INTAKE_ROOTS, without '..' components; remote callers must send content instead."
+        "Save the file on a local drive inside the workspace (PUBMED_WORKSPACE_DIR), the notes directory, the "
+        "tenant fulltext intake folder or a directory listed in PUBMED_FULLTEXT_INTAKE_ROOTS, without '..' "
+        "components; remote callers must send content instead."
     ),
     "file_not_found": "Check the path; relative paths resolve against the workspace directory.",
     "unsupported_file_type": "Use .pdf, .txt, .md, .html/.htm or .xml/.nxml (JATS).",
@@ -71,6 +72,10 @@ _SUGGESTIONS = {
     "invalid_content": "Check that content_format matches the content (text, markdown, jats or html).",
     "invalid_identifier": "Use one strict PMID, PMC-prefixed PMCID or DOI source object.",
     "storage_unavailable": "Retry once; if it persists, check the server data directory permissions.",
+    "invalid_input": (
+        "Send the article itself: content within the size, heading and nesting limits, describing the requested "
+        "article (a page or JATS that declares another PMID/PMCID/DOI is refused)."
+    ),
 }
 
 
@@ -100,7 +105,7 @@ class SuppliedProvenanceInput(BaseModel):
 
 
 def _intake_path_policy(store_root: Path) -> IntakePathPolicy:
-    """Roots a caller may read: workspace, notes, tenant data and explicit intake roots."""
+    """Roots a caller may read: workspace, notes, the tenant intake folder and explicit intake roots."""
     from pubmed_search.application.fulltext.intake import IntakePathPolicy
 
     settings = load_settings()
@@ -109,8 +114,9 @@ def _intake_path_policy(store_root: Path) -> IntakePathPolicy:
     for value in (settings.workspace_dir, settings.notes_dir, *settings.fulltext_intake_roots):
         if value:
             roots.append(Path(value))
-    # The tenant data directory (two levels above the store root) is always allowed.
-    roots.append(store_root.parent.parent)
+    # Only the tenant's own fulltext intake folder, never the whole data root: for the
+    # default tenant that root also holds other tenants' directories.
+    roots.append(store_root.parent / "intake")
     return IntakePathPolicy(roots=tuple(roots), allow_files=not identity.is_authenticated)
 
 
@@ -274,7 +280,12 @@ def register_fulltext_intake_tools(mcp: MCPServer) -> None:
         or a file the user provided. The text is stored in this tenant's
         fulltext store as agent_supplied or user_supplied (never as
         provider-verified fulltext), and later get_fulltext reads, literature
-        notes and Chronicle evidence lookups reuse it.
+        notes and Chronicle evidence lookups reuse it. A new registration
+        replaces the text served for every known identifier of the article
+        (PMID, PMCID, DOI), so re-register to correct it. Text without body
+        sections (for example only an abstract) is kept as a note and never
+        hides provider fulltext. A JATS or PMC page that declares another
+        article than ``source`` is refused.
 
         Register only verbatim article text (not a summary) that the user may
         lawfully use; individual reading only, never bulk or systematic
@@ -293,9 +304,10 @@ def register_fulltext_intake_tools(mcp: MCPServer) -> None:
             content_format: Format of content: markdown (default, e.g. WebFetch
                 output), text, jats (XML) or html.
             file_path: Local .pdf, .txt, .md, .html or .xml file inside the
-                workspace, notes directory, tenant data directory or
-                PUBMED_FULLTEXT_INTAKE_ROOTS. Relative paths resolve against the
-                workspace. Not available to remote authenticated callers.
+                workspace, notes directory, the tenant fulltext intake folder
+                (<data>/fulltext/intake) or PUBMED_FULLTEXT_INTAKE_ROOTS. Relative
+                paths resolve against the workspace; network shares, device paths
+                and '..' are refused. Not available to remote authenticated callers.
             supplied_by: "agent" (default) or "user" (the user provided the copy).
             title: Optional article title when the content has none.
             output_format: "markdown" (default), "json" or "toon".

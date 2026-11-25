@@ -135,9 +135,12 @@ async def test_markdown_registration_is_stored_with_provenance_and_never_verifie
 
 async def test_jats_and_pmc_html_content_reuse_the_provider_parsers(tmp_path: Path) -> None:
     service, _ = _service(tmp_path)
-    jats = await service.register(_request(content=PMC_EFETCH_FULL_BODY, content_format="jats"))
+    # Each document is registered under an identifier it declares itself.
+    jats = await service.register(
+        _request(identifier_value="12345678", content=PMC_EFETCH_FULL_BODY, content_format="jats")
+    )
     html = await service.register(
-        _request(identifier_value="39000002", content=PMC_ARTICLE_PAGE, content_format="html", supplied_by="user")
+        _request(identifier_value="39000001", content=PMC_ARTICLE_PAGE, content_format="html", supplied_by="user")
     )
 
     assert "Abstract-only result sentence" not in json.dumps(jats.record.sections)
@@ -401,7 +404,7 @@ async def test_get_fulltext_serves_registered_text_first_and_labels_it(tmp_path:
     assert [section["title"] for section in result.content_sections] == ["Results"]
     assert result.fulltext_origin == "agent_supplied"
     assert result.fulltext_source_name == "Agent-supplied fulltext (unverified)"
-    assert result.fulltext_provenance == "indirect"
+    assert result.fulltext_provenance == "supplied"
     assert result.fulltext_retrieval is not None
     assert result.fulltext_retrieval["record_id"] == registered.record_id
     assert result.fulltext_retrieval["provider_verified"] is False
@@ -515,7 +518,12 @@ def test_path_policy_follows_identity_and_configured_roots(tmp_path: Path, monke
         reset_settings_cache()
 
     assert local.allow_files is True
-    assert local.roots == (tmp_path / "workspace", tmp_path / "notes", zotero, tmp_path / "data")
+    assert local.roots == (
+        tmp_path / "workspace",
+        tmp_path / "notes",
+        zotero,
+        tmp_path / "data" / "fulltext" / "intake",
+    )
     assert remote.allow_files is False
 
 

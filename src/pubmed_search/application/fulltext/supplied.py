@@ -39,10 +39,11 @@ import re
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pubmed_search.domain.value_objects.article_identifiers import (
     IdentifierValidationError,
@@ -50,7 +51,7 @@ from pubmed_search.domain.value_objects.article_identifiers import (
     normalize_pmcid,
     normalize_pmid,
 )
-from pubmed_search.shared.file_io import atomic_write_json
+from pubmed_search.shared.file_io import atomic_write_json, atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ RETRIEVAL_METHODS: tuple[str, ...] = (
 )
 SUPPLIED_RECORD_SCHEMA = "supplied-fulltext/v1"
 DEFAULT_MAX_SUPPLIED_RECORDS = 500
+DEFAULT_MAX_SUPPLIED_BYTES = 256 * 1024 * 1024
 MAX_SUPPLIED_TEXT_CHARS = 2_000_000
 _RECORD_ID_RE = re.compile(r"^sft-[0-9a-f]{32}$")
 _MAX_URL_CHARS = 2_048
@@ -85,6 +87,36 @@ _MAX_LABEL_CHARS = 500
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Host-agent clocks may run slightly ahead of the server.
 _FUTURE_TOLERANCE = timedelta(minutes=10)
+# Windows refuses os.replace/unlink while another handle has the file open.
+_RETRY_DELAYS: tuple[float, ...] = (0.05, 0.1, 0.2, 0.4)
+_SECRET_QUERY_RE = re.compile(
+    r"(token|sig|signature|secret|password|passwd|pass|auth|session|sid|key|apikey|api_key|credential"
+    r"|policy|expires|x-amz-.*|x-goog-.*)",
+    re.IGNORECASE,
+)
+
+
+def _redact_url(url: str) -> str:
+    """Drop credentials, fragments and secret-looking query values from a stored URL."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise SuppliedFulltextError("invalid_provenance", "source_url must be an http(s) URL") from None
+    host = parts.hostname or ""
+    netloc = f"[{host}]" if ":" in host else host
+    try:
+        port = parts.port
+    except ValueError:
+        raise SuppliedFulltextError("invalid_provenance", "source_url must be an http(s) URL") from None
+    if port:
+        netloc = f"{netloc}:{port}"
+    query = urlencode(
+        [
+            (name, "REDACTED" if _SECRET_QUERY_RE.fullmatch(name) else value)
+            for name, value in parse_qsl(parts.query, keep_blank_values=True)
+        ]
+    )
+    return urlunsplit((parts.scheme, netloc, parts.path, query, ""))
 
 
 class SuppliedFulltextError(ValueError):
@@ -154,6 +186,8 @@ class SuppliedFulltextProvenance:
         url = _clean_label(source_url, name="source_url", max_chars=_MAX_URL_CHARS)
         if url is not None and not re.match(r"^https?://[^\s/]+", url, flags=re.IGNORECASE):
             raise SuppliedFulltextError("invalid_provenance", "source_url must be an http(s) URL")
+        if url is not None:
+            url = _redact_url(url)
         file_label = _clean_label(source_file, name="source_file")
         if url is None and file_label is None:
             raise SuppliedFulltextError(
@@ -216,15 +250,35 @@ class SuppliedFulltextRecord:
     def char_count(self) -> int:
         return sum(len(section.get("content", "")) for section in self.sections)
 
+    @property
+    def has_body(self) -> bool:
+        """Whether the record holds body sections (not only a title or abstract)."""
+        return any(section.get("content", "").strip() for section in self.sections)
+
     def as_parsed_document(self) -> dict[str, Any]:
-        """Project onto the shared fulltext section model used by structured sources."""
+        """Project onto the shared fulltext section model used by structured sources.
+
+        A license the supplier declared is provenance of the copy, not the
+        article's license, so it stays in :meth:`retrieval_summary` only.
+        """
         return {
             "title": self.title,
             "abstract": self.abstract,
             "sections": [dict(section) for section in self.sections],
             "references": [],
             "figures": [],
-            "license": {"text": self.provenance.license} if self.provenance.license else None,
+            "license": None,
+        }
+
+    def note_summary(self) -> dict[str, Any]:
+        """Short description of a registration that was not served as the body."""
+        return {
+            "origin": self.origin,
+            "record_id": self.record_id,
+            "registered_at": self.registered_at,
+            "has_body": self.has_body,
+            "provider_verified": False,
+            **{key: value for key, value in self.provenance.to_dict().items() if key != "note"},
         }
 
     def retrieval_summary(self) -> dict[str, Any]:
@@ -358,16 +412,40 @@ def _root_lock(root: Path) -> threading.RLock:
         return lock
 
 
+def _retrying(operation: Any, *args: Any) -> None:
+    """Run a file replace/unlink, retrying Windows sharing violations with backoff."""
+    for delay in (*_RETRY_DELAYS, None):
+        try:
+            operation(*args)
+            return
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
+
+
+def _unlink(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
 class SuppliedFulltextStore:
     """Durable, bounded store of supplied fulltext for one tenant storage root."""
 
-    def __init__(self, root: str | Path, *, max_records: int = DEFAULT_MAX_SUPPLIED_RECORDS) -> None:
-        if isinstance(max_records, bool) or not isinstance(max_records, int) or max_records < 1:
-            raise ValueError("max_records must be a positive integer")
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        max_records: int = DEFAULT_MAX_SUPPLIED_RECORDS,
+        max_bytes: int = DEFAULT_MAX_SUPPLIED_BYTES,
+    ) -> None:
+        for name, limit in (("max_records", max_records), ("max_bytes", max_bytes)):
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+                raise ValueError(f"{name} must be a positive integer")
         self._root = Path(root)
         self._records = self._root / "records"
         self._pointers = self._root / "by_identifier"
         self._max_records = max_records
+        self._max_bytes = max_bytes
 
     @property
     def root(self) -> Path:
@@ -382,45 +460,110 @@ class SuppliedFulltextStore:
             raise SuppliedFulltextError("invalid_record", "unsafe supplied-fulltext record id")
         return self._records / f"{record_id}.json"
 
-    def save(self, record: SuppliedFulltextRecord) -> None:
-        """Persist one record and point each of its identifiers at it."""
+    def related_identifiers(self, identifiers: dict[str, str]) -> dict[str, str]:
+        """Identifiers known for the same article: the given ones plus those of earlier registrations.
+
+        A value given for a kind always wins over an older record's value.
+        """
         with _root_lock(self._root):
-            atomic_write_json(self._record_path(record.record_id), record.to_dict())
-            for kind, value in record.identifiers.items():
-                atomic_write_json(
-                    self._pointers / self._pointer_name(kind, value),
-                    {"kind": kind, "value": value, "record_id": record.record_id},
-                )
-            self._enforce_bound()
+            merged = dict(identifiers)
+            for kind, value in list(identifiers.items()):
+                record = self._record_for(kind, value)
+                if record is not None:
+                    for other_kind, other_value in record.identifiers.items():
+                        merged.setdefault(other_kind, other_value)
+            return merged
+
+    def save(self, record: SuppliedFulltextRecord) -> SuppliedFulltextRecord:
+        """Persist one record as the newest text for every identifier of its article.
+
+        The record's identifiers are merged with those of earlier
+        registrations for the same article, and every one of them is pointed
+        at the new record, so a correction made under one identifier is
+        served under all of them. If any write fails, already-moved pointers
+        are restored and the new record is removed.
+
+        Returns:
+            The stored record (with the merged identifiers).
+
+        Raises:
+            OSError: The store could not be written; its previous state is kept.
+        """
+        with _root_lock(self._root):
+            record = replace(record, identifiers=self.related_identifiers(record.identifiers))
+            record_path = self._record_path(record.record_id)
+            previous: dict[Path, str | None] = {}
+            try:
+                _retrying(atomic_write_json, record_path, record.to_dict())
+                for kind, value in record.identifiers.items():
+                    pointer = self._pointers / self._pointer_name(kind, value)
+                    previous[pointer] = self._read_text(pointer)
+                    _retrying(atomic_write_json, pointer, {"kind": kind, "value": value, "record_id": record.record_id})
+            except OSError:
+                self._rollback(previous, record_path)
+                raise
+            self._enforce_bound(keep=record.record_id)
+            return record
+
+    def _rollback(self, previous: dict[Path, str | None], record_path: Path) -> None:
+        for pointer, text in previous.items():
+            try:
+                if text is None:
+                    _retrying(_unlink, pointer)
+                else:
+                    _retrying(atomic_write_text, pointer, text)
+            except OSError:
+                logger.warning("Could not restore a supplied-fulltext pointer after a failed save")
+        try:
+            _retrying(_unlink, record_path)
+        except OSError:
+            logger.warning("Could not remove a partially saved supplied-fulltext record")
+
+    @staticmethod
+    def _read_text(path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+
+    def _record_for(self, kind: str, value: str) -> SuppliedFulltextRecord | None:
+        pointer = self._pointers / self._pointer_name(kind, value)
+        try:
+            payload = json.loads(pointer.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError):
+            logger.warning("Ignoring an unreadable supplied-fulltext pointer")
+            return None
+        record_id = payload.get("record_id") if isinstance(payload, dict) else None
+        if not isinstance(record_id, str) or payload.get("kind") != kind or payload.get("value") != value:
+            return None
+        record = self.load(record_id)
+        if record is None or record.identifiers.get(kind) != value:
+            return None
+        return record
 
     def find(self, identifiers: list[tuple[str, str]]) -> SuppliedFulltextRecord | None:
-        """Return the newest record registered for any of the given identifiers."""
-        found: list[SuppliedFulltextRecord] = []
-        seen: set[str] = set()
-        for kind, value in identifiers:
-            pointer = self._pointers / self._pointer_name(kind, value)
-            try:
-                payload = json.loads(pointer.read_text(encoding="utf-8"))
-            except FileNotFoundError:
-                continue
-            except (OSError, ValueError):
-                logger.warning("Ignoring an unreadable supplied-fulltext pointer")
-                continue
-            record_id = payload.get("record_id") if isinstance(payload, dict) else None
-            if (
-                not isinstance(record_id, str)
-                or record_id in seen
-                or payload.get("kind") != kind
-                or payload.get("value") != value
-            ):
-                continue
-            seen.add(record_id)
-            record = self.load(record_id)
-            if record is not None and record.identifiers.get(kind) == value:
-                found.append(record)
-        if not found:
-            return None
-        return max(found, key=lambda record: record.record_id)
+        """Return the newest record for the article behind any of the given identifiers.
+
+        Records found directly are expanded once through their own
+        identifiers, so a newer registration made under another identifier of
+        the same article is preferred.
+        """
+        with _root_lock(self._root):
+            found: dict[str, SuppliedFulltextRecord] = {}
+            for kind, value in identifiers:
+                record = self._record_for(kind, value)
+                if record is not None:
+                    found[record.record_id] = record
+            for record in list(found.values()):
+                for kind, value in record.identifiers.items():
+                    related = self._record_for(kind, value)
+                    if related is not None:
+                        found.setdefault(related.record_id, related)
+            if not found:
+                return None
+            return found[max(found)]
 
     def load(self, record_id: str) -> SuppliedFulltextRecord | None:
         try:
@@ -432,19 +575,52 @@ class SuppliedFulltextStore:
             logger.warning("Ignoring an unreadable supplied-fulltext record")
             return None
 
-    def _enforce_bound(self) -> None:
+    def _enforce_bound(self, *, keep: str) -> None:
+        """Evict the oldest records beyond the count and byte quotas, then drop their pointers."""
         try:
             records = sorted(self._records.glob("sft-*.json"), key=lambda path: path.name)
+            sizes = {path: path.stat().st_size for path in records}
         except OSError:
             return
-        for stale in records[: max(0, len(records) - self._max_records)]:
+        total = sum(sizes.values())
+        evicted = False
+        for stale in records:
+            if len(records) <= self._max_records and total <= self._max_bytes:
+                break
+            if stale.stem == keep:
+                continue
             try:
-                stale.unlink()
+                _retrying(_unlink, stale)
             except OSError:
                 logger.warning("Could not remove an old supplied-fulltext record")
+                continue
+            records = [path for path in records if path != stale]
+            total -= sizes[stale]
+            evicted = True
+        if evicted:
+            self._drop_dangling_pointers()
+
+    def _drop_dangling_pointers(self) -> None:
+        try:
+            pointers = list(self._pointers.glob("*.json"))
+        except OSError:
+            return
+        for pointer in pointers:
+            try:
+                payload = json.loads(pointer.read_text(encoding="utf-8"))
+                record_id = payload.get("record_id") if isinstance(payload, dict) else None
+                dangling = not isinstance(record_id, str) or not self._record_path(record_id).exists()
+            except (OSError, ValueError):
+                dangling = True
+            if dangling:
+                try:
+                    _retrying(_unlink, pointer)
+                except OSError:
+                    logger.warning("Could not remove a stale supplied-fulltext pointer")
 
 
 __all__ = [
+    "DEFAULT_MAX_SUPPLIED_BYTES",
     "DEFAULT_MAX_SUPPLIED_RECORDS",
     "MAX_SUPPLIED_TEXT_CHARS",
     "RETRIEVAL_METHODS",

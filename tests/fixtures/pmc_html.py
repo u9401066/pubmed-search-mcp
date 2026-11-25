@@ -191,6 +191,7 @@ def pmc_article_page(
 
 
 PMC_ARTICLE_PAGE = pmc_article_page()
+ABSTRACT_ONLY_BODY = _NO_BODY
 PMC_ARTICLE_PAGE_WITHOUT_BODY = pmc_article_page(body=_NO_BODY)
 # Shape of the CAPTCHA interstitial NCBI's web front end serves (HTTP 200) to
 # automated traffic it distrusts; trimmed and with synthetic tokens.

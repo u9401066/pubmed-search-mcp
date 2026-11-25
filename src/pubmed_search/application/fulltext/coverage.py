@@ -42,8 +42,10 @@ FulltextSourceErrorCode = Literal[
     "invalid_response",
     "cache_error",
 ]
-FulltextSourceNoticeCode = Literal["no_body", "front_matter_only", "superseded", "supplied_not_verified"]
-FulltextSkipReason = Literal["deadline"]
+FulltextSourceNoticeCode = Literal[
+    "no_body", "front_matter_only", "superseded", "supplied_not_verified", "supplied_no_body", "pdf_only"
+]
+FulltextSkipReason = Literal["deadline", "not_configured"]
 
 _GENERIC_UNAVAILABLE = "The upstream source was unavailable during this request."
 
@@ -119,7 +121,25 @@ NOTICE_MESSAGES: dict[FulltextSourceNoticeCode, str] = {
         "Served text registered by the host agent or user with register_fulltext; providers were not "
         "re-queried and the text was not verified against a provider copy."
     ),
+    "supplied_no_body": (
+        "A registration exists for this article but has no body text (for example only an abstract), so it "
+        "was not served; providers were queried as usual. See supplied_fulltext for its origin."
+    ),
+    "pdf_only": "The PMC article page shows no body text, only a PDF (for example a scanned article).",
 }
+
+SKIP_MESSAGES: dict[FulltextSkipReason, str] = {
+    "deadline": "Not attempted: the get_fulltext deadline elapsed before this source started.",
+    "not_configured": (
+        "Not attempted: reading PMC article pages needs the operator's NCBI contact address (NCBI_EMAIL); "
+        "the server never sends a placeholder address."
+    ),
+}
+
+
+def make_skipped(source: str, reason: FulltextSkipReason) -> FulltextSkippedSource:
+    """Build a skipped-source row with its canonical, fixed message."""
+    return FulltextSkippedSource(source=source, reason=reason, message=SKIP_MESSAGES[reason])
 
 
 def make_notice(source: str, code: FulltextSourceNoticeCode) -> FulltextSourceNotice:
@@ -279,5 +299,6 @@ __all__ = [
     "classify_source_failure",
     "deadline_exceeded",
     "make_notice",
+    "make_skipped",
     "require_source_key",
 ]

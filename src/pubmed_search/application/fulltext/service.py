@@ -33,6 +33,7 @@ from pubmed_search.shared.exceptions import ParseError
 
 from .coverage import (
     FulltextSkippedSource,
+    FulltextSkipReason,
     FulltextSourceError,
     FulltextSourceNotice,
     FulltextSourceNoticeCode,
@@ -40,6 +41,7 @@ from .coverage import (
     classify_source_failure,
     deadline_exceeded,
     make_notice,
+    make_skipped,
     require_source_key,
 )
 from .plan import FulltextAccessContext, build_fulltext_plan
@@ -168,7 +170,7 @@ class FulltextServiceResult:
     figures: list[dict[str, Any]] = field(default_factory=list)
     fulltext_source_name: str | None = None
     fulltext_canonical_host: str | None = None
-    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
+    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed", "supplied"] | None = None
     fulltext_license: dict[str, str] | None = None
     fulltext_retrieval: dict[str, Any] | None = None
     """How the returned body was obtained (source, URL, retrieved_at, license text)."""
@@ -176,6 +178,8 @@ class FulltextServiceResult:
     fulltext_plan: list[dict[str, Any]] = field(default_factory=list)
     """Ordered next steps for the host agent when no usable body was obtained."""
     fulltext_plan_reason: Literal["no_body", "unstructured_text"] | None = None
+    supplied_fulltext: dict[str, Any] | None = None
+    """A registration found for the article but not served (it has no body text)."""
     extended_sources_attempted: bool = False
     fallback_notice: FulltextDownloadNotice | None = None
     deadline_seconds: float | None = None
@@ -259,14 +263,14 @@ class FulltextServiceResult:
         if all(notice.source != source or notice.code != code for notice in self.source_notices):
             self.source_notices.append(make_notice(source, code))
 
-    def record_source_skipped(self, source: str) -> None:
-        """Record a policy source that was never started because time ran out."""
+    def record_source_skipped(self, source: str, reason: FulltextSkipReason = "deadline") -> None:
+        """Record a policy source that was never started (deadline, or not configured)."""
         source = require_source_key(source)
         if source in self.sources_tried:
             msg = "An attempted fulltext source cannot be skipped"
             raise ValueError(msg)
         if all(skipped.source != source for skipped in self.sources_skipped):
-            self.sources_skipped.append(FulltextSkippedSource(source=source))
+            self.sources_skipped.append(make_skipped(source, reason))
 
 
 def _request_identifiers(request: FulltextRequest) -> list[tuple[str, str]]:
@@ -289,6 +293,8 @@ class _StructuredDocument:
     restricted: bool = False
     page: dict[str, str] | None = None
     """PMC article-page facts: url, retrieved_at, pdf_url, courtesy_note."""
+    pdf_only: bool = False
+    """A PMC page that shows no body text, only a PDF (for example a scanned record)."""
 
     @property
     def has_body(self) -> bool:
@@ -313,6 +319,7 @@ class FulltextService:
         structured_xml_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
         ncbi_pmc_client_factory: Callable[[], Any] | None = None,
         article_page_fetcher: Callable[[str], Awaitable[str | None]] | None = None,
+        article_page_unavailable: Literal["disabled", "not_configured"] | None = None,
         supplied_fulltext_lookup: SuppliedFulltextLookup | None = None,
         access_context: FulltextAccessContext | None = None,
         deadline_seconds: float | None = DEFAULT_FULLTEXT_DEADLINE_SECONDS,
@@ -336,6 +343,7 @@ class FulltextService:
         self._structured_xml_fetcher = structured_xml_fetcher
         self._ncbi_pmc_client_factory = ncbi_pmc_client_factory
         self._article_page_fetcher = article_page_fetcher
+        self._article_page_unavailable = None if article_page_fetcher is not None else article_page_unavailable
         self._supplied_lookup = supplied_fulltext_lookup
         self._access_context = access_context or FulltextAccessContext(
             article_page_enabled=article_page_fetcher is not None
@@ -361,25 +369,36 @@ class FulltextService:
 
         Text registered earlier with ``register_fulltext`` for the same
         article is served first (labelled as supplied and unverified) unless
-        the request opts out. When no usable body is obtained, the result
-        carries an ordered ``fulltext_plan`` for the host agent.
+        the request opts out. A registration without body text never stops
+        the providers from being queried; it is reported as
+        ``supplied_fulltext`` with a ``supplied_no_body`` notice. When no
+        usable body is obtained, the result carries an ordered
+        ``fulltext_plan`` for the host agent.
         """
         request = request.normalized()
         deadline = FulltextDeadline(self._deadline_seconds, clock=self._clock)
         supplied = await self._lookup_supplied(request, _request_identifiers(request))
-        if supplied is not None:
+        if supplied is not None and supplied.has_body:
             result = self._new_result(request, "registered_fulltext", deadline)
             self._apply_supplied(supplied, request, result)
+            result.fulltext_plan, result.fulltext_plan_reason = build_fulltext_plan(
+                result, request, self._access_context
+            )
             return result
+        noted = supplied
         known = set(_request_identifiers(request))
         request, metadata_outcomes = await self._resolve_identifiers(request, log, deadline)
         resolved = [pair for pair in _request_identifiers(request) if pair not in known]
         supplied = await self._lookup_supplied(request, resolved) if resolved else None
-        if supplied is not None:
+        if supplied is not None and supplied.has_body:
             result = self._new_result(request, "registered_fulltext", deadline)
             await self._record_hedged_outcomes(result, metadata_outcomes, log, deadline)
             self._apply_supplied(supplied, request, result)
+            result.fulltext_plan, result.fulltext_plan_reason = build_fulltext_plan(
+                result, request, self._access_context
+            )
             return result
+        noted = noted or supplied
         policy = self._registry.resolve_policy(
             pmcid=request.pmcid,
             pmid=request.pmid,
@@ -395,6 +414,11 @@ class FulltextService:
             deadline_seconds=deadline.seconds,
         )
         await self._record_hedged_outcomes(result, metadata_outcomes, log, deadline)
+        if noted is not None:
+            result.record_source_attempted("registered_fulltext")
+            result.record_source_completed("registered_fulltext")
+            result.record_source_notice("registered_fulltext", "supplied_no_body")
+            result.supplied_fulltext = noted.note_summary()
 
         structured_done = False
         for source in policy.sources:
@@ -506,9 +530,11 @@ class FulltextService:
         who = "User" if record.origin == "user_supplied" else "Agent"
         result.fulltext_source_name = f"{who}-supplied fulltext (unverified)"
         result.fulltext_canonical_host = _supplied_host(record)
-        result.fulltext_provenance = "derived" if record.content_format == "pdf" else "indirect"
+        # Never "indirect": that is the Europe PMC mirror; supplied text is its own class.
+        result.fulltext_provenance = "supplied"
         result.fulltext_origin = record.origin
-        result.fulltext_license = {"text": record.provenance.license} if record.provenance.license else None
+        # A license the supplier saw belongs to the copy's provenance, not the article.
+        result.fulltext_license = None
         result.fulltext_retrieval = record.retrieval_summary()
 
     async def _run_bounded(
@@ -651,9 +677,12 @@ class FulltextService:
         """Race the PMC-family structured sources and apply the first usable body.
 
         The PMC article page is a last structured resort: it is added only for
-        an explicit single-article read, and it starts only after an XML source
-        failed, had no body or was front matter only (never merely because the
-        XML sources are slow), so it adds no load while they are working.
+        an explicit single-article read, and it starts only after an XML
+        attempt has failed, had no body or was front matter only -- never
+        merely because the XML sources are slow. Another XML attempt may still
+        be running then (for example a slow Europe PMC after NCBI answered
+        front matter only); the first usable body wins and the slower attempt
+        is reported as superseded.
         """
         pmcid = str(request.pmcid)
         attempts: list[HedgedAttempt[_StructuredDocument]] = []
@@ -664,7 +693,11 @@ class FulltextService:
                 attempts.append(HedgedAttempt(source, partial(self._fetch_ncbi_pmc_document, pmcid)))
             elif source == "pmc_html" and request.explicit_article_read and self._article_page_fetcher is not None:
                 attempts.append(
-                    HedgedAttempt(source, partial(self._fetch_pmc_page_document, pmcid), start_on_hedge=False)
+                    HedgedAttempt(
+                        source,
+                        partial(self._fetch_pmc_page_document, pmcid, request.pmid),
+                        start_on_hedge=False,
+                    )
                 )
         if not attempts:
             return
@@ -700,6 +733,9 @@ class FulltextService:
                 continue
             if document.restricted:
                 result.record_source_notice(outcome.source, "front_matter_only")
+            elif document.pdf_only and not document.has_body:
+                result.record_source_notice(outcome.source, "pdf_only")
+                self._add_page_pdf_link(document, result)
             elif not document.has_body:
                 result.record_source_notice(outcome.source, "no_body")
             # Prefer the first body; then a publisher restriction (it decides
@@ -710,6 +746,14 @@ class FulltextService:
                 chosen, chosen_rank = (outcome.source, document), rank
         if chosen is not None:
             self._apply_structured_document(chosen[0], chosen[1], request, result)
+        if (
+            self._article_page_unavailable == "not_configured"
+            and request.explicit_article_read
+            and "pmc_html" in policy_sources
+            and not result.has_retrieved_text
+        ):
+            # The page would have been read now, but no operator contact is set.
+            result.record_source_skipped("pmc_html", "not_configured")
 
     async def _fetch_europe_pmc_document(self, pmcid: str) -> _StructuredDocument:
         client = self._europe_pmc_client_factory()
@@ -739,7 +783,7 @@ class FulltextService:
             raise ParseError("Structured fulltext parser returned no mapping", source="NCBI PMC")
         return _StructuredDocument(parsed, restricted=bool(parsed.get("access_restricted")))
 
-    async def _fetch_pmc_page_document(self, pmcid: str) -> _StructuredDocument:
+    async def _fetch_pmc_page_document(self, pmcid: str, pmid: str | None = None) -> _StructuredDocument:
         if self._article_page_fetcher is None:
             return _StructuredDocument(None)
         payload = await self._article_page_fetcher(pmcid)
@@ -753,12 +797,24 @@ class FulltextService:
             raise ParseError("PMC article page document was not JSON", source="PMC article page") from None
         if not isinstance(parsed, dict) or not isinstance(parsed.get("sections"), list):
             raise ParseError("PMC article page document had no section list", source="PMC article page")
+        declared_pmid = parsed.get("pmid")
+        if pmid and isinstance(declared_pmid, str) and declared_pmid.strip() and declared_pmid.strip() != pmid:
+            # The page says it is another PubMed record than the one requested.
+            raise ParseError("PMC article page declared a different article", source="PMC article page")
         page = {
             key: value
             for key in ("url", "retrieved_at", "pdf_url", "courtesy_note")
             if isinstance(value := parsed.get(key), str) and value
         }
-        return _StructuredDocument(parsed, page=page)
+        return _StructuredDocument(parsed, page=page, pdf_only=bool(parsed.get("pdf_only")))
+
+    @staticmethod
+    def _add_page_pdf_link(document: _StructuredDocument, result: FulltextServiceResult) -> None:
+        pdf_url = (document.page or {}).get("pdf_url")
+        if pdf_url and all(link.get("url") != pdf_url for link in result.pdf_links):
+            result.pdf_links.append(
+                {"source": "PubMed Central", "url": pdf_url, "type": "pdf", "access": "free_to_read"}
+            )
 
     def _apply_structured_document(
         self,

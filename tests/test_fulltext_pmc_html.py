@@ -26,6 +26,7 @@ from pubmed_search.infrastructure.sources.fulltext_download import FulltextResul
 from pubmed_search.infrastructure.sources.jats import parse_jats_article
 from pubmed_search.infrastructure.sources.ncbi_pmc import NCBIPMCClient
 from pubmed_search.infrastructure.sources.pmc_html import (
+    PageVolumeBudget,
     PMCArticlePageClient,
     parse_article_html,
     parse_pmc_article_html,
@@ -87,6 +88,7 @@ def _page_client(
         client=http,
         resolver=_public_resolver,
         clock=lambda: "2026-11-25T08:00:00Z",
+        budget=PageVolumeBudget(process_per_hour=1_000, tenant_per_hour=1_000),
         **kwargs,
     )
     return client, http
@@ -539,10 +541,10 @@ async def test_page_without_body_is_a_notice_not_fulltext() -> None:
 
     assert ("pmc_html", "no_body") in [(notice.source, notice.code) for notice in result.source_notices]
     assert not result.has_retrieved_text
-    # The page itself has no body, so the plan does not send the agent back to it.
-    assert all(
-        step.get("url") != f"https://pmc.ncbi.nlm.nih.gov/articles/{FIXTURE_PMCID}/" for step in result.fulltext_plan
-    )
+    # No PDF-only evidence on the page, so the host is still asked to look at it.
+    host_fetch = next(step for step in result.fulltext_plan if step["step"] == "host_fetch")
+    assert host_fetch["url"] == f"https://pmc.ncbi.nlm.nih.gov/articles/{FIXTURE_PMCID}/"
+    assert "found no body text" in host_fetch["why"]
 
 
 # ----------------------------------------------------------------------------
@@ -562,6 +564,7 @@ def _capture_tools() -> dict[str, Any]:
 def hermetic_tool_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("INSTITUTIONAL_DIRECT_FETCH", "false")
     monkeypatch.setenv("PUBMED_FULLTEXT_NCBI_PMC_FALLBACK", "false")
+    monkeypatch.setenv("NCBI_EMAIL", "ops@university.example.edu")
     europe = MagicMock()
     europe.get_fulltext_xml = AsyncMock(return_value=None)
     with (

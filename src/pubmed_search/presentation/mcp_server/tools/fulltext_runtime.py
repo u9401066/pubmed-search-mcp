@@ -6,6 +6,11 @@ import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.domain.value_objects.article_identifiers import (
+    try_normalize_doi,
+    try_normalize_pmcid,
+    try_normalize_pmid,
+)
 from pubmed_search.infrastructure.sources.fulltext_prefetch import fetch_prefetch_xml
 from pubmed_search.infrastructure.sources.registry import get_source_registry
 from pubmed_search.shared.settings import load_settings
@@ -115,9 +120,13 @@ def attach_registered_fulltext(articles: list[dict[str, Any]]) -> None:
         return
     for article in articles:
         identifiers = [
-            (kind, str(article[key]))
-            for kind, key in (("pmid", "pmid"), ("pmcid", "pmc_id"), ("doi", "doi"))
-            if article.get(key)
+            (kind, normalized)
+            for kind, key, normalize in (
+                ("pmid", "pmid", try_normalize_pmid),
+                ("pmcid", "pmc_id", try_normalize_pmcid),
+                ("doi", "doi", try_normalize_doi),
+            )
+            if article.get(key) and (normalized := normalize(str(article[key])))
         ]
         try:
             record = store.find(identifiers) if identifiers else None
@@ -144,8 +153,8 @@ def bind_supplied_fulltext_lookup() -> SuppliedFulltextLookup | None:
     return lookup
 
 
-def build_fulltext_access_context(settings: AppSettings) -> FulltextAccessContext:
-    """Describe the access routes configured on this server (never their secrets)."""
+def build_fulltext_access_context(settings: AppSettings, *, article_page_enabled: bool) -> FulltextAccessContext:
+    """Describe the configured access routes (never their secrets) and what this caller may do."""
     from pubmed_search.application.fulltext.plan import FulltextAccessContext
     from pubmed_search.infrastructure.sources.browser_session import get_browser_session_config
     from pubmed_search.infrastructure.sources.openurl import get_openurl_config
@@ -158,8 +167,11 @@ def build_fulltext_access_context(settings: AppSettings) -> FulltextAccessContex
         broker_configured = bool(get_browser_session_config().is_configured)
     except Exception:
         broker_configured = False
+    identity = current_tenant()
     return FulltextAccessContext(
-        article_page_enabled=settings.fulltext_pmc_html,
+        article_page_enabled=article_page_enabled,
+        registration_allowed=identity.owns_durable_storage and supplied_fulltext_store() is not None,
+        file_intake_allowed=not identity.is_authenticated,
         openurl_configured=openurl_configured,
         ezproxy_configured=bool(settings.ezproxy_enabled and settings.ezproxy_host),
         browser_broker_configured=broker_configured,
