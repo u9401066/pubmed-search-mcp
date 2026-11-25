@@ -329,7 +329,7 @@ class TestTenantSafePipelineDeletion:
         events: list[str] = []
         store = MagicMock()
         store.global_data_dir = tmp_path
-        store.delete.side_effect = lambda _name: events.append("delete") or (PipelineScope.GLOBAL, 2)
+        store.delete.side_effect = lambda _name, **_kwargs: events.append("delete") or (PipelineScope.GLOBAL, 2)
         scheduler = MagicMock()
         scheduler.get_schedule.return_value = ScheduleEntry(pipeline_name="shared", cron="0 9 * * 1")
         scheduler.unschedule.side_effect = lambda _name: events.append("unschedule")
@@ -355,7 +355,7 @@ class TestTenantSafePipelineDeletion:
                 name="shared"
             )
 
-        tenant_store.delete.assert_called_once_with("shared")
+        tenant_store.delete.assert_called_once_with("shared", delete_screening_log=True)
         scheduler.get_schedule.assert_not_called()
         scheduler.unschedule.assert_not_called()
         assert "permanently removed" in output
