@@ -16,6 +16,7 @@ from .analytics import (
     analyze_milestones,
     compare_chronicles,
     entry_max_citations,
+    landmark_citation_policy,
     landmark_importance_score,
     landmark_rank_key,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "build_chronicle_graph",
     "compare_chronicles",
     "entry_max_citations",
+    "landmark_citation_policy",
     "chronology_key",
     "derive_chronicle_id",
     "diff_chronicles",

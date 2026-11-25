@@ -309,7 +309,7 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
-每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+每個 chronicle entry 都帶有研究設計標籤、一行附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。標籤優先來自 PubMed PublicationType，其次是 MeSH 研究設計 descriptor；只有 PubMed 尚未標引設計時才以標題或摘要文字推斷，並標示 `[heuristic]`。已標引的研究設計優先於文字樣式 milestone，因此摘要提到 adverse events 的 RCT 不會被標成 safety alert。有摘要時，claim 會逐字引用該論文的結論句，並附章節與指向保存摘要的字元位置（`provenance.extractive_highlight`）；這是摘錄，不是詮釋。PMID 模式也會套用經驗證的 iCite metrics 計算 landmark score，但不重新排序指定集合；只是重述主題的 descriptor 不會形成分支（見 `lineage_diagnostics.excluded_topic_signals`）。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、heuristic 研究設計標籤、引文完整性、引用指標覆蓋率、graph 完整性、時序缺口與各來源回傳量。
 
 Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。上游失敗或零篇回傳時會回報錯誤。PubMed 無法存取期間，可讀取既有 revision 繼續查證，並記下採用的版次。
 

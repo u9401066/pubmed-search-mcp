@@ -54,6 +54,10 @@ class _CitationMetricsResponseError(TypeError):
     """Raised when iCite violates its PMID-to-metrics mapping contract."""
 
 
+#: v3: explicit-PMID builds apply iCite metrics and landmark scores, and
+#: indexed publication types outrank text-pattern milestone heuristics.
+_ALGORITHM_VERSION = "chronicle-timeline/v3"
+
 _CitationMetricsStatus = Literal["not_requested", "complete", "partial", "empty", "error"]
 _EffectiveRanking = Literal["pubmed_relevance", "icite_citation_count_then_pubmed_relevance"]
 
@@ -375,7 +379,10 @@ class TimelineBuilder:
         """
         Build timeline from a list of PMIDs.
 
-        Useful when user has pre-selected articles.
+        Useful when user has pre-selected articles. Every requested record is
+        kept; validated iCite metrics (one batched, cached request) feed the
+        landmark scores and citation-threshold milestones, and their coverage
+        is recorded with the ``citation-metrics-coverage/v1`` envelope.
 
         Args:
             pmids: List of PubMed IDs
@@ -406,14 +413,17 @@ class TimelineBuilder:
                 metadata={
                     "search_status": "no_results",
                     "source_counts": {"pubmed": {"returned": 0, "available": len(pmids)}},
-                    "retrieval": {
-                        "source": "pubmed",
-                        "mode": "explicit_pmids",
-                        "requested": len(pmids),
-                        "algorithm_version": "chronicle-timeline/v2",
-                    },
+                    "retrieval": self._explicit_retrieval_metadata(requested=len(pmids)),
                 },
             )
+
+        # The explicit set is never re-ranked or truncated, but validated
+        # citation metrics inform landmark scores and citation-threshold
+        # milestones as in topic mode, with the same coverage envelope. When
+        # iCite yields nothing usable, no composite is invented: ranking falls
+        # back to observed citation counts and the envelope discloses why.
+        citation_metrics = await self._apply_citation_metrics(articles)
+        landmark_map = self._compute_landmark_scores(articles) if citation_metrics.applied else {}
 
         # Explicitly requested PMIDs are part of the source of truth even when
         # they do not match a milestone heuristic. Preserve those records as
@@ -423,7 +433,10 @@ class TimelineBuilder:
         for index, article in enumerate(sorted_articles):
             is_first = index == 0 and parse_publication_year(article.get("year") or article.get("pub_year")) is not None
             event = self.detector.detect_milestone(article, is_first=is_first)
-            events.append(event or self._create_generic_event(article, earliest_observed_in_scope=is_first))
+            event = event or self._create_generic_event(article, earliest_observed_in_scope=is_first)
+            if event.pmid in landmark_map:
+                event = replace(event, landmark_score=landmark_map[event.pmid])
+            events.append(event)
         diagnostics = build_timeline_diagnostics(
             events,
             source="pmid_list",
@@ -431,7 +444,7 @@ class TimelineBuilder:
             filtered_count=len(articles),
             candidate_count=len(articles),
             include_all=True,
-            highlight_landmarks=False,
+            highlight_landmarks=bool(landmark_map),
         )
 
         timeline = ResearchTimeline(
@@ -442,15 +455,17 @@ class TimelineBuilder:
                 "pmid_count": len(pmids),
                 "retrieved_count": len(articles),
                 "total_searched": len(articles),
+                "landmarks_detected": sum(
+                    1 for event in events if event.landmark_score and event.landmark_score.tier == "landmark"
+                ),
+                "highlight_landmarks": bool(landmark_map),
                 "source_counts": {
                     "pubmed": {"returned": len(articles), "available": len(pmids)},
                 },
-                "retrieval": {
-                    "source": "pubmed",
-                    "mode": "explicit_pmids",
-                    "requested": len(pmids),
-                    "algorithm_version": "chronicle-timeline/v2",
-                },
+                "retrieval": self._explicit_retrieval_metadata(
+                    requested=len(pmids),
+                    citation_metrics=citation_metrics,
+                ),
                 "diagnostics": diagnostics,
             },
         )
@@ -545,66 +560,15 @@ class TimelineBuilder:
 
         batch = self._validate_search_page(page)
         results = batch.articles
-        citation_metrics = _CitationMetricsCoverage()
         effective_ranking: _EffectiveRanking = "pubmed_relevance"
 
         # Fetch iCite metrics for all articles
-        if results:
-            pmids = list(dict.fromkeys(str(r.get("pmid", "")) for r in results if r.get("pmid")))
-            if pmids:
-                try:
-                    raw_citation_data = await self.searcher.get_citation_metrics(pmids)
-                    citation_data, citation_metrics = self._validate_citation_metrics(raw_citation_data, pmids)
-
-                    for article in results:
-                        pmid = str(article.get("pmid", ""))
-                        metrics = citation_data.get(pmid)
-                        if metrics is None:
-                            continue
-                        # Keep full iCite data for landmark scoring only after
-                        # the complete response contract has been validated.
-                        article["icite"] = metrics
-                        citation_count = self._valid_citation_count(metrics.get("citation_count"))
-                        if citation_count is not None:
-                            article["citation_count"] = citation_count
-
-                    # Python's sort is stable, so PubMed relevance remains the
-                    # tiebreaker. Missing iCite counts rank below a genuine zero.
-                    if sort_by_citations and citation_metrics.citation_counts_applied:
-                        results.sort(
-                            key=self._citation_sort_key,
-                            reverse=True,
-                        )
-                        effective_ranking = "icite_citation_count_then_pubmed_relevance"
-                except _CitationMetricsResponseError as exc:
-                    citation_metrics = self._citation_metrics_failure(
-                        requested=len(pmids),
-                        error=SourceAdapterError(
-                            source="nih_icite",
-                            operation="citation_metrics",
-                            message="iCite returned an invalid metrics response",
-                            kind="validation",
-                            retryable=False,
-                        ),
-                        error_type=type(exc).__name__,
-                    )
-                    logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
-                except Exception as exc:
-                    normalized_error = normalize_source_adapter_error("nih_icite", "citation_metrics", exc)
-                    if normalized_error.kind == "unexpected" and bool(getattr(exc, "retryable", False)):
-                        normalized_error = SourceAdapterError(
-                            source="nih_icite",
-                            operation="citation_metrics",
-                            message="Upstream request failed",
-                            kind="retryable",
-                            retryable=True,
-                        )
-                    citation_metrics = self._citation_metrics_failure(
-                        requested=len(pmids),
-                        error=normalized_error,
-                        error_type=type(exc).__name__,
-                    )
-                    logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
+        citation_metrics = await self._apply_citation_metrics(results)
+        # Python's sort is stable, so PubMed relevance remains the tiebreaker.
+        # Missing iCite counts rank below a genuine zero.
+        if sort_by_citations and citation_metrics.citation_counts_applied:
+            results.sort(key=self._citation_sort_key, reverse=True)
+            effective_ranking = "icite_citation_count_then_pubmed_relevance"
 
         return _SearchBatch(
             articles=results,
@@ -615,6 +579,61 @@ class TimelineBuilder:
             citation_metrics=citation_metrics,
             effective_ranking=effective_ranking,
         )
+
+    async def _apply_citation_metrics(self, articles: list[dict[str, Any]]) -> _CitationMetricsCoverage:
+        """Attach validated iCite metrics in place and return typed coverage.
+
+        One batched (and provider-cached) iCite request covers every PMID. An
+        outage or malformed response leaves the articles untouched and is
+        reported as ``error`` coverage, never as zero citations.
+        """
+        pmids = list(dict.fromkeys(str(row.get("pmid", "")) for row in articles if row.get("pmid")))
+        if not pmids:
+            return _CitationMetricsCoverage()
+        try:
+            raw_citation_data = await self.searcher.get_citation_metrics(pmids)
+            citation_data, coverage = self._validate_citation_metrics(raw_citation_data, pmids)
+        except _CitationMetricsResponseError as exc:
+            logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
+            return self._citation_metrics_failure(
+                requested=len(pmids),
+                error=SourceAdapterError(
+                    source="nih_icite",
+                    operation="citation_metrics",
+                    message="iCite returned an invalid metrics response",
+                    kind="validation",
+                    retryable=False,
+                ),
+                error_type=type(exc).__name__,
+            )
+        except Exception as exc:
+            normalized_error = normalize_source_adapter_error("nih_icite", "citation_metrics", exc)
+            if normalized_error.kind == "unexpected" and bool(getattr(exc, "retryable", False)):
+                normalized_error = SourceAdapterError(
+                    source="nih_icite",
+                    operation="citation_metrics",
+                    message="Upstream request failed",
+                    kind="retryable",
+                    retryable=True,
+                )
+            logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
+            return self._citation_metrics_failure(
+                requested=len(pmids),
+                error=normalized_error,
+                error_type=type(exc).__name__,
+            )
+
+        for article in articles:
+            metrics = citation_data.get(str(article.get("pmid", "")))
+            if metrics is None:
+                continue
+            # Keep full iCite data for landmark scoring only after the complete
+            # response contract has been validated.
+            article["icite"] = metrics
+            citation_count = self._valid_citation_count(metrics.get("citation_count"))
+            if citation_count is not None:
+                article["citation_count"] = citation_count
+        return coverage
 
     @classmethod
     def _validate_citation_metrics(
@@ -755,8 +774,27 @@ class TimelineBuilder:
             "physical_query": batch.physical_query,
             "provider_mode": batch.provider_mode,
             "provider_metadata": dict(batch.provider_metadata or {}),
-            "algorithm_version": "chronicle-timeline/v2",
+            "algorithm_version": _ALGORITHM_VERSION,
         }
+
+    @staticmethod
+    def _explicit_retrieval_metadata(
+        *,
+        requested: int,
+        citation_metrics: _CitationMetricsCoverage | None = None,
+    ) -> dict[str, Any]:
+        """Describe explicit-PMID retrieval; the requested set is never re-ranked."""
+        metadata: dict[str, Any] = {
+            "source": "pubmed",
+            "mode": "explicit_pmids",
+            "requested": requested,
+            "evidence_selection": "explicit_pmid_set_without_ranking",
+            "algorithm_version": _ALGORITHM_VERSION,
+        }
+        if citation_metrics is not None:
+            metadata["citation_metrics"] = citation_metrics.to_metadata()
+            metadata["citation_metrics_use"] = "landmark_scoring_and_citation_threshold_milestones"
+        return metadata
 
     def _filter_by_year(
         self,

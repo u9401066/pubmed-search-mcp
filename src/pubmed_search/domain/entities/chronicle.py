@@ -154,7 +154,10 @@ class EvidenceArticle:
         article_type: Publication type label (e.g. ``Randomized Controlled Trial``).
         citation_count: Total citations, when available.
         rcr: NIH Relative Citation Ratio, when available.
-        claim_excerpt: Short quote or paraphrase backing the entry claim.
+        claim_excerpt: Verbatim abstract sentence backing the entry claim, when
+            one could be selected (older revisions may hold a short prefix).
+        abstract: The PubMed abstract text as retrieved. Extractive highlight
+            offsets index this exact string.
         fulltext_artifact_uri: Artifact URI of retrieved fulltext, when stored.
         figure_links: Figure metadata links for visual evidence.
         reference_verification_status: Result of reference verification, if run.
@@ -171,6 +174,7 @@ class EvidenceArticle:
     citation_count: int | None = None
     rcr: float | None = None
     claim_excerpt: str | None = None
+    abstract: str | None = None
     fulltext_artifact_uri: str | None = None
     figure_links: tuple[tuple[str, str], ...] = ()
     reference_verification_status: str | None = None
@@ -206,6 +210,7 @@ class EvidenceArticle:
             "citation_count": self.citation_count,
             "rcr": self.rcr,
             "claim_excerpt": self.claim_excerpt,
+            "abstract": self.abstract,
             "fulltext_artifact_uri": self.fulltext_artifact_uri,
             "figure_links": [{"label": label, "url": url} for label, url in self.figure_links],
             "reference_verification_status": self.reference_verification_status,
@@ -233,6 +238,7 @@ class EvidenceArticle:
             citation_count=data.get("citation_count"),
             rcr=data.get("rcr"),
             claim_excerpt=data.get("claim_excerpt"),
+            abstract=data.get("abstract") if isinstance(data.get("abstract"), str) else None,
             fulltext_artifact_uri=data.get("fulltext_artifact_uri"),
             figure_links=figure_links,
             reference_verification_status=data.get("reference_verification_status"),

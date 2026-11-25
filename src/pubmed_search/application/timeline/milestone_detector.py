@@ -28,18 +28,25 @@ from pubmed_search.domain.entities.timeline import (
     MilestoneType,
     TimelineEvent,
 )
+from pubmed_search.domain.services.study_design import indexed_design_family
 
 from .dates import parse_publication_month, parse_publication_year
 from .milestone_policy import (
+    ABSTRACT_PATTERN_POLICY_NAMES,
     DEFAULT_CITATION_THRESHOLD_POLICIES,
     DEFAULT_PUBTYPE_POLICIES,
     DEFAULT_TITLE_PATTERN_POLICIES,
     LANDMARK_CITATION_THRESHOLDS,
     PUBTYPE_PATTERNS,
+    TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN,
     TITLE_PATTERNS,
     PublicationTypeMilestonePolicy,
     RegexMilestonePolicy,
 )
+
+#: Abstract text is attached to timeline-event metadata up to this many chars.
+_MAX_ABSTRACT_METADATA_CHARS = 20_000
+_MAX_ABSTRACT_SECTIONS = 32
 
 __all__ = [
     "TITLE_PATTERNS",
@@ -108,23 +115,34 @@ class MilestoneDetector:
         if not pmid or parse_publication_year(year) is None:
             return None
 
+        # PubMed indexing is authoritative about what kind of publication this
+        # is. Text patterns may refine an indexed design (a trial phase) but
+        # cannot relabel an indexed trial or cohort as, say, a safety alert.
+        design_family = indexed_design_family(article.get("publication_types"), article.get("mesh_terms"))
+
         # Earliest-in-scope is provenance, not a scientific milestone type.
         # Detect the article's actual milestone first so an early FDA approval,
         # guideline, or trial cannot be overwritten by a generic "first" tag.
         result = self._detect_from_pubtype(article, include_unphased_rct=False)
 
-        # 2. Title pattern matching
+        # 2. Title pattern matching, limited to refinements of indexed designs
         if not result:
-            result = self._detect_from_title(article, title)
+            result = self._detect_from_title(article, title, design_family=design_family)
 
-        # 3. Abstract pattern matching (lower confidence)
-        if not result and abstract:
-            result = self._detect_from_title(article, abstract, confidence_penalty=0.2)
-
-        # 4. A generic RCT publication type is meaningful, but it is less
-        # specific than an explicit phase or regulatory title signal.
+        # 3. A generic RCT publication type is less specific than an explicit
+        # phase title, but indexed evidence outranks abstract wording.
         if not result:
             result = self._detect_from_pubtype(article, include_unphased_rct=True)
+
+        # 4. Abstract pattern matching (lower confidence) only for records
+        # without an indexed design, and only for self-describing designs.
+        if not result and abstract and design_family is None:
+            result = self._detect_from_title(
+                article,
+                abstract,
+                confidence_penalty=0.2,
+                design_family=design_family,
+            )
 
         # 5. Citation-based landmark detection
         if not result:
@@ -216,11 +234,37 @@ class MilestoneDetector:
         return None
 
     def _detect_from_title(
-        self, article: dict[str, Any], text: str, confidence_penalty: float = 0.0
+        self,
+        article: dict[str, Any],
+        text: str,
+        confidence_penalty: float = 0.0,
+        *,
+        design_family: str | None = None,
     ) -> TimelineEvent | None:
-        """Detect milestone from title or abstract text."""
+        """Detect milestone from title or abstract text.
+
+        Args:
+            article: Source article mapping.
+            text: Title or abstract text to match.
+            confidence_penalty: Positive for abstract matching.
+            design_family: Indexed PubMed design family, if any. Text patterns
+                that would contradict it are skipped.
+        """
         strategy = "abstract_pattern" if confidence_penalty else "title_pattern"
+        compatible = (
+            TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN.get(design_family, frozenset())
+            if design_family is not None
+            else None
+        )
         for pattern, policy in self._compiled_patterns:
+            if compatible is not None and policy.milestone_type not in compatible:
+                continue
+            if (
+                confidence_penalty
+                and not policy.name.startswith("custom_")
+                and policy.name not in ABSTRACT_PATTERN_POLICY_NAMES
+            ):
+                continue
             match = pattern.search(text)
             if match:
                 confidence = policy.confidence - confidence_penalty
@@ -239,6 +283,7 @@ class MilestoneDetector:
                                 "reason": policy.reason,
                                 "confidence": confidence,
                                 "confidence_penalty": confidence_penalty,
+                                "indexed_design_family": design_family,
                             }
                         },
                     )
@@ -351,6 +396,8 @@ class MilestoneDetector:
         raw_count = article.get("citation_count")
         if raw_count is None:
             raw_count = article.get("citations")
+        raw_abstract = article.get("abstract")
+        abstract = raw_abstract[:_MAX_ABSTRACT_METADATA_CHARS] if isinstance(raw_abstract, str) else ""
         return {
             "observed_citation_count": (
                 raw_count if isinstance(raw_count, int) and not isinstance(raw_count, bool) and raw_count >= 0 else None
@@ -361,6 +408,11 @@ class MilestoneDetector:
             "evidence_level_basis": "publication_type_heuristic_not_quality_assessment",
             "publication_type": publication_types[0] if publication_types else None,
             "pmcid": article.get("pmc_id") or article.get("pmcid"),
+            # The full abstract and its structured-section offsets let the
+            # Chronicle quote an exact, locatable sentence as evidence.
+            "abstract": abstract or None,
+            "abstract_truncated": isinstance(raw_abstract, str) and len(raw_abstract) > len(abstract),
+            "abstract_sections": _abstract_sections(article.get("abstract_sections"), len(abstract)),
         }
 
     def _build_title_policies(
@@ -436,6 +488,38 @@ class MilestoneDetector:
             return EvidenceLevel.LEVEL_4
 
         return EvidenceLevel.UNKNOWN
+
+
+def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]:
+    """Keep only well-formed, ordered section offsets inside the stored abstract."""
+    if not isinstance(value, list):
+        return []
+    sections: list[dict[str, Any]] = []
+    previous_end = 0
+    for row in value[:_MAX_ABSTRACT_SECTIONS]:
+        if not isinstance(row, dict):
+            return []
+        start, end = row.get("start"), row.get("end")
+        if (
+            not isinstance(start, int)
+            or not isinstance(end, int)
+            or isinstance(start, bool)
+            or isinstance(end, bool)
+            or not previous_end <= start <= end <= abstract_length
+        ):
+            return []
+        label = row.get("label")
+        category = row.get("nlm_category")
+        sections.append(
+            {
+                "label": str(label)[:120] if isinstance(label, str) and label.strip() else None,
+                "nlm_category": str(category)[:60] if isinstance(category, str) and category.strip() else None,
+                "start": start,
+                "end": end,
+            }
+        )
+        previous_end = end
+    return sections
 
 
 def get_milestone_patterns() -> list[dict[str, Any]]:
