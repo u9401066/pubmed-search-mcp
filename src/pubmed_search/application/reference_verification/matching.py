@@ -75,6 +75,7 @@ _LOOKUP_KEY_FIELDS: dict[str, frozenset[str]] = {
 }
 CorrectionBlocker = Literal["title_conflict", "few_locators", "weak_corroboration"]
 _IZE_RE = re.compile(r"(?<=[a-z])is(ation|ations|e|ed|es|ing)$")
+_TITLE_WORD_RE = re.compile(r"[^\W_]+")
 
 
 def fold_text(value: object) -> str:
@@ -93,9 +94,13 @@ def normalize_field(value: object) -> str:
 
 
 def title_tokens(title: object) -> list[str]:
-    """Tokenize a title, folding British/American spelling variants."""
+    """Tokenize a title into letter/digit runs of any script, folding British/American spelling.
+
+    Non-Latin titles keep their own words (a CJK run is one token), so two
+    different Chinese or Cyrillic titles no longer both reduce to ``[]``.
+    """
     tokens: list[str] = []
-    for word in re.findall(r"[a-z0-9]+", fold_text(title)):
+    for word in _TITLE_WORD_RE.findall(fold_text(title)):
         folded = word.replace("ae", "e").replace("oe", "e")
         tokens.append(_IZE_RE.sub(r"iz\1", folded))
     return tokens
@@ -195,8 +200,9 @@ def build_comparison(parsed: ParsedReference, article: dict[str, Any] | None) ->
         # British/American spelling are not citation errors.
         cited_title = normalize_article_title(fold_text(parsed.title))
         record_title = article.get("title", "")
+        cited_tokens = title_tokens(parsed.title)
         comparisons["title"] = cited_title == normalize_article_title(fold_text(record_title)) or (
-            bool(cited_title) and title_tokens(parsed.title) == title_tokens(record_title)
+            bool(cited_tokens) and cited_tokens == title_tokens(record_title)
         )
     return comparisons
 

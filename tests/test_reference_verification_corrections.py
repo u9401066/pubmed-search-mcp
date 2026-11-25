@@ -622,6 +622,48 @@ async def test_identifier_record_agreeing_on_one_field_is_kept_without_correctio
     assert "only first_author agrees with PMID 90000099 besides the cited PMID" in row["corrections_withheld_reason"]
 
 
+@pytest.mark.parametrize(
+    ("cited_title", "record_title", "same_work"),
+    [
+        pytest.param("右美托咪定预防术后谵妄的临床研究", "全身麻醉后苏醒期躁动的临床分析", False, id="different-cjk"),
+        pytest.param("右美托咪定预防术后谵妄的临床研究", "右美托咪定预防术后谵妄的临床研究。", True, id="same-cjk"),
+        pytest.param(
+            "Дексмедетомидин для профилактики делирия",
+            "Клинический анализ послеоперационного возбуждения",
+            False,
+            id="different-cyrillic",
+        ),
+        pytest.param(
+            "Дексмедетомидин для профилактики делирия",
+            "Дексмедетомидин для профилактики делирия.",
+            True,
+            id="same-cyrillic",
+        ),
+    ],
+)
+async def test_non_latin_titles_are_compared_by_their_own_words(
+    cited_title: str, record_title: str, same_work: bool
+) -> None:
+    record = _record(
+        "90000200",
+        title=record_title,
+        authors=["Wang Y"],
+        journal="Zhonghua ma zui xue za zhi",
+        journal_abbrev="Zhonghua Ma Zui Xue Za Zhi",
+        year="2019",
+        volume="39",
+        issue="3",
+        pages="1-5",
+    )
+    row = await ReferenceVerificationService(FakePubMed([record])).verify_reference(
+        f"Wang Y. {cited_title}. Zhonghua Ma Zui Xue Za Zhi. 2019;39(3):1-5. PMID: 90000200", index=1
+    )
+
+    assert row["parsed_reference"]["title"] == cited_title
+    assert row["comparison"]["title"] is same_work
+    assert row["status"] == ("verified" if same_work else "partial_match")
+
+
 async def test_equally_good_versions_withhold_corrections() -> None:
     twins = [
         _record(
