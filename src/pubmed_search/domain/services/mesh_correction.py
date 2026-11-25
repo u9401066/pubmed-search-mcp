@@ -8,19 +8,21 @@ Design:
     rewritten, so a valid heading is never "corrected".
 
     Data-driven candidates come from MEDLINE records whose title/abstract use
-    the agent's words. Each descriptor's *share* is the fraction of sampled
-    records indexed with it (an estimate of recall if the descriptor alone
-    replaced the words). Check tags (Humans, Male, Adult...) and study-design
-    descriptors (Retrospective Studies...) describe the study population or
-    method, not the concept, and are excluded. A descriptor that is frequent
-    everywhere (Postoperative Complications) also co-occurs often, so shares
-    are combined with PubMed's background count of the descriptor: the
-    estimated *precision* ``share * evidence_total / background_count`` is the
-    fraction of the descriptor's records that use the words. Candidates are
-    ranked by the F1 of these two estimates, which favors headings that both
-    cover the concept and are specific to it (Hausner et al.'s objective
-    approach compares term frequency in a development set with a population
-    set in the same spirit).
+    the agent's words. A bounded sample *nominates* headings: each
+    descriptor's *share* is the fraction of sampled records indexed with it.
+    Check tags (Humans, Male, Adult...) and study-design descriptors
+    (Retrospective Studies...) describe the study population or method, not
+    the concept, and are excluded. Nominated headings are then *scored
+    exactly* with two PubMed counts: the records indexed with the heading
+    (``background``) and the evidence records indexed with it (``joint``).
+    ``recall = joint / evidence_total`` is how much of the words' literature
+    the heading covers and ``precision = joint / background`` how much of the
+    heading's literature uses the words; candidates are ranked by their F1.
+    A heading frequent everywhere (Postoperative Complications) has low
+    precision; a heading introduced recently has few records overall and
+    therefore low recall, so neither wins merely by co-occurring in a
+    sample. (Hausner et al.'s objective approach likewise compares term
+    frequency in a development set with a population set.)
 
 Maintenance:
     No network access and no provider payload shapes here; NCBI adapters
@@ -199,23 +201,30 @@ class ShareTable:
 
 @dataclass(frozen=True, slots=True)
 class ScoredDescriptor:
-    """A co-occurring descriptor with its recall/precision estimates."""
+    """A co-occurring descriptor: sample share plus exact recall, precision and F1."""
 
     descriptor: str
     records: int
     share: float
     background_count: int | None = None
-    estimated_precision: float | None = None
+    joint_count: int | None = None
+    recall: float | None = None
+    precision: float | None = None
     score: float | None = None
 
     def to_dict(self) -> dict[str, object]:
+        def rounded(value: float | None) -> float | None:
+            return None if value is None else round(value, 3)
+
         return {
             "descriptor": self.descriptor,
             "records": self.records,
             "share": round(self.share, 3),
             "background_count": self.background_count,
-            "estimated_precision": None if self.estimated_precision is None else round(self.estimated_precision, 3),
-            "score": None if self.score is None else round(self.score, 3),
+            "joint_count": self.joint_count,
+            "recall": rounded(self.recall),
+            "precision": rounded(self.precision),
+            "score": rounded(self.score),
         }
 
 
@@ -362,19 +371,36 @@ def descriptor_shares(headings_by_record: Mapping[str, Sequence[str]]) -> ShareT
     return ShareTable(records_with_mesh, shares, {reason: len(names) for reason, names in excluded.items()})
 
 
-def score_descriptor(share: DescriptorShare, *, evidence_total: int, background_count: int) -> ScoredDescriptor:
-    """Attach the precision estimate and F1 score for one descriptor.
+def descriptor_clause(descriptor: str) -> str:
+    """PubMed clause for records indexed with the descriptor itself (no explosion)."""
+    if '"' in descriptor:
+        raise ValueError("Descriptor names cannot contain quotes")
+    return f'"{descriptor}"[mh:noexp]'
 
-    ``share`` estimates recall (records using the words that carry the
-    heading); ``share * evidence_total / background_count`` estimates the
-    fraction of the heading's records that use the words, capped at 1.
+
+def joint_query(evidence: str, descriptor: str) -> str:
+    """Evidence records that are also indexed with the descriptor."""
+    return f"{evidence} AND {descriptor_clause(descriptor)}"
+
+
+def score_descriptor(
+    share: DescriptorShare, *, evidence_total: int, background_count: int, joint_count: int
+) -> ScoredDescriptor:
+    """Exact recall, precision and F1 of using the heading for the words' literature.
+
+    ``recall = joint / evidence_total`` and ``precision = joint / background``
+    are PubMed counts at retrieval time, not sample estimates; ``share``
+    (which nominated the heading) is kept for disclosure.
     """
-    if background_count <= 0 or evidence_total <= 0:
-        return ScoredDescriptor(share.descriptor, share.records, share.share, background_count, None, None)
-    precision = min(1.0, share.share * evidence_total / background_count)
-    recall = share.share
+    if background_count <= 0 or evidence_total <= 0 or joint_count < 0:
+        return ScoredDescriptor(share.descriptor, share.records, share.share, background_count, joint_count)
+    joint = min(joint_count, background_count, evidence_total)
+    recall = joint / evidence_total
+    precision = joint / background_count
     score = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
-    return ScoredDescriptor(share.descriptor, share.records, share.share, background_count, precision, score)
+    return ScoredDescriptor(
+        share.descriptor, share.records, share.share, background_count, joint_count, recall, precision, score
+    )
 
 
 def rank_descriptors(scored: Iterable[ScoredDescriptor]) -> list[ScoredDescriptor]:
@@ -490,12 +516,14 @@ __all__ = [
     "TaggedMeshTerm",
     "apply_replacements",
     "cooccurrence_confidence",
+    "descriptor_clause",
     "descriptor_shares",
     "evidence_query",
     "exclusion_reason",
     "fetch_batches",
     "find_mesh_terms",
     "flag_unresolved_terms",
+    "joint_query",
     "normalize_heading",
     "not_found_clauses",
     "or_block",

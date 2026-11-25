@@ -10,12 +10,12 @@ Implements the ``MeshCorrectionGateway`` port used by the application-layer
   list of PMIDs;
 - ``fetch_mesh_headings``: MEDLINE-format EFetch (``rettype=medline``) of the
   sampled PMIDs, batched, returning each record's ``MH`` values;
-- ``descriptor_count``: PubMed's count of records indexed with a descriptor
-  (``"X"[mh:noexp]``), the background used to estimate precision.
+- ``count``: a count-only PubMed ESearch, used for descriptor background
+  (``"X"[mh:noexp]``) and joint (evidence AND descriptor) counts.
 
 Every method issues at most the requests its docstring states and caches
 public-vocabulary results (samples 6 h; per-PMID headings and descriptor
-counts 24 h). All calls share the NCBI transport kernel's rate limit, retry
+counts 24 h, joint counts 6 h). All calls share the NCBI transport kernel's rate limit, retry
 and circuit-breaker policy.
 """
 
@@ -115,7 +115,7 @@ class NCBIMeshEvidenceGateway:
         self._clock = clock
         self._samples: TTLCache[tuple[str, int, str], EvidenceSample] = TTLCache(maxsize=256, ttl=SAMPLE_CACHE_TTL)
         self._headings: TTLCache[str, tuple[str, ...]] = TTLCache(maxsize=16_384, ttl=VOCABULARY_CACHE_TTL)
-        self._descriptor_counts: TTLCache[str, int] = TTLCache(maxsize=4_096, ttl=VOCABULARY_CACHE_TTL)
+        self._counts: TTLCache[str, int] = TTLCache(maxsize=4_096, ttl=SAMPLE_CACHE_TTL)
 
     async def _call(self, operation: Callable[[], Any], *, service_name: str, timeout: float) -> Any:
         return await execute_entrez_operation(
@@ -221,23 +221,18 @@ class NCBIMeshEvidenceGateway:
         result: str = await self._call(_do_fetch, service_name="ncbi-mesh-correction:efetch", timeout=FETCH_TIMEOUT)
         return result
 
-    async def descriptor_count(self, descriptor: str) -> int:
-        """Records indexed with ``descriptor`` itself (``[mh:noexp]``). One ESearch; cached 24 hours."""
-        key = descriptor.casefold()
-        cached = self._descriptor_counts.get(key)
+    async def count(self, query: str) -> int:
+        """PubMed count of ``query``. One ESearch; cached for 6 hours."""
+        cached = self._counts.get(query)
         if cached is not None:
             return cached
-        if '"' in descriptor:
-            raise ValueError("Descriptor names cannot contain quotes")
         try:
-            record = await self._esearch(
-                f'"{descriptor}"[mh:noexp]', retmax=0, sort=None, service_name="ncbi-mesh-correction:background"
-            )
-            count = _count(record)
+            record = await self._esearch(query, retmax=0, sort=None, service_name="ncbi-mesh-correction:count")
+            value = _count(record)
         except Exception as exc:
-            raise_ncbi_infrastructure_error("mesh_correction_background", exc)
-        self._descriptor_counts[key] = count
-        return count
+            raise_ncbi_infrastructure_error("mesh_correction_count", exc)
+        self._counts[query] = value
+        return value
 
 
 __all__ = ["MeshVocabulary", "NCBIMeshEvidenceGateway", "parse_medline_headings"]

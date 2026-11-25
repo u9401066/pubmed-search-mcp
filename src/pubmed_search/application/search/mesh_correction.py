@@ -19,10 +19,11 @@ Correction tiers, tried in order for each unresolved heading:
 ``co_occurrence``
     No record has the words (MeSH has no "post-anesthesia care unit"). The
     words are searched as ``[tiab]`` in MEDLINE-indexed records, a bounded
-    sample's MeSH headings are counted, check tags and study-design headings
-    are excluded, and candidates are ranked by the F1 of their recall (share
-    of sampled records) and precision (share x evidence total / descriptor
-    background count). The clause becomes ``(<text words> OR "<best
+    sample's MeSH headings nominate candidates (check tags and study-design
+    headings excluded), and each nominee is scored exactly from two PubMed
+    counts: recall = evidence records indexed with it / evidence total, and
+    precision = evidence records indexed with it / all records indexed with
+    it. Candidates are ranked by F1. The clause becomes ``(<text words> OR "<best
     heading>"[<original tag>])``: the agent's own words keep the concept and
     the related heading adds the records indexed under it. A related heading
     is never substituted for the concept on its own. Confidence ``medium`` or
@@ -51,11 +52,13 @@ from pubmed_search.domain.services.mesh_correction import (
     TaggedMeshTerm,
     apply_replacements,
     cooccurrence_confidence,
+    descriptor_clause,
     descriptor_shares,
     evidence_query,
     fetch_batches,
     find_mesh_terms,
     flag_unresolved_terms,
+    joint_query,
     or_block,
     phrase_priority,
     rank_descriptors,
@@ -89,14 +92,17 @@ BUDGET_ACCOUNTING = (
     "transport retries of one operation are not counted."
 )
 SAMPLE_NOTE = (
-    "The sample is the first records of the evidence query in the stated sort order, not a random sample; "
-    "background counts are records indexed with the heading itself ([mh:noexp]) at retrieval time."
+    "The sample is the first records of the evidence query in the stated sort order, not a random sample; it "
+    "only nominates headings. background_count and joint_count are PubMed counts of records indexed with the "
+    "heading itself ([mh:noexp]) at retrieval time."
 )
 PROBE_COUNT_METHOD = "PubMed ESearch count (retmax=0)"
 SCORING_NOTE = (
-    "share = sampled records carrying the heading / sampled records with MeSH (recall estimate); "
-    "estimated_precision = share x evidence_total / background_count, capped at 1; score = F1 of the two. "
-    "Check tags (Humans, Male, Adult, ...) and study-design headings (Retrospective Studies, ...) are excluded."
+    "share = sampled records carrying the heading / sampled records with MeSH (nominates candidates); "
+    "joint_count = evidence records indexed with the heading ([mh:noexp]); recall = joint_count / evidence_total; "
+    "precision = joint_count / background_count; score = F1 of recall and precision (exact counts, not sample "
+    "estimates). Check tags (Humans, Male, Adult, ...) and study-design headings (Retrospective Studies, ...) "
+    "are excluded."
 )
 
 
@@ -111,7 +117,7 @@ class MeshCorrectionGateway(Protocol):
 
     async def fetch_mesh_headings(self, pmids: Sequence[str], *, batch_size: int) -> Mapping[str, tuple[str, ...]]: ...
 
-    async def descriptor_count(self, descriptor: str) -> int: ...
+    async def count(self, query: str) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -120,15 +126,16 @@ class MeshCorrectionPolicy:
 
     The defaults allow one unresolved heading to complete every tier:
     probe 1 + exact lookup 2 + evidence search 1 + one MEDLINE batch +
-    8 background counts + after-count 1 = 14 of 20 requests.
+    6 nominees x 2 counts (background, joint) + after-count 1 = 18 of 24
+    requests.
     """
 
-    max_ncbi_requests: int = 20
+    max_ncbi_requests: int = 24
     max_terms: int = 3
     sample_size: int = 150
     sample_sort: SampleSort = "relevance"
     fetch_batch_size: int = 200
-    scored_candidates: int = 8
+    scored_candidates: int = 6
     reported_candidates: int = 5
     min_share: float = 0.05
     min_records: int = 3
@@ -497,7 +504,7 @@ class MeshCorrectionService:
         phrases: Sequence[str],
         *,
         max_phrases: int = 2,
-        max_ncbi_requests: int = 16,
+        max_ncbi_requests: int = 20,
     ) -> PhraseSuggestions:
         """Co-occurrence MeSH candidates for phrases no MeSH record names.
 
@@ -747,16 +754,22 @@ class MeshCorrectionService:
         scored: list[ScoredDescriptor] = []
         unscored = 0
         for share in eligible:
-            count = None
-            if budget.reserve(1, f"background count for {share.descriptor!r}", keep=keep):
-                count = await self._attempt(
-                    self._gateway.descriptor_count(share.descriptor), "Descriptor background count", warnings
+            background = joint = None
+            if budget.reserve(2, f"background and joint counts for {share.descriptor!r}", keep=keep):
+                background = await self._attempt(
+                    self._gateway.count(descriptor_clause(share.descriptor)), "Descriptor background count", warnings
                 )
-            if count is None:
+                if background is not None:
+                    joint = await self._attempt(
+                        self._gateway.count(joint_query(query, share.descriptor)), "Descriptor joint count", warnings
+                    )
+            if background is None or joint is None:
                 unscored += 1
                 scored.append(ScoredDescriptor(share.descriptor, share.records, share.share))
             else:
-                scored.append(score_descriptor(share, evidence_total=sample.total, background_count=count))
+                scored.append(
+                    score_descriptor(share, evidence_total=sample.total, background_count=background, joint_count=joint)
+                )
         ranked = tuple(rank_descriptors(scored)[: policy.reported_candidates])
         status: CooccurrenceStatus
         if not eligible:

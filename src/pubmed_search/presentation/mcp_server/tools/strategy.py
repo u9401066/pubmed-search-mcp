@@ -99,11 +99,12 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         - Synonym expansion from confirmed MeSH records
         - Data-driven MeSH candidates for up to 2 unmapped phrases (multi-word
           first): MeSH headings most often indexed on MEDLINE records that use
-          the phrase in title/abstract, after removing check tags (Humans,
-          Male, Adult...) and study-design headings, ranked by the F1 of
-          share (recall) and estimated precision. Bounded NCBI traffic:
-          one search, one MEDLINE fetch and up to 8 heading counts per phrase,
-          at most 16 requests per call; see coverage.mesh_cooccurrence.
+          the phrase in title/abstract (check tags such as Humans, Male,
+          Adult and study-design headings removed) nominate candidates, which
+          are ranked by the F1 of exact recall and precision from PubMed
+          counts. Bounded NCBI traffic: one search, one MEDLINE fetch and up
+          to 6 x 2 heading counts per phrase, at most 20 requests per call;
+          see coverage.mesh_cooccurrence.
         - **Query analysis**: Shows how PubMed actually interprets each query
           (Agent's understanding vs PubMed's actual interpretation)
 
@@ -128,7 +129,7 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
               ("pubmed_atm_only", "ambiguous_exact_term", "co_occurrence");
               review before use. co_occurrence entries list candidates with
               preferred, search_clause, share, records, background_count,
-              estimated_precision and score, plus evidence (query, sort,
+              joint_count, recall, precision and score, plus evidence (query, sort,
               retrieved_at, evidence_total, sample_size, excluded headings).
               They are related concepts, not equivalents, and never appear
               in mesh_terms or suggested_queries

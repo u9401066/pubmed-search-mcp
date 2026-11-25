@@ -50,6 +50,7 @@ from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiag
 from tests.fixtures.mesh_entrez import (
     BACKGROUND_COUNTS,
     EVIDENCE_TOTAL,
+    JOINT_COUNTS,
     PACU,
     PACU_DISTRIBUTION,
     PACU_QUERY,
@@ -129,20 +130,37 @@ def test_shares_exclude_check_tags_and_study_design_and_count_indexed_records_on
     assert table.excluded == {"check_tag": 1, "study_design": 2}
 
 
-def test_background_aware_score_prefers_the_specific_heading_over_the_frequent_one():
+def test_exact_counts_prefer_the_specific_heading_over_the_frequent_one():
     shares = {name: DescriptorShare(name, records, records / 93) for name, records in PACU_DISTRIBUTION}
     scored = [
-        score_descriptor(shares[name], evidence_total=EVIDENCE_TOTAL, background_count=count)
+        score_descriptor(
+            shares[name], evidence_total=EVIDENCE_TOTAL, background_count=count, joint_count=JOINT_COUNTS[name]
+        )
         for name, count in BACKGROUND_COUNTS.items()
     ]
 
-    ranked = [item.descriptor for item in rank_descriptors(scored)]
+    ranked = rank_descriptors(scored)
 
     # Raw share alone would pick Postoperative Pain (34% vs 26%).
     assert max(scored, key=lambda item: item.share).descriptor == "Postoperative Pain"
-    assert ranked[:2] == ["Anesthesia Recovery Period", "Recovery Room"]
-    best = rank_descriptors(scored)[0]
-    assert best.estimated_precision == pytest.approx(24 / 93 * EVIDENCE_TOTAL / 6140)
+    assert [item.descriptor for item in ranked[:2]] == ["Anesthesia Recovery Period", "Recovery Room"]
+    best = ranked[0]
+    assert (best.recall, best.precision) == (pytest.approx(966 / EVIDENCE_TOTAL), pytest.approx(966 / 6140))
+
+
+def test_a_rare_new_heading_cannot_win_on_a_sample_share_alone():
+    # Live 2026-11-25: "Pediatric Anesthesia" (531 records) appeared in 16% of a recent sample; a
+    # sample-based precision estimate (0.16 x 3717 / 531) capped at 1 and ranked it first.
+    new_heading = score_descriptor(
+        DescriptorShare("Pediatric Anesthesia", 24, 0.16), evidence_total=3717, background_count=531, joint_count=60
+    )
+    recovery_period = score_descriptor(
+        DescriptorShare("Anesthesia Recovery Period", 39, 0.26),
+        evidence_total=3717,
+        background_count=6140,
+        joint_count=966,
+    )
+    assert rank_descriptors([new_heading, recovery_period])[0].descriptor == "Anesthesia Recovery Period"
 
 
 def test_text_word_variants_fold_hyphen_space_duplicates_and_use_canonical_casing():
@@ -277,7 +295,7 @@ async def test_budget_truncation_is_disclosed_and_respected(fake: FakeEntrez):
     issued = len(fake.calls)
     assert issued <= 8
     assert result.budget["truncated"] is True
-    assert any(item.startswith("background count") for item in result.budget["skipped"])
+    assert any(item.startswith("background and joint counts") for item in result.budget["skipped"])
     evidence = result.corrections[0].evidence
     assert evidence["unscored_candidates"] > 0
     assert result.after_count == 412  # the after-count is always kept in reserve
@@ -424,7 +442,7 @@ def test_candidate_entry_shape_is_stable():
             status="completed",
             evidence_query='"pacu"[tiab] AND medline[sb]',
             variants=("pacu",),
-            candidates=(ScoredDescriptor("Recovery Room", 3, 0.1, 1394, 0.2, 0.133),),
+            candidates=(ScoredDescriptor("Recovery Room", 3, 0.1, 1394, 440, 0.118, 0.316, 0.172),),
         )
     )
 
@@ -435,7 +453,9 @@ def test_candidate_entry_shape_is_stable():
         "records",
         "share",
         "background_count",
-        "estimated_precision",
+        "joint_count",
+        "recall",
+        "precision",
         "score",
     }
 

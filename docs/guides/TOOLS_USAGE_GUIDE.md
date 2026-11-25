@@ -157,15 +157,20 @@ PubMed's translation and both lists in `query_diagnostics`, and `unified_search`
 
 When no MeSH record has a topic phrase as a preferred or entry term, `generate_search_queries` adds
 `mesh_candidates` with `reason: "co_occurrence"` for up to two `unmapped_phrases` (multi-word first).
-It searches the phrase as `[tiab]` in MEDLINE-indexed records, counts the MeSH headings of a
-150-record sample, drops check tags (Humans, Male, Adult...) and study-design headings, and ranks
-headings by the F1 of `share` (recall estimate) and `estimated_precision`
-(`share x evidence_total / background_count`). Each phrase costs one search, one MEDLINE fetch and
-up to eight heading counts, at most 16 requests per call; `coverage.mesh_cooccurrence` lists what ran.
+It searches the phrase as `[tiab]` in MEDLINE-indexed records and counts the MeSH headings of a
+150-record sample, dropping check tags (Humans, Male, Adult...) and study-design headings. The sample
+only nominates the six most frequent headings; each is then scored exactly from two PubMed counts:
+`recall = joint_count / evidence_total` and `precision = joint_count / background_count`, where
+`joint_count` is the evidence records indexed with the heading. Candidates rank by their F1 (`score`).
+Each phrase costs one search, one MEDLINE fetch and up to twelve counts, at most 20 requests per call;
+`coverage.mesh_cooccurrence` lists what ran.
 
-On 2026-11-25 the variants of "Post-Anesthesia Care Units" matched 3,717 MEDLINE records. Anesthesia Recovery
-Period scored 0.141 (share 18.7%, 6,140 indexed records) and Recovery Room 0.116 (8.0%, 1,394).
-Postoperative Pain was as frequent (17.3%) but scored 0.021 because 57,605 records carry it.
+On 2026-11-25 the variants of "Post-Anesthesia Care Units" matched 3,717 MEDLINE records. Anesthesia
+Recovery Period scored 0.137 (673 of its 6,140 records use the phrase: recall 0.181, precision 0.110)
+and Recovery Room 0.110 (282 of 1,394: recall 0.076, precision 0.202). Postoperative Pain co-occurs
+about as often, but 57,605 records carry it, so its precision cannot exceed 3,717 / 57,605 = 0.065.
+Exact counts matter: a sample-based precision estimate let a recently introduced heading with 531
+records rank first.
 Candidates are related concepts, not synonyms; they never enter `mesh_terms` or
 `suggested_queries`. Keep the words when using one:
 `("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`.

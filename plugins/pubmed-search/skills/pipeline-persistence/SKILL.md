@@ -407,7 +407,7 @@ output:
 該步驟只會記錄 `mesh_correction` 建議（`mode: "suggestion"`、`applied: false`、`unresolved_clauses`、`corrected_query`、
 前後命中數），也會出現在回應的 `warnings`、Markdown 報告與 `get_pipeline_history(view="prisma_s")` 的 notes。
 要採用時，用 `save_pipeline` 保存 `corrected_query` 成為新版本再執行；PRISMA-S 會以新的 config hash 記錄。
-建議最多用 12 個請求，且只在 run 的 external-call 配額與期限足夠時執行，從不讓 run 失敗。
+建議最多用 18 個請求，且只在 run 的 external-call 配額與期限足夠時執行，從不讓 run 失敗。
 `block_analysis` 會把 PubMed 找不到的詞標成 `pubmed_not_found`（`contribution_meaningful: false`）、列在
 `unresolved_terms`，不再當成「零獨特貢獻」的冗餘詞，並附上同樣的建議。
 

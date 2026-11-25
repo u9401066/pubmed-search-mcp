@@ -58,7 +58,7 @@ generate_search_queries(
 
 - `mesh_terms`: 已確認的 MeSH 對應。只有主題片語（忽略大小寫、連字號間距與簡單複數）等於該紀錄的 preferred term 或 entry term 才會列入；`matched_on`/`matched_term` 是比對證據，`pubmed_atm` 表示 PubMed 自動詞彙對應是否一致
 - `mesh_candidates`: 未確認的連結與 `reason`（`pubmed_atm_only`、`ambiguous_exact_term`、`co_occurrence`）；採用前先人工確認，不要直接當成 `[MeSH Terms]`
-- `co_occurrence` 候選：MeSH 沒有任何紀錄以該片語為 preferred/entry term 時（例如 "post-anesthesia care unit"），伺服器會在 title/abstract 使用該片語的 MEDLINE 紀錄中統計 MeSH，排除 check tags（Humans、Male、Adult…）與研究設計標目後，以 share（召回估計）與 estimated_precision 的 F1（`score`）排序。每筆附 `search_clause`、`share`、`background_count` 與 `evidence`（查詢式、排序、檢索日期、樣本數）。這些是相關概念而非同義詞：要用時寫成 `(片語[tiab] OR "候選"[MeSH Terms])`，不要只換成候選標目。最多處理 2 個未對應片語，NCBI 請求數見 `coverage.mesh_cooccurrence`
+- `co_occurrence` 候選：MeSH 沒有任何紀錄以該片語為 preferred/entry term 時（例如 "post-anesthesia care unit"），伺服器會在 title/abstract 使用該片語的 MEDLINE 紀錄樣本中統計 MeSH，排除 check tags（Humans、Male、Adult…）與研究設計標目後提名候選，再以 PubMed 計數精確算出 `recall`（證據紀錄中有該標目的比例）與 `precision`（該標目紀錄中使用該片語的比例），依 F1（`score`）排序。每筆附 `search_clause`、`share`、`background_count`、`joint_count`、`recall`、`precision` 與 `evidence`（查詢式、排序、檢索日期、樣本數）。這些是相關概念而非同義詞：要用時寫成 `(片語[tiab] OR "候選"[MeSH Terms])`，不要只換成候選標目。最多處理 2 個未對應片語，NCBI 請求數見 `coverage.mesh_cooccurrence`
 - `unmapped_phrases`: 沒有確認 MeSH 的主題片語，用 `[Title/Abstract]` 自由詞涵蓋
 - `all_synonyms`: 已確認對應的同義詞，可直接組 OR 群組
 - `suggested_queries`: 當作參考，不是最後答案

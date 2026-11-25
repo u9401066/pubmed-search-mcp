@@ -143,14 +143,17 @@ PubMed 會在 ESearch 的 WarningList 與 ErrorList 回報無法解析的子句�
 
 若沒有任何 MeSH 紀錄以主題片語為 preferred 或 entry term，`generate_search_queries` 會替最多兩個
 `unmapped_phrases`（多字片語優先）加上 `reason: "co_occurrence"` 的 `mesh_candidates`。做法是在
-MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的 MeSH 標目，排除 check tags
-（Humans、Male、Adult…）與研究設計標目，再以 `share`（召回估計）與 `estimated_precision`
-（`share x evidence_total / background_count`）的 F1 排序。每個片語需一次搜尋、一次 MEDLINE 擷取與
-最多八次標目計數，每次呼叫最多 16 個請求；實際執行內容見 `coverage.mesh_cooccurrence`。
+MEDLINE 已索引紀錄中以 `[tiab]` 搜尋該片語，統計 150 筆樣本的 MeSH 標目並排除 check tags
+（Humans、Male、Adult…）與研究設計標目。樣本只用來提名出現最多的六個標目，再以兩次 PubMed 計數精確評分：
+`recall = joint_count / evidence_total`、`precision = joint_count / background_count`，其中 `joint_count`
+是同時被該標目索引的證據紀錄數，候選依 F1（`score`）排序。每個片語需一次搜尋、一次 MEDLINE 擷取與最多
+十二次計數，每次呼叫最多 20 個請求；實際執行內容見 `coverage.mesh_cooccurrence`。
 
 2026-11-25 實測 "Post-Anesthesia Care Units" 各變體共命中 3,717 筆 MEDLINE 紀錄。Anesthesia Recovery Period
-得分 0.141（share 18.7%，6,140 筆索引紀錄），Recovery Room 0.116（8.0%，1,394 筆）。
-Postoperative Pain 出現比例相近（17.3%），但有 57,605 筆紀錄使用該標目，因此只得 0.021。
+得分 0.137（其 6,140 筆紀錄中 673 筆使用該片語：recall 0.181、precision 0.110），Recovery Room 0.110
+（1,394 筆中 282 筆：recall 0.076、precision 0.202）。Postoperative Pain 共現次數相近，但有 57,605 筆紀錄
+使用該標目，precision 不可能超過 3,717 / 57,605 = 0.065。必須用精確計數：若用樣本推估 precision，
+一個近年才新增、只有 531 筆紀錄的標目會被排到第一。
 候選標目是相關概念而非同義詞，不會進入 `mesh_terms` 或 `suggested_queries`。採用時保留原詞：
 `("post-anesthesia care unit"[tiab] OR "Anesthesia Recovery Period"[MeSH Terms])`。
 以片語各拼寫變體的 `[tiab]` 自由詞 OR 該標目，再 `AND delirium[tiab]`，得到 518 筆；原查詢為 0 筆。

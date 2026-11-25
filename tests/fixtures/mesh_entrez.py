@@ -23,6 +23,8 @@ Fixture provenance (2026-11-25):
   (6140), Postoperative Pain (59724), Postoperative Complications (690806),
   Length of Stay (120182) and Recovery Room (1394) are live counts; the
   Anesthesia, General and Pain Measurement backgrounds are synthetic.
+- Joint counts (evidence AND heading) are synthetic, sized like the shares
+  above over the 3717 evidence records.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ EVIDENCE_TOTAL = 3717
 FIXED_NOW = datetime(2026, 11, 25, 8, 30, tzinfo=timezone.utc)
 _EXACT_CLAUSE = re.compile(r'"([^"]+)"\[(MeSH Terms|Substance Name)\]')
 _BACKGROUND = re.compile(r'^"([^"]+)"\[mh:noexp\]$')
+_JOINT = re.compile(r' AND medline\[sb\] AND "([^"]+)"\[mh:noexp\]$')
 _QUOTED_MESH = re.compile(r'"[^"]+"\[(?:mesh|mh|majr|mesh terms|mesh major topic)(?::noexp)?\]', re.IGNORECASE)
 
 # Headings per sampled record: (descriptor, records) over 93 indexed records.
@@ -65,7 +68,7 @@ PACU_DISTRIBUTION = [
     ("Treatment Outcome", 12),
     ("Length of Stay", 10),
     ("Pain Measurement", 8),
-    ("Recovery Room", 6),
+    ("Recovery Room", 11),
 ]
 BACKGROUND_COUNTS = {
     "Anesthesia Recovery Period": 6140,
@@ -75,6 +78,15 @@ BACKGROUND_COUNTS = {
     "Length of Stay": 120182,
     "Pain Measurement": 70000,
     "Recovery Room": 1394,
+}
+JOINT_COUNTS = {
+    "Anesthesia Recovery Period": 966,
+    "Postoperative Pain": 1264,
+    "Postoperative Complications": 818,
+    "Anesthesia, General": 743,
+    "Length of Stay": 400,
+    "Pain Measurement": 320,
+    "Recovery Room": 440,
 }
 
 
@@ -145,6 +157,7 @@ class FakeEntrez:
         self.headings = _pacu_headings()
         self.evidence_total = EVIDENCE_TOTAL
         self.background = dict(BACKGROUND_COUNTS)
+        self.joint = dict(JOINT_COUNTS)
         self.counts: dict[str, int] = {}
         self.medline_extra_pmid: str | None = None
         self.fail_probe = False
@@ -152,6 +165,10 @@ class FakeEntrez:
     # -- PubMed -------------------------------------------------------------
     def _pubmed(self, term: str, retmax: int) -> dict[str, Any]:
         record: dict[str, Any] = {"Count": "0", "IdList": [], "TranslationSet": [], "QueryTranslation": term}
+        joint = _JOINT.search(term)
+        if joint:
+            record["Count"] = str(self.joint.get(joint.group(1), 0))
+            return record
         if term.endswith("AND medline[sb]"):
             if "processed" in term:
                 record["Count"] = "250000"

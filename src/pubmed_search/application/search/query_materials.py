@@ -92,8 +92,8 @@ async def attach_cooccurrence_candidates(
 
     Only phrases left unmapped by a completed exact MeSH lookup are tried,
     multi-word phrases first, at most ``max_phrases`` (NCBI cost per phrase:
-    one evidence search, one MEDLINE fetch and up to
-    ``policy.scored_candidates`` background counts, capped by the service's
+    one evidence search, one MEDLINE fetch and two counts for each of up to
+    ``policy.scored_candidates`` nominated headings, capped by the service's
     phrase budget). Entries carry ``reason="co_occurrence"`` with share and
     evidence; they are never added to ``mesh_terms`` or ``suggested_queries``.
     ``coverage["mesh_cooccurrence"]`` reports what was attempted and skipped.
