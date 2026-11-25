@@ -86,6 +86,12 @@ PMC_EFETCH_NO_ARTICLE = (
     "The following PMCID is not available: 99999999</error></pmc-articleset>"
 )
 
+# HTTP 200 answers that state nothing about the article: an E-utilities error
+# envelope, an empty body, or an articleset without any per-ID statement.
+PMC_EFETCH_EUTILS_ERROR = '<?xml version="1.0" ?><eFetchResult><ERROR>Unable to obtain query #1</ERROR></eFetchResult>'
+PMC_EFETCH_EMPTY_BODY = ""
+PMC_EFETCH_EMPTY_ARTICLESET = PMC_ARTICLESET_PROLOG + "<pmc-articleset></pmc-articleset>"
+
 PUBMED_ESUMMARY_WITH_PMC = {
     "header": {"type": "esummary", "version": "0.3"},
     "result": {
@@ -104,6 +110,9 @@ PUBMED_ESUMMARY_WITH_PMC = {
 }
 
 __all__ = [
+    "PMC_EFETCH_EMPTY_ARTICLESET",
+    "PMC_EFETCH_EMPTY_BODY",
+    "PMC_EFETCH_EUTILS_ERROR",
     "PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT",
     "PMC_EFETCH_FRONT_MATTER_ONLY_PARAGRAPH",
     "PMC_EFETCH_FULL_BODY",

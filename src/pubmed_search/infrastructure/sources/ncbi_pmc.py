@@ -14,6 +14,13 @@ Publishers may forbid XML redistribution of articles deposited in PMC. NCBI
 then returns front matter only, with an explicit notice instead of a body.
 The adapter reports that state as ``access_restricted`` and never presents the
 remaining front matter or the notice itself as article body text.
+
+E-utilities can answer HTTP 200 without answering the question: an
+``<ERROR>`` envelope, an empty body, or an empty articleset. Only an
+articleset whose entries are NCBI's per-ID ``<error>`` statements (for
+example "The following PMCID is not available") means "no record"; anything
+else is an invalid response, so a backend hiccup never reads as a completed,
+empty check.
 """
 
 from __future__ import annotations
@@ -21,6 +28,8 @@ from __future__ import annotations
 import logging
 import re
 from typing import TYPE_CHECKING, Any
+
+from defusedxml import ElementTree  # Security: prevent XML attacks
 
 from pubmed_search.domain.value_objects.article_identifiers import (
     normalize_pmcid,
@@ -59,6 +68,29 @@ _RESTRICTED_XML_RE = re.compile(
     r"does\s+not\s+allow\s+downloading\s+of\s+the\s+full\s+text",
     re.IGNORECASE,
 )
+_XML_PROLOG_RE = re.compile(r"<\?xml[^>]*\?>|<!DOCTYPE[^>]*>")
+
+
+def _local_name(tag: object) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _states_missing_record(payload: str) -> bool:
+    """Whether an article-free efetch answer is NCBI's explicit "not available" statement.
+
+    That answer is a ``pmc-articleset`` whose every entry is a per-ID
+    ``<error>`` element with text. An E-utilities ``<ERROR>`` envelope (the
+    element name is case-sensitive), an empty body, an empty articleset or
+    unparsable XML does not say whether the record exists.
+    """
+    try:
+        root = ElementTree.fromstring(_XML_PROLOG_RE.sub("", payload))
+    except (ElementTree.ParseError, ValueError):
+        return False
+    if _local_name(root.tag) != "pmc-articleset":
+        return False
+    entries = [child for child in root if isinstance(child.tag, str)]
+    return bool(entries) and all(_local_name(entry.tag) == "error" and (entry.text or "").strip() for entry in entries)
 
 
 class NCBIPMCClient(BaseAPIClient):
@@ -103,8 +135,13 @@ class NCBIPMCClient(BaseAPIClient):
         """Fetch the PMC JATS record for one PMCID.
 
         Returns:
-            The raw ``pmc-articleset`` XML, or ``None`` when NCBI holds no
-            article for the identifier.
+            The raw ``pmc-articleset`` XML, or ``None`` when NCBI states that
+            it holds no article for the identifier (HTTP 404 or a per-ID
+            "not available" entry).
+
+        Raises:
+            ProviderSchemaError: HTTP 200 carried neither an article nor that
+                statement (``<ERROR>`` envelope, empty body or articleset).
         """
         normalized = normalize_pmcid(pmcid)
         try:
@@ -117,10 +154,12 @@ class NCBIPMCClient(BaseAPIClient):
                 return None
             if not isinstance(result, str):
                 raise_provider_schema_error(self._service_name)
-            if _ARTICLE_ELEMENT_RE.search(result) is None:
-                # An empty articleset or an E-utilities <ERROR> is "no record".
+            if _ARTICLE_ELEMENT_RE.search(result) is not None:
+                return result
+            if _states_missing_record(result):
                 return None
-            return result
+            logger.warning("NCBI PMC efetch answered without an article or a missing-record statement")
+            raise_provider_schema_error(self._service_name)
         except APIRequestError:
             raise
         except RetryableOperationError as exc:

@@ -37,6 +37,9 @@ from pubmed_search.presentation.mcp_server.tools.europe_pmc import register_euro
 from pubmed_search.shared.async_utils import OperationBudgetExceeded, RetryableOperationError
 from pubmed_search.shared.exceptions import ParseError, RateLimitError
 from tests.fixtures.pmc_jats import (
+    PMC_EFETCH_EMPTY_ARTICLESET,
+    PMC_EFETCH_EMPTY_BODY,
+    PMC_EFETCH_EUTILS_ERROR,
     PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT,
     PMC_EFETCH_FRONT_MATTER_ONLY_PARAGRAPH,
     PMC_EFETCH_FULL_BODY,
@@ -367,6 +370,37 @@ async def test_ncbi_adapter_parses_restriction_and_missing_records_at_the_bounda
         assert "token=hidden" not in str(error.value)
     finally:
         await client.close()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(PMC_EFETCH_EUTILS_ERROR, id="eutils-error-envelope"),
+        pytest.param(PMC_EFETCH_EMPTY_BODY, id="empty-body"),
+        pytest.param(PMC_EFETCH_EMPTY_ARTICLESET, id="empty-articleset"),
+        pytest.param("<pmc-articleset><ERROR>Backend failed</ERROR></pmc-articleset>", id="error-in-articleset"),
+    ],
+)
+async def test_ncbi_efetch_200_without_an_answer_is_a_failure_not_complete_coverage(payload: str) -> None:
+    """HTTP 200 with an E-utilities error or nothing at all says nothing about the article."""
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    ncbi = await _ncbi_client(_NCBIFixture(efetch=payload))
+    try:
+        with pytest.raises(ProviderSchemaError):
+            await ncbi.get_article_xml(PMCID)
+        result = await _service(europe_pmc=provider, ncbi=ncbi, hedge_seconds=60).retrieve(
+            FulltextRequest(pmcid=PMCID, include_pdf_links=False)
+        )
+    finally:
+        await ncbi.close()
+
+    assert [(error.source, error.code) for error in result.source_errors] == [("ncbi_pmc", "invalid_response")]
+    assert "ncbi_pmc" not in result.sources_completed
+    # Only Europe PMC actually answered "no body"; NCBI's silence is not a second "no record".
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("europe_pmc", "no_body")]
+    assert result.coverage_status != "complete"
+    assert not result.has_retrieved_text
 
 
 # ----------------------------------------------------------------------------
