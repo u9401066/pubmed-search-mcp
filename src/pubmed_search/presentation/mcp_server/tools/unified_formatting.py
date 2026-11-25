@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pubmed_search.application.unified.clinical_trials import (
@@ -44,7 +45,7 @@ from .agent_output import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from pubmed_search.application.search.query_analyzer import AnalyzedQuery
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
@@ -155,13 +156,59 @@ def _escape_tool_argument(value: str) -> str:
     return escaped.replace("\n", "\\n")
 
 
+_UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS: dict[str, Any] = {
+    "query": None,
+    "limit": 10,
+    "sources": None,
+    "ranking": "balanced",
+    "filters": None,
+    "options": None,
+    "fulltext": "off",
+    "output_format": "markdown",
+}
+
+
+def _unified_search_retry_command(arguments: Mapping[str, Any] | None) -> str | None:
+    """Render the caller's exact unified_search call (non-default arguments only)."""
+    if not arguments or not isinstance(arguments.get("query"), str) or not arguments["query"].strip():
+        return None
+    rendered: list[str] = []
+    for name, default in _UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS.items():
+        value = arguments.get(name)
+        if value is None or (name != "query" and value == default):
+            continue
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            return None
+        rendered.append(f"{name}={value}" if isinstance(value, int) else f'{name}="{_escape_tool_argument(value)}"')
+    return f"unified_search({', '.join(rendered)})"
+
+
+def _transient_failure_sources(source_errors: Sequence[Mapping[str, Any]] | None) -> list[str]:
+    return sorted(
+        {
+            str(error.get("source"))
+            for error in source_errors or ()
+            if isinstance(error, Mapping) and error.get("source") and error.get("retryable") is True
+        }
+    )
+
+
 def _build_next_actions(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
     source_rows: list[SourceCountRow],
     structured_output_format: Literal["json", "toon"] = "json",
+    *,
+    source_errors: Sequence[Mapping[str, Any]] | None = None,
+    retry_arguments: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Infer pragmatic next-tool suggestions from current result shape."""
+    """Infer pragmatic next-tool suggestions from current result shape.
+
+    A transient (retryable) source failure that left the result under-filled
+    is not evidence of a narrow query: the first suggestion is then the same
+    ``unified_search`` call, unchanged. Query rewriting is withheld while a
+    transient failure is the only reason nothing was returned.
+    """
     escaped_query = _escape_tool_argument(analysis.original_query)
     next_actions: list[dict[str, str]] = []
     seen_tools: set[str] = set()
@@ -171,6 +218,27 @@ def _build_next_actions(
             return
         next_actions.append(cast("dict[str, str]", dict(make_next_tool(tool, reason, example))))
         seen_tools.add(tool)
+
+    errors = [error for error in source_errors or () if isinstance(error, Mapping)]
+    transient_sources = _transient_failure_sources(errors)
+    raw_limit = (retry_arguments or {}).get("limit", _UNIFIED_SEARCH_RETRY_ARGUMENT_DEFAULTS["limit"])
+    requested_limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) else None
+    under_filled = requested_limit is None or len(articles) < requested_limit
+    retry_command = _unified_search_retry_command(retry_arguments)
+    transient_only_failure = (
+        bool(transient_sources) and not articles and all(e.get("retryable") is True for e in errors)
+    )
+    if transient_sources and under_filled and retry_command:
+        kinds = sorted({str(e.get("kind")) for e in errors if e.get("retryable") is True and e.get("kind")})
+        add_action(
+            "unified_search",
+            (
+                f"{', '.join(transient_sources)} failed with a transient, retryable "
+                f"{'/'.join(kinds) or 'upstream'} error. That says nothing about the query: "
+                "repeat this exact call unchanged before rewriting or broadening it."
+            ),
+            retry_command,
+        )
 
     if source_rows:
         high_yield = next(
@@ -196,7 +264,7 @@ def _build_next_actions(
             )
 
     intent_value = getattr(analysis.intent, "value", "")
-    if intent_value in {"comparison", "systematic"}:
+    if intent_value in {"comparison", "systematic"} and not transient_only_failure:
         add_action(
             "generate_search_queries",
             "This query looks like a comparison or review question; generate controlled-vocabulary variants before broadening the search.",
@@ -260,7 +328,7 @@ def _build_next_actions(
             'prepare_export(pmids="last", format="ris")',
         )
 
-    if not next_actions:
+    if not next_actions and not transient_only_failure:
         add_action(
             "generate_search_queries",
             "No obvious downstream pivot was detected; start by expanding controlled vocabulary and synonyms.",
@@ -1291,8 +1359,13 @@ def _format_as_json(
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
+    retry_arguments: Mapping[str, Any] | None = None,
 ) -> str:
-    """Format results as JSON or TOON for programmatic access."""
+    """Format results as JSON or TOON for programmatic access.
+
+    ``retry_arguments`` are the caller's original tool arguments, used to
+    suggest repeating the identical call after a transient source failure.
+    """
     source_rows = _serialize_source_counts(source_api_counts, stats)
     artifact_summary = _artifact_response_summary(artifact_manifest)
     search_status = _build_search_status(
@@ -1351,7 +1424,14 @@ def _format_as_json(
         )
 
     structured_output_format = preferred_structured_output_format(output_format)
-    next_actions = _build_next_actions(articles, analysis, source_rows, structured_output_format)
+    next_actions = _build_next_actions(
+        articles,
+        analysis,
+        source_rows,
+        structured_output_format,
+        source_errors=source_errors,
+        retry_arguments=retry_arguments,
+    )
     next_tools, next_commands = finalize_next_tools(next_actions)
     result = {
         "tool": "unified_search",

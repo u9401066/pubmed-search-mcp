@@ -505,6 +505,16 @@ async def run_unified_search(
                 prefetched_trials=execution.prefetched_trials,
                 broadening=execution.broadening,
                 mesh_correction=execution.mesh_correction,
+                retry_arguments={
+                    "query": query,
+                    "limit": limit,
+                    "sources": sources,
+                    "ranking": ranking,
+                    "filters": filters,
+                    "options": options,
+                    "fulltext": fulltext,
+                    "output_format": output_format,
+                },
             )
 
         markdown_response = await _format_unified_results(

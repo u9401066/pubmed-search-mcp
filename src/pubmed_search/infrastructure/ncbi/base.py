@@ -32,6 +32,7 @@ from pubmed_search.shared.async_utils import (
     parse_retry_after,
 )
 from pubmed_search.shared.exceptions import APIError, ErrorContext, is_retryable_error
+from pubmed_search.shared.transient_errors import classify_transient_error
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -51,6 +52,8 @@ class NCBIInfrastructureError(APIError):
     value, which may contain a query, URL, credential, or response fragment.
     ``upstream_type`` and the chained cause remain available for diagnostics
     without turning an outage into an article-shaped compatibility row.
+    ``failure_kind`` is the transient class (``timeout``/``transport``/``http``/
+    ``retryable``) of a retryable failure and ``None`` for a non-transient one.
     """
 
     def __init__(
@@ -62,12 +65,14 @@ class NCBIInfrastructureError(APIError):
         retry_after: float | None = None,
         status_code: int | None = None,
         execution_metadata: dict[str, Any] | None = None,
+        failure_kind: str | None = None,
     ) -> None:
         self.operation = operation
         self.upstream_type = upstream_type
         self.retry_after = retry_after
         self.status_code = status_code
         self.execution_metadata = dict(execution_metadata or {})
+        self.failure_kind = failure_kind if retryable else None
         super().__init__(
             f"NCBI {operation} failed",
             context=ErrorContext(
@@ -103,14 +108,21 @@ def raise_ncbi_infrastructure_error(
         retry_after = error.retry_after
         status_code = error.status_code
         inherited_metadata = error.execution_metadata
+        failure_kind = error.failure_kind
     else:
         upstream_type = type(error).__name__
-        retryable = is_retryable_error(error)
+        # URLError, connection resets, socket timeouts and HTTP 429/5xx are
+        # transient: the identical request may succeed when repeated.
+        transient = classify_transient_error(error)
+        retryable = transient is not None or is_retryable_error(error)
         raw_retry_after = getattr(error, "retry_after", None)
         retry_after = float(raw_retry_after) if isinstance(raw_retry_after, (int, float)) else None
         raw_status_code = getattr(error, "status_code", None)
         status_code = raw_status_code if isinstance(raw_status_code, int) else None
+        if status_code is None and transient is not None:
+            status_code = transient.status_code
         inherited_metadata = {}
+        failure_kind = transient.kind if transient is not None else ("retryable" if retryable else None)
 
     merged_metadata = {**inherited_metadata, **(execution_metadata or {})}
 
@@ -122,6 +134,7 @@ def raise_ncbi_infrastructure_error(
         retry_after=retry_after,
         status_code=status_code,
         execution_metadata=merged_metadata,
+        failure_kind=failure_kind,
     ) from error
 
 

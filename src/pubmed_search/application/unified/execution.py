@@ -60,6 +60,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 SOURCE_SEARCH_TIMEOUT_SECONDS = 25.0
 CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS = 0.5
+TRANSIENT_SOURCE_FAILURE_SUGGESTION = (
+    "Transient upstream failure, not a query problem: repeat the same unified_search call "
+    "with the same arguments before changing the query."
+)
 
 SearchRunner = Callable[
     [str, int, int | None, int | None, dict[str, Any]],
@@ -144,6 +148,9 @@ def _source_error_payload(error: Any) -> dict[str, Any]:
         )
     else:
         payload["status"] = "error"
+        if payload["retryable"]:
+            # A transient outage says nothing about the query; keep it unchanged.
+            payload["suggestion"] = TRANSIENT_SOURCE_FAILURE_SUGGESTION
     return payload
 
 
