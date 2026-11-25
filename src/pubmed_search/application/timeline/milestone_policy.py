@@ -408,7 +408,6 @@ ABSTRACT_SELF_DESCRIPTION_PATTERNS: dict[str, str] = {
     "meta_analysis": _self_describing(r"\bmeta[- ]?analysis\b|\bpooled\s+analysis\b"),
     "systematic_review": _self_describing(r"\bsystematic\s+review\b"),
 }
-ABSTRACT_PATTERN_POLICY_NAMES = frozenset(ABSTRACT_SELF_DESCRIPTION_PATTERNS)
 #: Abstract matches are weaker evidence than title or publication-type matches.
 ABSTRACT_CONFIDENCE_PENALTY = 0.2
 
