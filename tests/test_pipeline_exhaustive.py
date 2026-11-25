@@ -702,3 +702,107 @@ async def test_identification_counts_records_before_pipeline_filters(tmp_path: P
     assert identification["records_marked_ineligible_by_automation"] == 15
     assert identification["duplicate_records_removed"] == 0
     assert identification["records_after_duplicates_removed"] == 15
+
+
+# ---------------------------------------------------------------------------
+# Persistence and export disclose what the run record actually is
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("output_format", ["json", "markdown"])
+async def test_failed_run_persistence_is_disclosed_not_reported_as_saved(
+    store: PipelineStore, monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    _save_exhaustive_pipeline(store, output_format=output_format)
+
+    def disk_full(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save_run_records", disk_full)
+
+    outcome = await _execute_pipeline_mode_outcome(
+        "saved:pacu_ma",
+        output_format,
+        FakeHistorySearcher([str(5000 + index) for index in range(30)]),
+        pipeline_store=store,
+    )
+
+    assert outcome.exhaustive is False
+    assert store.get_history("pacu_ma", limit=5) == []
+    if output_format == "json":
+        payload = json.loads(outcome.response)
+        assert payload["run"] is None
+        assert payload["persistence"] == {"saved": False, "error_type": "OSError"}
+        assert payload["summary"]["record_count"] == 30
+        assert payload["next"] == {}
+        assert any("could not be saved" in warning for warning in payload["warnings"])
+    else:
+        assert "could not be saved" in outcome.response
+        assert "30 records" in outcome.response
+
+
+async def test_bounded_saved_pipeline_persistence_failure_is_disclosed(
+    store: PipelineStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    store.save("bounded", _config([_BOUNDED_STEP]), scope="workspace")
+
+    def disk_full(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "save_run", disk_full)
+
+    outcome = await _execute_pipeline_mode_outcome("saved:bounded", "json", _MixedSearcher([]), pipeline_store=store)
+
+    payload = json.loads(outcome.response)
+    assert any("could not be saved" in warning for warning in payload["warnings"])
+    assert payload["persistence"] == {"saved": False, "error_type": "OSError"}
+
+
+async def test_export_summary_discloses_whether_the_run_is_a_complete_record_set(store: PipelineStore) -> None:
+    from pubmed_search.application.pipeline.run_export import export_pipeline_run
+    from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _execute_pipeline_mode_outcome
+
+    _save_exhaustive_pipeline(store)
+    searcher = _MixedSearcher([str(5000 + index) for index in range(5)])
+    await _execute_pipeline_mode_outcome("saved:pacu_ma", "json", searcher, pipeline_store=store)
+    store.save(
+        "mixed",
+        _config(
+            [
+                _EXHAUSTIVE_STEP,
+                _BOUNDED_STEP,
+                {"id": "m", "action": "merge", "inputs": ["ex", "bd"], "params": {"method": "union"}},
+            ]
+        ),
+        scope="workspace",
+    )
+    await _execute_pipeline_mode_outcome("saved:mixed", "json", searcher, pipeline_store=store)
+    store.save("bounded", _config([_BOUNDED_STEP]), scope="workspace")
+    await _execute_pipeline_mode_outcome("saved:bounded", "json", searcher, pipeline_store=store)
+
+    complete = (await export_pipeline_run(store, "pacu_ma", fmt="ris", include_abstract=False, searcher=None)).summary()
+    mixed = (await export_pipeline_run(store, "mixed", fmt="ris", include_abstract=False, searcher=None)).summary()
+    bounded = (await export_pipeline_run(store, "bounded", fmt="ris", include_abstract=False, searcher=None)).summary()
+
+    assert (complete["record_basis"], complete["retrieval_mode"], complete["complete_record_set"]) == (
+        "final_step_full",
+        "exhaustive",
+        True,
+    )
+    assert complete["warnings"] == []
+    assert (mixed["record_basis"], mixed["retrieval_mode"], mixed["complete_record_set"]) == (
+        "final_step_full",
+        "mixed",
+        False,
+    )
+    assert any("bounded" in warning for warning in mixed["warnings"])
+    assert (bounded["record_basis"], bounded["retrieval_mode"], bounded["complete_record_set"]) == (
+        "ranked_output",
+        "bounded",
+        False,
+    )
+    assert any("ranked preview" in warning for warning in bounded["warnings"])

@@ -160,7 +160,10 @@ def register_export_tools(
         Covidence or Zotero import. Run exports are formatted locally from
         the run artifact (ris, csv, csl, bibtex, medline, json; source does
         not apply); missing metadata is fetched on demand (bounded) and
-        reported in the response.
+        reported in the response. The pipeline_run summary states
+        record_basis, retrieval_mode and complete_record_set; a ranked
+        preview, mixed or incomplete run is exported with a warning that it
+        is not the complete search result.
 
         Args:
             pmids: Articles to export. Accepts:
@@ -574,11 +577,14 @@ async def _export_pipeline_run(
         )
     )
     response["pipeline_run"] = exported.summary()
+    warnings = list(exported.warnings)
     if exported.metadata_missing:
-        response["warning"] = (
+        warnings.append(
             f"{len(exported.metadata_missing)} records are exported with identifiers only; "
             "retry later to fetch their metadata"
         )
+    if warnings:
+        response["warning"] = " ".join(warnings)
     return json.dumps(response, ensure_ascii=False)
 
 
