@@ -103,7 +103,7 @@ Agent 應一起修正已列出的欄位，
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `research_workspace`、`read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `research_workspace`、`read_session` 與八個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -324,7 +324,9 @@ Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（�
 
 ![Session 與 Pipeline 流程](../images/session-pipeline-workflow.svg)
 
-這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`。
+這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline`、`unschedule_pipeline` 與 `pipeline_screening`。
+
+系統性回顧時，PubMed search step 設 `retrieval: exhaustive` 會透過 E-utilities History Server 取得完整 PMID 集合（上限 `max_records` ≤ 10000；超過直接拒絕、不截斷），saved run 會連同 PRISMA-S 來源資訊一併保存：資料庫／平台、保存與實際查詢、PubMed query translation、總數／取回數、篩選條件、UTC 時間、server 版本與不可變 config snapshot。`unified_search` 只回傳有界預覽；`get_pipeline_history` 提供 `view="run"`、`view="prisma_s"`（Markdown + CSV）與 `view="records"`（完整集合分頁）；`prepare_export(pipeline_run=...)` 以 RIS/CSV/CSL-JSON 匯出完整集合；`block_analysis` step 以有界的僅計數查詢稽核 MeSH 區塊與詞彙貢獻；`pipeline_screening` 記錄逐篇篩選決策並產出 PRISMA 2020 流程數字。更新檢索第一次出現的文獻會自動進入待篩佇列。
 
 本機與 service 能力刻意不同。可信任的本機 caller 可使用 workspace scope、`file:`
 pipeline source 與 in-process scheduler。認證 service caller 只能讀取 tenant-derived store 中

@@ -282,7 +282,7 @@ output:
 
 | Action | 常用 params | 說明 |
 | ------ | ----------- | ---- |
-| `search` | `query`, `sources`, `limit`, `min_year`, `max_year` | 一般文獻搜尋 |
+| `search` | `query`, `sources`, `limit`, `min_year`, `max_year`；或 `retrieval: exhaustive`, `max_records`, `fetch_metadata` | 一般文獻搜尋；exhaustive 模式取回完整 PubMed 集合 |
 | `pico` | `P`, `I`, `C`, `O` | 建立 PICO elements 與組合 query |
 | `expand` | `topic` | 做語意擴展與 MeSH strategy |
 | `details` | `pmids` | 補抓文章詳情 |
@@ -292,6 +292,7 @@ output:
 | `metrics` | 無需額外 params | 補 iCite metrics |
 | `merge` | `method=union / intersection / rrf` | 合併多路結果 |
 | `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | 帶 diagnostics 的後處理篩選 |
+| `block_analysis` | `query` 或一個 input search step、`max_count_queries` | 僅計數的 MeSH／概念區塊與詞彙貢獻稽核（不會成為產生紀錄集的步驟） |
 
 `related`／`citing`／`references` 也支援 `inputs` + `seed_limit`（1–10），
 與 `pmid` 互斥。依輸入順序取前幾個不重複 PMID，每個 seed 消耗一次外部呼叫預算；
@@ -498,13 +499,120 @@ history 會顯示:
 - 文章總數
 - 相較前一次新增多少篇
 - 移除多少篇
+- 取回模式、PubMed 總數與策略 hash（config hash／實際查詢 hash）
 - 成功或失敗狀態
+
+單一 run 的來源資訊、PRISMA-S 表與保存的紀錄集請用 `view="run"`、`view="prisma_s"`、
+`view="records"`（見下方系統性回顧章節）。
 
 ### 現況限制
 
 - 目前沒有獨立的 `list_schedules()` MCP tool
 - 想要穩定追蹤 history / diff，請優先使用「已保存 pipeline」而不是臨時 inline pipeline
 - Service mode 保持單 process/單 replica，且其 Compose profile 不執行 scheduled pipelines
+
+## 系統性回顧與統合分析模式
+
+有界的相關性視窗（`limit` ≤ 100）無法支撐篩選或 PRISMA 流程圖。系統性檢索請把策略保存成
+pipeline，PubMed search step 設 `retrieval: exhaustive`，再由 run 紀錄、匯出與篩選工具處理完整紀錄集。
+
+```yaml
+steps:
+  - id: pubmed
+    action: search
+    params:
+      query: >-
+        ("Anesthesia Recovery Period"[Mesh] OR PACU[tiab] OR emergence[tiab])
+        AND ("Consciousness Monitors"[Mesh] OR "bispectral index"[tiab])
+        AND ("Delirium"[Mesh] OR delirium[tiab])
+        NOT (("Child"[Mesh] OR "Infant"[Mesh]) NOT "Adult"[Mesh])
+      sources: [pubmed]
+      retrieval: exhaustive     # 透過 E-utilities History Server 取得完整 PMID 集合
+      max_records: 10000        # 公開的安全上限（預設與最大值皆為 10000）
+      fetch_metadata: true      # 預設：分批 EFetch metadata 供匯出
+  - id: blocks
+    action: block_analysis      # 選用的策略稽核（僅計數查詢）
+    inputs: [pubmed]
+    params:
+      max_count_queries: 60     # 預設 60，最大 200
+output:
+  format: json
+  limit: 20                     # 排序預覽的筆數，不是紀錄集大小
+```
+
+```python
+save_pipeline(name="pacu_peeg_ma", config="<上方 yaml>", scope="workspace")
+unified_search(pipeline="saved:pacu_peeg_ma")
+```
+
+### exhaustive 取回的保證
+
+- 一次 ESearch 建立 History Server snapshot，所有 PMID 頁面都以 EFetch `rettype=uilist`
+  從同一 snapshot 讀取。每個 provider 操作（snapshot、PMID 頁、metadata 批次）都先預留一單位 run 預算。
+- PubMed ESearch 無法翻頁超過 10,000 筆。筆數超過 `max_records` 時**直接拒絕，不會截斷**；
+  請收斂策略（例如 `min_year`/`max_year`）或拆成多個 saved pipelines。
+- 翻頁中途停止（deadline 或配額）時，step 以不完整失敗，不會把部分集合當成完整結果。
+  若只有 metadata 批次用完預算，PMID 集合仍完整，匯出時會再補抓缺少的 metadata。
+- `retrieval: exhaustive` 不接受 `limit` 或其他來源；策略必須先保存（inline config 仍可用 `dry_run=True` 驗證）。
+- 回應是有界摘要：總數、實際取回數、exhaustive 旗標、前 20 筆排序預覽、run ID 與下一步呼叫。
+  完整集合隨 run 一起保存。
+
+### Run 紀錄（PRISMA-S 來源資訊）
+
+每個保存的 run 會依 search step 與資料庫記錄：資料庫與平台、保存時的策略、含限制條件的實際查詢、
+PubMed `QueryTranslation`（exhaustive step）、PubMed 找不到的片語、總數與取回數、exhaustive 旗標、
+篩選條件、UTC 檢索時間、server 版本、saved config hash、不可變 config snapshot 的 SHA-256，
+以及 block analysis。之後修改 YAML 不會改寫先前的 run。
+
+```python
+get_pipeline_history(name="pacu_peeg_ma")                      # Strategy 欄：config／query hash
+get_pipeline_history(name="pacu_peeg_ma", view="run")          # 單一 run 的來源資訊（JSON）
+get_pipeline_history(name="pacu_peeg_ma", view="prisma_s")     # PRISMA-S 表：Markdown + CSV
+get_pipeline_history(name="pacu_peeg_ma", view="records", offset=0, limit=100)  # 分頁讀完整集合
+prepare_export(pipeline_run="pacu_peeg_ma", format="ris")      # 最新 run；另有 csv、csl、bibtex、medline、json
+prepare_export(pipeline_run="pacu_peeg_ma@<run_id>", format="csv")
+```
+
+Run 匯出與 `prepare_export(pmids=...)` 共用同一個匯出層，並保留 PMID（RIS `AN`、CSV `PMID`、
+CSL-JSON `PMID` 與 `id: pmid:<PMID>`），可匯入 Rayyan、Covidence 或 Zotero。
+
+### 策略區塊分析
+
+`block_analysis` 將策略拆成頂層 AND 區塊（每塊為 OR 詞彙）與 NOT 區塊，以僅計數查詢計算：
+完整策略、各區塊單獨命中、累積 AND 組合、各 NOT 區塊排除的筆數，以及每個詞彙的獨特貢獻
+（在完整策略中，把該詞從其區塊移除會少掉多少筆）。貢獻為 0 代表值得檢視，不代表該詞無用。
+引號片語、欄位標籤、萬用字元、副標題與巢狀括號都原樣保留。PubMed 由左至右計算運算子，
+因此頂層混用 `OR` 與 `AND`/`NOT` 會回報無法分解，而不是猜測。計數查詢有獨立配額（每個 run 200 次），
+仍受 run deadline 約束；被截斷時會揭露。
+
+### 篩選與 PRISMA 2020 流程
+
+取得完整集合的 run 會自動登記到篩選紀錄，因此之後更新檢索第一次找到的文獻會自動進入標題／摘要待篩佇列。
+
+```python
+pipeline_screening(request={"action": "queue", "pipeline": "pacu_peeg_ma", "include_abstract": True})
+pipeline_screening(request={
+    "action": "record",
+    "pipeline": "pacu_peeg_ma",
+    "decisions": [
+        {"pmid": "12345678", "stage": "title_abstract", "decision": "include", "reviewer": "ak"},
+        {"pmid": "23456789", "stage": "title_abstract", "decision": "exclude", "reason": "paediatric", "reviewer": "ak"},
+    ],
+})
+pipeline_screening(request={"action": "record", "pipeline": "pacu_peeg_ma", "decisions": [
+    {"pmid": "12345678", "stage": "full_text", "decision": "exclude", "reason": "no pEEG arm"},
+]})
+pipeline_screening(request={"action": "flow", "pipeline": "pacu_peeg_ma"})   # Markdown；format="json" 取資料
+```
+
+- 決策只追加；每個 PMID 與階段以最新決策計算，先前決策保留在 `{"action": "log"}`。
+  不同 reviewer 標籤意見不一致時會回報 conflict。
+- 重送請求具冪等性（提供 `decision_id`，或由決策內容推導）。一個批次全部成功或全部不寫入。
+- 全文排除必須附理由；取不到全文請用 `not retrieved`。全文篩選前必須有標題／摘要的 `include` 或 `maybe`。
+- `flow` 回報每個 run／資料庫的識別筆數、跨 run 移除的重複、已篩選、排除、尋求全文、未取得、
+  已評估、依理由排除與納入，以及每個 run 尚未篩選的新文獻。
+- 較舊或有界的 run 可用 `{"action": "register_run"}` 明確登記；此時流程會警告識別不完整。
+- `delete_pipeline` 會一併刪除 run 歷史、紀錄集與篩選紀錄。
 
 ## 驗證與精確上限
 

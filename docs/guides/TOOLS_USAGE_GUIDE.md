@@ -116,7 +116,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `research_workspace`, `read_session` and the seven pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
+| Persistence and sessions | `research_workspace`, `read_session` and the eight pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -133,6 +133,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
 | Resume a literature investigation | `research_workspace` with `read` loads prior decisions, source handoffs and outstanding actions. [Worked example](ADVANCED_RESEARCH_WORKFLOWS.md#resume-a-research-workspace) |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
+| Systematic review / meta-analysis | `save_pipeline` with `retrieval: exhaustive` -> `unified_search(pipeline="saved:<name>")` -> `get_pipeline_history(view="prisma_s")` -> `prepare_export(pipeline_run="<name>")` -> `pipeline_screening` |
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
 
@@ -358,7 +359,9 @@ Artifact preflight audits the names produced by the actual artifact payload buil
 
 ![Session and pipeline workflow](../images/session-pipeline-workflow.svg)
 
-Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, and `unschedule_pipeline`.
+Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline`, and `pipeline_screening`.
+
+For systematic reviews, a PubMed search step with `retrieval: exhaustive` collects the complete PMID set through the E-utilities History Server (cap `max_records` ≤ 10000; larger counts are refused, not truncated) and the saved run persists it with PRISMA-S provenance: database/platform, saved and executed query, PubMed query translation, total/retrieved counts, filters, UTC time, server version and an immutable config snapshot. `unified_search` returns only a bounded preview. `get_pipeline_history` offers `view="run"`, `view="prisma_s"` (Markdown + CSV) and `view="records"` (paged full set); `prepare_export(pipeline_run=...)` exports the full set as RIS/CSV/CSL-JSON; a `block_analysis` step audits MeSH blocks and term contributions with bounded count-only queries; `pipeline_screening` records per-PMID decisions and reports PRISMA 2020 flow counts. Records first identified by an update run enter the screening queue automatically.
 
 Local and service capabilities are intentionally different. A trusted local
 caller may use workspace scope, `file:` pipeline sources, and the in-process
