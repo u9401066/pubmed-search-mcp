@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pubmed_search.domain.services.mesh_phrase_matching import MeshRecord
 from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
 
 
@@ -85,29 +86,36 @@ class TestSearchStrategyGenerator:
         assert "bad xml" not in str(exc_info.value)
 
     async def test_get_mesh_info_found(self, strategy_generator):
-        """Test getting MeSH info when term is found."""
+        """An entry-term match returns the record with its match evidence."""
+        summary = [
+            {
+                "Id": "68003920",
+                "DS_MeshTerms": ["Diabetes Mellitus", "Diabetes", "Type 2 Diabetes"],
+                "DS_IdxLinks": [{"TreeNum": "C18.452.394.750"}],
+                "DS_HeadingMappedToList": [],
+            }
+        ]
         with (
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch") as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary") as mock_esummary,
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["D003920"]}
+            mock_read.side_effect = [{"IdList": ["68003920"]}, summary]
             mock_esearch.return_value = MagicMock()
-
-            # Mock text response
-            mock_fetch_handle = MagicMock()
-            mock_fetch_handle.read.return_value = """1: Diabetes Mellitus
-Entry Terms:
-    Diabetes
-    Type 2 Diabetes
-Tree Number(s): C18.452.394.750"""
-            mock_efetch.return_value = mock_fetch_handle
+            mock_esummary.return_value = MagicMock()
 
             result = await strategy_generator.get_mesh_info("diabetes")
 
             assert result is not None
-            assert result["mesh_id"] == "D003920"
-            assert "Diabetes Mellitus" in result["preferred_term"]
+            assert result["mesh_id"] == "68003920"
+            assert result["preferred_term"] == "Diabetes Mellitus"
+            assert result["matched_on"] == "entry_term"
+            assert result["matched_term"] == "Diabetes"
+            assert result["tree_numbers"] == ["C18.452.394.750"]
+            term = mock_esearch.call_args.kwargs["term"]
+            assert '"diabetes"[MeSH Terms]' in term
+            assert "[All Fields]" not in term
+            assert mock_esummary.call_args.kwargs["id"] == "68003920"
 
     async def test_get_mesh_info_not_found(self, strategy_generator):
         """Test getting MeSH info when term is not found."""
@@ -188,32 +196,34 @@ Tree Number(s): C18.452.394.750"""
 
     async def test_generate_strategies_with_mesh(self, strategy_generator):
         """Test generating strategies with MeSH lookup."""
-        mesh_info = {
-            "mesh_id": "D003920",
-            "preferred_term": "Diabetes Mellitus",
-            "synonyms": ["Diabetes", "Type 2 Diabetes"],
-            "tree_numbers": ["C18.452"],
-        }
+        record = MeshRecord(
+            uid="68003920",
+            preferred="Diabetes Mellitus",
+            entry_terms=("Diabetes", "Type 2 Diabetes"),
+            tree_numbers=("C18.452",),
+        )
 
         with (
             patch.object(strategy_generator, "spell_check", return_value=("diabetes", False)),
-            patch.object(strategy_generator, "get_mesh_info", return_value=mesh_info),
+            patch.object(strategy_generator, "lookup_mesh_records", return_value={"diabete": (record,)}),
             patch.object(strategy_generator, "analyze_query", return_value={"count": 100}),
         ):
             result = await strategy_generator.generate_strategies(
                 topic="diabetes", use_mesh=True, include_suggestions=True
             )
 
-            assert len(result.get("mesh_terms", [])) > 0 or result.get("mesh_terms") is not None
+            assert [mesh["preferred"] for mesh in result["mesh_terms"]] == ["Diabetes Mellitus"]
+            assert result["mesh_terms"][0]["matched_on"] == "entry_term"
             assert result["coverage"]["mesh"]["status"] == "completed"
             assert result["coverage"]["mesh"]["failed"] == 0
+            assert '"Diabetes Mellitus"[MeSH Terms]' in [q["query"] for q in result["suggested_queries"]]
 
     async def test_generate_strategies_reports_optional_source_outages(self, strategy_generator):
         """Optional enrichments retain usable queries with explicit, sanitized coverage."""
         secret = "token=private-strategy-secret"
         with (
             patch.object(strategy_generator, "spell_check", side_effect=_ncbi_failure("spelling")),
-            patch.object(strategy_generator, "get_mesh_info", side_effect=_ncbi_failure("mesh")),
+            patch.object(strategy_generator, "lookup_mesh_records", side_effect=_ncbi_failure("mesh")),
             patch.object(strategy_generator, "analyze_query", side_effect=_ncbi_failure("query")),
         ):
             result = await strategy_generator.generate_strategies(topic="diabetes treatment")
@@ -226,7 +236,12 @@ Tree Number(s): C18.452.394.750"""
             "completed": 0,
             "failed": 1,
             "matched": 0,
+            "unconfirmed": 0,
+            "phrases_checked": 0,
         }
+        assert result["coverage"]["pubmed_atm"]["status"] == "failed"
+        assert result["mesh_terms"] == []
+        assert result["unmapped_phrases"] == ["diabetes treatment"]
         analysis = result["coverage"]["query_analysis"]
         assert analysis["status"] == "failed"
         assert analysis["attempted"] == analysis["failed"] > 0
