@@ -39,9 +39,9 @@ get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 ### 來源順序
 
 1. 只有 PMID 時先解析 PMCID／DOI：Europe PMC metadata（`europe_pmc_metadata`）優先，失敗或過慢時改用 NCBI ESummary（`ncbi_metadata`）。
-0. 這篇若已用 `register_fulltext` 登錄過，直接回傳該段文字（`registered_fulltext`，標示 `agent_supplied`／`user_supplied` 與 `supplied_not_verified`），不再查 provider。
+0. 這篇若已用 `register_fulltext` 登錄過且有正文，直接回傳該段文字（`registered_fulltext`，`fulltext_provenance: supplied`，標示 `agent_supplied`／`user_supplied` 與 `supplied_not_verified`），不再查 provider。只有摘要、沒有正文的登錄不會擋住 provider：照常查詢，並以 `supplied_no_body` 與 `supplied_fulltext` 註明。
 2. 有 PMCID 時取結構化 JATS：Europe PMC（`europe_pmc`）優先；它失敗、沒有正文或數秒內未回應時，改向 PMC 正式主機 NCBI E-utilities `efetch db=pmc`（`ncbi_pmc`）。先取得正文者勝出，另一路標為 `superseded`。
-3. XML 都失敗、沒有正文或只有 `front_matter_only` 時，才讀公開的 PMC 文章頁（`pmc_html`）。只在明確單篇的 `get_fulltext` 進行，搜尋預取與批次流程永遠不會讀；限速、快取，可用 `PUBMED_FULLTEXT_PMC_HTML=false` 關閉。回應的 `fulltext_retrieval` 記錄網址、`retrieved_at` 與頁面顯示的授權文字。
+3. 有 XML 來源失敗、沒有正文或回報 `front_matter_only` 後，才讀公開的 PMC 文章頁（`pmc_html`）；不會只因 XML 慢而啟動。此時若另一個 XML 來源（例如較慢的 Europe PMC）仍在進行，先取得正文者勝出，另一路標為 `superseded`。只在明確單篇的 `get_fulltext` 進行，搜尋預取與批次流程永遠不會讀；需要操作者的 `NCBI_EMAIL`（未設定時列為 `sources_skipped` 的 `not_configured`，絕不送出預設佔位信箱）；每秒 1 次、每程序與每 tenant 每小時有上限（`PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT`、`PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT`），用完回報 `rate_limited`；有快取，可用 `PUBMED_FULLTEXT_PMC_HTML=false` 關閉。回應的 `fulltext_retrieval` 記錄網址、`retrieved_at` 與頁面顯示的授權文字。
 4. 之後才是 Unpaywall、institutional、CORE 與 PDF fallback；已取得正文時不再下載 PDF。
 5. 整個請求有一個總時限（預設 90 秒）。時限內未開始的來源列在 `sources_skipped`，不是「上游不可用」。
 
@@ -56,7 +56,10 @@ get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 | `source_notices[].code = front_matter_only` | PMC 有這篇，但出版者不允許 XML 下載，只回傳前置資料 | 不當成全文；伺服器會在單篇請求改讀 PMC 文章頁，仍失敗時照 `fulltext_plan` 的 `host_fetch` 進行 |
 | `source_notices[].code = no_body` | 該來源完成但沒有正文 | 看其他來源結果 |
 | `source_notices[].code = supplied_not_verified` | 回傳的是 `register_fulltext` 登錄的文字，伺服器沒有比對 provider 版本 | 引用時註明來源與取得方式；要重查 provider 用 `use_registered_fulltext=false` |
-| `source_errors[]` 的 `pmc_html` = `rate_limited` | PMC 網站限速或出現機器人驗證，伺服器已退避 | 不要重試迴圈；照 plan 用 host 端讀單篇頁面 |
+| `source_errors[]` 的 `pmc_html` = `rate_limited` | PMC 網站限速、出現機器人驗證，或每小時頁面額度用完，伺服器已退避 | 不要重試迴圈；照 plan 用 host 端讀單篇頁面 |
+| `source_notices[].code = supplied_no_body` | 有登錄但沒有正文（例如只有摘要），所以照常查了 provider | 看 `supplied_fulltext` 的來源；需要時補登逐字正文 |
+| `source_notices[].code = pdf_only` | PMC 頁面只有 PDF、沒有正文（例如掃描檔） | 照 plan 的 `download_pdf` 取 PDF，再交 asset-aware-mcp |
+| `sources_skipped[]` 的 `pmc_html` = `not_configured` | 未設定 `NCBI_EMAIL`，伺服器不讀 PMC 頁面 | 照 plan 的 `host_fetch`；或請操作者設定 `NCBI_EMAIL` |
 
 ---
 
@@ -68,7 +71,9 @@ get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 | --- | --- | --- |
 | `retry_later` | 有來源逾時、限流或被總時限略過 | 等 `retry_after_seconds` 後只重讀這一篇；不要迴圈或批次重試 |
 | `host_fetch` | 有 PMCID 而伺服器沒讀到 PMC 頁面，或找到公開 OA landing page | host 的 WebFetch 讀該網址，要求**逐字**正文而非摘要；接著 `register_fulltext(... retrieval_method="host_fetch")` |
-| `download_oa_pdf` | 找到開放 PDF | 用 host 下載工具存到允許的資料夾；有 asset-aware-mcp 時 `ingest_documents` 取得 citation-ready spans；再 `register_fulltext(file_path=...)` |
+| `download_oa_pdf` | 找到經確認為開放取用的 PDF | 用 host 下載工具存到允許的資料夾；有 asset-aware-mcp 時 `ingest_documents` 取得 citation-ready spans；再 `register_fulltext(file_path=...)` |
+| `download_pdf` | 可免費閱讀（free to read，不一定是開放授權）或屬機構授權的 PDF | 同上，但只限使用者自己的研究，不再散布 |
+| `check_access` | 存取權不明的 PDF 連結（例如 CrossRef 的出版社連結） | 先確認使用者有權使用，再決定是否下載 |
 | `expand_discovery` | 尚未跑擴展來源 | `get_fulltext(..., extended_sources=true)` |
 | `institutional` | 伺服器已設定 OpenURL、EZproxy 或 browser broker | `get_institutional_link` 或 `allow_browser_session=true`；只在使用者自己的登入工作階段 |
 | `zotero_attachment` | 有 DOI 或 PMID 可比對 | Zotero Keeper `check_articles_owned`；有附件就 `register_fulltext(file_path=附件, supplied_by="user", retrieval_method="zotero_attachment")` |
@@ -97,8 +102,10 @@ register_fulltext(
 ### `register_fulltext` 規則
 
 - 必填 provenance：`retrieval_method`、`retrieved_at`，以及 `source_url` 或檔案。授權照抄頁面所示，不要推測。
-- `content` 與 `file_path` 二選一。`file_path` 只能是工作區（`PUBMED_WORKSPACE_DIR`）、筆記資料夾、tenant 資料夾或 `PUBMED_FULLTEXT_INTAKE_ROOTS` 內的 `.pdf`／`.txt`／`.md`／`.html`／`.xml`，不能含 `..`；遠端服務呼叫者只能送 `content`。
-- 登錄的文字一律標示 `agent_supplied`（agent 取得）或 `user_supplied`（使用者提供），`provider_verified=false`；不會被當成 provider 全文。
+- `content` 與 `file_path` 二選一。`file_path` 只能是本機磁碟上工作區（`PUBMED_WORKSPACE_DIR`）、筆記資料夾、tenant 的全文登錄資料夾（`<data>/fulltext/intake`）或 `PUBMED_FULLTEXT_INTAKE_ROOTS` 內的 `.pdf`／`.txt`／`.md`／`.html`／`.xml`；網路分享（`\\host\share`、`//host/share`）、裝置路徑與 `..` 一律拒絕；遠端服務呼叫者只能送 `content`。
+- 登錄的文字一律標示 `agent_supplied`（agent 取得）或 `user_supplied`（使用者提供），`fulltext_provenance: supplied`、`provider_verified=false`；不會被當成 provider 全文。供應者看到的授權只放在 `fulltext_retrieval.license`，不當成文章授權。
+- 同一篇文章以任一識別碼（PMID、PMCID、DOI）重新登錄，會取代所有已知識別碼下的文字；要更正就重新登錄。內容若宣告的是另一篇文章（PMC 頁面 canonical／citation id、JATS `<article-id>`），會以 `invalid_input` 拒絕。
+- 內容有大小、標題數與 HTML 巢狀深度上限，超過回報 `invalid_input`；來源網址中的帳密與簽章參數會被移除。
 - PDF 會抽取純文字但沒有頁碼或行號。需要逐句引用時，同一份 PDF 交給 asset-aware-mcp（`ingest_documents`／`parse_pdf_structure`）取得 citation-ready spans。
 - 只登錄逐字正文；WebFetch 若回傳的是摘要，就不要登錄。
 

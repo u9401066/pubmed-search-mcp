@@ -335,11 +335,15 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 `get_fulltext` 依序提供：這篇已登錄的文字、Europe PMC JATS、NCBI PMC JATS、
 公開的 PMC 文章頁（`pmc_html`），再到 OA 與機構路徑。PMC 文章頁只在明確單篇的
-`get_fulltext` 讀取，而且只在 XML 來源失敗、沒有正文或回報 `front_matter_only`
-之後；搜尋預取與批次流程永遠不會讀。它有程序層級限速、依 tenant 快取，回應的
+`get_fulltext` 讀取，而且只在有 XML 來源失敗、沒有正文或回報 `front_matter_only`
+之後（不會只因 XML 慢而啟動）；此時若另一個 XML 來源仍在進行，先取得正文者勝出，
+另一路標為 `superseded`。搜尋預取與批次流程永遠不會讀。它需要操作者的 `NCBI_EMAIL`
+（未設定時以 `not_configured` 略過，絕不送出佔位信箱），每秒 1 次，另有每程序與
+每 tenant 的每小時頁面上限（`PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT` 預設 60、
+`PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT` 預設 20），依 tenant 快取，回應的
 `fulltext_retrieval` 記錄網址、`retrieved_at` 與頁面顯示的授權文字，可用
-`PUBMED_FULLTEXT_PMC_HTML=false` 關閉。遇到 CAPTCHA 驗證頁會回報 `rate_limited`
-並退避，不會重試。
+`PUBMED_FULLTEXT_PMC_HTML=false` 關閉。CAPTCHA 驗證頁、403 或額度用完都回報
+`rate_limited` 並退避，不會重試。
 
 沒有可用正文時，`fulltext_plan` 依序列出適用於這篇的下一步，附 `why` 與 `legal`：
 
@@ -347,7 +351,9 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 | --- | --- | --- |
 | `retry_later` | 有來源逾時、限流或被總時限略過 | `retry_after_seconds` 後只重讀這一篇 |
 | `host_fetch` | 已知 PMCID，或找到公開 landing page | host WebFetch 讀該網址（逐字正文，不是摘要），再 `register_fulltext` |
-| `download_oa_pdf` | 找到開放 PDF | 下載到允許的資料夾；asset-aware-mcp `ingest_documents` 取得 citation-ready spans；`register_fulltext(file_path=...)` |
+| `download_oa_pdf` | 找到經確認為開放取用的 PDF | 下載到允許的資料夾；asset-aware-mcp `ingest_documents` 取得 citation-ready spans；`register_fulltext(file_path=...)` |
+| `download_pdf` | 可免費閱讀（不一定是開放授權）或屬機構授權的 PDF | 同上，只限使用者自己的研究 |
+| `check_access` | 存取權不明的 PDF（例如 CrossRef 的出版社連結） | 先確認使用者有權使用再下載 |
 | `expand_discovery` | 尚未跑擴展來源 | `get_fulltext(..., extended_sources=true)` |
 | `institutional` | 已設定 OpenURL、EZproxy 或 browser broker | `get_institutional_link` 或 broker；只在使用者自己的工作階段 |
 | `zotero_attachment` | 有 DOI 或 PMID 可比對 | Zotero Keeper `check_articles_owned`，再登錄附件 |
@@ -355,13 +361,18 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 `register_fulltext` 將 host 或使用者提供的文字存入 tenant 全文儲存區。必填
 provenance（`retrieval_method`、`retrieved_at`，以及 `source_url` 或檔案），宣告的
-授權照原文保存。可送 `content`（Markdown、純文字、JATS 或 HTML，最多 1,000,000
-字元）或 `file_path`（`.pdf`、`.txt`、`.md`、`.html`、`.xml`），檔案須位於工作區、
-筆記資料夾、tenant 資料夾或 `PUBMED_FULLTEXT_INTAKE_ROOTS`；含 `..` 或經 symlink
-離開這些根目錄的路徑會被拒絕，遠端服務呼叫者只能送 content。之後的
-`get_fulltext` 會優先回傳它，標示 `fulltext_origin: agent_supplied|user_supplied`、
+授權照原文保存在 `fulltext_retrieval.license`（不當成文章授權），網址中的帳密與
+簽章參數會被移除。可送 `content`（Markdown、純文字、JATS 或 HTML，最多 1,000,000
+字元）或 `file_path`（`.pdf`、`.txt`、`.md`、`.html`、`.xml`），檔案須在本機磁碟的
+工作區、筆記資料夾、tenant 全文登錄資料夾（`<data>/fulltext/intake`）或
+`PUBMED_FULLTEXT_INTAKE_ROOTS`；網路分享、裝置路徑、含 `..` 或經 symlink 離開這些
+根目錄的路徑會被拒絕，遠端服務呼叫者只能送 content。超過大小、標題數或 HTML 巢狀
+上限，或 JATS／PMC 頁面宣告的是另一篇文章，回報 `invalid_input`。重新登錄會取代該文
+所有已知識別碼下的文字。之後的 `get_fulltext` 會優先回傳有正文的登錄，標示
+`fulltext_origin: agent_supplied|user_supplied`、`fulltext_provenance: supplied`、
 `provider_verified: false` 與 `supplied_not_verified`（`use_registered_fulltext=false`
-可重查 provider）。文獻筆記會記錄 `fulltext_state`，Chronicle 證據列透過
+可重查 provider）；沒有正文的登錄只會註明（`supplied_no_body`、`supplied_fulltext`），
+provider 照常查詢。文獻筆記會記錄 `fulltext_state`，Chronicle 證據列透過
 `fulltext_lookup_source` 取得同一份文字。PDF 只抽取純文字、沒有頁碼定位；需要
 citation-ready spans 時，請把同一份 PDF 交給 asset-aware-mcp。
 

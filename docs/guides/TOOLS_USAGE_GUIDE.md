@@ -389,12 +389,17 @@ Extended-source initialization or cleanup failures preserve successful content.
 `get_fulltext` serves text in this order: text previously registered for the
 article, Europe PMC JATS, NCBI PMC JATS, then the public PMC article page
 (`pmc_html`), then OA and institutional routes. The PMC article page is read
-only for an explicit single-article `get_fulltext` request and only after the XML
-sources failed, had no body or reported `front_matter_only`; search prefetch and
-batch paths never read it. It is rate-limited process-wide, cached per tenant,
-records `fulltext_retrieval` (URL, `retrieved_at`, displayed license text) and
-can be disabled with `PUBMED_FULLTEXT_PMC_HTML=false`. A CAPTCHA interstitial is
-reported as `rate_limited` and the server backs off instead of retrying.
+only for an explicit single-article `get_fulltext` request and only after an XML
+source failed, had no body or reported `front_matter_only` (never just because XML
+is slow); if another XML source is still running, the first body wins and the other
+is reported as `superseded`. Search prefetch and batch paths never read it. It needs
+the operator's `NCBI_EMAIL` (otherwise it is skipped as `not_configured`; a placeholder
+address is never sent), is limited to 1 request/s plus hourly page budgets per process
+and per tenant (`PUBMED_FULLTEXT_PMC_HTML_HOURLY_LIMIT`, default 60;
+`PUBMED_FULLTEXT_PMC_HTML_TENANT_HOURLY_LIMIT`, default 20), is cached per tenant,
+records `fulltext_retrieval` (URL, `retrieved_at`, displayed license text) and can be
+disabled with `PUBMED_FULLTEXT_PMC_HTML=false`. A CAPTCHA interstitial, a 403 or a spent
+budget is reported as `rate_limited` and the server backs off instead of retrying.
 
 When no usable body is returned, `fulltext_plan` lists ordered, applicable next
 steps with `why` and `legal` notes. Only steps that fit the record appear:
@@ -403,7 +408,9 @@ steps with `why` and `legal` notes. Only steps that fit the record appear:
 | --- | --- | --- |
 | `retry_later` | A source timed out, was rate-limited or skipped at the deadline | Re-read this one article after `retry_after_seconds` |
 | `host_fetch` | A PMCID is known, or an open landing page was found | Host WebFetch of that URL (verbatim text, not a summary), then `register_fulltext` |
-| `download_oa_pdf` | An open PDF was located | Download into an allowed folder; asset-aware-mcp `ingest_documents` for citation-ready spans; `register_fulltext(file_path=...)` |
+| `download_oa_pdf` | A PDF verified as open access was located | Download into an allowed folder; asset-aware-mcp `ingest_documents` for citation-ready spans; `register_fulltext(file_path=...)` |
+| `download_pdf` | A free-to-read (not necessarily open-licensed) or licensed PDF | As above, for the user's own research only |
+| `check_access` | A PDF of unknown access (for example a publisher link from CrossRef) | Confirm the user may use it before downloading |
 | `expand_discovery` | Extended discovery was not run | `get_fulltext(..., extended_sources=true)` |
 | `institutional` | OpenURL, EZproxy or the browser broker is configured | `get_institutional_link`, or the broker; only in the user's own session |
 | `zotero_attachment` | A DOI or PMID can be matched | Zotero Keeper `check_articles_owned`, then register the attachment |
@@ -411,15 +418,22 @@ steps with `why` and `legal` notes. Only steps that fit the record appear:
 
 `register_fulltext` stores host- or user-supplied text in the tenant fulltext
 store. Provenance is required (`retrieval_method`, `retrieved_at`, and a
-`source_url` or file); a declared license is kept verbatim. Send `content`
-(Markdown, text, JATS or HTML, up to 1,000,000 characters) or a `file_path`
-(`.pdf`, `.txt`, `.md`, `.html`, `.xml`) inside the workspace, notes directory,
-tenant data directory or `PUBMED_FULLTEXT_INTAKE_ROOTS`; `..` components and
-symlinks leaving those roots are rejected, and remote service callers may only
-send content. Later `get_fulltext` reads serve it first with
-`fulltext_origin: agent_supplied|user_supplied`, `provider_verified: false` and
-a `supplied_not_verified` notice (pass `use_registered_fulltext=false` to
-re-query providers). Literature notes record `fulltext_state`, and Chronicle
+`source_url` or file); a declared license is kept verbatim under
+`fulltext_retrieval.license` (never as the article's license), and credentials or
+signed query values are removed from the URL. Send `content` (Markdown, text, JATS or
+HTML, up to 1,000,000 characters) or a `file_path` (`.pdf`, `.txt`, `.md`, `.html`,
+`.xml`) on a local drive inside the workspace, notes directory, the tenant fulltext
+intake folder (`<data>/fulltext/intake`) or `PUBMED_FULLTEXT_INTAKE_ROOTS`; network
+shares, device paths, `..` components and symlinks leaving those roots are rejected,
+and remote service callers may only send content. Content beyond the size, heading or
+HTML nesting limits, or a JATS/PMC page that declares another article than `source`,
+fails with `invalid_input`. A new registration replaces the text for every known
+identifier of the article. Later `get_fulltext` reads serve text with a body first, with
+`fulltext_origin: agent_supplied|user_supplied`, `fulltext_provenance: supplied`,
+`provider_verified: false` and a `supplied_not_verified` notice (pass
+`use_registered_fulltext=false` to re-query providers); a registration without body
+text is only reported (`supplied_no_body`, `supplied_fulltext`) and providers are
+queried as usual. Literature notes record `fulltext_state`, and Chronicle
 evidence rows reach the same text through `fulltext_lookup_source`. PDFs are
 text-extracted without page locators; ingest the same PDF with asset-aware-mcp
 for citation-ready evidence spans.

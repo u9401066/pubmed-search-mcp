@@ -404,7 +404,9 @@ because the publisher forbids XML reuse.
   defaults to `False`; only the `get_fulltext` tool sets it. The page joins the
   structured race as a `HedgedAttempt(start_on_hedge=False)`: it starts only
   after an XML attempt failed, had no body or was `front_matter_only`, never
-  merely because XML is slow, and a later usable XML body still wins. Search
+  merely because XML is slow. Another XML attempt may still be running then
+  (for example a slow Europe PMC after NCBI answered front matter only); the
+  first usable body wins and the slower attempt is reported as `superseded`. Search
   prefetch uses its own XML-only fetcher and can never reach the page
   (`tests/test_fulltext_pmc_html.py` proves both). Parsed pages are cached per
   tenant (16 entries, 1 h) in `ToolSessionRuntime.article_page_cache`;
@@ -432,6 +434,37 @@ because the publisher forbids XML reuse.
 NCBI permits reading individual PMC articles but prohibits systematic or bulk
 downloading from the PMC website. Nothing in this phase loops over search
 results; bulk reuse belongs to the PMC Open Access subset services.
+
+Pre-release review hardening (same release):
+
+- Parsing is linear and bounded: Markdown headings use a linear pattern and
+  lines over 300 characters are never headings; the HTML tree builder counts
+  open elements per tag so stray end tags cost O(1), and caps elements
+  (100,000), depth (128), sections (5,000) and size (8 M characters). A
+  breach is `invalid_input` for intake and `invalid_response` for the page.
+  Intake parsing, file reads and store writes run in worker threads.
+- `pmc_html` needs an operator contact (`NCBI_EMAIL`; skipped as
+  `not_configured` otherwise), has hourly budgets per process and per tenant,
+  keeps redirects on NCBI hosts (checked before any status handling), backs
+  off on 403, requires the page to declare its PMCID (canonical, citation URL
+  meta or final URL) and its `citation_pmid` to match a known PMID, reports a
+  page without the body container as layout drift, and marks PDF-only pages.
+- The plan uses open-access wording only for verified OA links
+  (`download_oa_pdf`); free-to-read PDFs (and a licensed PDF the server
+  already extracted unstructured text from) are `download_pdf`,
+  unknown-access PDFs are `check_access`, and other licensed copies go
+  through `institutional`. Registration skeletons follow what
+  the caller may use (content instead of files for remote callers; none
+  without durable storage).
+- Supplied text: a body-less registration never shadows providers
+  (`supplied_no_body`); the newest registration wins per article across all
+  known identifiers; documents declaring another article are refused;
+  provenance is `supplied` and the supplier's license stays in
+  `fulltext_retrieval`; network/device paths are refused before any OS call
+  and files are read once with an identity check; the store retries Windows
+  sharing violations, rolls back a failed save, drops dangling pointers and
+  has a byte quota; source URLs are redacted. Withdrawing a registration is
+  proposed as a separate decision (re-registering corrects it meanwhile).
 
 ### Phase 5: New high-value sources
 

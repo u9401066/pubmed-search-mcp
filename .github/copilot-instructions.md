@@ -662,14 +662,19 @@ When a single, explicitly requested article has no usable XML body (for example
 the publisher allows only PMC front matter), the server reads the public PMC
 article page (`pmc_html`) for that one request; search prefetch never does. If
 it still returns no body, follow `fulltext_plan` in order with your own tools:
-`host_fetch` (fetch the public page verbatim, not a summary), `download_oa_pdf`
-(then asset-aware-mcp `ingest_documents` for citation-ready spans),
-`institutional` (only in the user's own session), `zotero_attachment`
+`retry_later` (a source is cooling down), `host_fetch` (fetch the public page
+verbatim, not a summary), `download_oa_pdf` (verified open access only),
+`download_pdf` / `check_access` (free-to-read or unknown access: confirm the user
+may use it first), then asset-aware-mcp `ingest_documents` for citation-ready
+spans, `institutional` (only in the user's own session), `zotero_attachment`
 (Zotero Keeper `check_articles_owned`) and `ask_user_for_pdf`. Store the text
-once with `register_fulltext` and its provenance; later `get_fulltext`, notes and
+with `register_fulltext` and its provenance; later `get_fulltext`, notes and
 Chronicle evidence reuse it as `agent_supplied`/`user_supplied`, never as
-provider-verified text. Read one article at a time for the user's research;
-never batch or crawl PMC or publisher sites.
+provider-verified text. Text without body sections is kept only as a note and
+never hides provider fulltext; registering the article again replaces it. The
+server reads the PMC page only when `NCBI_EMAIL` is configured, within hourly
+budgets. Read one article at a time for the user's research; never batch or
+crawl PMC or publisher sites.
 
 ```python
 register_fulltext(

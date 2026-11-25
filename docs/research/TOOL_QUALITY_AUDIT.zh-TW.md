@@ -279,7 +279,7 @@ Dependency 欄列出主要 application service、store 或 external adapter，�
 | Tool | 角色 | 主要依賴與關係 | Side effect 與契約 |
 | --- | --- | --- | --- |
 | `get_fulltext` | 依 explicit source 與 access policy 解析並取得全文。 | Fulltext service 與 registry、已登錄（supplied）全文、PMC、Europe PMC、單篇才讀的 PMC 文章頁、Unpaywall、CORE、institutional adapter 與 immutable typed link discovery；partial source coverage 會一路進入 artifact persistence。 | write；判別式 `source`；non-idempotent、open-world；可能保存大型 full-text artifact；回傳精確 coverage status、completed/attempted source key、sanitized source error、取得出處，沒有可用正文時另附有序的 `fulltext_plan`。 |
-| `register_fulltext` | 以必填 provenance 保存 host agent 或使用者取得的文章文字，供後續重用。 | Application intake service 與 tenant supplied-fulltext store；與 provider 路徑共用 JATS／HTML／PDF adapter；由 `get_fulltext`、筆記匯出與 Chronicle 證據查詢讀回。 | write；判別式 `source`、封閉的 provenance 物件、有上界的 content 或允許清單內的本機檔案；non-idempotent、local-only；保存 artifact；從不標為 provider 驗證。 |
+| `register_fulltext` | 以必填 provenance 保存 host agent 或使用者取得的文章文字，供後續重用。 | Application intake service 與 tenant supplied-fulltext store；與 provider 路徑共用 JATS／HTML／PDF adapter；由 `get_fulltext`、筆記匯出與 Chronicle 證據查詢讀回。 | destructive（取代該文目前提供的文字）；判別式 `source`、封閉的 provenance 物件、有上界的 content 或允許清單內的本機檔案；non-idempotent、local-only；保存 artifact；從不標為 provider 驗證。 |
 | `get_text_mined_terms` | 取得單一 explicit article source 的 provider text-mined annotations。 | Europe PMC annotation client 與共用 article-source normalization。 | none；判別式 `source`；read-only、idempotent、open-world。 |
 
 ### 6. `figure` — 論文圖表擷取
