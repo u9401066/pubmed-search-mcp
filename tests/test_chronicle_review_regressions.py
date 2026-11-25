@@ -12,6 +12,7 @@ and unknown citation counts displayed as zero.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,8 +22,15 @@ from pubmed_search.application.chronicle.highlights import (
     sentence_spans,
     verify_highlight,
 )
-from pubmed_search.application.timeline import MilestoneDetector
-from pubmed_search.domain.entities.timeline import ResearchTimeline
+from pubmed_search.application.timeline import MilestoneDetector, TimelineBuilder
+from pubmed_search.domain.entities.timeline import EvidenceLevel, MilestoneType, ResearchTimeline
+from pubmed_search.domain.services.study_design import (
+    BASIS_PUBLICATION_TYPE,
+    BASIS_TEXT,
+    FAMILY_NOTICE,
+    FAMILY_PROTOCOL,
+    classify_study_design,
+)
 
 # ── Extractive highlights: boilerplate is never the authors' conclusion ──────
 
@@ -271,3 +279,123 @@ def test_untruncated_abstract_records_no_truncation() -> None:
     assert entry.provenance["extractive_highlight"]["abstract_truncated"] is False
     finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "extractive_highlights")
     assert finding.status == "pass"
+
+
+# ── Study-design labels: non-randomized studies and protocols are not RCTs ──
+
+
+@pytest.mark.parametrize(
+    ("title", "key", "label"),
+    [
+        (
+            "A non-randomized controlled trial of early mobilisation after hip fracture",
+            "non_randomized_trial",
+            "Non-randomized Trial",
+        ),
+        ("Nonrandomised, controlled trial of nurse-led sedation", "non_randomized_trial", "Non-randomized Trial"),
+        ("A non‐randomised trial of chlorhexidine bathing", "non_randomized_trial", "Non-randomized Trial"),
+        ("Quasi-randomised trial of chlorhexidine bathing", "quasi_randomized_trial", "Quasi-randomized Trial"),
+        ("Protocol for a randomised controlled trial of ketamine", "trial_protocol", "Clinical Trial Protocol"),
+        (
+            "Ketamine versus placebo (KETA): study protocol for a randomised controlled trial",
+            "trial_protocol",
+            "Clinical Trial Protocol",
+        ),
+        ("Rationale and design of the ENGAGES randomized trial", "trial_protocol", "Clinical Trial Protocol"),
+        (
+            "Effect of an enhanced recovery protocol for colorectal surgery: a randomized clinical trial",
+            "rct",
+            "Randomized Controlled Trial",
+        ),
+        ("Protocol-driven weaning from ventilation: a randomized trial", "rct", "Randomized Controlled Trial"),
+    ],
+)
+def test_title_heuristics_do_not_call_non_randomized_studies_or_protocols_rcts(
+    title: str, key: str, label: str
+) -> None:
+    design = classify_study_design(["Journal Article"], [], title=title)
+    assert (design.key, design.label, design.basis) == (key, label, BASIS_TEXT)
+
+
+def test_abstract_heuristics_ignore_background_randomized_trials() -> None:
+    previous = classify_study_design(
+        ["Journal Article"],
+        [],
+        title="Ketamine",
+        abstract="In a previous randomized trial, ketamine reduced pain. We now report a cohort.",
+    )
+    assert previous.key == "unspecified"
+    pooled = classify_study_design(
+        ["Journal Article"],
+        [],
+        title="Ketamine for depression",
+        abstract="We searched MEDLINE for trials in which adults were randomized to ketamine or placebo.",
+    )
+    assert pooled.key == "unspecified"
+    # A self-describing allocation sentence is still recognised.
+    own = classify_study_design(
+        ["Journal Article"], [], title="Ketamine", abstract="Ninety adults were randomized to ketamine or placebo."
+    )
+    assert (own.key, own.basis) == ("rct", BASIS_TEXT)
+
+
+def test_protocol_publication_type_outranks_rct_and_phase_types() -> None:
+    design = classify_study_design(["Clinical Trial Protocol", "Randomized Controlled Trial", "Journal Article"])
+    assert (design.key, design.family, design.basis) == ("trial_protocol", FAMILY_PROTOCOL, BASIS_PUBLICATION_TYPE)
+    assert design.display_label == "Clinical Trial Protocol (randomized)"
+    assert set(design.matched) == {"Clinical Trial Protocol", "Randomized Controlled Trial"}
+
+    phased = classify_study_design(["Clinical Trial, Phase III", "Clinical Trial Protocol"])
+    assert phased.display_label == "Clinical Trial Protocol (Phase III)"
+
+    # A completed RCT is unchanged.
+    rct = classify_study_design(["Randomized Controlled Trial", "Multicenter Study"])
+    assert (rct.key, rct.display_label) == ("rct", "Randomized Controlled Trial (multicenter)")
+
+
+@pytest.mark.parametrize("notice", ["Published Erratum", "Retraction of Publication", "Expression of Concern"])
+def test_publication_notices_have_their_own_family(notice: str) -> None:
+    design = classify_study_design([notice, "Randomized Controlled Trial"], title="Erratum: Phase 3 trial of X")
+    assert (design.key, design.family) == ("notice", FAMILY_NOTICE)
+
+
+# ── Milestones: notices and protocols are not completed trials ──────────────
+
+
+@pytest.mark.parametrize(
+    "article",
+    [
+        {"publication_types": ["Published Erratum"], "title": "Erratum: Phase 3 trial of X"},
+        {"publication_types": ["Retraction of Publication"], "title": "Retraction: A randomized phase 3 trial of X"},
+        {"publication_types": ["Expression of Concern"], "title": "Expression of concern: pivotal trial of X"},
+        {
+            "publication_types": ["Clinical Trial Protocol", "Randomized Controlled Trial"],
+            "title": "Protocol for a phase 3 trial of X",
+        },
+        {"publication_types": ["Clinical Trial Protocol", "Clinical Trial, Phase III"], "title": "The X-3 protocol"},
+        {"publication_types": ["Journal Article"], "title": "Study protocol for a phase 2 dose-finding trial of X"},
+    ],
+)
+def test_notices_and_protocols_are_never_trial_milestones(article: dict[str, Any]) -> None:
+    detector = MilestoneDetector()
+    full = {"pmid": "9", "year": 2021, **article}
+    assert detector.detect_milestone(full) is None
+    assert detector.infer_evidence_level(full) is EvidenceLevel.UNKNOWN
+
+
+def test_protocol_entry_is_labelled_as_a_protocol_in_the_chronicle() -> None:
+    article = {
+        "pmid": "31",
+        "year": 2019,
+        "title": "Protocol for a randomised trial of BIS-guided anaesthesia",
+        "publication_types": ["Clinical Trial Protocol", "Randomized Controlled Trial"],
+        "abstract": "This trial will randomise 1000 adults. The primary outcome will be delirium incidence.",
+    }
+    assert MilestoneDetector().detect_milestone(article) is None
+
+    generic = TimelineBuilder(MagicMock())._create_generic_event(article)
+    snapshot = assemble_chronicle(topic="bis", timeline=ResearchTimeline("bis", [generic]))
+    entry = snapshot.entries[0]
+    assert entry.title == "Clinical Trial Protocol (randomized)"
+    assert entry.provenance["milestone_type"] != MilestoneType.RANDOMIZED_TRIAL.value
+    assert "randomized_trial" not in entry.tags

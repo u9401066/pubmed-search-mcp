@@ -356,8 +356,15 @@ TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneTyp
     "review": _SYNTHESIS | _GUIDANCE | {MilestoneType.CONTROVERSY, MilestoneType.MECHANISM_DISCOVERY},
     "case_report": frozenset(),
     "commentary": _COMMUNICATIONS,
+    "protocol": frozenset(),
+    "publication_notice": frozenset(),
     "other": _TRIAL_PHASES | _SYNTHESIS | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL},
 }
+
+#: Design families that report no results of their own: a trial protocol or a
+#: notice (erratum, retraction, expression of concern) is never a milestone,
+#: whatever trial publication types or title wording it carries.
+NON_MILESTONE_DESIGN_FAMILIES = frozenset({"protocol", "publication_notice"})
 
 #: Abstracts describe background literature and routine outcomes (adverse
 #: events, recommendations, prior approvals), so abstract matching is limited

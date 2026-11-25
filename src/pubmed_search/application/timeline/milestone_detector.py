@@ -28,7 +28,7 @@ from pubmed_search.domain.entities.timeline import (
     MilestoneType,
     TimelineEvent,
 )
-from pubmed_search.domain.services.study_design import indexed_design_family
+from pubmed_search.domain.services.study_design import classify_study_design, indexed_design_family
 
 from .dates import parse_publication_month, parse_publication_year
 from .milestone_policy import (
@@ -37,6 +37,7 @@ from .milestone_policy import (
     DEFAULT_PUBTYPE_POLICIES,
     DEFAULT_TITLE_PATTERN_POLICIES,
     LANDMARK_CITATION_THRESHOLDS,
+    NON_MILESTONE_DESIGN_FAMILIES,
     PUBTYPE_PATTERNS,
     TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN,
     TITLE_PATTERNS,
@@ -119,6 +120,11 @@ class MilestoneDetector:
         # is. Text patterns may refine an indexed design (a trial phase) but
         # cannot relabel an indexed trial or cohort as, say, a safety alert.
         design_family = indexed_design_family(article.get("publication_types"), article.get("mesh_terms"))
+        if classify_study_design(article.get("publication_types"), title=title).family in NON_MILESTONE_DESIGN_FAMILIES:
+            # A protocol (indexed or stated by its title) or an erratum/retraction
+            # notice reports no results; it stays in the timeline as a
+            # background record, never a milestone.
+            return None
 
         # Earliest-in-scope is provenance, not a scientific milestone type.
         # Detect the article's actual milestone first so an early FDA approval,
@@ -463,6 +469,10 @@ class MilestoneDetector:
         pub_types = article.get("publication_types") or []
         if isinstance(pub_types, str):
             pub_types = [pub_types]
+
+        # Protocols and notices carry no results of their own.
+        if indexed_design_family(pub_types) in NON_MILESTONE_DESIGN_FAMILIES:
+            return EvidenceLevel.UNKNOWN
 
         # Level 1: Systematic reviews, Meta-analyses
         level1_types = {"Meta-Analysis", "Systematic Review"}
