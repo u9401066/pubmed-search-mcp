@@ -65,11 +65,13 @@ The broker has six explicit stages:
    central source registry. Enrichment-only sources cannot satisfy a primary
    search by themselves.
 3. **Schedule.** Fan out independent adapters concurrently while retaining a
-   bounded per-source deadline. In deep mode, one public per-source `limit` is
-   allocated across all strategies for that source, with global and per-source
-   concurrency guards; it is not multiplied by the number of strategies. A
-   slow or failed provider cannot discard good results returned by another
-   provider.
+   bounded per-source deadline. Deep mode is precision-first: the caller's
+   query runs on each source with that source's full `limit`; lower-precision
+   strategies run one at a time only to fill slots the exact tier left empty,
+   are disclosed in `broadening`, and never run for a source whose exact query
+   failed. Global and per-source concurrency guards and an overall fill
+   deadline still apply. A slow or failed provider cannot discard good results
+   returned by another provider.
 4. **Protect providers.** Admit requests through shared per-service concurrency
    slots, then acquire the conservative rate budget immediately before execution.
    Retry/backoff, timeouts and circuit breakers use the same transport kernel.
@@ -199,6 +201,15 @@ PubTator at all.
 - Auto-relaxation may broaden a PubMed query only when PubMed was part of the
   plan. It reuses the successful relaxed response instead of issuing the same
   PubMed request twice.
+- Deep-mode fill broadening and zero-result auto-relaxation share one
+  `search-broadening/v1` disclosure and record-level `retrieval` provenance;
+  broadened records rank after exact-query records, and `options="no_relax"`
+  disables both mechanisms.
+- A PubMed MeSH clause that PubMed reports as not found (`QuotedPhraseNotFound`
+  or `PhraseNotFound`) is corrected before either mechanism: the corrected query
+  replaces the PubMed exact tier and is disclosed as `mesh_correction` (first
+  `mechanisms` entry). `options="no_mesh_correction"` opts out; `no_relax` does
+  not. Fielded PubMed queries are PubMed-only, so other providers never see it.
 - `PUBMED_SEARCH_DISABLED_SOURCES` is a kill switch for explicit, automatic,
   `all`, and `options="preprints"` selection paths.
 - An empty successful response is reported as `empty`, not as an outage. A

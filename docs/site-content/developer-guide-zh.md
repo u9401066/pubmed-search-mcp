@@ -135,7 +135,7 @@ Export layer 屬於 `application/export/`。Presentation tools 不應手動組 R
 - `save_literature_notes` 負責 local note workflows。
 - Local note defaults 使用 wiki-note semantics。
 - Foam-compatible wikilinks、MedPaper-style layouts、CSL JSON 與 user templates 是 export profiles，不是 presentation-only behavior。
-- 輸出目錄解析順序必須保持文件化：`output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`、`PUBMED_DATA_DIR/references`、`~/.pubmed-search-mcp/references`。
+- 輸出目錄解析順序必須保持文件化：`output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`（未設定時為 `CLAUDE_PROJECT_DIR/references`）、`PUBMED_DATA_DIR/references`、`~/.pubmed-search-mcp/references`。
 - 這套 directory/template resolution 只屬於本機模式。Authenticated service tools 必須拒絕
   caller-selected `output_dir` 與 `template_file`，並將內建 format 寫到 installed tenant
   session root 之下。
@@ -211,7 +211,7 @@ uv run python scripts/check_async_tests.py
 ### 完整 MCP protocol acceptance
 
 全工具 acceptance suite 會啟動真正的 server，並用官方 MCP client 執行
-`tools/list` 與 `tools/call`。它會核對精確的 42-tool registry，逐一呼叫每個
+`tools/list` 與 `tools/call`。它會核對精確的 43-tool registry，逐一呼叫每個
 公開 tool，也會實際走過 session、Chronicle、artifact、note export、pipeline
 與 scheduler 的有狀態流程。
 
@@ -221,7 +221,7 @@ flowchart LR
     T --> S["Source-tree stdio 子行程"]
     T --> H["Streamable HTTP /mcp"]
     T --> W["全新安裝 wheel 的 stdio"]
-    S --> R["Canonical 42-tool registry"]
+    S --> R["Canonical 43-tool registry"]
     H --> R
     W --> R
     R --> A["真實 application services 與 durable stores"]
@@ -244,7 +244,7 @@ uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
 Child server 只替換 external-provider boundaries；MCP registration 與 schema
 validation、tool adapters、application services、session/artifact/Chronicle/
 pipeline persistence、note files 與 scheduling 都使用真實實作。每一種
-transport 都會執行 62 次成功且具語意斷言的 `tools/call`，加上 42 次執行前
+transport 都會執行 67 次成功且具語意斷言的 `tools/call`，加上 43 次執行前
 拒絕，驗證每個工具都能修正一次後成功。所有可接受參數也會驗證符合公開的
 JSON Schema。經 MCP 回傳的 Chronicle
 與 citation Mermaid 會核對 hash/size，CI 還會把這兩份實際 source 交給固定版

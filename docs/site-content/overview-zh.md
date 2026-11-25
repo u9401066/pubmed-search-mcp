@@ -16,7 +16,7 @@ PubMed 搜尋程式可追溯至 2025 年 11 月 25 日的 `med-paper-assistant`�
 
 | 使用情境 | 安裝方式 |
 | --- | --- |
-| 正式版 v0.10.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.10.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **42 個 MCP 工具**，包含持久研究工作區。 |
+| 正式版 v0.11.0 | 在 client 設定 stdio 指令 `uvx`、引數 `pubmed-search-mcp@0.11.0`，並用 `NCBI_EMAIL` 設定學術聯絡信箱。此版提供 **43 個 MCP 工具**，包含持久研究工作區。 |
 | 開發工作區 | 在 checkout 執行下方指令，以安裝可測試本機變更的 plugin。 |
 
 ```sh
@@ -27,16 +27,26 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 四個回顧主題的盲測記錄了 agent 看過 MeSH 預查後的選擇、找回的已知納入篇目與新增待篩筆數。[方法與逐題結果](#/mesh-preflight)
 
+## v0.11.0 新功能
+
+- **系統性回顧**：保存的 pipeline 可完整取回 PubMed 結果集（上限 10,000 筆），保留 PRISMA-S 執行紀錄，匯出 RIS/CSV/CSL-JSON，分析各概念區塊的貢獻，並記錄篩選決定（`pipeline_screening`）。
+- **精確優先搜尋**：先以你的查詢填滿要求筆數；只有不足時才自動放寬，且每筆放寬結果都有標示。
+- **可信的 MeSH**：只有完全符合主要詞或 entry term 才算確認對應；PubMed 無法解析的 MeSH 會在 `unified_search` 自動更正並附證據，保存的 pipeline 只提出建議、不改寫。
+- **能更正引用的文獻核對**：年份、卷號引錯的文獻會列出欄位更正，不再被當成疑似捏造。
+- **有證據支撐的 Chronicle 與更清楚的全文狀態**：依 PubMed publication type 標示研究設計、引用結論原句、NCBI PMC fallback 與明確的來源錯誤代碼。
+
+詳見 [CHANGELOG](https://github.com/u9401066/pubmed-search-mcp/blob/master/CHANGELOG.md)。
+
 ## 從研究問題開始
 
-可請 agent「追查早期人工耳蝸的技術分歧，並留下一篇讓同事接手閱讀的文章」。要理解這 42 個工具，可以先選研究任務。
+可請 agent「追查早期人工耳蝸的技術分歧，並留下一篇讓同事接手閱讀的文章」。要理解這 43 個工具，可以先選研究任務。
 
 | 研究任務 | 可以取得的結果 |
 | --- | --- |
 | 定義範疇 | 擴展 MeSH 與同義詞，驗證 agent 提出的 PICO，實測哪個布林條件排除了哪些篇目。[組合預查範例](#/tools-usage-guide-zh#%E6%AF%94%E8%BC%83-pubmed-%E6%A6%82%E5%BF%B5%E7%B5%84%E5%90%88) |
 | 搜尋與追索 | 跨來源搜尋，檢查各來源失敗或截斷的情形，再追查相關文獻、參考文獻及後續引用。[使用者指南](#/user-guide-zh) |
 | 閱讀與核對 | 檢視摘要、可取得的全文段落、圖表或書目比對。可用 `diagnose_institutional_access` 診斷已設定的機構存取。[工具指南](#/tools-usage-guide-zh) |
-| 重用回顧策略 | 保存 PICO 或引文擴展 pipeline，再次執行並比較歷史。研究團隊負責適格性篩選與統計合併。[Pipeline 教學](#/pipeline-tutorial-zh) |
+| 重用回顧策略 | 保存 PICO 或引文擴展 pipeline，完整取回 PubMed 結果集，匯出 PRISMA-S 紀錄與 RIS/CSV，分析各概念區塊的貢獻，並記錄篩選決定以產生 PRISMA 2020 計數。適格性判斷與統計合併仍由研究團隊負責。[Pipeline 教學](#/pipeline-tutorial-zh) |
 | 追溯研究史 | 從 Chronicle 查閱分支、關鍵文章、早期替代解釋與版次差異。[歷史案例與研究交接](#/advanced-workflows-zh) |
 | 交付研究 | 匯出引文或筆記、記錄來源與待辦。Host 可另用獲授權的 Zotero 本機書庫比對。[功能與驗證證據](#/documentation-map#capability-inventory) |
 
@@ -44,7 +54,7 @@ uv run --frozen python scripts/build_agent_plugin.py --dev-output build/pubmed-r
 
 ## 搜尋邊界與可回復的 search runs
 
-一般文獻發現對外固定只有一個 MCP tool，入口是 `unified_search`。每個來源的 limit 是該來源所有 query strategies 的**總額度**。解讀零筆或少量結果前，先看 `search_status` 和來源紀錄。全文是否可讀取取決於公開識別碼、機構授權與可用的本機文件。
+一般文獻發現對外固定只有一個 MCP tool，入口是 `unified_search`。Deep search 採精準優先：原始查詢先取得每個來源的**完整 limit**，不足時才由較低精準度策略補足剩餘名額，並在 `broadening` 揭露。解讀零筆或少量結果前，先看 `search_status` 和來源紀錄。全文是否可讀取取決於公開識別碼、機構授權與可用的本機文件。
 
 `search-run/v1` 保留檢索紀錄。`replay_search` 只回傳原本、已移除 credential 的參數。重新提交會開始一次有界搜尋，目前沒有對外的 provider cursor 續傳參數。遇到 `history_unavailable` 時，該次搜尋沒有可保證復原的紀錄。[恢復流程與 artifact](#/tools-usage-guide-zh)
 
