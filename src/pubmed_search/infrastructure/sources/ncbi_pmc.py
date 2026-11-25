@@ -174,10 +174,12 @@ class NCBIPMCClient(BaseAPIClient):
         The returned mapping has the shared JATS shape plus
         ``access_restricted``. When NCBI states that the publisher does not
         allow XML download, ``sections`` is emptied: whatever remains is front
-        matter or the notice itself, not article body.
+        matter or the notice itself, not article body. Only the main article
+        is consulted; a nested ``<sub-article>`` (decision letter, author
+        reply) neither supplies body text nor hides the restriction.
         """
-        parsed = parse_jats_article(xml_content, source=self._service_name)
-        if _RESTRICTED_XML_RE.search(xml_content) is None:
+        parsed = parse_jats_article(xml_content, source=self._service_name, notice_pattern=_RESTRICTED_XML_RE)
+        if not parsed.pop("notice_found", False):
             parsed["access_restricted"] = False
             return parsed
         body_sections = [

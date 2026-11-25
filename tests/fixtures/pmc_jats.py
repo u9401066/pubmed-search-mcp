@@ -92,6 +92,38 @@ PMC_EFETCH_EUTILS_ERROR = '<?xml version="1.0" ?><eFetchResult><ERROR>Unable to 
 PMC_EFETCH_EMPTY_BODY = ""
 PMC_EFETCH_EMPTY_ARTICLESET = PMC_ARTICLESET_PROLOG + "<pmc-articleset></pmc-articleset>"
 
+_SUB_ARTICLE = """<sub-article article-type="reply" id="sa1"><front-stub>
+<title-group><article-title>Author response</article-title></title-group>
+<abstract><p>Reply-only abstract.</p></abstract></front-stub>
+<body><p>Synthetic author response paragraph that is not the article body.</p>
+<fig id="sa1fig1"><label>Author response image 1</label><caption><p>Reply figure</p></caption></fig>
+<sec><title>Reviewer 1</title><p>Synthetic reply to reviewer one.</p></sec></body>
+<back><ref-list><ref id="sa1r1"><label>R1</label><mixed-citation>Reply-only reference.</mixed-citation></ref></ref-list></back>
+</sub-article>"""
+
+
+def _article_with_sub_article(*, body: str, permissions: str = _PERMISSIONS, back: str = _BACK) -> str:
+    """eLife-style record: the main article followed by a nested reply article."""
+    return (
+        PMC_ARTICLESET_PROLOG
+        + "<pmc-articleset>"
+        + '<article xmlns:xlink="http://www.w3.org/1999/xlink" article-type="research-article">'
+        + _FRONT.format(permissions=permissions)
+        + body
+        + back
+        + _SUB_ARTICLE
+        + "</article></pmc-articleset>"
+    )
+
+
+# NCBI withholds the main body; only the nested reply article carries a <body>.
+PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE = _article_with_sub_article(
+    body="<!--The publisher of this article does not allow downloading of the full text in XML form.-->",
+    permissions="<permissions><copyright-statement>Synthetic publisher copyright</copyright-statement></permissions>",
+    back="",
+)
+PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE = _article_with_sub_article(body=_BODY)
+
 PUBMED_ESUMMARY_WITH_PMC = {
     "header": {"type": "esummary", "version": "0.3"},
     "result": {
@@ -116,6 +148,8 @@ __all__ = [
     "PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT",
     "PMC_EFETCH_FRONT_MATTER_ONLY_PARAGRAPH",
     "PMC_EFETCH_FULL_BODY",
+    "PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE",
     "PMC_EFETCH_NO_ARTICLE",
+    "PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE",
     "PUBMED_ESUMMARY_WITH_PMC",
 ]

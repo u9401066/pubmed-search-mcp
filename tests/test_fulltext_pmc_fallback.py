@@ -43,7 +43,9 @@ from tests.fixtures.pmc_jats import (
     PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT,
     PMC_EFETCH_FRONT_MATTER_ONLY_PARAGRAPH,
     PMC_EFETCH_FULL_BODY,
+    PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE,
     PMC_EFETCH_NO_ARTICLE,
+    PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE,
     PUBMED_ESUMMARY_WITH_PMC,
 )
 
@@ -401,6 +403,60 @@ async def test_ncbi_efetch_200_without_an_answer_is_a_failure_not_complete_cover
     assert [(notice.source, notice.code) for notice in result.source_notices] == [("europe_pmc", "no_body")]
     assert result.coverage_status != "complete"
     assert not result.has_retrieved_text
+
+
+# ----------------------------------------------------------------------------
+# Nested <sub-article> records (decision letters, author replies)
+# ----------------------------------------------------------------------------
+
+
+async def test_restricted_main_article_is_not_replaced_by_a_sub_article_body() -> None:
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    ncbi = await _ncbi_client(_NCBIFixture(efetch=PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE))
+    try:
+        parsed = ncbi.parse_article_xml(PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE)
+        result = await _service(europe_pmc=provider, ncbi=ncbi, hedge_seconds=60).retrieve(
+            FulltextRequest(pmcid=PMCID, include_pdf_links=False)
+        )
+    finally:
+        await ncbi.close()
+
+    assert parsed["access_restricted"] is True
+    assert parsed["sections"] == []
+    assert parsed["references"] == []
+    assert parsed["figures"] == []
+    assert not result.has_retrieved_text
+    assert "author response" not in (result.raw_fulltext_content or "").lower()
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [
+        ("europe_pmc", "no_body"),
+        ("ncbi_pmc", "front_matter_only"),
+    ]
+    assert result.fulltext_source_name is None
+
+
+def test_jats_main_article_excludes_nested_sub_article_content() -> None:
+    client = NCBIPMCClient(email="fixture@example.org")
+
+    parsed = client.parse_article_xml(PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE)
+
+    assert parsed["access_restricted"] is False
+    assert parsed["title"] == "Synthetic EEG-guided anesthesia trial – a fixture"
+    assert "Reply-only abstract" not in parsed["abstract"]
+    # Parser-level sections still include the title-only "Methods" heading.
+    assert [section["title"] for section in parsed["sections"]] == [
+        "Introduction",
+        "Methods",
+        "Trial Design",
+        "Outcomes",
+        "Results",
+        "Discussion",
+    ]
+    rendered = " ".join(str(section["content"]) for section in parsed["sections"])
+    assert "author response" not in rendered.lower()
+    assert [reference["pmid"] for reference in parsed["references"]] == ["11111111"]
+    assert all(figure["label"] != "Author response image 1" for figure in parsed["figures"])
+    assert parsed["license"] is not None and parsed["license"]["type"] == "open-access"
 
 
 # ----------------------------------------------------------------------------
