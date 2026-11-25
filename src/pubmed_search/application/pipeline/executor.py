@@ -28,7 +28,9 @@ from pubmed_search.application.pipeline.action_contracts import (
     validate_pipeline_details_pmids,
     validate_pipeline_discovery_pmid,
 )
+from pubmed_search.application.pipeline.block_analysis import analyze_strategy_blocks
 from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT,
     PIPELINE_EXHAUSTIVE_METADATA_BATCH,
     PIPELINE_EXHAUSTIVE_PAGE_SIZE,
     PIPELINE_EXHAUSTIVE_RECORD_LIMIT,
@@ -51,6 +53,7 @@ from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.article import CitationMetrics, UnifiedArticle
 from pubmed_search.domain.entities.pipeline import (
+    ANALYSIS_ACTIONS,
     MAX_PIPELINE_STEPS,
     VALID_ACTIONS,
     PipelineConfig,
@@ -280,6 +283,7 @@ class PipelineExecutor:
             # Collect final articles from the last step. If a run budget ended
             # the DAG, retain the latest completed evidence as a typed partial.
             final_step_id = stop_at if stop_at else steps_to_run[-1].id
+            final_step_id = self._record_producing_step_id(steps_to_run, final_step_id)
             if final_step_id not in results and results:
                 final_step_id = next(reversed(results))
             final_step = results.get(final_step_id)
@@ -308,6 +312,18 @@ class PipelineExecutor:
             return final_articles, results
         finally:
             self._run_budget.reset(budget_token)
+
+    @staticmethod
+    def _record_producing_step_id(steps: list[PipelineStep], candidate: str) -> str:
+        """Analysis steps never own the run's record set; use the last producing step."""
+        by_id = {step.id: step for step in steps}
+        if by_id.get(candidate) is None or by_id[candidate].action not in ANALYSIS_ACTIONS:
+            return candidate
+        position = next(index for index, step in enumerate(steps) if step.id == candidate)
+        for step in reversed(steps[:position]):
+            if step.action not in ANALYSIS_ACTIONS:
+                return step.id
+        return candidate
 
     def _record_step_outcome(
         self,
@@ -380,6 +396,11 @@ class PipelineExecutor:
         budget = self._run_budget.get()
         if budget is not None:
             await budget.reserve_external_call()
+
+    async def _reserve_count_query(self) -> None:
+        budget = self._run_budget.get()
+        if budget is not None:
+            await budget.reserve_count_query()
 
     def dry_run(
         self,
@@ -584,6 +605,7 @@ class PipelineExecutor:
             "metrics": self._action_metrics,
             "merge": self._action_merge,
             "filter": self._action_filter,
+            "block_analysis": self._action_block_analysis,
         }
         handler = handler_map.get(step.action)
         if handler is None:
@@ -964,6 +986,70 @@ class PipelineExecutor:
                     }
                 },
             },
+        )
+
+    async def _action_block_analysis(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+        """Count-only analysis of a strategy's AND blocks, cumulative combinations and terms."""
+        executed_at = _utc_now_iso()
+        query = step.params.get("query")
+        filters = search_filters(step.params)
+        source_step: str | None = None
+        if not query:
+            source_step = step.inputs[0] if len(step.inputs) == 1 else None
+            source = inputs.get(source_step or "")
+            if source is None or source.action != "search" or not source.ok:
+                return StepResult(
+                    step_id=step.id,
+                    action="block_analysis",
+                    error="block_analysis needs a query or one successful input search step",
+                )
+            source_queries = source.metadata.get("source_queries") or {}
+            query = source_queries.get("pubmed") if isinstance(source_queries, dict) else None
+            if not isinstance(query, str) or not query:
+                return StepResult(
+                    step_id=step.id,
+                    action="block_analysis",
+                    error="block_analysis input step did not search PubMed",
+                )
+            filters = {**dict(source.metadata.get("filters") or {}), **filters}
+        if self._searcher is None or not callable(getattr(self._searcher, "esearch_snapshot", None)):
+            return StepResult(
+                step_id=step.id,
+                action="block_analysis",
+                error="Pipeline PubMed count adapter unavailable",
+            )
+        try:
+            max_queries = validate_bounded_limit(
+                step.params.get("max_count_queries", PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT.default),
+                PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT,
+                field="Pipeline block_analysis max_count_queries",
+            )
+        except ValueError as exc:
+            return StepResult(step_id=step.id, action="block_analysis", error=str(exc))
+
+        searcher = self._searcher
+
+        async def count(candidate: str) -> int:
+            await self._reserve_count_query()
+            snapshot = await searcher.esearch_snapshot(candidate, retmax=0, use_history=False, **filters)
+            value = snapshot.get("count") if isinstance(snapshot, dict) else None
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise TypeError("PubMed count response is invalid")
+            return value
+
+        analysis = await analyze_strategy_blocks(str(query), count=count, max_count_queries=max_queries)
+        analysis.update(
+            {"step_id": step.id, "source_step": source_step, "filters": filters, "executed_at": executed_at}
+        )
+        error = None
+        if analysis.get("decomposable") and analysis.get("full_count") is None:
+            reason = (analysis.get("count_queries") or {}).get("truncation_reason")
+            error = f"Block analysis could not count the full strategy ({reason})"
+        return StepResult(
+            step_id=step.id,
+            action="block_analysis",
+            metadata={"query": query, "filters": filters, "executed_at": executed_at, "block_analysis": analysis},
+            error=error,
         )
 
     @staticmethod

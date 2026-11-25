@@ -497,6 +497,32 @@ def _compact_step(step: Any, result: Any, preview: int) -> dict[str, Any]:
         }
         if provider_notes:
             compact["provider_notes"] = provider_notes
+    analysis = metadata.get("block_analysis")
+    if isinstance(analysis, dict):
+        compact["block_analysis"] = {
+            key: analysis.get(key)
+            for key in (
+                "decomposable",
+                "reason",
+                "full_count",
+                "blocks",
+                "not_blocks",
+                "zero_contribution_terms",
+                "count_queries",
+            )
+        }
+        compact["block_analysis"]["cumulative"] = [
+            {"blocks": row.get("blocks"), "count": row.get("count")} for row in analysis.get("cumulative") or []
+        ]
+        compact["block_analysis"]["terms"] = [
+            {
+                "block": term.get("block"),
+                "term": term.get("term"),
+                "unique_contribution": term.get("unique_contribution"),
+                "status": term.get("status"),
+            }
+            for term in analysis.get("terms") or []
+        ]
     if metadata.get("source_errors"):
         compact["source_errors"] = list(metadata["source_errors"])[:5]
     return compact

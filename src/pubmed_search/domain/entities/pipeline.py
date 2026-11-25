@@ -37,8 +37,13 @@ VALID_ACTIONS: frozenset[str] = frozenset(
         "metrics",
         "merge",
         "filter",
+        "block_analysis",
     }
 )
+
+# Actions that analyze a strategy instead of producing a record set; they never
+# become a pipeline's final (persisted) step.
+ANALYSIS_ACTIONS: frozenset[str] = frozenset({"block_analysis"})
 
 # Valid built-in templates
 VALID_TEMPLATES: frozenset[str] = frozenset(

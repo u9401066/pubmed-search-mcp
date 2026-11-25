@@ -188,6 +188,11 @@ class PipelineRunRecorder:
             server_version=__version__,
             searches=build_search_records(step_results, server_version=__version__),
         )
+        run.block_analyses = [
+            dict(result.metadata["block_analysis"])
+            for result in step_results.values()
+            if result.action == "block_analysis" and isinstance(result.metadata.get("block_analysis"), dict)
+        ]
         provenance = config_provenance(saved_config, executed_config)
         run.config_hash = provenance.get("config_hash")
         run.config_sha256 = provenance.get("config_sha256")
