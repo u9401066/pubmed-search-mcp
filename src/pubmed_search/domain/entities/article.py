@@ -418,6 +418,37 @@ class SourceMetadata:
     raw_data: dict[str, Any] | None = field(default=None, repr=False)
 
 
+@dataclass(frozen=True)
+class RetrievalProvenance:
+    """Which executed search strategy surfaced a record.
+
+    ``tier_rank`` 0 is the caller's own query for that source.  Higher ranks
+    are automatic broadening (semantic reformulation, broad title/abstract
+    search, or zero-result relaxation) and are lower precision by
+    construction, so agents must not treat them as matches of the original
+    query.
+    """
+
+    source: str
+    strategy: str
+    tier: str
+    tier_rank: int
+
+    @property
+    def broadened(self) -> bool:
+        """Whether a lower-precision strategy than the original query found it."""
+        return self.tier_rank > 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the stable JSON projection of one provenance entry."""
+        return {
+            "source": self.source,
+            "strategy": self.strategy,
+            "tier": self.tier,
+            "tier_rank": self.tier_rank,
+        }
+
+
 @dataclass
 class UnifiedArticle:
     """
@@ -493,6 +524,9 @@ class UnifiedArticle:
 
     # === Source Tracking ===
     sources: list[SourceMetadata] = field(default_factory=list)
+    # Strategy/tier provenance; populated only by tiered deep search and
+    # zero-result relaxation. Empty means "not tiered" (shallow/plain search).
+    retrieval: list[RetrievalProvenance] = field(default_factory=list)
 
     # === Internal (ranking scores, set by ResultAggregator) ===
     relevance_score: float | None = field(default=None, repr=False)
@@ -547,6 +581,33 @@ class UnifiedArticle:
                 return link
         # Return first available
         return self.oa_links[0]
+
+    @property
+    def best_retrieval(self) -> RetrievalProvenance | None:
+        """Return the highest-precision strategy that surfaced this record."""
+        if not self.retrieval:
+            return None
+        return min(self.retrieval, key=lambda provenance: provenance.tier_rank)
+
+    @property
+    def retrieval_tier_rank(self) -> int:
+        """Return the best tier rank; untiered records count as exact (0)."""
+        best = self.best_retrieval
+        return best.tier_rank if best is not None else 0
+
+    def retrieval_payload(self) -> dict[str, Any] | None:
+        """Return the agent-facing provenance summary, or ``None`` if untiered."""
+        best = self.best_retrieval
+        if best is None:
+            return None
+        return {
+            "tier": best.tier,
+            "tier_rank": best.tier_rank,
+            "broadened": best.broadened,
+            "source": best.source,
+            "strategy": best.strategy,
+            "matched_by": [provenance.to_dict() for provenance in self.retrieval],
+        }
 
     @property
     def author_string(self) -> str:
@@ -871,6 +932,12 @@ class UnifiedArticle:
                 self.sources.append(source)
                 existing_sources.add(source.source)
 
+        # A merged record keeps every strategy that surfaced it, so its best
+        # tier is the most precise query that matched any duplicate.
+        for provenance in other.retrieval:
+            if provenance not in self.retrieval:
+                self.retrieval.append(provenance)
+
     def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary for JSON serialization.
@@ -925,6 +992,10 @@ class UnifiedArticle:
             },
             "sources": [s.source for s in self.sources],
         }
+
+        retrieval = self.retrieval_payload()
+        if retrieval is not None:
+            result["retrieval"] = retrieval
 
         # Add citation metrics if available
         if self.citation_metrics:

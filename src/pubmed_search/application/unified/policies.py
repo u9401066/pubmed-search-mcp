@@ -13,20 +13,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def is_seen_article(article: UnifiedArticle, seen_pmids: frozenset[str], seen_dois: frozenset[str]) -> bool:
+    """Return whether a record repeats a previously returned PMID or DOI."""
+    return bool(
+        (article.pmid and article.pmid.strip() in seen_pmids)
+        or (normalize_article_doi(article.doi) or None) in seen_dois
+    )
+
+
 def exclude_seen_articles(
     articles: list[UnifiedArticle],
     seen_pmids: frozenset[str],
     seen_dois: frozenset[str],
 ) -> list[UnifiedArticle]:
     """Keep ranked candidates without a previously returned PMID or DOI."""
-    return [
-        article
-        for article in articles
-        if not (
-            (article.pmid and article.pmid.strip() in seen_pmids)
-            or (normalize_article_doi(article.doi) or None) in seen_dois
-        )
-    ]
+    return [article for article in articles if not is_seen_article(article, seen_pmids, seen_dois)]
 
 
 def is_preprint(article: UnifiedArticle, article_type_class: type) -> bool:  # type: ignore[type-arg]
@@ -80,4 +81,4 @@ def enrich_with_rank_percentiles(articles: list[UnifiedArticle]) -> None:
         logger.warning("Rank-percentile enrichment failed (%s)", type(exc).__name__)
 
 
-__all__ = ["enrich_with_rank_percentiles", "is_preprint"]
+__all__ = ["enrich_with_rank_percentiles", "is_preprint", "is_seen_article"]

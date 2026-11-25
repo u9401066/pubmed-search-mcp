@@ -51,6 +51,8 @@ class UnifiedSearchResult:
     source_counts: tuple[UnifiedSourceCount, ...]
     source_errors: tuple[dict[str, Any], ...]
     result_filter_counts: dict[str, int]
+    broadening: dict[str, Any] | None = None
+    """Precision-first ``search-broadening/v1`` disclosure; ``None`` when no tiering/relaxation ran."""
 
     @classmethod
     def from_outcome(cls, outcome: Any) -> UnifiedSearchResult:
@@ -72,6 +74,7 @@ class UnifiedSearchResult:
             source_counts=counts,
             source_errors=tuple(dict(error) for error in execution.source_errors),
             result_filter_counts=dict(execution.result_filter_counts),
+            broadening=getattr(execution, "broadening", None),
         )
 
 
