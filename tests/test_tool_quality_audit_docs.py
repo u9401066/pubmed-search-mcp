@@ -35,7 +35,7 @@ def test_runtime_registry_still_has_the_audited_shape() -> None:
     expected_tools = _runtime_tools()
 
     assert len(TOOL_CATEGORIES) == 16
-    assert len(expected_tools) == 42
+    assert len(expected_tools) == 43
     assert len(set(expected_tools)) == len(expected_tools)
 
 

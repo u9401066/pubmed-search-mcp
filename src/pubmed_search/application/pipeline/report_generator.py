@@ -70,6 +70,8 @@ def generate_pipeline_report(
     parts.append(_section_header(config))
     parts.append(_section_executive_summary(articles, step_results, config))
     parts.append(_section_step_details(step_results, config))
+    parts.append(_section_exhaustive_retrieval(step_results))
+    parts.append(_section_block_analysis(step_results))
     parts.append(_section_source_statistics(step_results))
     parts.append(_section_filter_diagnostics(step_results))
     parts.append(_section_evidence_distribution(articles))
@@ -187,6 +189,109 @@ def _section_step_details(
         parts.append("")
 
     return "\n".join(parts)
+
+
+def _section_exhaustive_retrieval(step_results: dict[str, StepResult]) -> str:
+    """Disclose completeness of every exhaustive PubMed retrieval step."""
+    rows: list[str] = []
+    for step_id, sr in step_results.items():
+        retrieval = sr.metadata.get("retrieval")
+        if not isinstance(retrieval, dict) or retrieval.get("mode") != "exhaustive":
+            continue
+        history = sr.metadata.get("pubmed_history") if isinstance(sr.metadata.get("pubmed_history"), dict) else {}
+        translation = history.get("query_translation") if isinstance(history, dict) else None
+        rows.append(
+            f"| `{escape_markdown_code(step_id)}` | {retrieval.get('total_count', '—')} "
+            f"| {retrieval.get('retrieved_count', '—')} | {'yes' if retrieval.get('exhaustive') else 'no'} "
+            f"| {retrieval.get('cap', '—')} | {retrieval.get('metadata_count', 0)} "
+            f"| {'captured' if translation else '—'} |"
+        )
+    if not rows:
+        return ""
+    return "\n".join(
+        [
+            "## Exhaustive PubMed Retrieval\n",
+            "| Step | PubMed count | Retrieved | Exhaustive | Cap | Metadata | Query translation |",
+            "|------|--------------|-----------|------------|-----|----------|-------------------|",
+            *rows,
+            "",
+            "The complete record set is persisted with the saved run; the article list below is the ranked preview.",
+            "",
+        ]
+    )
+
+
+def _count_cell(value: Any) -> str:
+    return "—" if value is None else f"{value:,}" if isinstance(value, int) else escape_markdown_text(value)
+
+
+def render_block_analysis_markdown(analysis: dict[str, Any], *, heading: str = "###") -> str:
+    """Render one strategy block analysis as Markdown tables."""
+    step_id = escape_markdown_code(str(analysis.get("step_id") or "block_analysis"))
+    parts = [f"{heading} Strategy block analysis (`{step_id}`)\n"]
+    if not analysis.get("decomposable"):
+        parts.append(f"Not decomposable: {escape_markdown_text(analysis.get('reason') or 'unknown reason')}\n")
+        return "\n".join(parts)
+    parts.append(f"Full strategy: {_count_cell(analysis.get('full_count'))} records")
+    filters = analysis.get("filters") or {}
+    if filters:
+        parts.append(f"Filters: {escape_markdown_text(', '.join(f'{k}={v}' for k, v in filters.items()))}")
+    parts.append("")
+    cumulative = list(analysis.get("cumulative") or [])
+    parts.append("| Block | Terms | Hits alone | Cumulative (AND so far) |")
+    parts.append("|-------|-------|------------|-------------------------|")
+    for index, block in enumerate(analysis.get("blocks") or []):
+        cumulative_count = cumulative[index]["count"] if index < len(cumulative) else None
+        parts.append(
+            f"| {escape_markdown_text(block.get('label'))} | {block.get('term_count')} "
+            f"| {_count_cell(block.get('count'))} | {_count_cell(cumulative_count)} |"
+        )
+    for not_block in analysis.get("not_blocks") or []:
+        parts.append(
+            f"| {escape_markdown_text(not_block.get('label'))} (NOT) | — | — "
+            f"| removes {_count_cell(not_block.get('records_removed'))} |"
+        )
+    parts.append("")
+    parts.append("| Block | Term | Unique records (lost if removed) | Status |")
+    parts.append("|-------|------|----------------------------------|--------|")
+    for term in analysis.get("terms") or []:
+        parts.append(
+            f"| {escape_markdown_text(term.get('block'))} | `{escape_markdown_code(term.get('term'))}` "
+            f"| {_count_cell(term.get('unique_contribution'))} | {escape_markdown_text(term.get('status'))} |"
+        )
+    zero = analysis.get("zero_contribution_terms") or []
+    if zero:
+        parts.append("")
+        parts.append(
+            "Terms with zero unique contribution in this strategy (review, do not delete blindly): "
+            + ", ".join(f"`{escape_markdown_code(item['term'])}`" for item in zero)
+        )
+    queries = analysis.get("count_queries") or {}
+    parts.append("")
+    parts.append(
+        f"Count queries: {queries.get('executed', 0)} executed of {queries.get('planned', 0)} planned "
+        f"(max {queries.get('max')}, {queries.get('cache_hits', 0)} cached)."
+    )
+    if queries.get("truncated"):
+        parts.append(
+            f"⚠️ Truncated ({escape_markdown_text(queries.get('truncation_reason'))}): "
+            f"{queries.get('terms_not_evaluated', 0)} terms were not evaluated."
+        )
+    parts.append("")
+    return "\n".join(parts)
+
+
+def _section_block_analysis(step_results: dict[str, StepResult]) -> str:
+    analyses = [
+        sr.metadata["block_analysis"]
+        for sr in step_results.values()
+        if sr.action == "block_analysis" and isinstance(sr.metadata.get("block_analysis"), dict)
+    ]
+    if not analyses:
+        return ""
+    return "## Strategy Block Analysis\n\n" + "\n".join(
+        render_block_analysis_markdown(analysis) for analysis in analyses
+    )
 
 
 def _step_output_summary(sr: StepResult) -> str:

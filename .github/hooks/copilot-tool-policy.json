@@ -93,7 +93,8 @@
       "delete_pipeline",
       "get_pipeline_history",
       "schedule_pipeline",
-      "unschedule_pipeline"
+      "unschedule_pipeline",
+      "pipeline_screening"
     ]
   },
   "workflowSteps": {
@@ -150,7 +151,8 @@
         "get_compound_details",
         "diagnose_institutional_access",
         "get_institutional_link",
-        "get_pipeline_history"
+        "get_pipeline_history",
+        "pipeline_screening"
       ]
     },
     "deep_exploration": {
@@ -240,7 +242,8 @@
       "load_pipeline",
       "get_pipeline_history",
       "schedule_pipeline",
-      "unschedule_pipeline"
+      "unschedule_pipeline",
+      "pipeline_screening"
     ],
     "qualityEvaluation": [
       "unified_search",
@@ -284,7 +287,8 @@
       "delete_pipeline",
       "get_pipeline_history",
       "schedule_pipeline",
-      "unschedule_pipeline"
+      "unschedule_pipeline",
+      "pipeline_screening"
     ]
   }
 }

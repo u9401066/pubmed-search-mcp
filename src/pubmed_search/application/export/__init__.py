@@ -35,7 +35,7 @@ from .links import (
     get_fulltext_links_with_lookup,
     summarize_access,
 )
-from .notes import SUPPORTED_NOTE_FORMATS, resolve_note_export_dir, write_literature_notes
+from .notes import SUPPORTED_NOTE_FORMATS, export_csl_json, resolve_note_export_dir, write_literature_notes
 
 __all__ = [
     # Format exporters
@@ -44,6 +44,7 @@ __all__ = [
     "export_csv",
     "export_medline",
     "export_json",
+    "export_csl_json",
     "export_articles",  # Unified export function
     "SUPPORTED_FORMATS",
     "SUPPORTED_NOTE_FORMATS",

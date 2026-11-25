@@ -394,7 +394,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **42 MCP Tools** for literature search and analysis
+- **43 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -605,17 +605,18 @@ unified_search(query="<combined_boolean_query>")
 
 
 ### Pipeline 管理
-*Pipeline 持久化、載入、排程*
+*Pipeline 持久化、載入、排程、PRISMA 篩選紀錄*
 
 | Tool | Purpose |
 |------|---------|
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |
-| `delete_pipeline` | Permanently delete a saved pipeline configuration and execution history. |
-| `get_pipeline_history` | Get execution history for a saved pipeline. |
+| `delete_pipeline` | Permanently delete a saved pipeline and its execution history. |
+| `get_pipeline_history` | Get execution history, a run's search record, or its persisted record set. |
 | `schedule_pipeline` | Schedule a saved pipeline for periodic execution. |
 | `unschedule_pipeline` | Remove the active schedule for a saved pipeline. |
+| `pipeline_screening` | Screen a saved pipeline's records and report PRISMA 2020 flow counts. |
 
 ---
 
@@ -639,6 +640,8 @@ get_article_references(pmid="12345678")  # What did it cite?
 ```
 
 For multiple seeds, use the `snowball` pipeline template (`query` required, `seed_limit` 1–10/default 5, `limit` default 20): search → citing + references → union merge. No additional tool is needed.
+
+For systematic reviews and meta-analyses, save a PubMed search step with `retrieval: exhaustive` (no `limit`; `max_records` ≤ 10000, counts above the cap are refused, not truncated) and run it with `unified_search(pipeline="saved:<name>")`. The response is a bounded preview: page the full set with `get_pipeline_history(view="records")`, report the strategy with `view="prisma_s"`, export with `prepare_export(pipeline_run="<name>[@<run_id>]")`, and screen plus count PRISMA 2020 flow with `pipeline_screening`. A `block_analysis` step (`inputs: [<search step>]`) reports block, cumulative AND and per-term unique-contribution counts.
 
 ### 3. Get Full Text
 

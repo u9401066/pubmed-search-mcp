@@ -4,7 +4,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 42 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 43 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -355,7 +355,7 @@ flowchart TB
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、runtime lifecycle 與 stdio 啟動
 ├── http_cli.py        canonical Streamable HTTP/SSE launcher 與 tenant-guarded companion routes
-├── tool_registry.py   42 tools / 16 categories 的權威 registry
+├── tool_registry.py   43 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -678,8 +678,8 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 42-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
-| `run_copilot.py` | 以相同 42-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
+| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 43-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
+| `run_copilot.py` | 以相同 43-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 

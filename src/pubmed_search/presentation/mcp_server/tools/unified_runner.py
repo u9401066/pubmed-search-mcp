@@ -302,8 +302,8 @@ async def run_unified_search(
                     payload["search_run"] = handoff
                     payload["search_status"] = {
                         "state": pipeline_outcome.status,
-                        "bounded": True,
-                        "exhaustive": False,
+                        "bounded": not pipeline_outcome.exhaustive,
+                        "exhaustive": pipeline_outcome.exhaustive,
                         "mode": "pipeline",
                     }
                     target_format = output_format if output_format in {"json", "toon"} else "json"
