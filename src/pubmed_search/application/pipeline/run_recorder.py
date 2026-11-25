@@ -13,6 +13,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
+from pubmed_search import __version__
 from pubmed_search.application.pipeline.executor import (
     PipelineOutcomeStatus,
     classify_pipeline_outcome,
@@ -23,6 +24,7 @@ from pubmed_search.application.pipeline.executor import (
     pipeline_run_status,
     run_uses_exhaustive_retrieval,
 )
+from pubmed_search.application.pipeline.prisma_s import build_search_records, config_provenance
 from pubmed_search.application.pipeline.report_generator import generate_pipeline_changes
 from pubmed_search.domain.entities.pipeline import PIPELINE_RUN_RECORD_VERSION, PipelineRun
 
@@ -157,7 +159,6 @@ class PipelineRunRecorder:
         complete final-step PMID set instead, with ``record_basis`` recording
         which rule applied so history diffs never compare incompatible sets.
         """
-        del executed_config, saved_config  # strategy provenance is attached by PRISMA-S support
         finished = finished or datetime.now(timezone.utc)
         run_id = run_id or self._store.create_run_id(pipeline_name, started)
         outcome = outcome or classify_pipeline_outcome(articles, step_results)
@@ -184,7 +185,13 @@ class PipelineRunRecorder:
             record_version=PIPELINE_RUN_RECORD_VERSION,
             record_basis=record_basis,
             retrieval=retrieval_summary(step_results, len(pmids)),
+            server_version=__version__,
+            searches=build_search_records(step_results, server_version=__version__),
         )
+        provenance = config_provenance(saved_config, executed_config)
+        run.config_hash = provenance.get("config_hash")
+        run.config_sha256 = provenance.get("config_sha256")
+        run.config_snapshot = provenance.get("config_snapshot")
 
         previous_run = self._previous_comparable_run(pipeline_name, record_basis) if persist_run else None
         previous_pmids = set(previous_run.pmids) if previous_run else set()

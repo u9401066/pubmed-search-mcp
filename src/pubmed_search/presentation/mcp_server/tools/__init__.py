@@ -96,7 +96,7 @@ def register_all_tools(
     _load_registrar("register_discovery_tools")(mcp, searcher)
     _load_registrar("register_reference_verification_tools")(mcp, searcher)
     _load_registrar("register_research_workspace_tools")(mcp)
-    _load_registrar("register_export_tools")(mcp, searcher)
+    _load_registrar("register_export_tools")(mcp, searcher, pipeline_runtime=pipeline_runtime)
     _load_registrar("register_europe_pmc_tools")(mcp)
     _load_registrar("register_figure_tools")(mcp)
     _load_registrar("register_ncbi_extended_tools")(mcp)

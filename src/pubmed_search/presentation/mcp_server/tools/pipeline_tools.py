@@ -24,6 +24,11 @@ from pubmed_search.application.pipeline.config_parser import (
     MAX_PIPELINE_CONFIG_CHARS,
     parse_pipeline_config_text,
 )
+from pubmed_search.application.pipeline.prisma_s import (
+    render_prisma_s_csv,
+    render_prisma_s_markdown,
+    strategy_fingerprint,
+)
 from pubmed_search.application.pipeline.store import PipelineHistoryError, _config_to_dict
 from pubmed_search.application.pipeline.validator import (
     MAX_PIPELINE_TAGS,
@@ -55,7 +60,8 @@ SaveScope = Literal["auto", "workspace", "global"]
 ListScope = Literal["", "workspace", "global"]
 CronExpression = Annotated[str, Field(strict=True, min_length=1, max_length=200)]
 RunId = Annotated[str, Field(strict=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
-HistoryView = Literal["runs", "records"]
+HistoryView = Literal["runs", "records", "run", "prisma_s"]
+MAX_PRISMA_S_RUNS = 20
 
 
 @dataclass(slots=True)
@@ -373,8 +379,8 @@ def _render_history_runs(name: str, runs: list[PipelineRun], total_runs: int) ->
     parts = [
         f'📊 Execution History for "{name}" (showing {len(runs)} of {total_runs}):',
         "",
-        "| # | Run ID | Date (UTC) | Records | Mode | PubMed total | New | Removed | Status |",
-        "|---|--------|------------|---------|------|--------------|-----|---------|--------|",
+        "| # | Run ID | Date (UTC) | Records | Mode | PubMed total | New | Removed | Strategy | Status |",
+        "|---|--------|------------|---------|------|--------------|-----|---------|----------|--------|",
     ]
 
     for index, run in enumerate(runs):
@@ -384,9 +390,10 @@ def _render_history_runs(name: str, runs: list[PipelineRun], total_runs: int) ->
         removed_str = f"-{len(run.removed_pmids)}" if run.removed_pmids else "-0"
         run_num = total_runs - index
         mode, total = _retrieval_cells(run)
+        strategy = _strategy_cell(run)
         parts.append(
             f"| {run_num} | `{run.run_id}` | {date_str} | {run.article_count} | {mode} | {total} "
-            f"| {new_str} | {removed_str} | {status_icon} |"
+            f"| {new_str} | {removed_str} | {strategy} | {status_icon} |"
         )
 
     latest = runs[0]
@@ -410,7 +417,45 @@ def _render_history_runs(name: str, runs: list[PipelineRun], total_runs: int) ->
             f'💡 Page the full record set: get_pipeline_history(name="{name}", run_id="{latest.run_id}", '
             'view="records", offset=0, limit=100)'
         )
+        parts.append(f'💡 Export for screening: prepare_export(pipeline_run="{name}@{latest.run_id}", format="ris")')
+    if len({_strategy_cell(run) for run in runs if run.config_hash}) > 1:
+        parts.append("⚠️ These runs used different strategy versions (see the Strategy column).")
+    parts.append(f'💡 PRISMA-S search record: get_pipeline_history(name="{name}", view="prisma_s")')
 
+    return "\n".join(parts)
+
+
+def _strategy_cell(run: PipelineRun) -> str:
+    """Config hash plus executed-query fingerprint distinguish strategy versions."""
+    if not run.config_hash:
+        return "—"
+    query_hash = strategy_fingerprint(run)
+    return f"`{run.config_hash}`" + (f" / q:`{query_hash[:8]}`" if query_hash else "")
+
+
+def _render_run_detail(run: PipelineRun) -> str:
+    """Return one run's provenance record as JSON (large PMID lists summarized)."""
+    payload = run.to_dict()
+    for key in ("pmids", "new_pmids", "removed_pmids"):
+        values = payload.pop(key)
+        payload[f"{key[:-1]}_count" if key == "pmids" else f"{key}_count"] = len(values)
+        payload[f"{key}_preview"] = values[:20]
+    payload["strategy_fingerprint"] = strategy_fingerprint(run)
+    payload["type"] = "pipeline_run"
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+
+
+def _render_prisma_s(name: str, runs: list[PipelineRun], *, truncated: bool) -> str:
+    parts = [render_prisma_s_markdown(runs, title=name)]
+    if truncated:
+        parts.append(
+            f"\nShowing the {len(runs)} most recent runs (PRISMA-S view is capped at {MAX_PRISMA_S_RUNS}); "
+            "pass run_id for an older run."
+        )
+    parts.append("\n### CSV\n")
+    parts.append("```csv")
+    parts.append(render_prisma_s_csv(runs).rstrip("\n"))
+    parts.append("```")
     return "\n".join(parts)
 
 
@@ -480,7 +525,7 @@ def _get_pipeline_history_impl(
             tool_name=tool_name,
         )
 
-    if view == "records":
+    if view in {"records", "run"} or (view == "prisma_s" and run_id is not None):
         try:
             run = store.get_run(name, run_id)
         except FileNotFoundError:
@@ -494,14 +539,21 @@ def _get_pipeline_history_impl(
             return _history_unavailable(tool_name)
         except ValueError as exc:
             return ResponseFormatter.error(str(exc), tool_name=tool_name)
+        if view == "run":
+            return _render_run_detail(run)
+        if view == "prisma_s":
+            return _render_prisma_s(name, [run], truncated=False)
         return _render_run_records(store, name, run, offset=offset, limit=limit)
 
+    history_limit = min(limit, MAX_PRISMA_S_RUNS) if view == "prisma_s" else limit
     try:
-        runs = store.get_history(name, limit=limit)
+        runs = store.get_history(name, limit=history_limit)
     except PipelineHistoryError as exc:
         logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
         return _history_unavailable(tool_name)
 
+    if runs and view == "prisma_s":
+        return _render_prisma_s(name, runs, truncated=limit > MAX_PRISMA_S_RUNS)
     if not runs:
         return (
             f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
@@ -750,24 +802,29 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
         view: HistoryView = "runs",
         offset: Annotated[int, Field(ge=0, le=10_000)] = 0,
     ) -> str:
-        """Get execution history, or page one run's persisted record set.
+        """Get execution history, a run's search record, or its persisted record set.
 
         view="runs" (default) lists recent runs with run ID, record count,
         retrieval mode, PubMed total, new/removed records versus the previous
-        comparable run, and status.
+        comparable run, strategy hash (config hash / executed-query hash) and
+        status, so runs from different strategy versions are distinguishable.
+        view="run" returns one run's provenance as JSON: database/platform,
+        logical and executed queries, PubMed query translation, counts,
+        filters, UTC timestamps, server version and the immutable config
+        snapshot. view="prisma_s" renders a PRISMA-S search-strategy table
+        (Markdown + CSV) for run_id or the latest runs (at most 20).
         view="records" returns one JSON page (offset/limit) of a run's complete
-        record set; run_id defaults to the latest run. Exhaustive runs
-        (retrieval: exhaustive) persist every PMID PubMed counted.
+        record set. run_id defaults to the latest run.
 
         Args:
             name: Name of the saved pipeline.
             limit: Runs to list, or records per page for view="records" (1-100).
-            run_id: Run to read for view="records" (default: latest run).
-            view: "runs" or "records".
+            run_id: Run to read (default: latest run).
+            view: "runs", "run", "prisma_s", or "records".
             offset: Record offset for view="records".
 
         Returns:
-            Markdown history table, or a JSON record page with next_offset.
+            Markdown history/PRISMA-S table, or JSON for view="run"/"records".
         """
         return _get_pipeline_history_impl(
             runtime=runtime,

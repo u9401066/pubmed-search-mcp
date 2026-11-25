@@ -510,6 +510,8 @@ def _exhaustive_next_steps(run: Any) -> dict[str, str]:
         "page_records": (
             f'get_pipeline_history(name="{name}", run_id="{run_id}", view="records", offset=0, limit=100)'
         ),
+        "export": f'prepare_export(pipeline_run="{name}@{run_id}", format="ris")',
+        "prisma_s": f'get_pipeline_history(name="{name}", run_id="{run_id}", view="prisma_s")',
         "history": f'get_pipeline_history(name="{name}")',
     }
 
