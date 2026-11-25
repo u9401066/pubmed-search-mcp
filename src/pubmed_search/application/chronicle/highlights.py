@@ -35,23 +35,41 @@ _BOILERPLATE_LABEL = re.compile(
 # Statements about the paper rather than findings of the paper: registration,
 # funding, competing interests, licensing and publisher notices. A sentence
 # that *opens* with one of these is never quoted as the authors' conclusion.
+# Each cue needs its boilerplate context, so findings such as "Registered
+# nurses ...", "Funding cuts ..." or "Disclosure of HIV status ..." stay quotable.
 _BOILERPLATE_SENTENCE = re.compile(
     r"^\W*(?:"
-    r"(?:clinical\s+)?trials?\s+regist|(?:systematic\s+review\s+|study\s+|protocol\s+|prospero\s+)?registration\b|"
-    r"(?:prospectively\s+|retrospectively\s+)?registered\b|registry\b|clinicaltrials\.gov|prospero\b|"
-    r"(?:this|the)\s+(?:work|study|trial|research|project|review|analysis|protocol|authors?)\s+"
+    r"(?:(?:clinical\s+)?trials?|systematic\s+review|study|protocol|prospero)\s+registration\b|"
+    r"registration\s*(?:number|no\b|id\b|details|information|:)|"
+    r"(?:prospectively|retrospectively)\s+registered\b|registered\s+(?:at|with|in|on|under|as)\b|"
+    r"clinicaltrials\.gov\s*(?:identifier|id\b|number|registration|registry|:|\(|nct)|"
+    r"prospero\s*(?:registration|id\b|number|:|\(|crd)|"
+    r"(?:this|the)\s+(?:work|study|trial|research|project|review|protocol|authors?)\s+"
     r"(?:was|were|is|are|has\s+been|have\s+been)\s+(?:(?:partly|partially|jointly|financially|in\s+part|"
-    r"prospectively|retrospectively)\s+)?(?:funded|supported|sponsored|financed|registered)\b|"
-    r"fund(?:ing|ed)\b|supported\s+by\b|sponsored\s+by\b|(?:grant|financial)\s+support\b|"
+    r"prospectively|retrospectively)\s+)?(?:funded|sponsored|financed|registered)\b|"
+    r"funding\s*(?:[:.]|sources?\b|statement|information|for\s+(?:this|the)\b|was\s+(?:provided|received)|"
+    r"(?:and|&)\s+support)|funded\s+by\b|sponsored\s+by\b|(?:grant|financial)\s+support\b|"
     r"sources?\s+of\s+(?:funding|support)|role\s+of\s+the\s+fund|no\s+(?:specific\s+|external\s+)?funding|"
-    r"(?:the\s+)?authors?\s+(?:declare|report|have\s+no|received\s+no|disclose)|"
-    r"conflicts?\s+of\s+interest|competing\s+interests?|declarations?\s+of\s+(?:competing\s+)?interests?|"
-    r"(?:financial\s+)?disclosures?\b|"
+    r"(?:the\s+)?authors?\s+(?:declare|have\s+no|received\s+no|report\s+no|disclose)|"
+    r"(?:no\s+)?(?:conflicts?\s+of\s+interests?|competing\s+interests?)\s*(?:[:.]|statement|none|declared?|exist)|"
+    r"declarations?\s+of\s+(?:competing\s+)?interests?|(?:financial\s+)?disclosures?\s*(?:[:.]|statement)|"
     r"copyright\b|©|\(c\)\s|crown\s+copyright|all\s+rights\s+reserved|this\s+article\s+is\s+protected|"
     r"published\s+by\b|this\s+is\s+an\s+open[- ]access|licensee\b|"
     r"the\s+authors?(?:\(s\))?\s*,?\s*\d{4}|\d{4}\s+the\s+authors?|psycinfo\b|"
-    r"level\s+of\s+evidence|key\s*words?\b|abbreviations?\s*:"
+    r"level\s+of\s+evidence|key\s*words?\s*:|abbreviations?\s*:"
     r")",
+    re.IGNORECASE,
+)
+# "Supported by ..." is a funding note only when it names a funder.
+_SUPPORT_SENTENCE = re.compile(
+    r"^\W*(?:(?:this|the)\s+(?:work|study|trial|research|project|protocol|review|authors?)\s+"
+    r"(?:was|were|is|are|has\s+been|have\s+been)\s+(?:(?:partly|partially|jointly|financially|in\s+part)\s+)?)?"
+    r"supported\s+(?:in\s+part\s+)?by\b",
+    re.IGNORECASE,
+)
+_FUNDER = re.compile(
+    r"\b(?:grants?|fund(?:s|ing|ed)?|foundation|institutes?|council|ministry|agency|trust|award|fellowship|"
+    r"scholarship|sponsor\w*|program(?:me)?|department\s+of|NIH|NIHR|NSF|NSFC)\b",
     re.IGNORECASE,
 )
 # Registry identifiers and licence/publisher notices mark a sentence as
@@ -294,7 +312,11 @@ def _is_results_section(section: dict[str, Any]) -> bool:
 
 def is_boilerplate_sentence(sentence: str) -> bool:
     """Whether *sentence* is registration, funding, interest or publisher text."""
-    return bool(_BOILERPLATE_SENTENCE.search(sentence) or _BOILERPLATE_ANYWHERE.search(sentence))
+    return bool(
+        _BOILERPLATE_SENTENCE.search(sentence)
+        or _BOILERPLATE_ANYWHERE.search(sentence)
+        or (_SUPPORT_SENTENCE.search(sentence) and _FUNDER.search(sentence))
+    )
 
 
 def abstract_truncation_basis(abstract: str, *, stored_prefix_truncated: bool = False) -> tuple[str, ...]:

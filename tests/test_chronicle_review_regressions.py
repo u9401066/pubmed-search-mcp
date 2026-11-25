@@ -71,6 +71,27 @@ def test_funding_registration_and_publisher_statements_are_never_quoted(tail: st
     assert abstract[highlight.char_start : highlight.char_end] == highlight.text
 
 
+@pytest.mark.parametrize(
+    "finding",
+    [
+        "Registered nurses reported less fatigue with the new rota.",
+        "Registry data from 10,000 patients showed lower mortality with early surgery.",
+        "Funding cuts reduced access to postoperative rehabilitation.",
+        "Disclosure of HIV status to partners increased after counselling.",
+        "The authors report the first case of remimazolam anaphylaxis in a child.",
+        "Conflicts of interest were common among guideline panel members.",
+        "Trials registered on ClinicalTrials.gov rarely reported their results on time.",
+        "ClinicalTrials.gov records showed frequent primary outcome switching.",
+        "The study was supported by strong patient engagement across all sites.",
+    ],
+)
+def test_findings_that_resemble_boilerplate_words_are_still_quotable(finding: str) -> None:
+    abstract = f"We analysed records from several hospitals. {finding}"
+    highlight = select_extractive_highlight(abstract)
+    assert highlight is not None
+    assert highlight.text == finding
+
+
 def test_short_abstract_fallback_skips_boilerplate_and_never_quotes_only_boilerplate() -> None:
     short = select_extractive_highlight("We studied 5 rats. Copyright 2020.")
     assert short is not None
