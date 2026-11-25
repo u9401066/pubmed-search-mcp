@@ -123,11 +123,12 @@ async def _execute_pipeline_mode_outcome(
     from pubmed_search.application.pipeline.executor import PipelineExecutor
     from pubmed_search.application.pipeline.templates import materialize_pipeline_config
     from pubmed_search.application.pipeline.validator import parse_and_validate_config
-    from pubmed_search.domain.entities.pipeline import PipelineConfig
+    from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineScope
     from pubmed_search.shared.settings import load_settings
 
     pipeline_name_override: str | None = None
     saved_config: PipelineConfig | None = None
+    saved_scope: PipelineScope | None = None
 
     if contains_credential_material(pipeline_text):
         return _pipeline_failure(
@@ -156,6 +157,7 @@ async def _execute_pipeline_mode_outcome(
             config, _meta = pipeline_store.load(pipeline_name)
             pipeline_name_override = _meta.name
             saved_config = config
+            saved_scope = getattr(_meta, "scope", None)
         except FileNotFoundError:
             return _pipeline_failure(
                 "Saved pipeline was not found",
@@ -265,12 +267,19 @@ async def _execute_pipeline_mode_outcome(
     # ── Auto-save report to workspace/global ─────────────────────────────
     persistence = RunPersistence()
     if not dry_run:
+        # The run's record, record set, report and screening stay in the scope
+        # the saved pipeline was loaded from.
+        run_store = (
+            pipeline_store.pinned_to(saved_scope)
+            if pipeline_store is not None and saved_scope is not None
+            else pipeline_store
+        )
         persistence = await asyncio.to_thread(
             _persist_pipeline_run,
             prepared_config,
             articles,
             report,
-            pipeline_store=pipeline_store,
+            pipeline_store=run_store,
             status=status,
             pipeline_name_override=pipeline_name_override,
             started_at=started_at,

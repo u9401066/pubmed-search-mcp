@@ -61,6 +61,8 @@ class StoredPipelineRunner:
         """
         saved_config, meta = self._store.load(name)
         config = materialize_pipeline_config(saved_config, default_name=meta.name)
+        # Everything this run writes stays in the scope its pipeline was loaded from.
+        store = self._store.pinned_to(meta.scope)
 
         executor = PipelineExecutor(
             searcher=self._searcher,
@@ -69,10 +71,10 @@ class StoredPipelineRunner:
             execution_policy=self._execution_policy,
             mesh_correction=self._mesh_correction,
         )
-        recorder = PipelineRunRecorder(self._store, on_recorded=self._run_observer)
+        recorder = PipelineRunRecorder(store, on_recorded=self._run_observer)
 
         started = datetime.now(timezone.utc)
-        run_id = self._store.create_run_id(meta.name, started)
+        run_id = store.create_run_id(meta.name, started)
 
         try:
             with self._execution_context():
@@ -113,5 +115,5 @@ class StoredPipelineRunner:
                 status="error",
                 error_message=safe_message,
             )
-            self._store.save_run(meta.name, failed_run)
+            store.save_run(meta.name, failed_run)
             raise RuntimeError(safe_message) from None

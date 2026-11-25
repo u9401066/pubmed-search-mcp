@@ -10,6 +10,7 @@ Resolution order: workspace → global (load), auto-detect (save).
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -171,6 +172,8 @@ class PipelineStore:
         self._lock = _PIPELINE_PERSISTENCE_LOCK
         self._global_dir = Path(global_data_dir)
         self._workspace_dir = Path(workspace_dir) if workspace_dir else None
+        # Set only on views returned by pinned_to(): name lookups use this scope.
+        self._pinned_scope: PipelineScope | None = None
 
         # Ensure directories exist
         self._global_pipelines_dir.mkdir(parents=True, exist_ok=True)
@@ -194,6 +197,28 @@ class PipelineStore:
             return
         except OSError as exc:
             logger.warning("Could not create the workspace data .gitignore (%s)", type(exc).__name__)
+
+    def pinned_to(self, scope: PipelineScope) -> PipelineStore:
+        """Return a view of this store whose name lookups always use ``scope``.
+
+        A workspace pipeline shadows a same-name global one. A run persists
+        through the view pinned to the scope its pipeline was loaded from, so
+        its run record, record set, report, history pruning and screening log
+        stay in that scope even if a same-name pipeline appears or disappears
+        in the other scope meanwhile.
+        """
+        if scope == PipelineScope.WORKSPACE and not self._workspace_dir:
+            msg = "Workspace scope requested but no workspace directory is configured"
+            raise ValueError(msg)
+        view = copy.copy(self)
+        view._pinned_scope = scope  # noqa: SLF001 - a view of this class
+        return view
+
+    def _lookup_scopes(self) -> list[PipelineScope]:
+        """Scopes searched for a pipeline name, in precedence order."""
+        if self._pinned_scope is not None:
+            return [self._pinned_scope]
+        return [PipelineScope.WORKSPACE, PipelineScope.GLOBAL] if self._workspace_dir else [PipelineScope.GLOBAL]
 
     def rebased(self, global_data_dir: str | Path) -> PipelineStore:
         """Return an equivalent store rooted at a different global directory.
@@ -483,16 +508,11 @@ class PipelineStore:
         """
         name = self._validate_name(name, allow_saved_prefix=True)
 
-        # Try workspace first
-        if self._workspace_dir:
-            ws_path = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_path.exists():
-                return self._load_from_file(ws_path, PipelineScope.WORKSPACE, name)
-
-        # Then global
-        global_path = self._global_pipelines_dir / f"{name}.yaml"
-        if global_path.exists():
-            return self._load_from_file(global_path, PipelineScope.GLOBAL, name)
+        # Workspace first, then global (only the pinned scope for a pinned view).
+        for scope in self._lookup_scopes():
+            path = self._pipelines_dir_for(scope) / f"{name}.yaml"
+            if path.exists():
+                return self._load_from_file(path, scope, name)
 
         msg = (
             f"Pipeline '{name}' not found. "
@@ -645,23 +665,12 @@ class PipelineStore:
         """
         name = self._validate_name(name)
 
-        # Try workspace first
-        if self._workspace_dir:
-            ws_yaml = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_yaml.exists():
+        # Workspace first, then global (only the pinned scope for a pinned view).
+        for scope in self._lookup_scopes():
+            if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists():
                 return self._delete_from_scope(
-                    name,
-                    PipelineScope.WORKSPACE,
-                    delete_screening_log=delete_screening_log,
-                    screening_log=screening_log,
+                    name, scope, delete_screening_log=delete_screening_log, screening_log=screening_log
                 )
-
-        # Then global
-        global_yaml = self._global_pipelines_dir / f"{name}.yaml"
-        if global_yaml.exists():
-            return self._delete_from_scope(
-                name, PipelineScope.GLOBAL, delete_screening_log=delete_screening_log, screening_log=screening_log
-            )
 
         msg = f"Pipeline '{name}' not found"
         raise FileNotFoundError(msg)
@@ -886,8 +895,8 @@ class PipelineStore:
             index[name].run_count += int(is_new)
             self._save_index(scope, index)
 
-        # Prune old history
-        self._prune_history(runs_dir)
+        # Prune old history (in the scope this run was written to)
+        self._prune_history(runs_dir, scope)
 
         logger.info("Saved one pipeline run")
 
@@ -938,25 +947,21 @@ class PipelineStore:
         return sum(1 for path in runs_dir.glob("*.json") if path.is_file())
 
     def _find_pipeline_scope(self, name: str) -> PipelineScope:
-        """Find which scope a pipeline lives in."""
+        """Find which scope a pipeline lives in (always the pinned scope for a pinned view)."""
         name = self._validate_name(name)
-        if self._workspace_dir:
-            ws_path = self._workspace_pipelines_dir / f"{name}.yaml"
-            if ws_path.exists():
-                return PipelineScope.WORKSPACE
-
-        global_path = self._global_pipelines_dir / f"{name}.yaml"
-        if global_path.exists():
-            return PipelineScope.GLOBAL
+        if self._pinned_scope is not None:
+            return self._pinned_scope
+        for scope in self._lookup_scopes():
+            if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists():
+                return scope
 
         # Default to global if not found (e.g., for creating runs before save)
         return PipelineScope.GLOBAL
 
-    def _prune_history(self, runs_dir: Path) -> None:
-        """Keep only the most recent _MAX_HISTORY runs (and their record artifacts)."""
+    def _prune_history(self, runs_dir: Path, scope: PipelineScope) -> None:
+        """Keep only the most recent _MAX_HISTORY runs (and their record artifacts) of one scope."""
         run_files = sorted(runs_dir.glob("*.json"))
         if len(run_files) > _MAX_HISTORY:
-            scope = self._find_pipeline_scope(runs_dir.name)
             artifacts_dir = self._artifacts_dir_for(scope) / runs_dir.name
             for f in run_files[: len(run_files) - _MAX_HISTORY]:
                 f.unlink()
@@ -1098,11 +1103,17 @@ class PipelineStore:
 
     @synchronized
     def exists(self, name: str) -> bool:
-        """Check if a pipeline exists in any scope."""
+        """Check if a pipeline exists in any scope (only the pinned scope for a pinned view)."""
         name = self._validate_name(name)
-        if self._workspace_dir and (self._workspace_pipelines_dir / f"{name}.yaml").exists():
-            return True
-        return (self._global_pipelines_dir / f"{name}.yaml").exists()
+        return any((self._pipelines_dir_for(scope) / f"{name}.yaml").exists() for scope in self._lookup_scopes())
+
+    @synchronized
+    def shadowed_scopes(self, name: str) -> list[PipelineScope]:
+        """Return every scope that holds ``name`` when more than one does (workspace wins)."""
+        name = self._validate_name(name)
+        scopes = [PipelineScope.WORKSPACE, PipelineScope.GLOBAL] if self._workspace_dir else [PipelineScope.GLOBAL]
+        present = [scope for scope in scopes if (self._pipelines_dir_for(scope) / f"{name}.yaml").exists()]
+        return present if len(present) > 1 else []
 
     @synchronized
     def create_run_id(self, name: str, started: datetime | None = None) -> str:

@@ -107,6 +107,22 @@ class PipelineToolRuntime:
             return scoped
 
 
+def _shadowed_scopes(store: PipelineStore, name: str) -> list[str]:
+    """Scope names holding ``name`` when a workspace pipeline shadows a global one."""
+    scopes = store.shadowed_scopes(name)
+    return [scope.value for scope in scopes] if isinstance(scopes, list) else []
+
+
+def _shadow_warning(store: PipelineStore, name: str) -> str | None:
+    if not _shadowed_scopes(store, name):
+        return None
+    return (
+        f"⚠️ A pipeline named '{name}' also exists in the global scope. The workspace pipeline takes "
+        "precedence for unified_search, history, export and screening; the global one (and its runs and "
+        "screening log) is unchanged but not reachable by this name until one of them is renamed or deleted."
+    )
+
+
 def _store_unavailable(tool_name: str) -> str:
     """Explain why no pipeline store is available to this caller."""
     return durable_storage_denied(tool_name) or ResponseFormatter.error(
@@ -181,6 +197,9 @@ def _save_pipeline_impl(
         parts.append(f"  Steps: {meta.step_count} ({step_summary})")
     parts.append(f"  Config hash: {meta.config_hash}")
 
+    shadow = _shadow_warning(store, meta.name)
+    if shadow:
+        parts.extend(["", shadow])
     parts.append("")
     parts.append("💡 Usage:")
     parts.append(f'  • Execute: unified_search(pipeline="saved:{meta.name}")')
@@ -225,6 +244,7 @@ def _list_pipelines_impl(
         "|------|-------|-------------|------|------|",
     ]
 
+    shadowing: list[str] = []
     for pipeline in pipelines:
         tags_str = ", ".join(pipeline.tags) if pipeline.tags else "-"
         desc = (
@@ -232,7 +252,17 @@ def _list_pipelines_impl(
             if pipeline.description and len(pipeline.description) > 43
             else (pipeline.description or "-")
         )
-        parts.append(f"| {pipeline.name} | {pipeline.scope.value} | {desc} | {tags_str} | {pipeline.run_count} |")
+        scope_cell = pipeline.scope.value
+        if pipeline.scope.value == "workspace" and _shadowed_scopes(store, pipeline.name):
+            scope_cell = "workspace (shadows global)"
+            shadowing.append(pipeline.name)
+        parts.append(f"| {pipeline.name} | {scope_cell} | {desc} | {tags_str} | {pipeline.run_count} |")
+    if shadowing:
+        parts.append("")
+        parts.append(
+            f"⚠️ {', '.join(shadowing)} also exist in the global scope; the workspace pipeline is used by name. "
+            'Use list_pipelines(scope="global") to see the shadowed ones.'
+        )
 
     schedules = {entry.pipeline_name: entry for entry in store.list_schedules()}
     for pipeline in pipelines:
@@ -423,6 +453,8 @@ def _delete_pipeline_impl(
     except ValueError as exc:
         return ResponseFormatter.error(str(exc), tool_name=tool_name)
     removed_log = deletion.screening_log or summary
+    # Deleting a workspace pipeline can uncover a same-name global one.
+    uncovered_global = deletion.scope.value == "workspace" and store.exists(name) is True
 
     schedule_cleanup_failed = False
     if scheduler is not None:
@@ -437,6 +469,8 @@ def _delete_pipeline_impl(
     parts.append(f"  - {deletion.run_count} execution history record(s) and run record sets permanently removed")
     if removed_log is not None:
         parts.append(f"  - Screening log permanently removed: {_screening_loss(removed_log)}")
+    if uncovered_global:
+        parts.append("  - Note: a same-name pipeline remains in the global scope and is now the one used by this name")
     if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:

@@ -648,3 +648,19 @@ class TestToolsIntegration:
 
         assert "unknown action" in output.lower()
         assert "find" in output
+
+
+def test_same_name_pipelines_in_both_scopes_are_disclosed(mcp, real_store) -> None:
+    """A workspace pipeline shadowing a global one must never look like the only pipeline of that name."""
+    config_yaml = "template: pico\ntemplate_params:\n  P: ICU\n  I: remimazolam"
+    mcp["save_pipeline"](name="dup", config=config_yaml, scope="global")
+
+    saved = mcp["save_pipeline"](name="dup", config=config_yaml, scope="workspace")
+    listed = mcp["list_pipelines"]()
+    deleted = mcp["delete_pipeline"](name="dup")
+
+    assert "also exists in the global scope" in saved
+    assert "| dup | workspace (shadows global) |" in listed
+    assert "from workspace scope" in deleted
+    assert "remains in the global scope" in deleted
+    assert real_store.load("dup")[1].scope == PipelineScope.GLOBAL

@@ -773,3 +773,44 @@ class TestScopeResolution:
     def test_global_always_global(self, store_dual: PipelineStore):
         scope = store_dual._resolve_scope("global")
         assert scope == PipelineScope.GLOBAL
+
+
+class TestSameNameScopes:
+    """A workspace pipeline shadows a same-name global one; operations never cross scopes."""
+
+    def test_pruning_a_pinned_scope_never_touches_the_other_scope(
+        self, store_dual: PipelineStore, simple_config: PipelineConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from pubmed_search.application.pipeline import store as store_module
+
+        monkeypatch.setattr(store_module, "_MAX_HISTORY", 2)
+        store_dual.save("dup", simple_config, scope="global")
+        store_dual.save("dup", simple_config, scope="workspace")
+        global_store = store_dual.pinned_to(PipelineScope.GLOBAL)
+        workspace_store = store_dual.pinned_to(PipelineScope.WORKSPACE)
+        for store in (global_store, workspace_store):
+            for index in range(3):
+                run = PipelineRun(run_id=f"run_{index}", pipeline_name="dup", pmids=[str(index + 1)])
+                run.artifacts["records"] = store.save_run_records("dup", run.run_id, [{"pmid": str(index + 1)}])
+                store.save_run("dup", run)
+
+        for store in (global_store, workspace_store):
+            assert [run.run_id for run in store.get_history("dup", limit=10)] == ["run_2", "run_1"]
+            assert store.load_run_records("dup", "run_0") == []  # pruned together with its run
+            assert store.load_run_records("dup", "run_1") == [{"pmid": "2"}]
+        # Unpinned name lookups resolve to the workspace pipeline, like load().
+        assert store_dual.load("dup")[1].scope == PipelineScope.WORKSPACE
+        assert store_dual.get_run("dup", "run_2").pmids == ["3"]
+
+    def test_pinned_view_reads_and_deletes_only_its_scope(
+        self, store_dual: PipelineStore, simple_config: PipelineConfig
+    ) -> None:
+        store_dual.save("dup", simple_config, scope="global")
+        store_dual.save("dup", simple_config, scope="workspace")
+        global_store = store_dual.pinned_to(PipelineScope.GLOBAL)
+
+        assert global_store.load("dup")[1].scope == PipelineScope.GLOBAL
+        assert global_store.delete("dup").scope == PipelineScope.GLOBAL
+        assert not global_store.exists("dup")
+        assert store_dual.exists("dup")
+        assert store_dual.load("dup")[1].scope == PipelineScope.WORKSPACE

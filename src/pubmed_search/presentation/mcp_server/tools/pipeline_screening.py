@@ -24,6 +24,7 @@ from pubmed_search.application.pipeline.screening import (
 )
 from pubmed_search.application.pipeline.store import PipelineHistoryError
 from pubmed_search.application.pipeline.validator import PIPELINE_NAME_PATTERN
+from pubmed_search.domain.entities.pipeline import PipelineScope
 from pubmed_search.infrastructure.pipeline_screening import SQLiteScreeningStore
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 
@@ -133,7 +134,12 @@ def screening_run_observer(store: PipelineStore) -> RunObserver:
     """Return a run observer that queues new records of complete runs for screening."""
 
     def observe(name: str, run: PipelineRun) -> None:
-        screening_service(store, name).register_if_complete(run)
+        # The record artifact names the scope the run was persisted to; register
+        # into that scope's log even if a same-name pipeline exists elsewhere.
+        artifact = run.artifacts.get("records")
+        scope = artifact.get("scope") if isinstance(artifact, dict) else None
+        target = store.pinned_to(PipelineScope(scope)) if scope in {"workspace", "global"} else store
+        screening_service(target, name).register_if_complete(run)
 
     return observe
 

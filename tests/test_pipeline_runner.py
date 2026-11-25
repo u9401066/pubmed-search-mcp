@@ -338,3 +338,43 @@ def test_metadata_count_merges_collected_records_once(
     assert len(calls) == 1
     assert run.artifacts["records"]["count"] == 2000
     assert run.artifacts["records"]["metadata_count"] == 1500
+
+
+async def test_run_stays_in_the_scope_it_was_loaded_from(tmp_path: Path) -> None:
+    """A same-name workspace pipeline created mid-run must not capture the global run's artifacts."""
+    from pubmed_search.application.pipeline.record_lineage import FINAL_STEP_METADATA_KEY
+    from pubmed_search.domain.entities.pipeline import PipelineScope
+
+    store = PipelineStore(global_data_dir=tmp_path / "global", workspace_dir=tmp_path / "workspace")
+    config = PipelineConfig(steps=[PipelineStep(id="s", action="search", params={"query": "topic"})])
+    store.save("dup", config, scope="global")
+    pmids = ["1", "2"]
+    step = StepResult(
+        step_id="s",
+        action="search",
+        pmids=pmids,
+        records={pmid: {"pmid": pmid, "title": f"Paper {pmid}"} for pmid in pmids},
+        metadata={"retrieval": {"mode": "exhaustive", "exhaustive": True}, FINAL_STEP_METADATA_KEY: True},
+    )
+
+    async def execute_while_workspace_copy_appears(
+        _executor: object, _config: PipelineConfig, **_kwargs: object
+    ) -> tuple[list[UnifiedArticle], dict]:
+        store.save("dup", config, scope="workspace")
+        return [], {"s": step}
+
+    runner = StoredPipelineRunner(store=store, searcher=AsyncMock())
+    with patch(
+        "pubmed_search.application.pipeline.runner.PipelineExecutor.execute", new=execute_while_workspace_copy_appears
+    ):
+        run = await runner.execute_saved_pipeline("dup")
+
+    global_store = store.pinned_to(PipelineScope.GLOBAL)
+    workspace_store = store.pinned_to(PipelineScope.WORKSPACE)
+    assert global_store.get_run("dup", run.run_id).pmids == pmids
+    assert [row["pmid"] for row in global_store.load_run_records("dup", run.run_id)] == pmids
+    assert run.artifacts["records"]["scope"] == "global"
+    assert workspace_store.count_history("dup") == 0
+    assert not (tmp_path / "workspace" / ".pubmed-search" / "pipeline_artifacts").exists()
+    assert not (tmp_path / "workspace" / ".pubmed-search" / "pipeline_reports").exists()
+    assert (tmp_path / "global" / "pipeline_reports" / "dup" / f"{run.run_id}.md").is_file()
