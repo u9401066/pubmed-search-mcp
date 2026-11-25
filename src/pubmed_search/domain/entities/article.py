@@ -614,8 +614,9 @@ class UnifiedArticle:
         """Return provider-indexed publication types (e.g. PubMed ``PublicationType``).
 
         Values come from each contributing source's raw record, deduplicated in
-        order; when no provider indexed any, a known ``article_type`` is used.
-        Publication type is indexing metadata, not an evidence-quality grade.
+        order; empty when no provider indexed any. ``article_type`` carries the
+        normalized type. Publication type is indexing metadata, not an
+        evidence-quality grade.
         """
         values: list[str] = []
         for source in self.sources:
@@ -625,8 +626,6 @@ class UnifiedArticle:
                 text = candidate.strip() if isinstance(candidate, str) else ""
                 if text and text not in values:
                     values.append(text)
-        if not values and self.article_type != ArticleType.UNKNOWN:
-            values.append(self.article_type.value)
         return values
 
     @property
