@@ -54,7 +54,12 @@ from .agent_output import (
 )
 from .article_source import ArticleSource, PubmedSource, normalize_article_source
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
-from .fulltext_runtime import bind_cached_fulltext_fetcher
+from .fulltext_runtime import (
+    bind_cached_article_page_fetcher,
+    bind_cached_fulltext_fetcher,
+    bind_supplied_fulltext_lookup,
+    build_fulltext_access_context,
+)
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -185,6 +190,10 @@ def _format_get_fulltext_json(
     sources_skipped: list[dict[str, str]] | None = None,
     fulltext_license: dict[str, str] | None = None,
     deadline_seconds: float | None = None,
+    fulltext_origin: str | None = None,
+    fulltext_retrieval: dict[str, Any] | None = None,
+    fulltext_plan: list[dict[str, Any]] | None = None,
+    fulltext_plan_reason: str | None = None,
 ) -> str:
     """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
     section_provenance: dict[str, dict[str, Any]] = {
@@ -218,7 +227,11 @@ def _format_get_fulltext_json(
             surfacing_source=fulltext_source,
             canonical_host=fulltext_canonical_host,
             provenance=fulltext_provenance,
-            note="Structured or extracted article text came from the reported surfacing source.",
+            note=(
+                "Text registered by the host agent or user (register_fulltext); not verified against a provider copy."
+                if fulltext_origin in {"agent_supplied", "user_supplied"}
+                else "Structured or extracted article text came from the reported surfacing source."
+            ),
             fields=[section.get("title", "") for section in content_sections] if content_sections else None,
         )
 
@@ -255,6 +268,10 @@ def _format_get_fulltext_json(
         "section_selection": section_selection,
         "pdf_links": pdf_links,
         "fulltext_license": fulltext_license,
+        "fulltext_origin": fulltext_origin,
+        "fulltext_retrieval": fulltext_retrieval,
+        "fulltext_plan": fulltext_plan or [],
+        "fulltext_plan_reason": fulltext_plan_reason,
         "sources_tried": sources_tried,
         "sources_completed": sources_completed,
         "source_errors": source_errors,
@@ -346,6 +363,61 @@ def _format_source_notices_markdown(source_notices: list[dict[str, str]]) -> str
         for notice in source_notices
     )
     return "\n".join(lines) + "\n\n"
+
+
+def _format_fulltext_plan_markdown(plan: list[dict[str, Any]], reason: str | None) -> str:
+    """Render the ordered next steps an agent can run with its own tools."""
+    if not plan:
+        return ""
+    intro = (
+        "_The returned text is unstructured PDF text; for citation-ready spans:_"
+        if reason == "unstructured_text"
+        else "_No usable body was returned. Each step below applies to this article; follow them in order._"
+    )
+    lines = ["## 🧭 Fulltext plan", "", intro, ""]
+    for step in plan:
+        head = f"{step.get('order', '-')}. **{escape_markdown_text(step.get('step', ''))}**"
+        if step.get("url"):
+            head += f" — {markdown_link(str(step['url']), str(step['url']))}"
+        elif step.get("via"):
+            head += f" — via {escape_markdown_text(step['via'])}"
+        lines.append(head)
+        for label, key in (
+            ("Why", "why"),
+            ("Use", "tool_hint"),
+            ("Then", "then"),
+            ("Requires", "requires"),
+            ("Access/legal", "legal"),
+        ):
+            if step.get(key):
+                lines.append(f"   - {label}: {escape_markdown_text(step[key])}")
+        if step.get("retry_after_seconds") is not None:
+            lines.append(f"   - Retry after: {escape_markdown_text(step['retry_after_seconds'])} s")
+    return "\n".join(lines) + "\n\n"
+
+
+def _format_retrieval_markdown(origin: str | None, retrieval: dict[str, Any] | None) -> str:
+    """State where the body came from, including supplied-text caveats."""
+    if not retrieval:
+        return ""
+    location = retrieval.get("url") or retrieval.get("source_url") or retrieval.get("source_file") or ""
+    when = retrieval.get("retrieved_at") or ""
+    if origin in {"agent_supplied", "user_supplied"}:
+        text = (
+            f"🧾 **{escape_markdown_text(origin)}** text registered "
+            f"{escape_markdown_text(retrieval.get('registered_at', ''))} "
+            f"(retrieved {escape_markdown_text(when)} via {escape_markdown_text(retrieval.get('retrieval_method', ''))}"
+            f" from {escape_markdown_text(location)}). Not verified against a provider copy; pass "
+            "`use_registered_fulltext=false` to re-query providers."
+        )
+    else:
+        text = (
+            f"🧾 Read from {escape_markdown_text(location)} ({escape_markdown_text(retrieval.get('source', ''))}, "
+            f"retrieved {escape_markdown_text(when)}; individual reading)."
+        )
+        if retrieval.get("courtesy_note"):
+            text += f" {escape_markdown_text(retrieval['courtesy_note'])}."
+    return text + "\n\n"
 
 
 def _render_fulltext_content_for_artifact(
@@ -552,31 +624,41 @@ def register_europe_pmc_tools(mcp: MCPServer):
         extended_sources: StrictBool = False,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
         allow_browser_session: StrictBool | None = None,
+        use_registered_fulltext: StrictBool = True,
         ctx: Context | None = None,
     ) -> str:
         """
         🔥 Enhanced multi-source fulltext retrieval.
 
         Automatically tries multiple sources to find the best fulltext:
+        0. Text registered earlier with register_fulltext for this article
+           (served as agent_supplied/user_supplied, never as provider text)
         1. Europe PMC JATS (if a PMCID is known or resolved from the PMID)
         2. NCBI PMC efetch JATS, started when Europe PMC fails, has no body,
            or is slow; publisher-restricted PMC records are reported as
            front matter only, never as fulltext
-        3. Unpaywall (finds OA versions via DOI)
-        4. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
-        5. CORE (open-access repository metadata and available text)
+        3. The public PMC article page (pmc_html), only for this explicit
+           single-article read and only after the XML sources failed, had
+           no body or were front matter only (never in search prefetch)
+        4. Unpaywall (finds OA versions via DOI)
+        5. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
+        6. CORE (open-access repository metadata and available text)
 
         With extended_sources=True, also searches:
-        6. CrossRef (publisher links)
-        7. DOAJ (Gold OA journals)
-        8. Zenodo (research repository)
-        9. PubMed LinkOut (external providers)
-        10. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
+        7. CrossRef (publisher links)
+        8. DOAJ (Gold OA journals)
+        9. Zenodo (research repository)
+        10. PubMed LinkOut (external providers)
+        11. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
 
         One overall deadline bounds the request. Read source_errors[].code
         (e.g. rate_limited, upstream_retries_exhausted, timeout, cache_error),
         source_notices and sources_skipped before treating missing text as
-        evidence that no fulltext exists.
+        evidence that no fulltext exists. When no usable body is returned,
+        fulltext_plan lists ordered next steps (host WebFetch of a public
+        page, OA PDF download and asset-aware ingest, institutional access,
+        Zotero Keeper attachment, asking the user) that end with
+        register_fulltext; follow only steps the user is entitled to.
 
         ``source`` is a discriminated identifier object, so the schema itself
         requires exactly one explicit PMID, PMCID, or DOI kind.
@@ -597,6 +679,8 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 - True: force broker fallback when configured
                 - False: disable broker fallback
                 - None: use auto mode from broker configuration
+            use_registered_fulltext: Serve text registered with register_fulltext
+                (default True). False re-queries the provider sources.
 
         Returns:
             Fulltext content with PDF links from all available sources.
@@ -627,6 +711,10 @@ def register_europe_pmc_tools(mcp: MCPServer):
             include_figures=include_figures,
             extended_sources=extended_sources,
             allow_browser_session=allow_browser_session,
+            # One explicitly requested article: per-article sources such as the
+            # public PMC page may run. Batch and prefetch paths never set this.
+            explicit_article_read=True,
+            use_registered_fulltext=use_registered_fulltext,
         )
 
         from pubmed_search.infrastructure.sources.figure_client import get_figure_client
@@ -635,6 +723,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             InstitutionalFulltextClient,
         )
         from pubmed_search.infrastructure.sources.ncbi_pmc import get_ncbi_pmc_client
+        from pubmed_search.infrastructure.sources.pmc_html import get_pmc_article_page_client
 
         _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
         _ncbi_pmc_factory = get_ncbi_pmc_client if settings.fulltext_ncbi_pmc_fallback else None
@@ -645,6 +734,11 @@ def register_europe_pmc_tools(mcp: MCPServer):
         get_source_runtime()
         europe_pmc_client = get_europe_pmc_client()
         _structured_xml = bind_cached_fulltext_fetcher(europe_pmc_client.get_fulltext_xml)
+        _article_page = (
+            bind_cached_article_page_fetcher(get_pmc_article_page_client().fetch_article_document)
+            if settings.fulltext_pmc_html
+            else None
+        )
 
         service = FulltextService(
             europe_pmc_client_factory=lambda: europe_pmc_client,
@@ -655,6 +749,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
             institutional_client_factory=_institutional_factory,
             structured_xml_fetcher=_structured_xml,
             ncbi_pmc_client_factory=_ncbi_pmc_factory,
+            article_page_fetcher=_article_page,
+            supplied_fulltext_lookup=bind_supplied_fulltext_lookup(),
+            access_context=build_fulltext_access_context(settings),
             deadline_seconds=settings.fulltext_deadline_seconds,
         )
         try:
@@ -742,6 +839,10 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "fulltext_canonical_host": retrieval.fulltext_canonical_host,
             "fulltext_provenance": retrieval.fulltext_provenance,
             "fulltext_license": retrieval.fulltext_license,
+            "fulltext_origin": retrieval.fulltext_origin,
+            "fulltext_retrieval": retrieval.fulltext_retrieval,
+            "fulltext_plan": retrieval.fulltext_plan,
+            "fulltext_plan_reason": retrieval.fulltext_plan_reason,
             "include_figures": include_figures,
             "figures": retrieval.figures,
         }
@@ -799,6 +900,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "fulltext_canonical_host": retrieval.fulltext_canonical_host,
             "fulltext_provenance": retrieval.fulltext_provenance,
             "fulltext_license": retrieval.fulltext_license,
+            "fulltext_origin": retrieval.fulltext_origin,
+            "fulltext_retrieval": retrieval.fulltext_retrieval,
+            "fulltext_plan": retrieval.fulltext_plan,
         }
 
         # === BUILD OUTPUT ===
@@ -861,6 +965,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     output_format=normalized_output_format,
                     tool_name="get_fulltext",
                 )
+            no_results_response += "\n\n" + _format_fulltext_plan_markdown(
+                retrieval.fulltext_plan, retrieval.fulltext_plan_reason
+            )
             artifact = None
             if artifact_persistence_enabled():
                 artifact = await persist_tool_artifact(
@@ -882,6 +989,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                             "sources_skipped": skipped_rows,
                             "coverage_status": retrieval.coverage_status,
                             "source_counts": source_counts,
+                            "fulltext_plan": retrieval.fulltext_plan,
                         },
                     },
                     primary_file="response.md",
@@ -909,9 +1017,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
             sources_skipped=skipped_rows,
         )
         if retrieval.fulltext_license and retrieval.fulltext_content:
-            license_label = retrieval.fulltext_license.get("type") or retrieval.fulltext_license.get("url")
+            license_label = (
+                retrieval.fulltext_license.get("type")
+                or retrieval.fulltext_license.get("url")
+                or retrieval.fulltext_license.get("text")
+            )
             if license_label:
                 output += f"📜 Declared article license: {escape_markdown_text(license_label)}\n\n"
+        output += _format_retrieval_markdown(retrieval.fulltext_origin, retrieval.fulltext_retrieval)
+        output += _format_fulltext_plan_markdown(retrieval.fulltext_plan, retrieval.fulltext_plan_reason)
 
         download_note = _format_download_notice(retrieval.fallback_notice)
         if download_note:

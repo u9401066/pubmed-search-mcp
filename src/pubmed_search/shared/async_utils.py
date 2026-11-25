@@ -220,6 +220,15 @@ class RateLimiter:
         """Async-compatible entrypoint for an atomic loop-local safety update."""
         self.defer(retry_after)
 
+    def cooldown_remaining(self) -> float:
+        """Seconds until an applied cooldown ends; 0.0 when none is active.
+
+        Callers that must not block for a long upstream back-off (for example a
+        fallback source inside a request deadline) can fail fast with this
+        value instead of waiting in :meth:`acquire`.
+        """
+        return max(0.0, self._cooldown_until - time.monotonic())
+
     def defer(self, retry_after: float) -> None:
         """Record cooldown atomically on this loop, even after a caller times out.
 

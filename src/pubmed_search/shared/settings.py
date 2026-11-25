@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -62,6 +63,12 @@ class AppSettings(BaseSettings):
     )
     # NCBI E-utilities (efetch db=pmc / esummary) fallback when Europe PMC cannot supply a body.
     fulltext_ncbi_pmc_fallback: bool = Field(default=True, alias="PUBMED_FULLTEXT_NCBI_PMC_FALLBACK")
+    # Public PMC article page, read only for explicit single-article get_fulltext requests
+    # (never by search prefetch or batch paths) when the XML sources yield no body.
+    fulltext_pmc_html: bool = Field(default=True, alias="PUBMED_FULLTEXT_PMC_HTML")
+    # Extra local roots (os.pathsep-separated) from which register_fulltext may read files,
+    # in addition to the workspace, notes directory and tenant data directory.
+    fulltext_intake_roots_raw: str = Field(default="", alias="PUBMED_FULLTEXT_INTAKE_ROOTS")
     pipeline_run_timeout_seconds: float = Field(
         default=DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS,
         alias="PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS",
@@ -211,6 +218,11 @@ class AppSettings(BaseSettings):
     def workspace_dir_source(self) -> WorkspaceDirSource | None:
         """Environment variable that supplied ``workspace_dir``, or None when unset."""
         return self._workspace_dir_source
+
+    @property
+    def fulltext_intake_roots(self) -> tuple[str, ...]:
+        """Extra local directories ``register_fulltext`` may read (os.pathsep-separated)."""
+        return tuple(part.strip() for part in self.fulltext_intake_roots_raw.split(os.pathsep) if part.strip())
 
     @property
     def disabled_sources(self) -> tuple[str, ...]:

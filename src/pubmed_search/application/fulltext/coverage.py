@@ -42,7 +42,7 @@ FulltextSourceErrorCode = Literal[
     "invalid_response",
     "cache_error",
 ]
-FulltextSourceNoticeCode = Literal["no_body", "front_matter_only", "superseded"]
+FulltextSourceNoticeCode = Literal["no_body", "front_matter_only", "superseded", "supplied_not_verified"]
 FulltextSkipReason = Literal["deadline"]
 
 _GENERIC_UNAVAILABLE = "The upstream source was unavailable during this request."
@@ -115,6 +115,10 @@ NOTICE_MESSAGES: dict[FulltextSourceNoticeCode, str] = {
         "so it is not presented as fulltext."
     ),
     "superseded": "Stopped waiting after another source gave a definitive answer first.",
+    "supplied_not_verified": (
+        "Served text registered by the host agent or user with register_fulltext; providers were not "
+        "re-queried and the text was not verified against a provider copy."
+    ),
 }
 
 

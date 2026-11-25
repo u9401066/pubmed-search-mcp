@@ -69,6 +69,7 @@ def _disable_live_institutional_fetch(monkeypatch):
     """Keep unit tests hermetic; direct DOI and NCBI PMC retrieval have dedicated adapter tests."""
     monkeypatch.setenv("INSTITUTIONAL_DIRECT_FETCH", "false")
     monkeypatch.setenv("PUBMED_FULLTEXT_NCBI_PMC_FALLBACK", "false")
+    monkeypatch.setenv("PUBMED_FULLTEXT_PMC_HTML", "false")
 
 
 # ============================================================
