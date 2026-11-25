@@ -31,7 +31,12 @@ from pubmed_search.infrastructure.sources.base_client import (
     BaseAPIClient,
     ProviderSchemaError,
 )
-from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult, PDFLinkDiscoveryResult
+from pubmed_search.infrastructure.sources.fulltext_download import (
+    FulltextResult,
+    PDFLink,
+    PDFLinkDiscoveryResult,
+    PDFSource,
+)
 from pubmed_search.infrastructure.sources.jats import parse_jats_article
 from pubmed_search.infrastructure.sources.ncbi_pmc import NCBI_EUTILS_RATE_LIMIT, NCBIPMCClient
 from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource
@@ -687,6 +692,45 @@ async def test_deadline_inside_structured_stage_is_reported_as_deadline_not_outa
     assert [skipped.source for skipped in result.sources_skipped] == ["ncbi_pmc", "pdf_retrieval_fallback"]
     assert all(error.code != "source_unavailable" for error in result.source_errors)
     assert result.coverage_status == "unavailable"
+
+
+async def test_pdf_fallback_downloader_works_within_the_remaining_request_budget() -> None:
+    """The downloader stops on the request's budget and returns what it found, not a cancellation."""
+    received: dict[str, Any] = {}
+
+    class _BudgetedDownloader:
+        async def get_fulltext(self, **kwargs: Any) -> FulltextResult:
+            received.update(kwargs)
+            budget = kwargs.get("total_timeout")
+            # Keeps trying candidates until its own end-to-end budget is spent.
+            await asyncio.sleep(min(budget, 5.0) if budget is not None else 5.0)
+            discovery = PDFLinkDiscoveryResult(
+                links=(PDFLink(url="https://repository.example.test/a.pdf", source=PDFSource.CORE),),
+                attempted_sources=("core",),
+                completed_sources=("core",),
+            )
+            return FulltextResult(link_discovery=discovery, error="Fulltext retrieval exceeded total timeout")
+
+        async def close(self) -> None:
+            return None
+
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    deadline_seconds = 0.6
+    result = await asyncio.wait_for(
+        _service(
+            europe_pmc=provider,
+            ncbi=None,
+            downloader=_BudgetedDownloader(),
+            deadline_seconds=deadline_seconds,
+        ).retrieve(FulltextRequest(pmcid=PMCID)),
+        timeout=5,
+    )
+
+    assert 0 < received["total_timeout"] < deadline_seconds
+    assert result.source_errors == []
+    assert "pdf_retrieval_fallback" in result.sources_completed
+    assert "https://repository.example.test/a.pdf" in [link["url"] for link in result.pdf_links]
 
 
 @pytest.mark.parametrize("late_outcome", ["raises", "returns"])

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 import toons
@@ -686,6 +686,7 @@ class TestGetFulltext:
             doi="10.1234/test",
             strategy="extract_text",
             allow_browser_session=None,
+            total_timeout=ANY,
         )
         assert "Institutional PDF text" in result
         assert "publisher.example.edu/paper.pdf" in result
@@ -750,6 +751,7 @@ class TestGetFulltext:
             doi="10.1234/test",
             strategy="extract_text",
             allow_browser_session=True,
+            total_timeout=ANY,
         )
 
     @pytest.mark.asyncio

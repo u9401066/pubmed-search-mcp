@@ -41,7 +41,7 @@ from .coverage import (
     make_notice,
     require_source_key,
 )
-from .racing import FulltextDeadline, HedgedAttempt, HedgedOutcome, run_hedged
+from .racing import MIN_USEFUL_BUDGET_SECONDS, FulltextDeadline, HedgedAttempt, HedgedOutcome, run_hedged
 from .registry import FulltextRegistry, get_fulltext_registry
 from .sections import SectionSelection, select_sections
 
@@ -57,6 +57,8 @@ DEFAULT_FULLTEXT_DEADLINE_SECONDS = 90.0
 """Overall get_fulltext budget; sources not started in time are reported as skipped."""
 DEFAULT_STRUCTURED_HEDGE_SECONDS = 6.0
 """Wait this long for the preferred structured source before also asking the fallback."""
+_DOWNLOADER_RESERVE_SECONDS = 1.0
+"""Request budget kept back from the downloader so it can return and clean up in time."""
 _STRUCTURED_SOURCES = frozenset({"europe_pmc", "ncbi_pmc"})
 _METADATA_SOURCES = ("europe_pmc_metadata", "ncbi_metadata")
 
@@ -361,7 +363,7 @@ class FulltextService:
                     source,
                     result,
                     deadline,
-                    partial(self._collect_download, request, result, log, source="extended"),
+                    partial(self._collect_download, request, result, log, source="extended", deadline=deadline),
                     before=partial(setattr, result, "extended_sources_attempted", True),
                 )
             elif (
@@ -374,7 +376,14 @@ class FulltextService:
                     source,
                     result,
                     deadline,
-                    partial(self._collect_download, request, result, log, source="pdf_retrieval_fallback"),
+                    partial(
+                        self._collect_download,
+                        request,
+                        result,
+                        log,
+                        source="pdf_retrieval_fallback",
+                        deadline=deadline,
+                    ),
                 )
 
         if request.include_figures and request.pmcid and self._figure_client_factory is not None:
@@ -800,17 +809,30 @@ class FulltextService:
         log: LogCallback | None,
         *,
         source: Literal["extended", "pdf_retrieval_fallback"],
+        deadline: FulltextDeadline,
     ) -> None:
-        """Share discovery, extraction, coverage, and cleanup across both policies."""
+        """Share discovery, extraction, coverage, and cleanup across both policies.
+
+        The downloader receives what is left of the request budget (minus a
+        small reserve for wrap-up and cleanup) as its own end-to-end timeout.
+        It then stops on its own and returns the links it already found,
+        instead of being cancelled by the request deadline with nothing.
+        """
         downloader: Any | None = None
         try:
             downloader = self._downloader_factory()
+            budget: dict[str, float] = {}
+            remaining = deadline.remaining()
+            if remaining is not None:
+                reserve = min(_DOWNLOADER_RESERVE_SECONDS, remaining * 0.25)
+                budget["total_timeout"] = max(MIN_USEFUL_BUDGET_SECONDS, remaining - reserve)
             extended_result = await downloader.get_fulltext(
                 pmid=request.pmid,
                 pmcid=request.pmcid,
                 doi=request.doi,
                 strategy="links_only" if result.has_retrieved_text else "extract_text",
                 allow_browser_session=request.allow_browser_session,
+                **budget,
             )
             link_discovery = extended_result.require_link_discovery()
             if source == "pdf_retrieval_fallback":
