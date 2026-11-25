@@ -26,10 +26,13 @@ from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
 
 from .matching import (
     AMBIGUITY_SCORE_MARGIN,
+    MIN_CORROBORATING_FIELDS,
+    IdentityEvidence,
     article_first_author,
     build_comparison,
     build_corrections,
-    identity_supported,
+    correction_blocker,
+    identity_evidence,
     score_candidate,
     search_candidate_rejection,
 )
@@ -79,6 +82,14 @@ _STRATEGY_REQUIREMENTS: dict[str, str] = {
     "ecitmatch": "needs a journal and year",
     "title_search": "needs a parsed title with at least two distinctive words",
     "metadata_search": "needs a first author, journal, and volume or first page",
+}
+# What each strategy matched by construction, in correction-withholding notes.
+_LOOKUP_KEY_LABELS: dict[str, str] = {
+    "pmid": "cited PMID",
+    "doi_search": "cited DOI",
+    "ecitmatch": "journal and year matched by ECitMatch",
+    "title_search": "title words it was found by",
+    "metadata_search": "first author, journal and volume/first page it was found by",
 }
 
 
@@ -463,6 +474,8 @@ class ReferenceVerificationService:
             "review_required": review_required,
             "review_strategy": review_strategy,
         }
+        if withheld_reason:
+            result["corrections_withheld_reason"] = withheld_reason
         if outcome.unavailable_sources:
             result["source_warnings"] = [
                 {"source": source, "error": "upstream source unavailable"} for source in outcome.unavailable_sources
@@ -728,10 +741,12 @@ class ReferenceVerificationService:
                 )
             return "Insufficient structured fields; manually inspect author/journal/year extraction"
         corrections = row.get("corrections") or []
+        pmid = (row.get("matched_article") or {}).get("pmid", "")
         if corrections:
-            pmid = (row.get("matched_article") or {}).get("pmid", "")
             changes = ", ".join(f"{item['field']} ({item['cited']} -> {item['pubmed']})" for item in corrections)
             return f"Cited fields differ from PubMed PMID {pmid}: {changes}"
+        if withheld_reason := row.get("corrections_withheld_reason"):
+            return f"PubMed PMID {pmid} is a candidate, but no corrections are proposed: {withheld_reason}"
         if mismatched_fields:
             return f"Candidate found but mismatched fields: {', '.join(mismatched_fields)}"
         return "Manual review requested"
@@ -1171,16 +1186,36 @@ class ReferenceVerificationService:
             return [], ""
         if not any(matched is False for matched in comparison.values()):
             return [], ""
-        if not identity_supported(parsed, article, comparison):
-            if parsed.title:
-                return [], (
-                    f"the cited title does not match PMID {article.get('pmid', '')}; "
-                    "the identifier or locator may point to a different work"
-                )
+        pmid = article.get("pmid", "")
+        evidence = identity_evidence(parsed, article, comparison, method=outcome.method)
+        blocker = correction_blocker(parsed, article, comparison, evidence=evidence)
+        if blocker == "title_conflict":
+            return [], (
+                f"the cited title does not match PMID {pmid}; the identifier or locator may point to a different work"
+            )
+        if blocker == "few_locators":
             return [], "too few cited fields agree with the PubMed record to confirm it is the cited work"
+        if blocker == "weak_corroboration":
+            return [], ReferenceVerificationService._weak_corroboration_reason(evidence, pmid, outcome.method)
         if outcome.selection is not None and outcome.selection.ambiguous:
             return [], "several PubMed records match about equally well; confirm which one is intended"
         return build_corrections(parsed, article, comparison), ""
+
+    @staticmethod
+    def _weak_corroboration_reason(evidence: IdentityEvidence, pmid: object, method: ResolutionMethod | None) -> str:
+        """Explain that too few independent fields corroborate the record to correct the citation."""
+        key = _LOOKUP_KEY_LABELS.get(method or "", "lookup key")
+        if evidence.agreeing:
+            agreeing = ", ".join(evidence.agreeing)
+            verb = "agrees" if len(evidence.agreeing) == 1 else "agree"
+            found = f"only {agreeing} {verb} with PMID {pmid} besides the {key}"
+        else:
+            found = f"no cited field agrees with PMID {pmid} besides the {key}"
+        disagreeing = f" ({', '.join(evidence.conflicting)} differ)" if evidence.conflicting else ""
+        return (
+            f"{found}{disagreeing}; at least {MIN_CORROBORATING_FIELDS} independent cited fields must agree "
+            "before corrections are proposed, so confirm this is the cited work rather than a different paper"
+        )
 
     def _build_notes(
         self,

@@ -8,10 +8,14 @@ which cited fields disagree with it. They are deliberately conservative:
   the cited work when its title agrees with the cited title and the first
   author or journal also agree (or, without a cited title, when author,
   journal, volume and first page all agree).
-- Field-level corrections are offered only when the cited title (or, without a
-  title, the identifier / locator) anchors the record's identity. A conflicting
-  title means the identifier or locator may point to a different work, so no
-  correction is proposed.
+- Field-level corrections are offered only when at least two independent cited
+  fields corroborate the record *beyond the lookup key that found it* (the
+  PMID, the DOI, the searched title, the searched first author + journal +
+  locator, or the journal + year sent to ECitMatch). A title hit that agrees on
+  one other field may be a fabricated reference that happens to share words
+  with a real paper, so it is returned for manual review without corrections.
+- A conflicting cited title means the identifier or locator may point to a
+  different work, so no correction is proposed either.
 
 This module performs no I/O.
 """
@@ -21,7 +25,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from pubmed_search.shared.article_identity import normalize_article_doi, normalize_article_title
 
@@ -39,6 +44,8 @@ TITLE_DICE_THRESHOLD = 0.8
 TITLE_CONTAINMENT_THRESHOLD = 0.9
 MIN_CONTAINMENT_TOKENS = 5
 MIN_IDENTITY_LOCATOR_MATCHES = 3
+MIN_CORROBORATING_FIELDS = 2
+NEAR_YEAR_TOLERANCE = 1
 AMBIGUITY_SCORE_MARGIN = 5.0
 
 _FIELD_WEIGHTS = {
@@ -57,6 +64,16 @@ _EXACT_TITLE_WEIGHT = 10.0
 _AUTHOR_ORDER_WEIGHT = 15.0
 _ISSUE_WEIGHT = 5.0
 _LOCATOR_FIELDS = ("first_author", "journal", "volume", "first_page")
+_EVIDENCE_FIELDS = ("title", "first_author", "journal", "year", "volume", "first_page", "doi", "pmid")
+# Fields each resolution strategy matched by construction: they cannot corroborate its own hit.
+_LOOKUP_KEY_FIELDS: dict[str, frozenset[str]] = {
+    "pmid": frozenset({"pmid"}),
+    "doi_search": frozenset({"doi"}),
+    "ecitmatch": frozenset({"journal", "year"}),
+    "title_search": frozenset({"title"}),
+    "metadata_search": frozenset({"first_author", "journal"}),
+}
+CorrectionBlocker = Literal["title_conflict", "few_locators", "weak_corroboration"]
 _IZE_RE = re.compile(r"(?<=[a-z])is(ation|ations|e|ed|es|ing)$")
 
 
@@ -220,13 +237,91 @@ def search_candidate_rejection(
     return "the cited first author, journal, volume and first page do not all agree"
 
 
-def identity_supported(parsed: ParsedReference, article: dict[str, Any], comparison: dict[str, bool | None]) -> bool:
-    """Whether the record is anchored as the cited work strongly enough to propose corrections."""
-    if parsed.title:
-        return is_strong_title_match(parsed.title, article.get("title", ""))
-    if comparison.get("doi") is True or comparison.get("pmid") is True:
-        return True
-    return sum(1 for field in _LOCATOR_FIELDS if comparison.get(field) is True) >= MIN_IDENTITY_LOCATOR_MATCHES
+@dataclass(frozen=True, slots=True)
+class IdentityEvidence:
+    """Cited fields that agree or conflict with a record, excluding the lookup key that found it.
+
+    Attributes:
+        lookup_fields: Fields the resolution strategy matched by construction.
+        agreeing: Independent cited fields that agree (a strong title match and
+            a year within ``NEAR_YEAR_TOLERANCE`` count as agreeing).
+        conflicting: Independent cited fields whose PubMed value differs. A
+            field the record lacks is unconfirmed, not conflicting.
+    """
+
+    lookup_fields: frozenset[str]
+    agreeing: tuple[str, ...]
+    conflicting: tuple[str, ...]
+
+    @property
+    def corroborated(self) -> bool:
+        """Whether enough independent fields agree to propose corrections."""
+        return len(self.agreeing) >= MIN_CORROBORATING_FIELDS
+
+
+def lookup_key_fields(method: str | None, comparison: dict[str, bool | None]) -> frozenset[str]:
+    """Return the fields a resolution strategy matched by construction."""
+    fields = _LOOKUP_KEY_FIELDS.get(method or "", frozenset())
+    if method == "metadata_search":
+        # The query also required the volume or the first page to match.
+        fields |= {"volume" if comparison.get("volume") is True else "first_page"}
+    return fields
+
+
+def record_value(article: dict[str, Any], field: str) -> str:
+    """Return the PubMed value of one compared field in citation form."""
+    if field == "first_page":
+        return first_page_token(article.get("pages", ""))
+    if field == "journal":
+        return str(article.get("journal_abbrev", "") or article.get("journal", "") or "")
+    if field == "first_author":
+        return article_first_author(article)
+    value = str(article.get(field, "") or "")
+    return value.strip() if field == "title" else value
+
+
+def identity_evidence(
+    parsed: ParsedReference,
+    article: dict[str, Any],
+    comparison: dict[str, bool | None],
+    *,
+    method: str | None,
+) -> IdentityEvidence:
+    """Collect the independent cited fields that corroborate or contradict a record."""
+    lookup_fields = lookup_key_fields(method, comparison)
+    agreeing: list[str] = []
+    conflicting: list[str] = []
+    for field in _EVIDENCE_FIELDS:
+        if field in lookup_fields or not record_value(article, field):
+            continue
+        agreement = _field_agreement(parsed, article, comparison, field)
+        if agreement is True:
+            agreeing.append(field)
+        elif agreement is False:
+            conflicting.append(field)
+    return IdentityEvidence(lookup_fields, tuple(agreeing), tuple(conflicting))
+
+
+def correction_blocker(
+    parsed: ParsedReference,
+    article: dict[str, Any],
+    comparison: dict[str, bool | None],
+    *,
+    evidence: IdentityEvidence,
+) -> CorrectionBlocker | None:
+    """Return why the record is not anchored strongly enough to correct the citation, or ``None``."""
+    if parsed.title and not is_strong_title_match(parsed.title, article.get("title", "")):
+        return "title_conflict"
+    anchored_by_identifier = comparison.get("doi") is True or comparison.get("pmid") is True
+    if (
+        not parsed.title
+        and not anchored_by_identifier
+        and sum(1 for field in _LOCATOR_FIELDS if comparison.get(field) is True) < MIN_IDENTITY_LOCATOR_MATCHES
+    ):
+        return "few_locators"
+    if not evidence.corroborated:
+        return "weak_corroboration"
+    return None
 
 
 def build_corrections(
@@ -235,22 +330,28 @@ def build_corrections(
     comparison: dict[str, bool | None],
 ) -> list[dict[str, str]]:
     """List cited-vs-PubMed values for every mismatched field the record can correct."""
-    record_values = {
-        "year": str(article.get("year", "") or ""),
-        "volume": str(article.get("volume", "") or ""),
-        "first_page": first_page_token(article.get("pages", "")),
-        "journal": str(article.get("journal_abbrev", "") or article.get("journal", "") or ""),
-        "first_author": article_first_author(article),
-        "title": str(article.get("title", "") or "").strip(),
-        "doi": str(article.get("doi", "") or ""),
-        "pmid": str(article.get("pmid", "") or ""),
-    }
     corrections: list[dict[str, str]] = []
     for field in CORRECTABLE_FIELDS:
-        pubmed_value = record_values[field]
+        pubmed_value = record_value(article, field)
         if comparison.get(field) is False and pubmed_value:
             corrections.append({"field": field, "cited": str(getattr(parsed, field)), "pubmed": pubmed_value})
     return corrections
+
+
+def _field_agreement(
+    parsed: ParsedReference,
+    article: dict[str, Any],
+    comparison: dict[str, bool | None],
+    field: str,
+) -> bool | None:
+    """Whether one cited field agrees with the record; ``None`` when it was not cited."""
+    if field == "title":
+        return is_strong_title_match(parsed.title, article.get("title", "")) if parsed.title else None
+    if field == "year":
+        year_gap = _year_gap(parsed.year, article.get("year", ""))
+        if year_gap is not None:
+            return year_gap <= NEAR_YEAR_TOLERANCE
+    return comparison.get(field)
 
 
 def _year_gap(cited: str, record: object) -> int | None:

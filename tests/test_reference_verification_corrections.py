@@ -510,6 +510,64 @@ async def test_equally_good_versions_withhold_corrections() -> None:
     assert any("several PubMed records match about equally well" in note for note in row["notes"])
 
 
+def _wang_dexmedetomidine_record(title: str) -> dict[str, Any]:
+    """A real-looking record that shares only the cited first author and some title words."""
+    return _record(
+        "31000001",
+        title=title,
+        authors=["Wang H", "Chen L"],
+        journal="Journal of cardiothoracic and vascular anesthesia",
+        journal_abbrev="J Cardiothorac Vasc Anesth",
+        year="2021",
+        volume="35",
+        issue="4",
+        pages="1100-1110",
+    )
+
+
+@pytest.mark.parametrize(
+    "record_title",
+    [
+        pytest.param(
+            "Dexmedetomidine for the prevention of delirium in elderly patients after cardiac surgery: "
+            "a meta-analysis of randomized trials.",
+            id="cited-title-contained-in-longer-title",
+        ),
+        pytest.param("Dexmedetomidine for the prevention of delirium.", id="identical-title"),
+    ],
+)
+async def test_title_hit_corroborated_by_one_field_is_returned_without_corrections(record_title: str) -> None:
+    # Only the first author agrees besides the title used to find the record:
+    # journal, year, volume and first page all differ, so this may be a
+    # fabricated reference rather than a mis-cited one.
+    unrelated_same_words = _record(
+        "31000002",
+        title="Dexmedetomidine for the prevention of delirium after non-cardiac surgery in older adults.",
+        authors=["Zhang Q"],
+        journal="Journal of clinical anesthesia",
+        journal_abbrev="J Clin Anesth",
+        year="2020",
+        volume="60",
+        issue="1",
+        pages="50-58",
+    )
+    pubmed = FakePubMed([_wang_dexmedetomidine_record(record_title), unrelated_same_words])
+    report = await ReferenceVerificationService(pubmed).verify_reference_list(
+        "Wang Y, Li X. Dexmedetomidine for the prevention of delirium. Anesth Analg. 2019;128(3):456-62."
+    )
+    row = report["results"][0]
+
+    assert row["status"] == "partial_match"
+    assert row["resolution_method"] == "title_search"
+    assert row["matched_article"]["pmid"] == "31000001"
+    assert row["corrections"] == []
+    assert "only first_author agrees" in row["corrections_withheld_reason"]
+    assert any(note.startswith("No field corrections proposed: only first_author agrees") for note in row["notes"])
+    queue_item = report["review_workflow"]["review_queue"][0]
+    assert "no corrections are proposed" in queue_item["review_reason"]
+    assert "->" not in queue_item["review_reason"]
+
+
 async def test_failed_year_tolerant_search_is_source_unavailable_not_unresolved(pubmed: FakePubMed) -> None:
     pubmed.fail_queries = ("[1au]",)
     report = await ReferenceVerificationService(pubmed).verify_reference_list(
