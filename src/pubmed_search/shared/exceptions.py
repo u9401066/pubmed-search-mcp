@@ -417,19 +417,19 @@ def is_retryable_error(error: Exception) -> bool:
     if isinstance(error, PubMedSearchError):
         return error.retryable
 
+    from .transient_errors import TRANSIENT_MESSAGE_MARKERS, classify_transient_error, is_programming_error
+
+    # Network-level failures (URLError, connection resets, socket timeouts,
+    # HTTP 408/425/429/5xx) are transient by type, whatever their message says.
+    if classify_transient_error(error) is not None:
+        return True
+    # A ValueError/TypeError that happens to mention "timeout" is still a bug.
+    if is_programming_error(error):
+        return False
+
     # Check for common transient error messages
     error_str = str(error).lower()
-    transient_patterns = [
-        "rate limit",
-        "too many requests",
-        "temporarily unavailable",
-        "service unavailable",
-        "backend failed",
-        "connection reset",
-        "timeout",
-        "database is not supported",  # NCBI transient
-    ]
-    return any(pattern in error_str for pattern in transient_patterns)
+    return any(pattern in error_str for pattern in TRANSIENT_MESSAGE_MARKERS)
 
 
 def get_retry_delay(error: Exception, attempt: int) -> float:

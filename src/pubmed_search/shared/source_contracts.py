@@ -207,15 +207,35 @@ def normalize_source_adapter_error(
     operation: str,
     error: Exception,
 ) -> SourceAdapterError:
-    """Map raw exceptions into a consistent adapter error contract."""
+    """Map raw exceptions into a consistent adapter error contract.
+
+    Transient failures (timeouts, dropped/refused connections incl. Bio.Entrez
+    ``URLError``, HTTP 408/425/429/5xx, upstream "temporarily unavailable")
+    are ``retryable``; the message names the failure class and the upstream
+    exception *class* only. Anything else stays ``unexpected``.
+    """
     from pubmed_search.shared.async_utils import RetryableOperationError
+    from pubmed_search.shared.exceptions import PubMedSearchError
+    from pubmed_search.shared.transient_errors import RETRYABLE_HTTP_STATUS_CODES, classify_transient_error
+
+    transient = classify_transient_error(error)
 
     if isinstance(error, RetryableOperationError):
+        # Retry-exhausted envelope: keep the established ``retryable`` kind
+        # unless the sanitizing boundary recorded a timeout/transport class.
+        retry_kind: SourceAdapterErrorKind = (
+            transient.kind if transient is not None and transient.kind in {"timeout", "transport"} else "retryable"
+        )
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message="Upstream request failed",
-            kind="retryable",
+            message=_transient_message(
+                retry_kind,
+                status_code=error.status_code,
+                upstream_type=transient.upstream_type if transient is not None else None,
+                explicit=error.failure_kind == "retryable",
+            ),
+            kind=retry_kind,
             retryable=True,
             status_code=error.status_code,
         )
@@ -227,26 +247,34 @@ def normalize_source_adapter_error(
             operation=operation,
             message=f"Upstream returned HTTP {status_code}",
             kind="http",
-            retryable=status_code in {408, 425, 429, 500, 502, 503, 504},
+            retryable=status_code in RETRYABLE_HTTP_STATUS_CODES,
             status_code=status_code,
         )
 
-    if isinstance(error, (asyncio.TimeoutError, TimeoutError, httpx.TimeoutException)):
+    if transient is not None:
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message="Upstream request timed out",
-            kind="timeout",
+            message=_transient_message(
+                transient.kind,
+                status_code=transient.status_code,
+                upstream_type=transient.upstream_type,
+                explicit=transient.kind == "retryable",
+            ),
+            kind=transient.kind,
             retryable=True,
+            status_code=transient.status_code,
         )
 
-    if isinstance(error, httpx.RequestError):
+    if isinstance(error, PubMedSearchError) and error.retryable:
+        raw_status = getattr(error, "status_code", None)
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message="Upstream transport failed",
-            kind="transport",
+            message="Upstream request failed",
+            kind="retryable",
             retryable=True,
+            status_code=raw_status if isinstance(raw_status, int) and not isinstance(raw_status, bool) else None,
         )
 
     return SourceAdapterError(
@@ -256,6 +284,45 @@ def normalize_source_adapter_error(
         kind="unexpected",
         retryable=False,
     )
+
+
+_UNINFORMATIVE_UPSTREAM_TYPES = frozenset(
+    {
+        "APIRequestError",
+        "CancelledError",
+        "Exception",
+        "NCBIInfrastructureError",
+        "OperationBudgetExceeded",
+        "RetryableOperationError",
+        "RuntimeError",
+        "TimeoutError",
+    }
+)
+
+
+def _transient_message(
+    kind: str,
+    *,
+    status_code: int | None,
+    upstream_type: str | None,
+    explicit: bool,
+) -> str:
+    """Name a transient failure class without any upstream message text."""
+    if kind == "timeout":
+        message = "Upstream request timed out"
+    elif kind == "transport":
+        message = "Upstream transport failed"
+    elif kind == "http" and status_code is not None:
+        return f"Upstream returned HTTP {status_code}"
+    elif status_code is not None:
+        return f"Upstream request failed (HTTP {status_code})"
+    elif explicit:
+        return "Upstream service temporarily unavailable"
+    else:
+        return "Upstream request failed"
+    if upstream_type and upstream_type not in _UNINFORMATIVE_UPSTREAM_TYPES and upstream_type.isidentifier():
+        message += f" ({upstream_type})"
+    return message
 
 
 def format_source_adapter_error(error: SourceAdapterError) -> str:

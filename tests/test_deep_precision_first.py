@@ -255,7 +255,7 @@ async def test_sparse_query_broadens_only_the_gap_and_ranks_broadened_records_la
     assert tiers == ["exact"] * 6 + ["broad"] * 9
     assert all(article["retrieval"]["broadened"] for article in articles[6:])
     assert not any(article["retrieval"]["broadened"] for article in articles[:6])
-    assert {article["identifiers"]["pmid"] for article in articles[:6]} == {str(1000 + index) for index in range(6)}
+    assert {article["pmid"] for article in articles[:6]} == {str(1000 + index) for index in range(6)}
 
     broadening = payload["broadening"]
     assert broadening["applied"] is True
@@ -541,7 +541,7 @@ async def test_shallow_auto_relax_uses_the_broadening_disclosure_contract() -> N
             query=query,
             sources="pubmed",
             output_format="json",
-            options="shallow,no_scores",
+            options="shallow,no_scores,full_records",
             analyzer_factory=_ModerateAnalyzer,
         )
 
@@ -559,6 +559,7 @@ async def test_shallow_auto_relax_uses_the_broadening_disclosure_contract() -> N
         ("original", "exact"),
         ("auto_relax:and_to_or", "relaxed"),
     ]
+    # Complete per-record provenance via full_records; summary records keep tier/broadened/strategy.
     retrieval = payload["articles"][0]["retrieval"]
     assert retrieval == {
         "tier": "relaxed",

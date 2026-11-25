@@ -300,7 +300,7 @@ class TestNormalizeSourceAdapterError:
         assert normalized.kind == "retryable"
         assert normalized.retryable is True
         assert normalized.status_code == 429
-        assert normalized.message == "Upstream request failed"
+        assert normalized.message == "Upstream request failed (HTTP 429)"
 
     def test_http_status_error(self):
         request = httpx.Request("GET", "https://example.org")
@@ -323,7 +323,7 @@ class TestNormalizeSourceAdapterError:
         assert normalized.kind == "timeout"
         assert normalized.retryable is True
         assert normalized.status_code is None
-        assert normalized.message == "Upstream request timed out"
+        assert normalized.message == "Upstream request timed out (ReadTimeout)"
 
     def test_builtin_timeout_exception(self):
         normalized = normalize_source_adapter_error(
@@ -346,7 +346,7 @@ class TestNormalizeSourceAdapterError:
         assert normalized.kind == "transport"
         assert normalized.retryable is True
         assert normalized.status_code is None
-        assert normalized.message == "Upstream transport failed"
+        assert normalized.message == "Upstream transport failed (ConnectError)"
 
     def test_request_error_does_not_expose_query_or_credentials(self):
         request = httpx.Request(
@@ -360,7 +360,7 @@ class TestNormalizeSourceAdapterError:
 
         normalized = normalize_source_adapter_error("semantic_scholar", "search", error)
 
-        assert normalized.message == "Upstream transport failed"
+        assert normalized.message == "Upstream transport failed (ConnectError)"
         assert "rare-patient-phenotype" not in normalized.message
         assert "SENTINEL" not in normalized.message
         assert "SECRET-TOKEN" not in normalized.message

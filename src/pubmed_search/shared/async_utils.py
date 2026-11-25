@@ -41,6 +41,7 @@ from .exceptions import (
     RateLimitError,
     is_retryable_error,
 )
+from .transient_errors import classify_transient_error, is_programming_error
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -122,6 +123,9 @@ class RetryableOperationError(Exception):
 
     ``cooldown_seconds`` is informational only: the shared cooldown a client
     already applied after exhausting retries. Retry scheduling never reads it.
+    ``failure_kind`` and ``upstream_type`` optionally keep the query-safe
+    transient class (``timeout``/``transport``/``http``/``retryable``) and the
+    original exception class name after a sanitizing boundary drops the cause.
     """
 
     def __init__(
@@ -131,11 +135,15 @@ class RetryableOperationError(Exception):
         retry_after: float | None = None,
         status_code: int | None = None,
         cooldown_seconds: float | None = None,
+        failure_kind: str | None = None,
+        upstream_type: str | None = None,
     ) -> None:
         super().__init__(message)
         self.retry_after = retry_after
         self.status_code = status_code
         self.cooldown_seconds = cooldown_seconds
+        self.failure_kind = failure_kind
+        self.upstream_type = upstream_type
 
 
 def parse_retry_after(value: str | None) -> float | None:
@@ -755,6 +763,17 @@ class TransportExecutionKernel:
                 return True
             if retry_policy.retry_on_transport_errors and isinstance(error, httpx.RequestError):
                 return True
+
+        # Bio.Entrez runs with max_tries=1 so this kernel owns NCBI retries. Its
+        # stdlib failures (URLError, ConnectionResetError, RemoteDisconnected,
+        # IncompleteRead, socket timeouts) must be retried like httpx ones.
+        transient = classify_transient_error(error)
+        if transient is not None and transient.kind == "timeout":
+            return retry_policy.retry_on_timeouts
+        if transient is not None and transient.kind == "transport":
+            return retry_policy.retry_on_transport_errors
+        if is_programming_error(error):
+            return False
 
         error_str = str(error).lower()
         if any(message in error_str for message in retry_policy.retryable_messages):

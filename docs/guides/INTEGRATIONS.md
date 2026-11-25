@@ -259,7 +259,17 @@ whole query. JSON responses use `source_errors`; markdown responses include a
 `Source warnings` line. Semantic Scholar HTTP 429 warnings recommend setting
 `SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the
 source with `sources="auto,-semantic_scholar"` /
-`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
+`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`. A `source_errors[]` entry with
+`retryable: true` (also listed in `search_status.retryable_sources`) is a
+transient network, timeout or HTTP 429/5xx failure; repeat the identical call
+(`next_tools[0]`) before changing the query.
+
+JSON/TOON `articles` are summary records by default (identifiers, title, year,
+journal, first author and author count, publication types, a 400-character
+abstract snippet, rank, source and open-access flags). Integrations that store
+or import the article list, such as a reference manager, should request
+`options="full_records"` or read the artifact `results.json` to get complete
+records.
 
 ---
 

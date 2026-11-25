@@ -38,7 +38,7 @@ Agent 先抽出 P/I/C/O，再使用 `validate_pico_plan(description=..., p=..., 
 
 | 情境 | 推薦工具 | 說明 |
 |------|----------|------|
-| pubmed-search-mcp JSON 結果 | `import_articles` | 預設推薦，直接接 `unified_search(..., output_format="json")` |
+| pubmed-search-mcp JSON 結果 | `import_articles` | 預設推薦，接 `unified_search(..., output_format="json", options="full_records")` 的 `articles`；未加 `full_records` 時是摘要紀錄（只有第一作者與 400 字摘要片段），不可直接匯入 |
 | RIS 匯出文字 | `import_articles` | 傳入 `ris_text`，由 keeper 統一解析匯入 |
 | 需要舊版 keeper 單機橋接流程 | legacy tools | 僅在啟用 `ZOTERO_KEEPER_ENABLE_LEGACY_PUBMED_TOOLS=1` 時使用 |
 
