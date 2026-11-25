@@ -786,7 +786,7 @@ configuration and review tracked project-rule updates normally.
 
 [`plugins/pubmed-search/`](../../plugins/pubmed-search/plugin.json) is an
 [Agent Plugins 1.0.0](https://agent-plugins.org/) package: `plugin.json`,
-`mcp.json` (stdio `uvx pubmed-search-mcp@0.11.0`), and the same research
+`mcp.json` (stdio `uvx pubmed-search-mcp@0.12.0`), and the same research
 skills selected by `install_research_skills.py`. Point a compatible client at
 that directory; installation, enablement, and updates stay client-managed.
 The package uses the default `~/.pubmed-search-mcp` data directory, so plugin
@@ -937,7 +937,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; a server built from this checkout should enumerate 44 tools in the primary MCP surface (the v0.11.0 package does not yet include `register_fulltext`).
+1. **Local stdio**: ask the AI to list PubMed tools; the v0.12.0 package and a server built from this checkout should enumerate 44 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.
