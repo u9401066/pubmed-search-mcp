@@ -141,7 +141,8 @@ async def test_default_json_records_are_agent_sized_summaries() -> None:
         assert not FULL_ONLY_KEYS & set(record)
         assert _record_size(record) <= 1_500
     sizes = sorted(_record_size(record) for record in articles)
-    assert sizes[len(sizes) // 2] <= 1_300
+    # Populated article_type/pmc/OA fields included (the pilot payloads had them blank).
+    assert sizes[len(sizes) // 2] <= 1_350
 
     lead = next(record for record in articles if record["pmid"] == "41926003")
     assert lead["first_author"] == "Investigator0 Surname0"
