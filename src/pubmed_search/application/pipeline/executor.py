@@ -937,6 +937,7 @@ class PipelineExecutor:
                 metadata=base_metadata,
             )
 
+        budget = self._run_budget.get()
         try:
             retrieval = await retrieve_pubmed_exhaustive(
                 self._searcher,
@@ -947,6 +948,7 @@ class PipelineExecutor:
                 fetch_metadata=fetch_metadata,
                 page_size=self._exhaustive_page_size,
                 metadata_batch_size=self._exhaustive_metadata_batch_size,
+                remaining_seconds=None if budget is None else budget.remaining_seconds,
             )
         except ExhaustiveCapExceededError as exc:
             return StepResult(

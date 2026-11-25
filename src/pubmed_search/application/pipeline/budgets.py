@@ -43,6 +43,10 @@ PIPELINE_EXHAUSTIVE_PAGE_SIZE = 5_000
 PIPELINE_EXHAUSTIVE_METADATA_BATCH = 500
 # Number of records shown inline when a run is exhaustive; the rest stay on disk.
 PIPELINE_EXHAUSTIVE_PREVIEW = 20
+# Seconds of the run deadline kept free once an exhaustive step holds its complete
+# PMID set: metadata batches stop (or are cut off) this early so the step can
+# return the identifier set before the scheduler cancels unfinished work.
+PIPELINE_EXHAUSTIVE_FINALIZE_SECONDS = 2.0
 PIPELINE_ACTION_LIMITS: Mapping[str, LimitBudget] = MappingProxyType(
     {
         "search": LimitBudget(default=50, maximum=100),
@@ -250,6 +254,7 @@ __all__ = [
     "DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS",
     "PIPELINE_BLOCK_ANALYSIS_QUERY_LIMIT",
     "PIPELINE_EXHAUSTIVE_METADATA_BATCH",
+    "PIPELINE_EXHAUSTIVE_FINALIZE_SECONDS",
     "PIPELINE_EXHAUSTIVE_PAGE_SIZE",
     "PIPELINE_EXHAUSTIVE_PREVIEW",
     "PIPELINE_EXHAUSTIVE_RECORD_LIMIT",

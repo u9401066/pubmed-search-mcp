@@ -92,6 +92,7 @@ def retrieval_summary(step_results: Mapping[str, StepResult], record_count: int)
                 "cap": retrieval.get("cap"),
                 "metadata_count": retrieval.get("metadata_count"),
                 "metadata_complete": retrieval.get("metadata_complete"),
+                "metadata_error": retrieval.get("metadata_error"),
                 "terminal_reason": retrieval.get("terminal_reason"),
             }
         )

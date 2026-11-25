@@ -8,6 +8,7 @@ instance, and the response-size bound for a 10,000-record run.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -359,6 +360,64 @@ async def test_metadata_failure_keeps_identifier_set_complete_and_partial() -> N
     assert step.metadata["retrieval"]["metadata_complete"] is False
     assert step.metadata["source_errors"][0]["status"] == "metadata_incomplete"
     assert "upstream exploded" not in json.dumps(step.metadata)
+
+
+class _StallingMetadataSearcher(FakeHistorySearcher):
+    """Metadata batches after the first never finish, as when EFetch hangs at the run deadline."""
+
+    def __init__(self, pmids: list[str], *, fast_batches: int) -> None:
+        super().__init__(pmids)
+        self.fast_batches = fast_batches
+        self.cancelled = 0
+
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+        if self.fast_batches > 0:
+            self.fast_batches -= 1
+            return await super().fetch_details(pmids)
+        self.calls.append(("details", len(pmids)))
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        raise AssertionError("unreachable")
+
+
+@pytest.mark.parametrize(("run_timeout", "fast_batches", "expected_metadata"), [(2.6, 1, 200), (1.0, 0, 0)])
+async def test_run_deadline_during_metadata_keeps_the_complete_pmid_set(
+    run_timeout: float, fast_batches: int, expected_metadata: int
+) -> None:
+    pmids = [str(5000 + index) for index in range(1000)]
+    searcher = _StallingMetadataSearcher(pmids, fast_batches=fast_batches)
+    executor = PipelineExecutor(
+        searcher=searcher,
+        exhaustive_page_size=500,
+        exhaustive_metadata_batch_size=200,
+        execution_policy=PipelineExecutionPolicy(run_timeout_seconds=run_timeout),
+    )
+
+    articles, results = await executor.execute(_exhaustive_config())
+
+    step = results["pubmed"]
+    assert step.ok, step.error
+    assert step.pmids == pmids
+    assert final_record_set(results) == ("pubmed", pmids)
+    assert len(articles) == 100
+    retrieval = step.metadata["retrieval"]
+    assert retrieval["exhaustive"] is True
+    assert retrieval["retrieved_count"] == 1000
+    assert retrieval["metadata_count"] == expected_metadata
+    assert retrieval["metadata_complete"] is False
+    assert retrieval["metadata_error"] == {
+        "kind": "deadline",
+        "terminal_reason": "deadline_exhausted",
+        "retryable": True,
+    }
+    assert step.metadata["source_errors"][0]["status"] == "metadata_incomplete"
+    assert step.metadata["source_errors"][0]["kind"] == "deadline"
+    assert "PMID set is complete" in retrieval["warnings"][0]
+    # An in-flight metadata batch is cancelled rather than left running.
+    assert searcher.cancelled == (1 if expected_metadata else 0)
 
 
 # ---------------------------------------------------------------------------
