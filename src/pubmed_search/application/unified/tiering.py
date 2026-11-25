@@ -39,6 +39,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.search.result_aggregator import ArticleIdentityIndex
 from pubmed_search.application.search.semantic_enhancer import STRATEGY_TIER_RANKS
 from pubmed_search.application.unified.mesh_correction import correction_summary
 from pubmed_search.domain.entities.article import RetrievalProvenance
@@ -176,7 +177,13 @@ def order_by_retrieval_tier(articles: list[UnifiedArticle]) -> list[UnifiedArtic
 
 
 def _identity_tokens(article: UnifiedArticle) -> frozenset[tuple[str, str]]:
-    """Return the identity keys the aggregator would use to merge a record."""
+    """Every identity signal of a record: identifiers, else its normalized title.
+
+    This is a superset of the keys the aggregator merges on (it ignores the
+    conflict rule and the minimum title length). Fill admission discards any
+    candidate sharing one of these tokens with a held record, so a record it
+    keeps can never be merged away by the aggregator.
+    """
     tokens: set[tuple[str, str]] = set()
     doi = normalize_article_doi(article.doi)
     if doi:
@@ -225,10 +232,19 @@ class FillAdmission:
 class DeepFillTracker:
     """Count eligible unique records against the requested limit.
 
-    ``admit_exact`` keeps every record of an exact-tier attempt (cross-source
-    duplicates still merge in the aggregator) while counting new eligible
-    identities. ``admit_fill`` keeps only new eligible records up to the
-    remaining slots and discards duplicates, ineligible records, and surplus.
+    ``admit_exact`` keeps every record of an exact-tier attempt (the final
+    filters remove ineligible ones) and counts unique records with the
+    aggregator's own :class:`ArticleIdentityIndex` -- same keys, conflict
+    rule and title threshold -- so a record bridging two earlier identities
+    merges them, and records with conflicting identifiers stay distinct,
+    exactly as they will in the aggregated result. A merged record counts as
+    eligible only when every member is eligible.
+
+    ``admit_fill`` keeps only new eligible records up to the remaining slots.
+    It discards any candidate sharing an identity token with a held record
+    (a superset of the aggregator's merge keys), so every kept fill record
+    is a new identity for the aggregator as well, and discarded records never
+    reach it.
     """
 
     def __init__(self, requested_limit: int, eligibility: Eligibility | None = None) -> None:
@@ -237,7 +253,9 @@ class DeepFillTracker:
             raise ValueError(msg)
         self.requested_limit = requested_limit
         self._eligibility = eligibility
-        self._seen: set[tuple[str, str]] = set()
+        self._index = ArticleIdentityIndex()
+        self._pool_eligible: list[bool] = []
+        self._tokens: set[tuple[str, str]] = set()
         self.unique_count = 0
         self.eligible_unique = 0
 
@@ -263,22 +281,29 @@ class DeepFillTracker:
     def _is_eligible(self, article: UnifiedArticle) -> bool:
         return True if self._eligibility is None else bool(self._eligibility(article))
 
+    def _hold(self, article: UnifiedArticle, tokens: frozenset[tuple[str, str]], *, eligible: bool) -> bool:
+        """Add one record to the pool; return whether it merged into a held record."""
+        self._tokens.update(tokens)
+        self._pool_eligible.append(eligible)
+        return bool(self._index.add(article))
+
+    def _recount(self) -> None:
+        groups = list(self._index.groups().values())
+        self.unique_count = len(groups)
+        self.eligible_unique = sum(1 for members in groups if all(self._pool_eligible[i] for i in members))
+
     def admit_exact(self, articles: Sequence[UnifiedArticle], provenance: RetrievalProvenance) -> FillAdmission:
         """Admit an exact-tier attempt; every record is kept and tagged."""
         admission = FillAdmission(accepted=list(articles))
         for article in articles:
-            tokens = _identity_tokens(article)
-            if tokens & self._seen:
+            eligible = self._is_eligible(article)
+            if self._hold(article, _identity_tokens(article), eligible=eligible):
                 admission.duplicates += 1
-                self._seen.update(tokens)
                 continue
-            self._seen.update(tokens)
-            self.unique_count += 1
             admission.new_unique += 1
-            if self._is_eligible(article):
-                self.eligible_unique += 1
-            else:
+            if not eligible:
                 admission.ineligible += 1
+        self._recount()
         tag_retrieval(admission.accepted, provenance)
         return admission
 
@@ -287,7 +312,7 @@ class DeepFillTracker:
         admission = FillAdmission()
         for article in articles:
             tokens = _identity_tokens(article)
-            if tokens & self._seen:
+            if tokens & self._tokens:
                 admission.duplicates += 1
                 continue
             admission.new_unique += 1
@@ -297,7 +322,8 @@ class DeepFillTracker:
             if self.remaining == 0:
                 admission.surplus_discarded += 1
                 continue
-            self._seen.update(tokens)
+            # It shares no identity token with anything held: a new identity.
+            self._hold(article, tokens, eligible=True)
             self.unique_count += 1
             self.eligible_unique += 1
             admission.accepted.append(article)

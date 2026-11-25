@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryComplexity, QueryIntent
+from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
     ExpandedTerm,
@@ -817,6 +818,111 @@ def test_fill_tracker_counts_eligible_unique_records_and_clips_surplus() -> None
     assert fill.surplus_discarded == 1
     assert tracker.filled
     assert all(article.retrieval[0].tier == "broad" for article in fill.accepted)
+
+
+def _bare(title: str, *, pmid: str | None = None, doi: str | None = None) -> UnifiedArticle:
+    return UnifiedArticle(title=title, primary_source="pubmed", pmid=pmid, doi=doi, year=2024)
+
+
+@pytest.mark.parametrize(
+    ("exact", "fill", "expected_unique"),
+    [
+        pytest.param(
+            # Z shares the PMID of X and the DOI of Y: the aggregator merges all three.
+            [_bare("X", pmid="1"), _bare("Y", doi="10.1/y"), _bare("Z", pmid="1", doi="10.1/y")],
+            [],
+            1,
+            id="bridging-record-merges-two-identities",
+        ),
+        pytest.param(
+            # Exact records with the same DOI but conflicting PMIDs are both kept and stay distinct.
+            [_bare("A", pmid="1", doi="10.1/a"), _bare("B", pmid="2", doi="10.1/a")],
+            [],
+            2,
+            id="conflicting-exact-identifiers-stay-distinct",
+        ),
+        pytest.param(
+            # Kept exact records whose normalized titles are under 20 characters never merge.
+            [_bare("Editorial"), _bare("Editorial")],
+            [],
+            2,
+            id="short-exact-titles-do-not-merge",
+        ),
+        pytest.param(
+            [_bare("A long enough identifier-free title"), _bare("A long enough identifier-free title")],
+            [],
+            1,
+            id="long-identifier-free-exact-titles-merge",
+        ),
+        pytest.param(
+            # A fill candidate sharing any identity signal is discarded, never counted or kept.
+            [_bare("A", pmid="1", doi="10.1/a"), _bare("Editorial")],
+            [_bare("B", pmid="2", doi="10.1/a"), _bare("Editorial"), _bare("New", pmid="3")],
+            3,
+            id="fill-discards-weak-duplicates-it-would-otherwise-show-twice",
+        ),
+    ],
+)
+def test_fill_tracker_counts_unique_records_exactly_as_the_aggregator_merges_them(
+    exact: list[UnifiedArticle], fill: list[UnifiedArticle], expected_unique: int
+) -> None:
+    tracker = DeepFillTracker(10)
+    exact_admission = tracker.admit_exact(
+        exact, provenance_for(SearchPlan(name="original", query="q", source="pubmed"))
+    )
+    fill_admission = tracker.admit_fill(
+        fill, provenance_for(SearchPlan(name="broad_tiab", query="b", source="pubmed", tier="broad"))
+    )
+
+    aggregated, _stats = ResultAggregator().aggregate([exact_admission.accepted, fill_admission.accepted])
+    assert len(aggregated) == expected_unique
+    assert tracker.unique_count == tracker.eligible_unique == expected_unique
+    assert tracker.remaining == 10 - expected_unique
+
+
+async def test_deep_fill_is_not_reported_filled_when_the_aggregator_merges_exact_records() -> None:
+    """PubMed and Europe PMC exact rows bridge into one record; the gap is filled by broadening."""
+    original = SearchPlan(name="original", query="q", source="pubmed")
+    epmc = SearchPlan(name="fulltext_epmc", query="q", source="europe_pmc")
+    broad = SearchPlan(name="broad_tiab", query=f"q{BROAD_MARKER}", source="pubmed", priority=0, tier="broad")
+
+    def runner(source: str) -> Any:
+        async def run(query: str, limit: int, *_args: Any) -> SourceAdapterResult[UnifiedArticle]:
+            if BROAD_MARKER in query:
+                items = [_bare(f"Broad record number {index}", pmid=str(9000 + index)) for index in range(limit)]
+            elif source == "pubmed":
+                items = [_bare("Exact X", pmid="1")]
+            else:
+                items = [_bare("Exact Y", doi="10.1/y"), _bare("Exact Z", pmid="1", doi="10.1/y")]
+            return SourceAdapterResult(
+                source=source,
+                operation="search",
+                items=items,
+                total_count=len(items),
+                status="ok",
+                metadata={"total_available": len(items)},
+            )
+
+        return run
+
+    all_results, metrics, *_ = await _execute_deep_search(
+        AsyncMock(),
+        EnhancedQuery(original_query="q", strategies=[original, epmc, broad]),
+        limit=2,
+        min_year=None,
+        max_year=None,
+        advanced_filters={},
+        strategies=[original, epmc, broad],
+        search_functions={"pubmed": runner("pubmed"), "europe_pmc": runner("europe_pmc")},
+    )
+
+    aggregated, _stats = ResultAggregator().aggregate(all_results)
+    outcome = metrics.tier_outcome
+    assert outcome is not None
+    assert outcome.exact_eligible_unique == 1
+    assert outcome.broadening_needed is True
+    assert outcome.broadened_records == 1
+    assert outcome.eligible_unique == len(aggregated) == 2
 
 
 def test_merged_records_keep_their_most_precise_tier_and_tier_order_is_stable() -> None:
