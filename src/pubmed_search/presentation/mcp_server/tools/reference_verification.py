@@ -51,15 +51,23 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
     ) -> str:
         """Verify a plain-text reference list against PubMed evidence.
 
-        First version scope:
-            - Reference-list verification only
-            - Client supplies the extracted reference list text
-            - Backend parses entries and resolves them via PMID / DOI / ECitMatch
-
-        Second version scope:
-            - Adds unresolved review workflow for ``partial_match`` and ``unresolved`` rows
-            - Returns a manual-review queue with retry queries and review checklist
-            - Supports human-in-the-loop acceptance/rejection in client-side workflows
+        Scope:
+            - Reference-list verification only; the client supplies the
+              extracted reference list text (Vancouver/AMA, numbered lists,
+              and APA-style author-year entries are parsed)
+            - Resolution order: explicit PMID, exact DOI, ECitMatch, then a
+              title-word search and a first-author + journal + volume/first-page
+              search that do not pin the cited year, so a real but mis-cited
+              record (wrong year/volume/page) is still found
+            - ``partial_match`` rows list ``corrections`` (``field``, ``cited``,
+              ``pubmed``) when the cited title anchors the PubMed record;
+              corrections are withheld when the title conflicts or several
+              versions match equally. Apply them only after confirming
+              ``matched_article`` is the intended work.
+            - ``unresolved`` rows list ``attempted_strategies`` and note that no
+              PubMed record was found; this is not proof of fabrication
+            - A manual-review queue with retry queries and a checklist supports
+              human-in-the-loop acceptance/rejection
 
         Args:
             reference_text: Plain-text references, ideally one per line or a
@@ -73,9 +81,9 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
 
         Returns:
             JSON verification report with parsed fields, matched PubMed evidence,
-            per-reference verification status, and explicit
-            ``source_unavailable`` / ``not_checked`` rows when evidence could
-            not be assessed.
+            per-reference verification status, field-level ``corrections``,
+            ``attempted_strategies``, and explicit ``source_unavailable`` /
+            ``not_checked`` rows when evidence could not be assessed.
         """
         if not reference_text.strip():
             return ResponseFormatter.error(
