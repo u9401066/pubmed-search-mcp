@@ -7,6 +7,7 @@ ranking, formatting, and artifact envelope -- only provider I/O is replaced.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -25,7 +26,12 @@ from pubmed_search.application.search.semantic_enhancer import (
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.session.artifact_envelope import build_unified_search_artifact_envelope
 from pubmed_search.application.unified.planning import _build_deep_strategies
-from pubmed_search.application.unified.tiering import DeepFillTracker, order_by_retrieval_tier, provenance_for
+from pubmed_search.application.unified.tiering import (
+    DeepFillTracker,
+    build_broadening_disclosure,
+    order_by_retrieval_tier,
+    provenance_for,
+)
 from pubmed_search.domain.entities.article import ArticleType, CitationMetrics, RetrievalProvenance, UnifiedArticle
 from pubmed_search.infrastructure.sources.registry import get_source_registry
 from pubmed_search.infrastructure.sources.unified_broker import _execute_deep_search
@@ -85,11 +91,13 @@ class _FakePubMed:
         broad_total: int = 12_598,
         broad_overlap: tuple[str, ...] = (),
         exact_status: str = "ok",
+        broad_status: str = "ok",
     ) -> None:
         self.exact_total = exact_total
         self.broad_total = broad_total
         self.broad_overlap = broad_overlap
         self.exact_status = exact_status
+        self.broad_status = broad_status
         self.calls: list[tuple[str, int]] = []
 
     async def __call__(
@@ -102,6 +110,22 @@ class _FakePubMed:
     ) -> SourceAdapterResult[UnifiedArticle]:
         self.calls.append((query, limit))
         if BROAD_MARKER in query:
+            if self.broad_status == "hang":
+                await asyncio.Event().wait()
+            if self.broad_status == "error":
+                return SourceAdapterResult.failure(
+                    source="pubmed",
+                    operation="search",
+                    error=SourceAdapterError(
+                        source="pubmed",
+                        operation="search",
+                        message="Provider returned HTTP 503",
+                        kind="http",
+                        retryable=True,
+                        status_code=503,
+                    ),
+                    metadata={"logical_query": query, "physical_query": query, "query_executed": True},
+                )
             overlap = [_article(pmid, f"Exact hit {pmid}") for pmid in self.broad_overlap]
             # Broad noise is deliberately "high quality" so ranking alone would
             # place it above the exact hits.
@@ -321,6 +345,103 @@ async def test_failed_exact_query_is_not_replaced_by_broadened_records() -> None
     broad_row = next(row for row in payload["broadening"]["attempts"] if row["strategy"] == "broad_tiab")
     assert broad_row["skip_reason"] == "exact_tier_failed"
     assert "exact-tier query failed" in payload["broadening"]["summary"]
+
+
+async def test_failed_broadening_attempt_is_disclosed_as_a_failure_not_an_empty_result() -> None:
+    fake = _FakePubMed(exact_total=6, broad_status="error")
+
+    payload = json.loads(await _search(fake))
+
+    assert len(fake.broad_calls) == 1
+    broadening = payload["broadening"]
+    # Nothing was broadened: the only broadening request failed.
+    assert broadening["applied"] is False
+    assert broadening["mechanisms"] == []
+    assert broadening["failed_attempts"] == 1
+    assert broadening["summary"] == (
+        "original returned 6 of requested 15 (PubMed total 6) → broadening with broad_tiab failed "
+        "(PubMed request failed), so lower-precision coverage is incomplete; still under-filled (6 of 15)"
+    )
+    broad_row = next(row for row in broadening["attempts"] if row["strategy"] == "broad_tiab")
+    assert (broad_row["status"], broad_row["executed"], broad_row["contributed"]) == ("error", True, 0)
+
+    markdown = await _search(_FakePubMed(exact_total=6, broad_status="error"), output_format="markdown")
+    assert "**Broadening**: ⚠️ original returned 6 of requested 15" in markdown
+    assert "| broad | PubMed | broad\\_tiab | broaden | error |" in markdown
+
+    original = SearchPlan(name="original", query=EXPERT_QUERY, source="pubmed")
+    request, plan, execution = _artifact_inputs([_tagged("1", original)], broadening)
+    envelope = build_unified_search_artifact_envelope(
+        request=request, plan=plan, execution=execution, structured_payload="{}"
+    )
+    checks = {check["check"]: check for check in envelope.files["audit.json"]["checks"]}
+    assert checks["search_broadening"]["severity"] == "warn"
+    assert "failed or timed out" in checks["search_broadening"]["message"]
+
+
+async def test_timed_out_broadening_attempt_is_disclosed_as_timed_out() -> None:
+    fake = _FakePubMed(exact_total=6, broad_status="hang")
+    original = SearchPlan(name="original", query=EXPERT_QUERY, source="pubmed")
+    broad = SearchPlan(name="broad_tiab", query=f'"PACU"{BROAD_MARKER}', source="pubmed", priority=0, tier="broad")
+
+    _results, metrics, _total, _counts, errors = await asyncio.wait_for(
+        _execute_deep_search(
+            AsyncMock(),
+            EnhancedQuery(original_query=EXPERT_QUERY, strategies=[original, broad]),
+            limit=15,
+            min_year=None,
+            max_year=None,
+            advanced_filters={},
+            strategies=[original, broad],
+            search_functions={"pubmed": fake},
+            strategy_timeout=0.05,
+        ),
+        timeout=5,
+    )
+    disclosure = build_broadening_disclosure(
+        requested_limit=15, deep_metrics=metrics, relaxation=None, broadening_enabled=True
+    )
+
+    assert disclosure is not None
+    assert (disclosure["applied"], disclosure["mechanisms"], disclosure["failed_attempts"]) == (False, [], 1)
+    assert "→ broadening with broad_tiab timed out" in disclosure["summary"]
+    assert "no new eligible records" not in disclosure["summary"]
+    assert [error.kind for error in errors] == ["timeout"]
+
+
+async def test_relaxation_whose_every_request_failed_is_not_reported_as_applied() -> None:
+    query = "diabetes AND therapy"
+    calls = 0
+
+    async def page(*_args: Any, **_kwargs: Any) -> SourceSearchPage[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return SourceSearchPage(source="pubmed", items=[], total=0, query=query)
+        raise RuntimeError("PubMed unavailable")
+
+    searcher = AsyncMock()
+    searcher.search_page.side_effect = page
+    with patch(
+        "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        raw = await run_unified_search(
+            searcher=searcher,
+            query=query,
+            sources="pubmed",
+            output_format="json",
+            options="shallow,no_scores",
+            analyzer_factory=_ModerateAnalyzer,
+        )
+
+    broadening = json.loads(raw)["broadening"]
+    relax_rows = [row for row in broadening["attempts"] if row["phase"] == "relax"]
+    assert relax_rows and {row["status"] for row in relax_rows} == {"error"}
+    assert (broadening["applied"], broadening["mechanisms"]) == (False, [])
+    assert broadening["failed_attempts"] == len(relax_rows)
+    assert "could not complete every broader PubMed query" in broadening["summary"]
 
 
 async def test_exact_query_is_deepened_before_any_broadening() -> None:

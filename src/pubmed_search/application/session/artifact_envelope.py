@@ -747,7 +747,19 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
 
     broadening = execution.broadening
     if broadening:
-        if (
+        failed_attempts = int(broadening.get("failed_attempts") or 0)
+        if failed_attempts:
+            _add_check(
+                checks,
+                check="search_broadening",
+                severity="warn",
+                message=(
+                    f"{failed_attempts} automatic deepening/broadening/relaxation request(s) failed or timed out; "
+                    "the coverage they were meant to add is unknown, not empty."
+                ),
+                details=compact_broadening(broadening),
+            )
+        elif (
             broadening.get("applied")
             and not int(broadening.get("broadened_records") or 0)
             and list(broadening.get("mechanisms") or []) == [MECHANISM_MESH_CORRECTION]

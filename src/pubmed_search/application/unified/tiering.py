@@ -19,8 +19,14 @@ Design:
     caller's query matched nothing, the corrected query is re-run as the exact
     tier and every later decision uses its results. ``mechanisms`` therefore
     lists every automatic change to what was searched, and ``applied`` is
-    true when any of them ran; ``broadened_records`` alone counts records
-    from lower-precision tiers.
+    true when any of them completed (a provider answered);
+    ``broadened_records`` alone counts records from lower-precision tiers.
+
+    A deepening, broadening or relaxation request that failed or timed out
+    changed nothing about the result. It is counted in ``failed_attempts``
+    and named in the summary as failed, never described as a broader query
+    that found no new records: an empty answer and a missing answer are
+    different coverage facts.
 
 Maintenance:
     This module is pure policy: no I/O, no presentation strings beyond the
@@ -293,8 +299,38 @@ class DeepFillTracker:
 # ============================================================================
 
 
+FILL_PHASES = frozenset({"deepen", "broaden"})
+"""Automatic fill phases whose provider requests may fail without changing the result."""
+
+
 def _executed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
     return [row for row in rows if row.phase == phase and row.executed]
+
+
+def _completed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
+    """Executed attempts the provider answered (records or a confirmed empty result)."""
+    return [row for row in _executed(rows, phase) if row.status != "error"]
+
+
+def _failed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
+    return [row for row in _executed(rows, phase) if row.status == "error"]
+
+
+def _failure_verb(row: StrategyResult) -> str:
+    errors = row.metadata.get("errors") if isinstance(row.metadata, dict) else None
+    kinds = (
+        {str(error.get("kind")) for error in errors if isinstance(error, dict)} if isinstance(errors, list) else set()
+    )
+    return "timed out" if kinds == {"timeout"} else "failed"
+
+
+def _failed_phrase(action: str, rows: Sequence[StrategyResult]) -> str:
+    """Name failed fill attempts; a failure is never presented as an empty result."""
+    names = ", ".join(dict.fromkeys(row.strategy_name for row in rows))
+    verbs = {_failure_verb(row) for row in rows}
+    verb = "timed out" if verbs == {"timed out"} else "failed"
+    details = ", ".join(dict.fromkeys(f"{source_label(row.source)} request {_failure_verb(row)}" for row in rows))
+    return f" → {action} {names} {verb} ({details})"
 
 
 def _exact_phrase(rows: Sequence[StrategyResult], count: int, limit: int) -> str:
@@ -348,7 +384,11 @@ def _deep_summary(metrics: SearchDepthMetrics, outcome: DeepTierOutcome) -> str:
     summary = _exact_phrase(rows, outcome.exact_eligible_unique, outcome.requested_limit)
     if outcome.deepened_records:
         summary += f" → fetched {outcome.deepened_records} more record(s) from the exact query"
-    broadened = list(dict.fromkeys(row.strategy_name for row in _executed(rows, "broaden")))
+    failed_deepening = _failed(rows, "deepen")
+    if failed_deepening:
+        summary += _failed_phrase("fetching more records from", failed_deepening)
+    broadened = list(dict.fromkeys(row.strategy_name for row in _completed(rows, "broaden")))
+    failed_broadening = _failed(rows, "broaden")
     if broadened:
         if outcome.broadened_records:
             summary += (
@@ -357,6 +397,12 @@ def _deep_summary(metrics: SearchDepthMetrics, outcome: DeepTierOutcome) -> str:
             )
         else:
             summary += f" → broadened with {', '.join(broadened)}, but no new eligible records were found"
+    if failed_broadening:
+        summary += _failed_phrase("broadening with", failed_broadening)
+        summary += ", so lower-precision coverage is incomplete"
+    if broadened or failed_broadening:
+        if outcome.broadening_blocked_reason == SKIP_DEADLINE_EXHAUSTED:
+            summary += "; the remaining broadening was skipped because the deep-search deadline was exhausted"
     elif outcome.broadening_blocked_reason == SKIP_BROADENING_DISABLED:
         summary += '; broadening disabled by options="no_relax"'
     elif outcome.broadening_blocked_reason == SKIP_EXACT_TIER_FAILED:
@@ -488,13 +534,17 @@ def build_broadening_disclosure(
     eligible = 0
     deepened = 0
     broadened = 0
+    failed_attempts = 0
     filled = False
     summary = ""
 
     if deep_metrics is not None and outcome is not None:
-        attempts.extend(row.disclosure() for row in deep_metrics.strategy_results)
-        if any(row.phase == "broaden" and row.executed for row in deep_metrics.strategy_results):
+        rows = deep_metrics.strategy_results
+        attempts.extend(row.disclosure() for row in rows)
+        # A broadening request that failed broadened nothing.
+        if _completed(rows, "broaden"):
             mechanisms.append("deep_strategy_tiers")
+        failed_attempts += sum(len(_failed(rows, phase)) for phase in sorted(FILL_PHASES))
         needed = outcome.broadening_needed
         blocked_reason = outcome.broadening_blocked_reason
         exact_eligible = outcome.exact_eligible_unique
@@ -513,8 +563,9 @@ def build_broadening_disclosure(
 
     if relaxation is not None:
         needed = True
-        if relaxation.steps_tried:
+        if any(step.status in {"ok", "empty"} for step in relaxation.steps_tried):
             mechanisms.append("auto_relax")
+        failed_attempts += sum(1 for step in relaxation.steps_tried if step.status == "error")
         if outcome is None and not corrected:
             total = f" (PubMed total {exact_pubmed_total})" if exact_pubmed_total is not None else ""
             summary = f"original returned 0 of requested {requested_limit}{total}"
@@ -568,6 +619,7 @@ def build_broadening_disclosure(
         "eligible_unique": eligible,
         "deepened_records": deepened,
         "broadened_records": broadened,
+        "failed_attempts": failed_attempts,
         "filled": filled,
         "summary": summary,
         "attempts": attempts,
@@ -586,6 +638,7 @@ def compact_broadening(disclosure: dict[str, Any] | None) -> dict[str, Any] | No
             "applied",
             "mechanisms",
             "broadened_records",
+            "failed_attempts",
             "filled",
             "summary",
         )
