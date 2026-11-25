@@ -45,7 +45,7 @@ _STRONG_TAIL_RE = re.compile(
     r"\s*(?:;\s*(?:[A-Za-z]{0,4}\d|\(|(?i:suppl))|,\s*[A-Za-z]?\d+[A-Za-z]?\s*[(:])",
 )
 _WEAK_TAIL_RE = re.compile(r"\s*(?:[.;,)]|$)")
-_SEGMENT_OPENING_RE = re.compile(r"(?:^|[.,;(]\s*)$")
+_WORD_RE = re.compile(r"[A-Za-z]{3,}")
 _PAREN_YEAR_RE = re.compile(
     rf"\(\s*((?:19|20)\d{{2}})[a-z]?(?:\s*,\s*{_MONTH}(?:\s+\d{{1,2}})?)?\s*\)",
 )
@@ -254,31 +254,57 @@ def _locate_publication_year(bibliography: str) -> _YearAnchor | None:
         if _STRONG_TAIL_RE.match(bibliography, date_end):
             return _YearAnchor(match.group(1), match.start(), date_end, "vancouver")
 
+    # Every check below is O(1) per candidate year (no prefix/suffix slicing),
+    # so an adversarial 4,000-character entry stays linear.
+    last_word_start = _last_word_start(bibliography)
+
     # 2. Author-year: ``Authors (2018). Title. Journal, 121(5), 1005-1012.``
     for match in _PAREN_YEAR_RE.finditer(bibliography):
-        if re.search(r"[A-Za-z]{3,}", bibliography[match.end() :]):
+        if last_word_start >= match.end():
             return _YearAnchor(match.group(1), match.start(), match.end(), "author_year")
 
     # 3. A standalone year that opens a segment (``cohort. 2024.``) or ends the
     #    entry (``Lancet 2015``); prefer the last one, which follows the title
     #    in every common style. Years inside title prose (``1990 to 2010``) or
     #    glued to a hyphen (``surgery-2018``) are not publication dates.
+    content_end = len(bibliography.rstrip(" .;,)"))
     weak: _YearAnchor | None = None
     for match in _YEAR_TOKEN_RE.finditer(bibliography):
         start = match.start()
         date = _DATE_SUFFIX_RE.match(bibliography, match.end())
         date_end = date.end() if date else match.end()
-        opens_segment = _SEGMENT_OPENING_RE.search(bibliography[:start]) is not None
-        ends_entry = not bibliography[date_end:].strip(" .;,)")
+        opens_segment = _opens_segment(bibliography, start)
+        ends_entry = date_end >= content_end
         glued = start > 0 and bibliography[start - 1] in "-–/"
         if not glued and (opens_segment or ends_entry) and _WEAK_TAIL_RE.match(bibliography, date_end):
             weak = _YearAnchor(match.group(1), start, date_end, "vancouver")
     if weak is None:
         return None
     pre_segments = _segment_spans(bibliography[: weak.start])
-    if len(pre_segments) <= 1 and re.search(r"[A-Za-z]{3,}", bibliography[weak.end :]):
+    if len(pre_segments) <= 1 and last_word_start >= weak.end:
         return _YearAnchor(weak.year, weak.start, weak.end, "author_year")
     return weak
+
+
+def _last_word_start(text: str) -> int:
+    """Start of the last window of three ASCII letters, or ``-1``.
+
+    ``text[pos:]`` contains a three-letter word iff the result is ``>= pos``.
+    """
+    last = -1
+    for match in _WORD_RE.finditer(text):
+        last = match.end() - 3
+    return last
+
+
+def _opens_segment(text: str, start: int) -> bool:
+    """Whether ``start`` begins the entry or follows ``.``, ``,``, ``;`` or ``(`` (and spaces)."""
+    if start == 0:
+        return True
+    end = start
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    return end > 0 and text[end - 1] in ".,;("
 
 
 def _parse_vancouver(bibliography: str, anchor: _YearAnchor) -> tuple[str, str, str, _Locator]:
