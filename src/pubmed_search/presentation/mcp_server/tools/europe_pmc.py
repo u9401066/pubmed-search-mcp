@@ -4,7 +4,7 @@ Europe PMC Tools - Access Europe PMC for fulltext and search.
 Tools:
 - get_fulltext: 🔥 Enhanced multi-source fulltext retrieval
   - Supports PMID, PMC ID, or DOI input
-  - Auto-tries: Europe PMC → Unpaywall → CORE
+  - Auto-tries: Europe PMC (NCBI PMC hedged fallback) → Unpaywall → CORE
   - Extended sources: CrossRef, DOAJ, Zenodo, PubMed LinkOut (15 total)
   - Returns fulltext content + PDF links
 - get_text_mined_terms: Get text-mined annotations (genes, diseases, chemicals)
@@ -35,6 +35,7 @@ from pydantic import Field
 from pubmed_search.application.fulltext import FulltextRequest, FulltextService
 from pubmed_search.domain.value_objects.article_identifiers import IdentifierValidationError
 from pubmed_search.infrastructure.sources import get_core_client, get_europe_pmc_client, get_unpaywall_client
+from pubmed_search.infrastructure.sources.runtime import get_source_runtime
 from pubmed_search.shared.markdown import escape_markdown_block, escape_markdown_text, markdown_link
 from pubmed_search.shared.settings import load_settings
 
@@ -53,7 +54,7 @@ from .agent_output import (
 )
 from .article_source import ArticleSource, PubmedSource, normalize_article_source
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
-from .fulltext_runtime import get_cached_fulltext_xml
+from .fulltext_runtime import bind_cached_fulltext_fetcher
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -167,7 +168,7 @@ def _format_get_fulltext_json(
     pdf_links: list[dict[str, Any]],
     sources_tried: list[str],
     sources_completed: list[str],
-    source_errors: list[dict[str, str]],
+    source_errors: list[dict[str, Any]],
     coverage_status: Literal["complete", "partial", "unavailable"],
     source_counts: list[dict[str, Any]],
     next_tools: list[dict[str, str]],
@@ -180,6 +181,10 @@ def _format_get_fulltext_json(
     output_format: OutputFormat = "json",
     artifact_manifest: dict[str, Any] | None = None,
     section_selection: dict[str, Any] | None = None,
+    source_notices: list[dict[str, str]] | None = None,
+    sources_skipped: list[dict[str, str]] | None = None,
+    fulltext_license: dict[str, str] | None = None,
+    deadline_seconds: float | None = None,
 ) -> str:
     """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
     section_provenance: dict[str, dict[str, Any]] = {
@@ -200,7 +205,10 @@ def _format_get_fulltext_json(
             surfacing_source="pubmed-search-mcp",
             canonical_host=None,
             provenance="derived",
-            note="Coverage distinguishes completed upstream checks from sanitized source failures.",
+            note=(
+                "Coverage distinguishes completed checks, typed source failures (source_errors[].code), "
+                "non-error notices such as front-matter-only PMC records, and sources skipped at the deadline."
+            ),
             upstream_sources=sources_tried,
         ),
     }
@@ -246,10 +254,14 @@ def _format_get_fulltext_json(
         "content_sections": content_sections,
         "section_selection": section_selection,
         "pdf_links": pdf_links,
+        "fulltext_license": fulltext_license,
         "sources_tried": sources_tried,
         "sources_completed": sources_completed,
         "source_errors": source_errors,
+        "source_notices": source_notices or [],
+        "sources_skipped": sources_skipped or [],
         "coverage_status": coverage_status,
+        "deadline_seconds": deadline_seconds,
         "source_counts": source_counts,
         "next_tools": next_tools,
         "next_commands": next_commands,
@@ -290,11 +302,14 @@ def _format_source_coverage_markdown(
     *,
     coverage_status: Literal["complete", "partial", "unavailable"],
     sources_completed: list[str],
-    source_errors: list[dict[str, str]],
+    source_errors: list[dict[str, Any]],
+    source_notices: list[dict[str, str]] | None = None,
+    sources_skipped: list[dict[str, str]] | None = None,
 ) -> str:
     """Render sanitized upstream coverage without exposing exception details."""
+    notes = _format_source_notices_markdown(source_notices or [])
     if coverage_status == "complete":
-        return ""
+        return notes
     lines = [f"## ⚠️ Source coverage: {escape_markdown_text(coverage_status)}"]
     if sources_completed:
         completed = ", ".join(escape_markdown_text(source) for source in sources_completed)
@@ -302,12 +317,35 @@ def _format_source_coverage_markdown(
     if source_errors:
         lines.append("Unavailable checks:")
         lines.extend(
-            f"- {escape_markdown_text(issue.get('source', 'unknown'))}: "
+            f"- {escape_markdown_text(issue.get('source', 'unknown'))} "
+            f"(`{escape_markdown_text(issue.get('code', 'source_unavailable'))}`): "
             f"{escape_markdown_text(issue.get('message', 'source unavailable'))}"
             for issue in source_errors
         )
-    lines.append("_Absence of fulltext cannot be concluded from unavailable sources._")
-    return "\n\n".join(lines) + "\n\n"
+    if sources_skipped:
+        lines.append("Skipped checks (not attempted):")
+        lines.extend(
+            f"- {escape_markdown_text(row.get('source', 'unknown'))} "
+            f"(`{escape_markdown_text(row.get('reason', 'deadline'))}`): "
+            f"{escape_markdown_text(row.get('message', 'not attempted'))}"
+            for row in sources_skipped
+        )
+    lines.append("_Absence of fulltext cannot be concluded from unavailable or skipped sources._")
+    return "\n\n".join(lines) + "\n\n" + notes
+
+
+def _format_source_notices_markdown(source_notices: list[dict[str, str]]) -> str:
+    """Render non-error source outcomes that must not be read as fulltext."""
+    if not source_notices:
+        return ""
+    lines = ["Source notes:"]
+    lines.extend(
+        f"- {escape_markdown_text(notice.get('source', 'unknown'))} "
+        f"(`{escape_markdown_text(notice.get('code', 'notice'))}`): "
+        f"{escape_markdown_text(notice.get('message', ''))}"
+        for notice in source_notices
+    )
+    return "\n".join(lines) + "\n\n"
 
 
 def _render_fulltext_content_for_artifact(
@@ -520,17 +558,25 @@ def register_europe_pmc_tools(mcp: MCPServer):
         🔥 Enhanced multi-source fulltext retrieval.
 
         Automatically tries multiple sources to find the best fulltext:
-        1. Europe PMC (if PMC ID available)
-        2. Unpaywall (finds OA versions via DOI)
-        3. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
-        4. CORE (open-access repository metadata and available text)
+        1. Europe PMC JATS (if a PMCID is known or resolved from the PMID)
+        2. NCBI PMC efetch JATS, started when Europe PMC fails, has no body,
+           or is slow; publisher-restricted PMC records are reported as
+           front matter only, never as fulltext
+        3. Unpaywall (finds OA versions via DOI)
+        4. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
+        5. CORE (open-access repository metadata and available text)
 
         With extended_sources=True, also searches:
-        5. CrossRef (publisher links)
-        6. DOAJ (Gold OA journals)
-        7. Zenodo (research repository)
-        8. PubMed LinkOut (external providers)
-        9. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
+        6. CrossRef (publisher links)
+        7. DOAJ (Gold OA journals)
+        8. Zenodo (research repository)
+        9. PubMed LinkOut (external providers)
+        10. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
+
+        One overall deadline bounds the request. Read source_errors[].code
+        (e.g. rate_limited, upstream_retries_exhausted, timeout, cache_error),
+        source_notices and sources_skipped before treating missing text as
+        evidence that no fulltext exists.
 
         ``source`` is a discriminated identifier object, so the schema itself
         requires exactly one explicit PMID, PMCID, or DOI kind.
@@ -588,20 +634,28 @@ def register_europe_pmc_tools(mcp: MCPServer):
         from pubmed_search.infrastructure.sources.institutional_fulltext import (
             InstitutionalFulltextClient,
         )
+        from pubmed_search.infrastructure.sources.ncbi_pmc import get_ncbi_pmc_client
 
         _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
+        _ncbi_pmc_factory = get_ncbi_pmc_client if settings.fulltext_ncbi_pmc_fallback else None
 
-        async def _structured_xml(pmcid: str) -> str | None:
-            return await get_cached_fulltext_xml(pmcid, get_europe_pmc_client().get_fulltext_xml)
+        # Structured sources run as concurrent child tasks that see a copy of
+        # this context: resolve context-local runtimes, the cache and the
+        # Europe PMC client here so every task shares them.
+        get_source_runtime()
+        europe_pmc_client = get_europe_pmc_client()
+        _structured_xml = bind_cached_fulltext_fetcher(europe_pmc_client.get_fulltext_xml)
 
         service = FulltextService(
-            europe_pmc_client_factory=get_europe_pmc_client,
+            europe_pmc_client_factory=lambda: europe_pmc_client,
             unpaywall_client_factory=get_unpaywall_client,
             core_client_factory=get_core_client,
             downloader_factory=FulltextDownloader,
             figure_client_factory=get_figure_client if include_figures else None,
             institutional_client_factory=_institutional_factory,
             structured_xml_fetcher=_structured_xml,
+            ncbi_pmc_client_factory=_ncbi_pmc_factory,
+            deadline_seconds=settings.fulltext_deadline_seconds,
         )
         try:
             retrieval = await service.retrieve(request, progress=_progress, log=_log)
@@ -655,6 +709,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 ]
             )
         exposed_pdf_links = retrieval.pdf_links if include_pdf_links else []
+        source_error_rows = [issue.to_dict() for issue in retrieval.source_errors]
+        source_notice_rows = [notice.to_dict() for notice in retrieval.source_notices]
+        skipped_rows = [skipped.to_dict() for skipped in retrieval.sources_skipped]
         source_counts = _build_fulltext_source_counts(
             sources_tried=retrieval.sources_tried,
             fulltext_source=retrieval.fulltext_source_name if retrieval.fulltext_content else None,
@@ -673,14 +730,18 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "pdf_links": exposed_pdf_links,
             "sources_tried": retrieval.sources_tried,
             "sources_completed": retrieval.sources_completed,
-            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+            "source_errors": source_error_rows,
+            "source_notices": source_notice_rows,
+            "sources_skipped": skipped_rows,
             "coverage_status": retrieval.coverage_status,
+            "deadline_seconds": retrieval.deadline_seconds,
             "source_counts": source_counts,
             "next_tools": next_tools,
             "next_commands": next_commands,
             "fulltext_source": retrieval.fulltext_source_name,
             "fulltext_canonical_host": retrieval.fulltext_canonical_host,
             "fulltext_provenance": retrieval.fulltext_provenance,
+            "fulltext_license": retrieval.fulltext_license,
             "include_figures": include_figures,
             "figures": retrieval.figures,
         }
@@ -729,12 +790,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
             },
             "sources_tried": retrieval.sources_tried,
             "sources_completed": retrieval.sources_completed,
-            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+            "source_errors": source_error_rows,
+            "source_notices": source_notice_rows,
+            "sources_skipped": skipped_rows,
             "coverage_status": retrieval.coverage_status,
             "source_counts": source_counts,
             "fulltext_source": retrieval.fulltext_source_name,
             "fulltext_canonical_host": retrieval.fulltext_canonical_host,
             "fulltext_provenance": retrieval.fulltext_provenance,
+            "fulltext_license": retrieval.fulltext_license,
         }
 
         # === BUILD OUTPUT ===
@@ -774,13 +838,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
             )
 
         if not retrieval.fulltext_content and not retrieval.pdf_links:
-            if retrieval.source_errors:
+            if retrieval.source_errors or retrieval.sources_skipped:
                 marker = "❌" if retrieval.coverage_status == "unavailable" else "⚠️"
                 no_results_response = f"{marker} **Fulltext retrieval incomplete**\n\n"
                 no_results_response += _format_source_coverage_markdown(
                     coverage_status=retrieval.coverage_status,
                     sources_completed=retrieval.sources_completed,
-                    source_errors=[issue.to_dict() for issue in retrieval.source_errors],
+                    source_errors=source_error_rows,
+                    source_notices=source_notice_rows,
+                    sources_skipped=skipped_rows,
                 )
                 no_results_response += "Retry later before treating this article as unavailable."
             else:
@@ -811,7 +877,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
                             },
                             "sources_tried": retrieval.sources_tried,
                             "sources_completed": retrieval.sources_completed,
-                            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+                            "source_errors": source_error_rows,
+                            "source_notices": source_notice_rows,
+                            "sources_skipped": skipped_rows,
                             "coverage_status": retrieval.coverage_status,
                             "source_counts": source_counts,
                         },
@@ -836,8 +904,14 @@ def register_europe_pmc_tools(mcp: MCPServer):
         output += _format_source_coverage_markdown(
             coverage_status=retrieval.coverage_status,
             sources_completed=retrieval.sources_completed,
-            source_errors=[issue.to_dict() for issue in retrieval.source_errors],
+            source_errors=source_error_rows,
+            source_notices=source_notice_rows,
+            sources_skipped=skipped_rows,
         )
+        if retrieval.fulltext_license and retrieval.fulltext_content:
+            license_label = retrieval.fulltext_license.get("type") or retrieval.fulltext_license.get("url")
+            if license_label:
+                output += f"📜 Declared article license: {escape_markdown_text(license_label)}\n\n"
 
         download_note = _format_download_notice(retrieval.fallback_notice)
         if download_note:
