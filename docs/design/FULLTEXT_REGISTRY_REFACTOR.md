@@ -323,11 +323,45 @@ This lets the tool format once, regardless of how the content was found.
 - stop letting the downloader decide policy
 - remove duplicate downloader pass-through methods and historical re-export modules
 
-### Phase 4: Direct PMC structured fallback
+### Phase 4: Direct PMC structured fallback (complete)
 
-- add `pmc_structured_direct`
-- place it behind the same structured capability contract as Europe PMC
-- allow `structured_first` to try more than one structured source
+- source key `ncbi_pmc` (`infrastructure/sources/ncbi_pmc.py`): NCBI E-utilities
+  `efetch db=pmc` with the configured `tool`/`email`/`api_key`, drawing from the
+  same `ncbi-entrez` rate budget as Bio.Entrez; `esummary db=pubmed` resolves a
+  PMID to PMCID/DOI when Europe PMC metadata fails (`ncbi_metadata`)
+- Europe PMC and NCBI share one JATS parser (`infrastructure/sources/jats.py`)
+- `structured_first` is `europe_pmc, ncbi_pmc, ...`; `application/fulltext/racing.py`
+  starts NCBI when Europe PMC fails, has no body, or has not answered within the
+  hedge delay (6 s), keeps the first usable body and cancels the other attempt
+  (`source_notices: superseded`)
+- NCBI's "publisher does not allow downloading of the full text in XML form"
+  record is `front_matter_only`: no sections, a PMC landing-page link, and the
+  ordinary PDF fallback still runs
+- one request deadline (`PUBMED_FULLTEXT_DEADLINE_SECONDS`, default 90 s) bounds
+  every stage; a source cancelled by it is `deadline_exceeded`, a source never
+  started is listed in `sources_skipped`
+- `PUBMED_FULLTEXT_NCBI_PMC_FALLBACK=false` disables the NCBI route
+
+### Source status contract
+
+`application/fulltext/coverage.py` classifies already-sanitized failures without
+importing infrastructure:
+
+| `source_errors[].code` | Meaning |
+| --- | --- |
+| `upstream_retries_exhausted` | retryable HTTP status (5xx/408) still failing after transport retries |
+| `rate_limited` | HTTP 429 or open circuit; `retry_after_seconds` carries the applied cooldown when known |
+| `upstream_http_error` | non-retryable HTTP status (`status_code`) |
+| `upstream_connection_error` | connection reset, hang-up or DNS failure |
+| `timeout` | the source's own timeout or the XML cache fetch deadline |
+| `deadline_exceeded` | cancelled at the overall `get_fulltext` deadline |
+| `invalid_response` | unparseable or oversized payload |
+| `cache_error` | local fulltext cache closed or at capacity; upstream status unknown |
+| `source_unavailable` | anything else |
+
+`FulltextCache` re-raises the adapter's own sanitized exception; it never
+rewrites an upstream failure as a cache error. `source_notices` holds
+`no_body`, `front_matter_only` and `superseded`; none of them is fulltext.
 
 ### Phase 5: New high-value sources
 
