@@ -10,6 +10,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-25
+
+Systematic-review and evidence-quality release. A field benchmark on a PACU
+processed-EEG question compared this server with a plain agent using NCBI
+E-utilities and found the cases fixed below.
+
+### Added
+
+- **Exhaustive PubMed retrieval for saved pipelines** (`retrieval: exhaustive`): the complete PMID set via the E-utilities History Server up to `max_records` (≤ 10,000; larger counts are refused, not truncated), metadata in batches, the full set persisted as a run artifact and a bounded preview in the response.
+- **PRISMA-S run records**: database/platform, saved and executed queries, PubMed QueryTranslation and not-found lists, counts, filters, UTC time, server version, config hash/SHA-256 and an immutable config snapshot. `get_pipeline_history(view="run" | "prisma_s" | "records")` adds a PRISMA-S table (Markdown and CSV); `prepare_export(pipeline_run=...)` exports a run's full set as RIS, CSV, CSL-JSON, BibTeX, MEDLINE or JSON.
+- **`block_analysis` pipeline action**: counts per concept block, cumulative AND, records removed by NOT and each term's unique contribution, with a separate bounded count quota; terms PubMed could not resolve are marked.
+- **`pipeline_screening` tool** (43 tools in total): per-PMID title/abstract and full-text decisions, automatic queueing of records from update runs, reviewer conflicts and PRISMA 2020 flow counts in a cross-process-safe SQLite log.
+- **Automatic MeSH correction in `unified_search`**: when PubMed reports a `[Mesh]` clause as not found, the exact tier is re-run with an exact entry-term fix or, for terms with no MeSH record, the original words as text words OR a related heading ranked by exact PubMed recall/precision (F1). Disclosed as `mesh_correction`, a Markdown line, `query_strategy.json` and an audit check; opt out with `options="no_mesh_correction"`. Saved pipelines are never rewritten: they record suggest-only corrections in run warnings and PRISMA-S notes.
+- PubMed search pages return ESearch diagnostics (`query_diagnostics`: translation, WarningList, ErrorList) and surface unresolved clauses as source warnings.
+- `generate_search_queries` returns `co_occurrence` MeSH candidates with evidence for unmapped phrases; they are never promoted to confirmed `mesh_terms`.
+- NCBI PMC fulltext fallback (`efetch db=pmc`, ESummary PMCID/DOI lookup) when Europe PMC fails, has no body or is slow; publisher-restricted PMC records are reported as `front_matter_only`. Overall `get_fulltext` deadline (`PUBMED_FULLTEXT_DEADLINE_SECONDS`, default 90 s) with `sources_skipped`; `PUBMED_FULLTEXT_NCBI_PMC_FALLBACK=false` disables the fallback.
+- Research Chronicle highlights quote one verbatim abstract sentence (CONCLUSIONS first) with section and character offsets; `extractive_highlights` and `study_design_labels` audit checks.
+- Claude Code's `CLAUDE_PROJECT_DIR` is used as the workspace root when `PUBMED_WORKSPACE_DIR` is unset.
+
+### Changed
+
+- **`unified_search` deep strategy is precision-first**: the caller's query gets the full per-source `limit`; only when it returns fewer eligible records does the server fetch deeper, then run `entity_semantic` and `broad_tiab` to fill the remaining slots. Broadened records rank after exact matches, carry per-article `retrieval` provenance (Markdown 🔻) and are disclosed in a `search-broadening/v1` block (Markdown, JSON/TOON, SDK, `query_strategy.json`, audit). `options="no_relax"` disables all broadening. Deep `budget` metadata reports `policy/requested/fetched/returned`.
+- `generate_search_queries` confirms a MeSH mapping only when a phrase equals the descriptor's preferred term or an entry term (case, hyphen spacing and simple plurals ignored); results carry match evidence, `mesh_candidates` and `unmapped_phrases`, and a topic needs about 3 NCBI requests instead of dozens.
+- Research Chronicle labels entries by study design from PubMed publication types (heuristics only as a marked fallback), applies NIH iCite metrics in pmids mode, and excludes topic-restating descriptors from branch formation.
+- `verify_reference_list` rows add `corrections`, `attempted_strategies`, parsed `authors`/`issue` and `resolution_method: "metadata_search"`.
+- `get_pipeline_history` shows run IDs, retrieval mode, PubMed total and strategy hashes; `unified_search` and scheduled pipeline runs share one recorder.
+- `delete_pipeline` refuses to delete a screening log that holds decisions unless `delete_screening_log=true`.
+- **Storage location**: with `scope: auto`, servers started by Claude Code (via `CLAUDE_PROJECT_DIR`) or the HTTP launcher store pipelines in `<project>/.pubmed-search/` — including run record sets with titles and abstracts, the SQLite screening log and reports. A newly created directory gets a `.gitignore` that ignores everything (with a recipe to share only `pipelines/*.yaml`); existing directories are never changed. Set `PUBMED_WORKSPACE_DIR` or save with `scope: "global"` to choose another location.
+- `retrieval.exhaustive` is true only when every search feeding the final record set was exhaustive; runs mixing exhaustive and bounded searches report `mode: "mixed"`, are not auto-registered for screening, and PRISMA identification counts the search set before pipeline filters (`records_marked_ineligible_by_automation`; screening log schema v2, migrated automatically).
+- `unified_search` deep mode: `budget.allocated` remains as a deprecated alias of `requested`; attempts no longer use `status="skipped_budget"` (an unneeded strategy is `status="skipped"` with a `skip_reason`); `search-broadening/v1` adds `failed_attempts`, and `applied`/`mechanisms` count only requests a provider answered. One deep search is bounded by an overall deadline (3 strategy timeouts, 75 s by default) that includes MeSH correction.
+- `verify_reference_list` rows may include `corrections_withheld_reason` and `identifier_assessment`; rows whose PMID/DOI is probably wrong are `unresolved` with `matched_article: null`.
+- Boolean operators follow PubMed's own rules (verified live): `or` and `not` work in lowercase, a lowercase `and` is a stopword, and mixed-case words are never operators; MeSH correction, topic mapping, block analysis and the query validator share this rule.
+- `get_fulltext`: an NCBI publisher restriction no longer cancels a Europe PMC fetch that is already running.
+
+### Fixed
+
+- `verify_reference_list` takes the year from its citation position, keeps titles containing years intact, and finds real but mis-cited references (wrong year/volume) with a year-tolerant title-word and author/journal/volume/page search, reporting field corrections instead of `unresolved`. Long titles are no longer sent as one quoted phrase (PubMed `QuotedPhraseNotFound`).
+- `generate_search_queries` no longer maps stopword-bounded fragments or scope-note mentions to unrelated MeSH descriptors (e.g. "length of" → 3-Hydroxyacyl-CoA Dehydrogenase).
+- Expert Boolean queries that already fill the limit are no longer diluted by broadened results, and deep searches no longer return fewer results than requested because of a parallel budget split.
+- `get_fulltext` no longer reports upstream outages, rate limits or timeouts as fulltext cache errors; each source reports a typed `source_errors[].code`.
+- Research Chronicle no longer labels randomized trials whose abstracts mention adverse events as "Safety Alert".
+- Saved pipelines are no longer capped at 100 records and PRISMA-relevant run metadata (executed query, total count, config hash) is no longer lost.
+- Reference verification proposes field corrections only when at least two independent cited fields corroborate the record beyond the title, locator or identifier that found it, so a likely fabricated citation is no longer "corrected" into another real paper; a cited PMID/DOI contradicted by the other fields no longer ends resolution. Access dates and title years are no longer read as the publication year, different non-Latin titles no longer compare equal, and year parsing is linear-time.
+- Screening: returning to an earlier decision (include → exclude → include) is recorded and counted; without `decision_id` only an exact repeat of the reviewer's latest decision is a replay.
+- Exhaustive runs keep their complete PMID set when the run deadline interrupts metadata (`metadata_error`); filters keep metadata-less records and report `metadata_missing`; recording a 10,000-record run no longer blocks the event loop; `delete_pipeline` checks screening decisions atomically and leaves a retryable state on locked files; persistence failures and export completeness are disclosed; MeSH suggestions never starve required retrieval calls; same-name workspace/global pipelines stay in their own scope; record sets page beyond 10,000.
+- MeSH auto-correction never changes a query's meaning: a `/` is a qualifier only for real MeSH subheadings (`"Ischemia/Reperfusion Injury"[Mesh]` → `"Reperfusion Injury"[Mesh]`), qualifiers are checked against each heading's allowable qualifiers, and inside a NOT operand — in every tier, including broadening and auto-relax queries — only an equivalent exact fix is applied (others are listed in `mesh_correction.suggestions`). MeSH phrase mapping keeps comma-inverted headings, folds Unicode hyphens, no longer depends on lookup order, and never caches a truncated MeSH search.
+- Fulltext: an NCBI efetch HTTP 200 with an `<ERROR>` envelope or empty body is `invalid_response`, not complete coverage; only the main JATS article is extracted (never `<sub-article>` bodies); cancelled attempts are reaped; the PDF downloader gets the remaining request budget.
+- Broadening disclosure: relaxed records are no longer also counted as exact, failed or timed-out broadening is reported as failed, `contributed` excludes ineligible records, deep-fill counting uses the aggregator's dedup rules, and a failed deep MeSH re-run no longer marks PubMed partial.
+- Research Chronicle never quotes funding, registration, licence or publisher statements as the authors' words; sentence splitting keeps abbreviations, decimals and units; non-randomized/quasi-randomised studies, protocols, errata and retractions are no longer labelled RCTs or trial milestones; milestones that 0.10 emitted for observational designs are restored; abstract-pattern milestones ignore background mentions; unknown citation counts show as unknown; truncated abstracts are disclosed.
+
 ## [0.10.0] - 2026-11-20
 
 ### Added

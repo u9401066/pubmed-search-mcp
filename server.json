@@ -8,13 +8,13 @@
     "source": "github"
   },
   "websiteUrl": "https://u9401066.github.io/pubmed-search-mcp/",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "pubmed-search-mcp",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
