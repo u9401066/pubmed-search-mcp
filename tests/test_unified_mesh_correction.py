@@ -11,7 +11,9 @@ aggregation, formatting and artifact envelope all run for real.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,12 +25,17 @@ from pubmed_search.application.search.result_aggregator import RankingConfig
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan, SemanticEnhancer
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.unified.execution import execute_unified_search
+from pubmed_search.application.unified.mesh_correction import PubMedMeshCorrector
 from pubmed_search.application.unified.planning import UnifiedSearchPlan
 from pubmed_search.application.unified.request import normalize_unified_search_request
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
 from pubmed_search.infrastructure.sources.registry import get_source_registry
-from pubmed_search.infrastructure.sources.unified_broker import UnifiedSourceBroker
+from pubmed_search.infrastructure.sources.unified_broker import (
+    DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR,
+    UnifiedSourceBroker,
+    _execute_deep_search,
+)
 from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
 from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
 from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
@@ -347,6 +354,56 @@ async def test_failed_deep_mesh_rerun_does_not_make_a_successful_pubmed_search_p
         ("original:mesh_corrected", "error")
     ]
     assert execution.source_metadata["pubmed"]["mesh_correction"] == {"applied": False, "rerun_status": "error"}
+
+
+async def test_deep_search_with_a_hanging_mesh_correction_stays_within_its_overall_deadline() -> None:
+    """Worst case: correction evidence never arrives. The deep search still ends on its own budget."""
+
+    async def never(*_args: Any, **_kwargs: Any) -> Any:
+        await asyncio.Event().wait()
+
+    service = MagicMock()
+    service.correct_query = never
+    service.unavailable_result = MeshCorrectionService(MagicMock()).unavailable_result
+    corrector = PubMedMeshCorrector(service)  # its own 45 s timeout would dominate otherwise
+    plan = _deep_plan(PACU_QUERY)
+    strategy_timeout = 0.2
+    pubmed = _FakePubMed()
+
+    async def runner(query: str, *args: Any) -> SourceAdapterResult[UnifiedArticle]:
+        if BROAD_MARKER in query:
+            await never()  # a fill attempt can only end through the deadline
+        return await pubmed(query, *args)
+
+    started = time.monotonic()
+    _results, metrics, _total, _counts, _errors = await asyncio.wait_for(
+        _execute_deep_search(
+            AsyncMock(),
+            plan.enhanced_query,  # type: ignore[arg-type]
+            limit=10,
+            min_year=None,
+            max_year=None,
+            advanced_filters={},
+            strategies=plan.deep_strategies,
+            search_functions={"pubmed": runner},
+            strategy_timeout=strategy_timeout,
+            exact_query_corrector=corrector,
+        ),
+        timeout=5,
+    )
+    elapsed = time.monotonic() - started
+
+    # The correction may only use what is left of the overall budget (3 strategy
+    # timeouts), not its own 45 s; nothing runs past that budget.
+    assert elapsed < DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR * strategy_timeout + 0.3
+    disclosure = corrector.disclosure()
+    assert disclosure is not None and disclosure["applied"] is False
+    assert "MeSH correction did not finish within the search deadline; query unchanged." in disclosure["warnings"]
+    outcome = metrics.tier_outcome
+    assert outcome is not None
+    assert outcome.broadened_records == 0
+    broad = next(row for row in metrics.strategy_results if row.strategy_name == "broad_tiab")
+    assert broad.skip_reason == "deadline_exhausted" or broad.status == "error"
 
 
 async def test_shallow_markdown_discloses_the_correction(fake_entrez: FakeEntrez) -> None:

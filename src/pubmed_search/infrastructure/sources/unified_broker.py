@@ -75,6 +75,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS = 25.0
+DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR = 3
+"""One deep search never runs longer than this many strategy timeouts (75 s by default).
+
+The bound covers the exact tier, the MeSH correction (evidence gathering and
+the corrected re-run) and every fill phase; whatever has not started when it
+elapses is skipped and disclosed as ``deadline_exhausted``.
+"""
 DEEP_SEARCH_MAX_CONCURRENCY = 4
 DEEP_SEARCH_PER_SOURCE_CONCURRENCY = 1
 ProviderRetrievalMode = Literal["auto", "semantic", "systematic"]
@@ -261,12 +268,16 @@ class ExactQueryCorrector(Protocol):
     """Application hook that may replace a PubMed exact-tier query (MeSH correction).
 
     ``propose`` sees the exact attempt's query, adapter metadata and total and
-    returns a corrected query or ``None``. The broker re-runs the exact tier
-    with it and reports the outcome through ``record_rerun``; ``rewrite``
-    applies the accepted correction to lower-precision PubMed fill queries.
+    returns a corrected query or ``None``; ``timeout`` is the remaining deep
+    search budget it must finish within (``None`` = its own limit). The broker
+    re-runs the exact tier with it and reports the outcome through
+    ``record_rerun``; ``rewrite`` applies the accepted correction to
+    lower-precision PubMed fill queries.
     """
 
-    async def propose(self, query: str, metadata: Mapping[str, Any] | None, total: int | None) -> str | None: ...
+    async def propose(
+        self, query: str, metadata: Mapping[str, Any] | None, total: int | None, *, timeout: float | None = None
+    ) -> str | None: ...
 
     def record_rerun(self, *, status: str, total: int | None, metadata: Mapping[str, Any] | None) -> None: ...
 
@@ -390,6 +401,7 @@ async def _execute_deep_search(
     per_source_concurrency: int = DEEP_SEARCH_PER_SOURCE_CONCURRENCY,
     strategy_timeout: float = DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS,
     total_timeout: float | None = None,
+    overall_timeout: float | None = None,
     eligibility: Callable[[UnifiedArticle], bool] | None = None,
     allow_broadening: bool = True,
     exact_query_corrector: ExactQueryCorrector | None = None,
@@ -424,7 +436,12 @@ async def _execute_deep_search(
     ``SearchDepthMetrics.strategy_results`` and the fill accounting in
     ``SearchDepthMetrics.tier_outcome``; contributed records carry
     :class:`RetrievalProvenance`. ``total_timeout`` (default twice the
-    per-strategy timeout) bounds the sequential fill phases.
+    per-strategy timeout) bounds the sequential fill phases; time spent on
+    MeSH correction does not count against it. ``overall_timeout`` (default
+    ``DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR`` per-strategy timeouts) is the hard
+    wall-clock bound for the whole call, correction included: MeSH evidence
+    gathering and the corrected re-run get only what is left of it, and fill
+    phases that cannot start in time are skipped as ``deadline_exhausted``.
 
     Returns:
         Tuple of (all_results, depth_metrics, pubmed_total_count, source_api_counts, source_errors)
@@ -450,9 +467,19 @@ async def _execute_deep_search(
         source: asyncio.Semaphore(max(1, per_source_concurrency)) for source in {s.source for s in ordered}
     }
     loop = asyncio.get_running_loop()
+    started_at = loop.time()
     # The exact tier always receives the full per-strategy timeout; sequential
-    # fill phases share whatever remains of the overall deep-search deadline.
-    deadline = loop.time() + (total_timeout if total_timeout is not None else 2 * strategy_timeout)
+    # fill phases share whatever remains of the fill deadline. Nothing --
+    # MeSH correction included -- runs past the overall deadline.
+    fill_budget = total_timeout if total_timeout is not None else 2 * strategy_timeout
+    deadline = started_at + fill_budget
+    default_overall = max(DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR * strategy_timeout, fill_budget + strategy_timeout)
+    overall_deadline = started_at + max(
+        strategy_timeout, overall_timeout if overall_timeout is not None else default_overall
+    )
+
+    def overall_remaining() -> float:
+        return max(0.0, overall_deadline - loop.time())
 
     tracker = DeepFillTracker(limit, eligibility)
     outcome = DeepTierOutcome(requested_limit=limit, broadening_enabled=allow_broadening)
@@ -661,7 +688,10 @@ async def _execute_deep_search(
             if attempt.strategy.source != "pubmed" or attempt.result.status == "error":
                 continue
             corrected_query = await exact_query_corrector.propose(
-                attempt.strategy.query, attempt.result.metadata, attempt.result.total_available
+                attempt.strategy.query,
+                attempt.result.metadata,
+                attempt.result.total_available,
+                timeout=overall_remaining(),
             )
             if not corrected_query or corrected_query == attempt.strategy.query:
                 continue
@@ -670,7 +700,10 @@ async def _execute_deep_search(
                 query=corrected_query,
                 name=f"{attempt.strategy.name}{MESH_CORRECTED_SUFFIX}",
             )
-            (rerun,) = await run_attempts([(corrected_strategy, limit, "exact")], timeout=strategy_timeout)
+            # Without time left the re-run fails as a timeout and the original stands.
+            (rerun,) = await run_attempts(
+                [(corrected_strategy, limit, "exact")], timeout=min(strategy_timeout, overall_remaining())
+            )
             exact_query_corrector.record_rerun(
                 status=rerun.result.status,
                 total=rerun.result.total_available,
@@ -692,8 +725,9 @@ async def _execute_deep_search(
     )
     correction_started = loop.time()
     exact_attempts = await correct_exact_attempts(exact_attempts)
-    # MeSH correction belongs to the exact tier; it must not consume the fill deadline.
-    deadline += loop.time() - correction_started
+    # MeSH correction belongs to the exact tier; it must not consume the fill
+    # deadline -- but the fill deadline never extends past the overall one.
+    deadline = min(deadline + loop.time() - correction_started, overall_deadline)
     for attempt in exact_attempts:
         record_attempt(attempt, tracker.admit_exact(attempt.articles, provenance_for(attempt.strategy)))
     outcome.exact_eligible_unique = tracker.eligible_unique

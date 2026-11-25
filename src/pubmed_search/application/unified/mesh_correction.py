@@ -85,11 +85,21 @@ class PubMedMeshCorrector:
         """Status of the corrected exact-tier re-run, ``None`` when none ran."""
         return self._rerun_status
 
-    async def propose(self, query: str, metadata: Mapping[str, Any] | None, total: int | None) -> str | None:
+    async def propose(
+        self,
+        query: str,
+        metadata: Mapping[str, Any] | None,
+        total: int | None,
+        *,
+        timeout: float | None = None,
+    ) -> str | None:
         """Return the corrected query for a flagged exact-tier attempt, else ``None``.
 
         Only the first flagged PubMed exact attempt is corrected; the result
         of that correction is reused for any other attempt of the same query.
+        ``timeout`` (the caller's remaining budget) can only shorten the
+        corrector's own limit; a correction that cannot finish in time leaves
+        the query unchanged and says so.
         """
         if self._result is not None:
             return self._result.corrected_query if query == self._original_query and self._result.changed else None
@@ -97,13 +107,15 @@ class PubMedMeshCorrector:
         if not has_unresolved_mesh(query, diagnostics):
             return None
         self._original_query = query
+        budget = self._timeout if timeout is None else max(0.0, min(self._timeout, timeout))
         try:
             self._result = await asyncio.wait_for(
                 self._service.correct_query(query, diagnostics=diagnostics, observed_count=total, measure_after=False),
-                timeout=self._timeout,
+                timeout=budget,
             )
         except asyncio.TimeoutError:
-            self._notes.append(f"MeSH correction did not finish within {self._timeout:.0f} s; query unchanged.")
+            limit = "the search deadline" if budget < self._timeout else f"{self._timeout:.0f} s"
+            self._notes.append(f"MeSH correction did not finish within {limit}; query unchanged.")
             self._result = self._service.unavailable_result(query, diagnostics=diagnostics, observed_count=total)
         except Exception as exc:
             logger.warning("MeSH correction failed (%s)", type(exc).__name__)
