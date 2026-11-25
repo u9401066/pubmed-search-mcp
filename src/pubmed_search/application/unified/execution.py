@@ -42,6 +42,7 @@ from .helpers import DispatchStrategy, RelaxationResult, SearchDepthMetrics
 from .mesh_correction import MESH_CORRECTED_SUFFIX, PubMedMeshCorrector
 from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint, is_seen_article
 from .tiering import (
+    UNADMITTED_PHASES,
     build_broadening_disclosure,
     order_by_retrieval_tier,
     relaxation_provenance,
@@ -322,7 +323,13 @@ async def execute_unified_search(
             for source, (returned, _total) in source_api_counts.items():
                 attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
                 executed_attempts = [attempt for attempt in attempts if attempt.executed]
-                attempt_statuses = {attempt.status for attempt in executed_attempts}
+                # Source status describes the attempts whose records were admitted.
+                # A superseded original or a failed MeSH-corrected re-run never fed
+                # the result; the re-run failure is disclosed by mesh_correction and
+                # its own attempt row instead of degrading a successful source.
+                attempt_statuses = {
+                    attempt.status for attempt in executed_attempts if attempt.phase not in UNADMITTED_PHASES
+                }
                 has_failure = "error" in attempt_statuses
                 has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
                 if has_failure and has_response:
@@ -520,6 +527,12 @@ async def execute_unified_search(
                 "applied": True,
                 "original_query": plan.query,
                 "corrected_query": effective_pubmed_query,
+            }
+        elif corrector is not None and corrector.rerun_status is not None:
+            # The corrected re-run did not complete; the original results stand.
+            source_metadata.setdefault("pubmed", {})["mesh_correction"] = {
+                "applied": False,
+                "rerun_status": corrector.rerun_status,
             }
 
         await progress(5, 10, "Aggregating results...")

@@ -80,6 +80,11 @@ class PubMedMeshCorrector:
     def result(self) -> MeshCorrectionResult | None:
         return self._result
 
+    @property
+    def rerun_status(self) -> str | None:
+        """Status of the corrected exact-tier re-run, ``None`` when none ran."""
+        return self._rerun_status
+
     async def propose(self, query: str, metadata: Mapping[str, Any] | None, total: int | None) -> str | None:
         """Return the corrected query for a flagged exact-tier attempt, else ``None``.
 
