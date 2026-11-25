@@ -54,6 +54,23 @@ problem, and structured search responses too large for an agent context.
   the only reason nothing was returned. Programming errors (including a
   `ValueError` whose text mentions "timeout") stay `unexpected` and are no
   longer retried.
+- **PubMed records now carry their article type, PMCID and open-access flag.**
+  The EFetch parser emits `publication_types` and `pmc_id`, but
+  `article_from_pubmed` read `article_type` and `pmc`, so every PubMed record in
+  `unified_search` and pipelines was `article_type: "unknown"`, `pmc: null`
+  and not open access (0 of 30 in the pilot search; 30 typed and 9 with a PMC
+  copy after the fix). Types follow the study-design precedence (notices are
+  `other`, protocols are not typed as their trial, preprints are `preprint`);
+  PMCIDs are normalized and mark the record `green` as for Europe PMC records.
+  `ranking="quality"` and the quality part of balanced ranking now see the
+  type, Markdown shows the study-type and OA lines, the pipeline
+  `article_types` filter keeps typed PubMed records, pipeline run records
+  export PubMed publication types instead of `unknown`, and PMC-backed PubMed
+  results become eligible for the bounded `fulltext="prefetch"` (at most three
+  Europe PMC XML jobs). Unpaywall enrichment no longer queries records already
+  open in PMC, and a PubMed record indexed as `Preprint` is excluded by default
+  like other detected preprints (`options="include_detected_preprints"` keeps
+  it).
 
 ## [0.11.0] - 2026-11-25
 

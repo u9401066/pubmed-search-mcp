@@ -311,10 +311,10 @@ context (about 1-1.5 KB per PubMed record):
 | `rank`, `pmid`, `doi`, `pmc` | Result position and identifiers (`openalex_id`, `s2_id`, `core_id`, `arxiv_id` when present) |
 | `title`, `year`, `journal` | Bibliographic anchors |
 | `first_author`, `author_count` | First author display name and total number of authors |
-| `publication_types`, `article_type` | Provider-indexed types (PubMed `PublicationType`); not a quality grade |
+| `publication_types`, `article_type` | Provider-indexed types (PubMed `PublicationType`) and the normalized type derived from them (a notice is `other`, a protocol is not typed as its trial); not a quality grade |
 | `abstract_snippet`, `abstract_truncated` | First 400 characters of the abstract (word boundary, `…` when cut) |
 | `source`, `sources` | Primary and contributing providers |
-| `open_access`, `oa_status`, `pdf_available` | Open-access flags |
+| `open_access`, `oa_status`, `pdf_available` | Open-access flags; a PubMed record with a PMCID is `green` (free to read in PMC) |
 | `ranking_score`, `rank_percentile`, `retrieval` | Rank signals (hidden by `no_scores`) and exact/broadened provenance |
 
 The top-level `record_detail` block names the level. For complete records (all

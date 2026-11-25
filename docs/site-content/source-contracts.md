@@ -236,6 +236,14 @@ A successful zero-hit search is `items=[]` with `total=0`. An NCBI outage
 raises `NCBIInfrastructureError`; it is never encoded as an empty page or an
 article-shaped error row.
 
+Each item carries PubMed's `publication_types` and `pmc_id`. The domain
+mapper (`article_from_pubmed`) derives `article_type` from the publication
+types with the study-design precedence, so an erratum or retraction notice is
+`other` and a trial protocol is not typed as the trial it describes. It
+normalizes `pmc_id` to `pmc` (`PMC…`); a PMC copy marks the record free to read
+(`oa_status: green`, PMC article link), the same convention as Europe PMC
+records. The raw `publication_types` remain available on the record.
+
 The canonical low-level date filter is inclusive publication-year
 `min_year`/`max_year`. Retired precise-date aliases are not accepted. Strategy,
 detail level, age, sex, species, language, and clinical-query values must match
