@@ -347,7 +347,7 @@ def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name:
 
     parts = [f'🗑️ Pipeline "{name}" deleted.']
     parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
-    parts.append(f"  - {run_count} execution history record(s) permanently removed")
+    parts.append(f"  - {run_count} execution history record(s), run record sets and screening log permanently removed")
     if scheduled_entry is not None and not schedule_cleanup_failed:
         parts.append("  - Process schedule removed")
     if schedule_cleanup_failed:
@@ -774,7 +774,7 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
 
     @mcp.tool()
     def delete_pipeline(name: PipelineName) -> str:
-        """Permanently delete a saved pipeline configuration and execution history.
+        """Permanently delete a saved pipeline, its execution history and screening log.
 
         For the default tenant, any process-level schedule is removed only
         after the stored pipeline deletion succeeds. Isolated tenants never

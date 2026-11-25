@@ -451,9 +451,10 @@ def _auto_save_pipeline_report(
 
 
 def _screening_observer(pipeline_store: PipelineStore) -> Any:
-    """Return the run observer that feeds new records into screening (none yet)."""
-    del pipeline_store
-    return None
+    """Queue records of complete (exhaustive) runs for screening."""
+    from .pipeline_screening import screening_run_observer
+
+    return screening_run_observer(pipeline_store)
 
 
 def _compact_article(article: Any) -> dict[str, Any]:
@@ -538,6 +539,10 @@ def _exhaustive_next_steps(run: Any) -> dict[str, str]:
         ),
         "export": f'prepare_export(pipeline_run="{name}@{run_id}", format="ris")',
         "prisma_s": f'get_pipeline_history(name="{name}", run_id="{run_id}", view="prisma_s")',
+        "screening_queue": (
+            f'pipeline_screening(request={{"action": "queue", "pipeline": "{name}", "run_id": "{run_id}"}})'
+        ),
+        "prisma_flow": f'pipeline_screening(request={{"action": "flow", "pipeline": "{name}"}})',
         "history": f'get_pipeline_history(name="{name}")',
     }
 

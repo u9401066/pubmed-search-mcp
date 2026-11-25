@@ -602,6 +602,13 @@ class PipelineStore:
         artifacts_dir = self._artifacts_dir_for(scope) / name
         if artifacts_dir.is_dir() and not artifacts_dir.is_symlink():
             shutil.rmtree(artifacts_dir)
+        # The screening log belongs to this pipeline's identification history;
+        # leaving it would silently reattach decisions to a future same-name strategy.
+        screening_db = self._scope_root(scope) / "pipeline_screening" / f"{name}.sqlite3"
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            sidecar = screening_db.with_name(screening_db.name + suffix)
+            if sidecar.is_file():
+                sidecar.unlink()
 
         # Update index
         index = self._load_index(scope)
@@ -820,6 +827,11 @@ class PipelineStore:
 
     def _artifacts_dir_for(self, scope: PipelineScope) -> Path:
         return self._scope_root(scope) / "pipeline_artifacts"
+
+    def screening_db_path(self, name: str) -> Path:
+        """Return the screening-log database path for one saved pipeline."""
+        name = self._validate_name(name)
+        return self._scope_root(self._find_pipeline_scope(name)) / "pipeline_screening" / f"{name}.sqlite3"
 
     def scope_data_dir(self, name: str) -> Path:
         """Return the data root of the scope that owns ``name`` (for sibling stores)."""
