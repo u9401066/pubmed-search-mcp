@@ -3,17 +3,31 @@ Search Strategy Module - Intelligent query generation using NCBI APIs.
 
 Uses:
 - ESpell for spelling correction
-- MeSH database for synonyms and related terms
-- EInfo for query translation
+- MeSH database exact-term lookup (ESearch + ESummary) for descriptors and synonyms
+- PubMed ESearch translation (automatic term mapping) as corroborating evidence
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+import re
+from typing import TYPE_CHECKING, Any
 
 from Bio import Entrez
+from cachetools import TTLCache
+
+from pubmed_search.domain.services.mesh_phrase_matching import (
+    MeshRecord,
+    RecordType,
+    contains_phrase,
+    lookup_variants,
+    matches_for,
+    parse_topic,
+    resolve_matches,
+    select_mappings,
+    term_key,
+)
 
 from .base import (
     DEFAULT_ENTREZ_TOOL,
@@ -23,11 +37,78 @@ from .base import (
     run_entrez_callable,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
 logger = logging.getLogger(__name__)
 
 # Retry settings for NCBI intermittent errors
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
+
+# Exact MeSH lookups: one ESearch per batch of quoted term clauses, one ESummary.
+MESH_LOOKUP_MAX_CLAUSES = 200
+MESH_LOOKUP_RETMAX = 500
+MESH_SUBSTANCE_MAX_TOKENS = 3
+MESH_CACHE_TTL = 6 * 60 * 60
+MESH_CACHE_SIZE = 4096
+
+_ATM_VOCABULARY_TERM = re.compile(r'"([^"]+)"\[(?:MeSH Terms|Supplementary Concept)(?::noexp)?\]', re.IGNORECASE)
+
+
+def _mesh_uids(result: Any) -> list[str]:
+    """Validated UIDs from a db=mesh ESearch record; they are later comma-joined into ESummary."""
+    uids = [str(uid) for uid in result.get("IdList", [])]
+    if any(not uid.isascii() or not uid.isdecimal() for uid in uids):
+        raise ValueError("Invalid MeSH identifiers")
+    return uids
+
+
+def _mesh_record_from_summary(summary: Any) -> MeshRecord | None:
+    """Reduce one db=mesh ESummary document to a matchable record.
+
+    Qualifier (subheading) and pharmacological-action records are skipped:
+    they are not standalone PubMed MeSH Terms and would shadow descriptors.
+    """
+    uid = str(summary["Id"])
+    terms = [str(term).strip() for term in summary["DS_MeshTerms"] if str(term).strip()]
+    if not uid.isascii() or not uid.isdecimal():
+        raise ValueError("Invalid MeSH identifier")
+    if not terms:
+        return None
+    trees = [str(link["TreeNum"]) for link in summary.get("DS_IdxLinks") or [] if link.get("TreeNum")]
+    record_type: RecordType
+    if summary.get("DS_HeadingMappedToList") or (trees and all(tree.startswith("@") for tree in trees)):
+        record_type = "supplementary_concept"
+    elif any(tree.startswith("Y") for tree in trees) or summary.get("DS_PaList"):
+        return None
+    elif trees and all(tree.startswith("V") for tree in trees):
+        record_type = "publication_type"
+    else:
+        record_type = "descriptor"
+    return MeshRecord(
+        uid=uid,
+        preferred=terms[0],
+        entry_terms=tuple(dict.fromkeys(term for term in terms[1:] if term != terms[0])),
+        tree_numbers=tuple(tree for tree in trees if not tree.startswith("@")),
+        record_type=record_type,
+    )
+
+
+def _atm_proposals(translation_set: Any) -> list[tuple[str, tuple[str, ...]]]:
+    """Extract (source phrase, vocabulary names) pairs from a PubMed TranslationSet."""
+    if not isinstance(translation_set, list):
+        return []
+    proposals: list[tuple[str, tuple[str, ...]]] = []
+    for item in translation_set:
+        try:
+            source = str(item["From"]).strip()
+            names = tuple(dict.fromkeys(_ATM_VOCABULARY_TERM.findall(str(item["To"]))))
+        except (KeyError, TypeError):
+            continue
+        if source and names:
+            proposals.append((source, names))
+    return proposals
 
 
 async def _read_entrez_handle(handle: Any) -> Any:
@@ -52,8 +133,8 @@ class SearchStrategyGenerator:
 
     Features:
     - Spelling correction via ESpell
-    - MeSH term lookup for standardized vocabulary
-    - Synonym expansion from MeSH
+    - MeSH mapping accepted only on preferred-term or entry-term equality
+    - Synonym expansion from confirmed MeSH records
     - Query translation analysis
     """
 
@@ -63,6 +144,8 @@ class SearchStrategyGenerator:
         self._email = email
         self._api_key = api_key
         self._tool = DEFAULT_ENTREZ_TOOL
+        # Public vocabulary only; keyed by term_key, negative results included.
+        self._mesh_cache: TTLCache[str, tuple[MeshRecord, ...]] = TTLCache(maxsize=MESH_CACHE_SIZE, ttl=MESH_CACHE_TTL)
 
     async def _execute_entrez(self, operation, *, service_name: str, timeout: float = 45.0):
         return await execute_entrez_operation(
@@ -113,161 +196,250 @@ class SearchStrategyGenerator:
             return corrected, True
         return query, False
 
-    async def get_mesh_info(self, term: str) -> dict[str, Any] | None:
+    async def lookup_mesh_records(self, phrases: Iterable[str]) -> dict[str, tuple[MeshRecord, ...]]:
+        """Find MeSH records holding a phrase as an exact term, keyed by ``term_key``.
+
+        Each phrase is searched only as quoted MeSH Terms (descriptor headings and
+        entry terms) plus, for short phrases, Substance Name; free-text MeSH
+        searches are never issued because they match scope notes. Results,
+        including empty ones, are cached per normalized key. All uncached
+        phrases share batched ESearch requests and one ESummary request.
         """
-        Get MeSH information for a term including synonyms.
+        phrases = list(phrases)
+        requested: dict[str, list[str]] = {}
+        for phrase in phrases:
+            key = term_key(phrase)
+            if key and key not in self._mesh_cache:
+                requested.setdefault(key, []).append(phrase)
 
-        Uses multiple search strategies for best results:
-        1. First try term[MeSH Terms] for exact MeSH matching
-        2. Fall back to quoted search if needed
+        if requested:
+            clauses: list[str] = []
+            for group in requested.values():
+                for phrase in dict.fromkeys(group):
+                    clauses.extend(f'"{variant}"[MeSH Terms]' for variant in lookup_variants(phrase))
+                    if len(phrase.split()) <= MESH_SUBSTANCE_MAX_TOKENS:
+                        clauses.append(f'"{phrase}"[Substance Name]')
+            unique_clauses = list(dict.fromkeys(clauses))
+            uids: list[str] = []
+            for offset in range(0, len(unique_clauses), MESH_LOOKUP_MAX_CLAUSES):
+                batch = unique_clauses[offset : offset + MESH_LOOKUP_MAX_CLAUSES]
+                uids.extend(await self._search_mesh_uids(" OR ".join(batch)))
+            records = await self._fetch_mesh_records(list(dict.fromkeys(uids))) if uids else []
+            for key in requested:
+                self._mesh_cache[key] = tuple(record for record in records if key in record.term_keys)
 
-        Returns:
-            Dict with mesh_id, preferred_term, synonyms, tree_numbers
-        """
+        return {key: self._mesh_cache.get(key, ()) for key in (term_key(phrase) for phrase in phrases) if key}
 
-        async def _search_mesh_exact():
-            """Try exact MeSH term search first."""
+    async def _search_mesh_uids(self, term: str) -> list[str]:
+        async def _do_search() -> Any:
             handle = await asyncio.to_thread(
                 run_entrez_callable,
                 Entrez,
                 Entrez.esearch,
                 db="mesh",
-                term=f"{term}[MeSH Terms]",
-                retmax=1,
+                term=term,
+                retmax=MESH_LOOKUP_RETMAX,
                 email=self._email,
                 api_key=self._api_key,
                 tool=self._tool,
             )
             return await _read_entrez_handle(handle)
 
-        async def _search_mesh_quoted():
-            """Fall back to quoted search."""
-            handle = await asyncio.to_thread(
-                run_entrez_callable,
-                Entrez,
-                Entrez.esearch,
-                db="mesh",
-                term=f'"{term}"',
-                retmax=1,
-                email=self._email,
-                api_key=self._api_key,
-                tool=self._tool,
-            )
-            return await _read_entrez_handle(handle)
-
-        async def _fetch_mesh_text(mesh_id):
-            # Use text mode - more reliable than XML
-            handle = await asyncio.to_thread(
-                run_entrez_callable,
-                Entrez,
-                Entrez.efetch,
-                db="mesh",
-                id=mesh_id,
-                rettype="full",
-                retmode="text",
-                email=self._email,
-                api_key=self._api_key,
-                tool=self._tool,
-            )
-            return await _read_text_handle(handle)
-
-        def _parse_mesh_text(content: str) -> dict[str, Any]:
-            """Parse MeSH text format to extract info."""
-            lines = content.strip().split("\n")
-
-            result: dict[str, Any] = {
-                "preferred_term": "",
-                "synonyms": [],
-                "tree_numbers": [],
-                "description": "",
-            }
-
-            # First line format: "1: Term Name"
-            if lines and lines[0].strip().startswith("1:"):
-                # Extract term name after "1:"
-                first_line = lines[0].strip()
-                result["preferred_term"] = first_line[2:].strip()
-
-            # Parse Entry Terms section
-            in_entry_terms = False
-            for line in lines:
-                if "Entry Terms:" in line:
-                    in_entry_terms = True
-                    continue
-                if in_entry_terms:
-                    stripped = line.strip()
-                    # Stop at empty line or new section
-                    if not stripped or stripped.startswith(("Previous", "All MeSH")):
-                        in_entry_terms = False
-                        continue
-                    if stripped:
-                        result["synonyms"].append(stripped)
-
-            # Parse Tree Numbers - format: "Tree Number(s): E03.295"
-            for line in lines:
-                if line.strip().startswith("Tree Number(s):"):
-                    # Tree number is on same line after colon
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        tree_str = parts[1].strip()
-                        result["tree_numbers"] = [t.strip() for t in tree_str.split(",") if t.strip()]
-                    break
-
-            return result
-
-        # Strategy 1: Try exact MeSH term search first.
         try:
-            result = await self._execute_entrez(
-                _search_mesh_exact,
-                service_name="ncbi-strategy:mesh-esearch",
-            )
+            result = await self._execute_entrez(_do_search, service_name="ncbi-strategy:mesh-esearch")
         except Exception as exc:
             raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
         try:
-            mesh_ids = result.get("IdList", [])
+            return _mesh_uids(result)
         except (AttributeError, TypeError, ValueError) as exc:
             raise_ncbi_infrastructure_error("strategy MeSH search response", exc)
 
-        # Strategy 2: Fall back to quoted search. A provider failure raises;
-        # only a successful pair of empty searches means "no matching term".
-        if not mesh_ids:
-            try:
-                result = await self._execute_entrez(
-                    _search_mesh_quoted,
-                    service_name="ncbi-strategy:mesh-esearch",
-                )
-            except Exception as exc:
-                raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
-            try:
-                mesh_ids = result.get("IdList", [])
-            except (AttributeError, TypeError, ValueError) as exc:
-                raise_ncbi_infrastructure_error("strategy MeSH search response", exc)
+    async def _fetch_mesh_records(self, uids: list[str]) -> list[MeshRecord]:
+        async def _do_summary() -> Any:
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.esummary,
+                db="mesh",
+                id=",".join(uids),
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
+            )
+            return await _read_entrez_handle(handle)
 
-        if not mesh_ids:
-            return None
-
-        mesh_id = mesh_ids[0]
         try:
-            content = await self._execute_entrez(
-                lambda: _fetch_mesh_text(mesh_id),
-                service_name="ncbi-strategy:mesh-efetch",
+            summaries = await self._execute_entrez(
+                _do_summary,
+                service_name="ncbi-strategy:mesh-esummary",
                 timeout=60.0,
             )
         except Exception as exc:
             raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
-        if not content:
-            return None
-
         try:
-            parsed = _parse_mesh_text(content)
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise_ncbi_infrastructure_error("strategy MeSH fetch response", exc)
+            return [record for summary in summaries if (record := _mesh_record_from_summary(summary)) is not None]
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy MeSH summary response", exc)
+
+    async def get_mesh_info(self, term: str) -> dict[str, Any] | None:
+        """
+        Get the MeSH record whose preferred term or entry term equals ``term``.
+
+        Equality ignores case, punctuation/hyphen spacing and simple plurals.
+        A record that merely mentions the words (for example in its scope note)
+        is not returned, and neither is a phrase claimed by several records.
+
+        Returns:
+            Dict with mesh_id, preferred_term, synonyms, tree_numbers, record_type,
+            search_field, matched_on and matched_term; None when no record matches.
+        """
+        records = await self.lookup_mesh_records([term])
+        match = resolve_matches(matches_for(term, records.get(term_key(term), ())))
+        if match is None:
+            return None
+        record = match.record
         return {
-            "mesh_id": mesh_id,
-            "preferred_term": parsed["preferred_term"] or term,
-            "synonyms": parsed["synonyms"][:10],
-            "tree_numbers": parsed["tree_numbers"],
+            "mesh_id": record.uid,
+            "preferred_term": record.preferred,
+            "synonyms": record.text_synonyms(10),
+            "tree_numbers": list(record.tree_numbers),
+            "record_type": record.record_type,
+            "search_field": record.search_field,
+            "matched_on": match.matched_on,
+            "matched_term": match.matched_term,
         }
+
+    async def _pubmed_mesh_proposals(self, topic: str) -> list[tuple[str, tuple[str, ...]]] | None:
+        """PubMed automatic term mapping for the topic, or None when unavailable."""
+        try:
+            analysis = await self.analyze_query(topic)
+        except NCBIInfrastructureError:
+            return None
+        return _atm_proposals(analysis.get("translation_set") if isinstance(analysis, dict) else None)
+
+    async def _map_topic_to_mesh(self, topic: str) -> dict[str, Any]:
+        """Confirmed MeSH mappings, review candidates and unmapped phrases for one topic."""
+        phrases = parse_topic(topic)
+        proposals = await self._pubmed_mesh_proposals(topic)
+        atm_names = [name for _, names in proposals or [] for name in names]
+        lookups = list(dict.fromkeys([candidate.text for candidate in phrases.candidates] + atm_names))
+        mesh_coverage: dict[str, Any] = {
+            "status": "completed",
+            "attempted": int(bool(lookups)),
+            "completed": int(bool(lookups)),
+            "failed": 0,
+            "matched": 0,
+            "unconfirmed": 0,
+            "phrases_checked": 0,
+        }
+        outcome: dict[str, Any] = {
+            "mesh_terms": [],
+            "mesh_candidates": [],
+            "unmapped_phrases": [],
+            "warnings": [],
+            "mesh_coverage": mesh_coverage,
+            "atm_coverage": {
+                "status": "completed" if proposals is not None else "failed",
+                "attempted": 1,
+                "completed": int(proposals is not None),
+                "failed": int(proposals is None),
+            },
+        }
+        if phrases.truncated:
+            outcome["warnings"].append(
+                f"Only the first {len(phrases.tokens)} topic words were checked against MeSH; "
+                "split long topics into concepts."
+            )
+        try:
+            records_by_key = await self.lookup_mesh_records(lookups) if lookups else {}
+        except NCBIInfrastructureError:
+            mesh_coverage.update(status="failed", completed=0, failed=1)
+            outcome["warnings"].append("NCBI MeSH analysis was unavailable for one or more terms.")
+            outcome["unmapped_phrases"] = list(select_mappings(phrases, {}).unmapped)
+            return outcome
+
+        selection = select_mappings(phrases, records_by_key)
+        atm_by_key: dict[str, set[str]] = {}
+        for source, names in proposals or []:
+            atm_by_key.setdefault(term_key(source), set()).update(name.casefold() for name in names)
+
+        for mapping in selection.confirmed:
+            record = mapping.match.record
+            entry: dict[str, Any] = {
+                "input": mapping.phrase.text,
+                "preferred": record.preferred,
+                "synonyms": record.text_synonyms(5),
+                "mesh_id": record.uid,
+                "record_type": record.record_type,
+                "search_field": record.search_field,
+                "tree_numbers": list(record.tree_numbers),
+                "matched_on": mapping.match.matched_on,
+                "matched_term": mapping.match.matched_term,
+                "pubmed_atm": None,  # PubMed translation unavailable
+            }
+            if proposals is not None:
+                proposed = atm_by_key.get(term_key(mapping.phrase.text), set())
+                entry["pubmed_atm"] = (
+                    "agrees" if record.preferred.casefold() in proposed else "differs" if proposed else "not_mapped"
+                )
+                if entry["pubmed_atm"] == "differs":
+                    entry["pubmed_atm_terms"] = sorted(proposed)
+            outcome["mesh_terms"].append(entry)
+
+        for item in selection.ambiguous:
+            outcome["mesh_candidates"].append(
+                {
+                    "input": item.phrase.text,
+                    "candidates": [
+                        {
+                            "preferred": match.record.preferred,
+                            "mesh_id": match.record.uid,
+                            "record_type": match.record.record_type,
+                            "matched_on": match.matched_on,
+                            "matched_term": match.matched_term,
+                        }
+                        for match in item.matches
+                    ],
+                    "reason": "ambiguous_exact_term",
+                    "note": "The phrase is an exact term of several MeSH records; choose one explicitly.",
+                }
+            )
+
+        claimed = [mapping.phrase.text for mapping in selection.confirmed]
+        claimed.extend(item.phrase.text for item in selection.ambiguous)
+        for source, names in proposals or []:
+            if any(contains_phrase(text, source) for text in claimed):
+                continue
+            for name in names:
+                proposed_record = next(
+                    (
+                        match.record
+                        for match in matches_for(name, records_by_key.get(term_key(name), ()))
+                        if match.matched_on == "preferred"
+                    ),
+                    None,
+                )
+                outcome["mesh_candidates"].append(
+                    {
+                        "input": source,
+                        "preferred": proposed_record.preferred if proposed_record else name,
+                        "mesh_id": proposed_record.uid if proposed_record else None,
+                        "record_type": proposed_record.record_type if proposed_record else None,
+                        "reason": "pubmed_atm_only",
+                        "note": (
+                            "PubMed automatic term mapping links this phrase to the record, "
+                            "but the phrase is not its preferred term or an entry term."
+                        ),
+                    }
+                )
+
+        outcome["unmapped_phrases"] = list(selection.unmapped)
+        mesh_coverage.update(
+            matched=len(outcome["mesh_terms"]),
+            unconfirmed=len(outcome["mesh_candidates"]),
+            phrases_checked=len({term_key(text) for text in lookups} - {""}),
+        )
+        return outcome
 
     async def _query_record(self, query: str, retmax: int, *, preview: bool = False) -> Any:
         async def _do_esearch():
@@ -355,7 +527,9 @@ class SearchStrategyGenerator:
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
 
         The Agent (or a lightweight LLM like minimind) can decide how to use these materials:
-        - Use mesh_terms to build MeSH queries
+        - Use mesh_terms (confirmed exact preferred/entry-term matches) to build MeSH queries
+        - Review mesh_candidates (ambiguous or PubMed-ATM-only links) before using them
+        - Cover unmapped_phrases with free-text terms
         - Use synonyms for query expansion
         - Use corrected spelling or not
         - Generate its own query combinations
@@ -377,14 +551,17 @@ class SearchStrategyGenerator:
             analyze_queries: Whether to analyze how PubMed interprets each query
 
         Returns:
-            Dict with raw materials (spelling, mesh_terms, keywords) and optional suggestions
+            Dict with raw materials (spelling, mesh_terms, mesh_candidates,
+            unmapped_phrases, keywords) and optional suggestions
         """
         result: dict[str, Any] = {
             "topic": topic,
             "corrected_topic": topic,  # May be updated by spell check
             "spelling": None,
             "keywords": [],  # Extracted keywords from topic
-            "mesh_terms": [],  # MeSH data for Agent to use
+            "mesh_terms": [],  # Confirmed MeSH mappings with match evidence
+            "mesh_candidates": [],  # Unconfirmed links that need review, with reasons
+            "unmapped_phrases": [],  # Topic phrases without a confirmed MeSH term
             "all_synonyms": [],  # Flattened list of all synonyms
             # Optional: pre-built suggestions (Agent can ignore)
             "suggested_queries": [] if include_suggestions else None,
@@ -401,6 +578,14 @@ class SearchStrategyGenerator:
                     "completed": 0,
                     "failed": 0,
                     "matched": 0,
+                    "unconfirmed": 0,
+                    "phrases_checked": 0,
+                },
+                "pubmed_atm": {
+                    "status": "pending" if use_mesh else "disabled",
+                    "attempted": 0,
+                    "completed": 0,
+                    "failed": 0,
                 },
                 "query_analysis": {
                     "status": "pending" if include_suggestions and analyze_queries else "disabled",
@@ -442,9 +627,9 @@ class SearchStrategyGenerator:
                     working_topic = corrected
                     result["corrected_topic"] = corrected
 
-        # Step 2: Extract key terms and lookup MeSH
+        # Step 2: Map stopword-bounded topic phrases to MeSH, longest first.
+        # Only exact preferred/entry-term matches become mesh_terms.
         words = working_topic.split()
-        mesh_data = {}
         stop_words = {
             "and",
             "or",
@@ -459,79 +644,13 @@ class SearchStrategyGenerator:
         }
 
         if use_mesh:
-            mesh_lookups = 0
-            mesh_completed = 0
-            mesh_failures = 0
-            mesh_available = True
-
-            async def _lookup_mesh(term: str) -> dict[str, Any] | None:
-                nonlocal mesh_available, mesh_completed, mesh_failures, mesh_lookups
-                if not mesh_available:
-                    return None
-                mesh_lookups += 1
-                try:
-                    mesh_info = await self.get_mesh_info(term)
-                except NCBIInfrastructureError:
-                    mesh_failures += 1
-                    mesh_available = False
-                    return None
-                mesh_completed += 1
-                return mesh_info
-
-            # Try full topic first
-            full_mesh = await _lookup_mesh(working_topic)
-            if full_mesh:
-                mesh_data[working_topic] = full_mesh
-                result["mesh_terms"].append(
-                    {
-                        "input": working_topic,
-                        "preferred": full_mesh["preferred_term"],
-                        "synonyms": full_mesh["synonyms"][:5],
-                    }
-                )
-
-            # Try bigrams (two-word phrases) - often match MeSH better
-            # e.g. "mechanical ventilation" instead of just "mechanical"
-            for i in range(len(words) - 1):
-                bigram = f"{words[i]} {words[i + 1]}"
-                if bigram.lower() not in stop_words:
-                    bigram_mesh = await _lookup_mesh(bigram)
-                    if bigram_mesh and bigram not in mesh_data:
-                        mesh_data[bigram] = bigram_mesh
-                        result["mesh_terms"].append(
-                            {
-                                "input": bigram,
-                                "preferred": bigram_mesh["preferred_term"],
-                                "synonyms": bigram_mesh["synonyms"][:3],
-                            }
-                        )
-
-            # Try individual significant words (if not covered by bigrams)
-            covered_words = set()
-            for key in mesh_data:
-                covered_words.update(key.lower().split())
-
-            for word in words:
-                if len(word) > 3 and word.lower() not in stop_words and word.lower() not in covered_words:
-                    word_mesh = await _lookup_mesh(word)
-                    if word_mesh and word not in mesh_data:
-                        mesh_data[word] = word_mesh
-                        result["mesh_terms"].append(
-                            {
-                                "input": word,
-                                "preferred": word_mesh["preferred_term"],
-                                "synonyms": word_mesh["synonyms"][:3],
-                            }
-                        )
-            result["coverage"]["mesh"] = {
-                "status": ("completed" if not mesh_failures else "partial" if mesh_completed else "failed"),
-                "attempted": mesh_lookups,
-                "completed": mesh_completed,
-                "failed": mesh_failures,
-                "matched": len(mesh_data),
-            }
-            if mesh_failures:
-                result["warnings"].append("NCBI MeSH analysis was unavailable for one or more terms.")
+            mapping = await self._map_topic_to_mesh(working_topic)
+            result["mesh_terms"] = mapping["mesh_terms"]
+            result["mesh_candidates"] = mapping["mesh_candidates"]
+            result["unmapped_phrases"] = mapping["unmapped_phrases"]
+            result["coverage"]["mesh"] = mapping["mesh_coverage"]
+            result["coverage"]["pubmed_atm"] = mapping["atm_coverage"]
+            result["warnings"].extend(mapping["warnings"])
 
         # Extract keywords for Agent to use
         result["keywords"] = [w for w in words if w.lower() not in stop_words and len(w) > 2]
@@ -583,36 +702,34 @@ class SearchStrategyGenerator:
             )
             query_id += 1
 
-        # MeSH-based queries
-        if mesh_data:
-            # Use preferred MeSH terms
-            for term, data in list(mesh_data.items())[:2]:
-                preferred = data["preferred_term"]
-                if preferred != term:
+        # MeSH-based queries: confirmed mappings only, never unconfirmed candidates.
+        confirmed = result["mesh_terms"]
+        for mesh in confirmed[:2]:
+            queries.append(
+                {
+                    "id": f"q{query_id}_mesh",
+                    "query": f'"{mesh["preferred"]}"[{mesh["search_field"]}]',
+                    "purpose": (
+                        f"MeSH {mesh['matched_on'].replace('_', ' ')} match: {mesh['input']} → {mesh['preferred']}"
+                    ),
+                    "priority": 2,
+                }
+            )
+            query_id += 1
+
+        # Use synonyms for expansion
+        if strategy in ["comprehensive", "exploratory"]:
+            for mesh in confirmed[:1]:
+                for syn in mesh.get("synonyms", [])[:2]:
                     queries.append(
                         {
-                            "id": f"q{query_id}_mesh",
-                            "query": f'"{preferred}"[MeSH Terms]',
-                            "purpose": f"MeSH standardized: {term} → {preferred}",
-                            "priority": 2,
+                            "id": f"q{query_id}_syn",
+                            "query": f"({syn})[Title/Abstract]",
+                            "purpose": f"MeSH synonym: {mesh['input']} → {syn}",
+                            "priority": 3,
                         }
                     )
                     query_id += 1
-
-            # Use synonyms for expansion
-            if strategy in ["comprehensive", "exploratory"]:
-                for term, data in list(mesh_data.items())[:1]:
-                    synonyms = data.get("synonyms", [])[:2]
-                    for syn in synonyms:
-                        queries.append(
-                            {
-                                "id": f"q{query_id}_syn",
-                                "query": f"({syn})[Title/Abstract]",
-                                "purpose": f"MeSH synonym: {term} → {syn}",
-                                "priority": 3,
-                            }
-                        )
-                        query_id += 1
 
         # Strategy-specific queries
         if strategy == "comprehensive":

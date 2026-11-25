@@ -56,8 +56,10 @@ generate_search_queries(
 
 ### 你真正要用的欄位
 
-- `mesh_terms`: 標準詞彙與對應同義詞
-- `all_synonyms`: 可直接組 OR 群組
+- `mesh_terms`: 已確認的 MeSH 對應。只有主題片語（忽略大小寫、連字號間距與簡單複數）等於該紀錄的 preferred term 或 entry term 才會列入；`matched_on`/`matched_term` 是比對證據，`pubmed_atm` 表示 PubMed 自動詞彙對應是否一致
+- `mesh_candidates`: 未確認的連結與 `reason`（`pubmed_atm_only`、`ambiguous_exact_term`）；採用前先人工確認，不要直接當成 `[MeSH Terms]`
+- `unmapped_phrases`: 沒有確認 MeSH 的主題片語，用 `[Title/Abstract]` 自由詞涵蓋
+- `all_synonyms`: 已確認對應的同義詞，可直接組 OR 群組
 - `suggested_queries`: 當作參考，不是最後答案
 - `pubmed_translation`: 檢查 PubMed 實際如何理解查詢
 

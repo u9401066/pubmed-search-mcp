@@ -90,8 +90,10 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         Features:
         - Spelling correction via NCBI ESpell
-        - MeSH term lookup for standardized vocabulary
-        - Synonym expansion from MeSH database
+        - MeSH lookup of stopword-bounded topic phrases, longest first; a phrase
+          maps only when it equals a record's preferred term or an entry term
+          (ignoring case, hyphen spacing and simple plurals)
+        - Synonym expansion from confirmed MeSH records
         - **Query analysis**: Shows how PubMed actually interprets each query
           (Agent's understanding vs PubMed's actual interpretation)
 
@@ -108,9 +110,17 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             JSON with RAW MATERIALS:
             - corrected_topic: Spell-checked topic
             - keywords: Extracted significant keywords
-            - mesh_terms: MeSH data with preferred terms and synonyms
-            - all_synonyms: Flattened list of all synonyms
-            - suggested_queries: Optional pre-built queries with:
+            - mesh_terms: Confirmed mappings only. Each has input, preferred,
+              synonyms, mesh_id, search_field, matched_on ("preferred" or
+              "entry_term"), matched_term and pubmed_atm (whether PubMed's own
+              automatic term mapping agrees, differs or does not map the phrase)
+            - mesh_candidates: Unconfirmed links with a reason
+              ("pubmed_atm_only", "ambiguous_exact_term"); review before use
+            - unmapped_phrases: Topic phrases without a confirmed MeSH term;
+              cover them with free-text [Title/Abstract] terms
+            - all_synonyms: Flattened synonyms of confirmed mappings
+            - suggested_queries: Optional pre-built queries (MeSH clauses come
+              from confirmed mappings only) with:
               - estimated_count: How many results PubMed would return
               - pubmed_translation: How PubMed actually interprets the query
         """
@@ -157,7 +167,8 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 # Add usage hint (Agent can ignore)
                 result["_hint"] = {
                     "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
-                    "example_mesh_query": '"{preferred_term}"[MeSH Terms]',
+                    "mesh_review": "mesh_terms are exact preferred/entry-term matches; verify mesh_candidates and cover unmapped_phrases with text words",
+                    "example_mesh_query": '"{preferred}"[{search_field}]',
                     "example_synonym_query": "({synonym})[Title/Abstract]",
                     "note": 'Check pubmed_translation. To preview combined blocks use analyze_search_query(query=fixed_scope, comparison={"blocks": named_clauses}).',
                 }
