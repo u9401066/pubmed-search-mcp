@@ -485,6 +485,143 @@ async def test_conflicting_title_withholds_corrections_for_identifier_match(pubm
     )
 
 
+# A real-looking record that shares nothing with the ENGAGES citation except a
+# cited identifier pointing at it (a transcription error or a fabricated PMID).
+UNRELATED_CIRCULATION = _record(
+    "90000099",
+    title="Totally unrelated cardiology paper.",
+    authors=["Zhang W"],
+    journal="Circulation",
+    journal_abbrev="Circulation",
+    year="2010",
+    volume="122",
+    issue="2",
+    pages="100-110",
+    doi="10.1161/circ.2010.000001",
+)
+ENGAGES_TITLE = (
+    "Effect of electroencephalography-guided anesthetic administration on postoperative delirium among older "
+    "adults undergoing major surgery: the ENGAGES randomized clinical trial"
+)
+_PMID_FIX = {"field": "pmid", "cited": "90000099", "pubmed": "30721296"}
+_YEAR_FIX = {"field": "year", "cited": "2018", "pubmed": "2019"}
+
+
+@pytest.mark.parametrize(
+    ("reference", "method", "attempted", "corrections"),
+    [
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099",
+            "ecitmatch",
+            ["pmid", "ecitmatch"],
+            [_PMID_FIX],
+            id="pmid-found-by-ecitmatch",
+        ),
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2018;321(5):473-483. PMID: 90000099",
+            "metadata_search",
+            ["pmid", "ecitmatch", "metadata_search"],
+            [_YEAR_FIX, _PMID_FIX],
+            id="pmid-and-year-wrong-found-by-locator-search",
+        ),
+        pytest.param(
+            f"Wildes TS, Mickle AM. {ENGAGES_TITLE}. JAMA. 2018;320(5):473-483. PMID: 90000099",
+            "title_search",
+            ["pmid", "ecitmatch", "title_search"],
+            [_YEAR_FIX, {"field": "volume", "cited": "320", "pubmed": "321"}, _PMID_FIX],
+            id="pmid-with-title-found-by-title-search",
+        ),
+        pytest.param(
+            "Wildes TS, et al. JAMA. 2018;321(5):473-483. doi:10.1161/circ.2010.000001",
+            "metadata_search",
+            ["doi_search", "ecitmatch", "metadata_search"],
+            [_YEAR_FIX, {"field": "doi", "cited": "10.1161/circ.2010.000001", "pubmed": "10.1001/jama.2018.22005"}],
+            id="doi-and-year-wrong-found-by-locator-search",
+        ),
+    ],
+)
+async def test_identifier_contradicted_by_every_cited_field_does_not_stop_resolution(
+    reference: str, method: str, attempted: list[str], corrections: list[dict[str, str]]
+) -> None:
+    pubmed = FakePubMed([*PUBMED_RECORDS, UNRELATED_CIRCULATION])
+    row = await ReferenceVerificationService(pubmed).verify_reference(reference, index=1)
+
+    assert row["status"] == "partial_match"
+    assert row["matched_article"]["pmid"] == "30721296"
+    assert row["resolution_method"] == method
+    assert row["attempted_strategies"] == attempted
+    assert row["corrections"] == corrections
+    assessment = row["identifier_assessment"]
+    assert assessment["assessment"] == "probably_wrong"
+    assert assessment["resolved_article"]["pmid"] == "90000099"
+    assert assessment["agreeing_fields"] == []
+    assert assessment["replaced_by_pmid"] == "30721296"
+    assert any(f"is probably wrong; PMID 30721296 found via {method}" in note for note in row["notes"])
+
+
+async def test_identifier_contradicted_by_every_cited_field_without_alternative_is_unresolved() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    report = await ReferenceVerificationService(pubmed).verify_reference_list(
+        "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099"
+    )
+    row = report["results"][0]
+
+    assert row["status"] == "unresolved"
+    assert row["matched_article"] is None
+    assert row["corrections"] == []
+    # The cited PMID does not short-circuit ECitMatch or the year-tolerant search.
+    assert row["attempted_strategies"] == ["pmid", "ecitmatch", "metadata_search"]
+    assert len(pubmed.ecitmatch_calls) == 1
+    assert any("[1au]" in query for query, _kwargs in pubmed.search_calls)
+    assessment = row["identifier_assessment"]
+    assert {key: assessment[key] for key in ("field", "cited", "assessment", "replaced_by_pmid")} == {
+        "field": "pmid",
+        "cited": "90000099",
+        "assessment": "probably_wrong",
+        "replaced_by_pmid": None,
+    }
+    assert assessment["agreeing_fields"] == []
+    assert assessment["conflicting_fields"] == ["first_author", "journal", "year", "volume", "first_page"]
+    assert assessment["resolved_article"]["journal"] == "Circulation"
+    notes = " ".join(row["notes"])
+    assert "The cited PMID 90000099 resolves to PMID 90000099 (Circulation 2010)" in notes
+    assert "the PMID is probably wrong" in notes
+    assert "No PubMed record was found after" in notes
+    queue_item = report["review_workflow"]["review_queue"][0]
+    assert queue_item["review_priority"] == "high"
+    assert "PMID 90000099 is probably wrong" in queue_item["review_reason"]
+
+
+async def test_failed_search_after_contradicted_identifier_keeps_the_identifier_evidence() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    pubmed.fail_queries = ("[1au]",)
+    row = await ReferenceVerificationService(pubmed).verify_reference(
+        "Wildes TS, et al. JAMA. 2019;321(5):473-483. PMID: 90000099", index=1
+    )
+
+    assert row["status"] == "source_unavailable"
+    assert row["source_errors"] == [{"source": "PubMed metadata search", "error": "upstream source unavailable"}]
+    assert row["identifier_assessment"]["assessment"] == "probably_wrong"
+    assert "the PMID is probably wrong" in row["notes"][0]
+
+
+async def test_identifier_record_agreeing_on_one_field_is_kept_without_corrections() -> None:
+    pubmed = FakePubMed([UNRELATED_CIRCULATION])
+    row = await ReferenceVerificationService(pubmed).verify_reference(
+        "Zhang W. JAMA. 2019;321(5):473-483. PMID: 90000099", index=1
+    )
+
+    assert row["status"] == "partial_match"
+    assert row["resolution_method"] == "pmid"
+    assert row["matched_article"]["pmid"] == "90000099"
+    assert row["corrections"] == []
+    assert row["attempted_strategies"] == ["pmid", "ecitmatch", "metadata_search"]
+    assert row["identifier_assessment"]["assessment"] == "weakly_corroborated"
+    assert row["identifier_assessment"]["agreeing_fields"] == ["first_author"]
+    assert row["identifier_assessment"]["replaced_by_pmid"] is None
+    assert "only first_author agrees with PMID 90000099 besides the cited PMID" in row["corrections_withheld_reason"]
+
+
 async def test_equally_good_versions_withhold_corrections() -> None:
     twins = [
         _record(

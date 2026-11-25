@@ -109,6 +109,30 @@ class _SearchSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class _IdentifierCheck:
+    """A cited PMID/DOI whose PubMed record the other cited fields do not corroborate.
+
+    The identifier is only the lookup key, so its own match proves nothing
+    about the citation. When no other cited field agrees, the identifier is
+    probably wrong (a typo or a fabricated reference).
+    """
+
+    method: Literal["pmid", "doi_search"]
+    article: dict[str, Any]
+    evidence: IdentityEvidence
+
+    @property
+    def field(self) -> Literal["pmid", "doi"]:
+        """Cited identifier field that was looked up."""
+        return "pmid" if self.method == "pmid" else "doi"
+
+    @property
+    def probably_wrong(self) -> bool:
+        """Whether every other comparable cited field contradicts the record."""
+        return not self.evidence.agreeing
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolutionOutcome:
     """Internal resolution result that preserves upstream availability."""
 
@@ -118,6 +142,7 @@ class _ResolutionOutcome:
     attempted: tuple[ResolutionMethod, ...] = ()
     skipped: tuple[ResolutionMethod, ...] = ()
     selection: _SearchSelection | None = None
+    identifier_check: _IdentifierCheck | None = None
 
 
 class ReferenceVerificationService:
@@ -437,7 +462,11 @@ class ReferenceVerificationService:
             article_cache=article_cache,
         )
         if outcome.article is None and outcome.unavailable_sources:
-            return self._source_unavailable_row(parsed, outcome.unavailable_sources, attempted=outcome.attempted)
+            row = self._source_unavailable_row(parsed, outcome.unavailable_sources, attempted=outcome.attempted)
+            if outcome.identifier_check is not None:
+                row["notes"].insert(0, self._identifier_note(parsed, outcome))
+                row["identifier_assessment"] = self._identifier_assessment(parsed, outcome)
+            return row
 
         article = outcome.article
         method = outcome.method
@@ -476,6 +505,8 @@ class ReferenceVerificationService:
         }
         if withheld_reason:
             result["corrections_withheld_reason"] = withheld_reason
+        if outcome.identifier_check is not None:
+            result["identifier_assessment"] = self._identifier_assessment(parsed, outcome)
         if outcome.unavailable_sources:
             result["source_warnings"] = [
                 {"source": source, "error": "upstream source unavailable"} for source in outcome.unavailable_sources
@@ -731,6 +762,13 @@ class ReferenceVerificationService:
             return "An upstream PubMed evidence source was unavailable; retry before adjudication"
         if status == "not_checked":
             return "This reference was not checked before the operation time budget expired"
+        assessment = row.get("identifier_assessment") or {}
+        if status == "unresolved" and assessment.get("assessment") == "probably_wrong":
+            label = str(assessment.get("field", "")).upper()
+            return (
+                f"Cited {label} {assessment.get('cited', '')} is probably wrong: its PubMed record disagrees with "
+                "every other comparable cited field and no other strategy found the cited work"
+            )
         if status == "unresolved":
             if parsed.get("doi"):
                 return "DOI present but unresolved; verify DOI transcription and index coverage"
@@ -834,7 +872,8 @@ class ReferenceVerificationService:
         review_checklist = [
             "Confirm author surname, journal abbreviation, and year were parsed correctly",
             "Run retry queries in order until one yields a convincing candidate",
-            "Accept only when DOI/PMID matches or when year+journal plus one field (page/author/volume) agree",
+            "Accept only when at least two cited fields besides the DOI/PMID agree with its record, or when "
+            "year+journal plus one field (page/author/volume) agree",
             "Document acceptance/rejection rationale for each unresolved reference",
         ]
         if method in {"title_search", "metadata_search"}:
@@ -874,10 +913,19 @@ class ReferenceVerificationService:
         first page). A wrong year is the most common citation error, so the
         year-tolerant searches let a real but mis-cited record be found and
         reported with field-level corrections instead of looking fabricated.
+
+        A cited PMID/DOI is only a lookup key. When the record it resolves to
+        conflicts with the other cited fields and fewer than two of them agree,
+        resolution continues; a later record replaces it only when that record
+        is itself anchored strongly enough to correct the citation. Otherwise
+        the identifier record is kept for review (one agreeing field) or the
+        row is unresolved with the identifier reported as probably wrong (no
+        agreeing field).
         """
         unavailable_sources: list[str] = []
         attempted: list[ResolutionMethod] = []
         skipped: list[ResolutionMethod] = []
+        identifier_check: _IdentifierCheck | None = None
 
         def outcome(
             article: dict[str, Any] | None,
@@ -891,27 +939,40 @@ class ReferenceVerificationService:
                 attempted=tuple(attempted),
                 skipped=tuple(skipped),
                 selection=selection,
+                identifier_check=identifier_check,
             )
 
-        if parsed.pmid:
-            attempted.append("pmid")
-            try:
-                article = await self._fetch_article_by_pmid(parsed.pmid, article_cache=article_cache)
-            except Exception:
-                unavailable_sources.append("PubMed article details")
-                article = None
-            if article:
-                return outcome(article, "pmid")
+        def accepts(article: dict[str, Any], method: ResolutionMethod) -> bool:
+            """Whether a later hit may stand in for an uncorroborated identifier record."""
+            if identifier_check is None:
+                return True
+            if str(article.get("pmid") or "") == str(identifier_check.article.get("pmid") or ""):
+                return False
+            comparison = build_comparison(parsed, article)
+            evidence = identity_evidence(parsed, article, comparison, method=method)
+            return correction_blocker(parsed, article, comparison, evidence=evidence) is None
 
+        identifier_lookups: list[tuple[Literal["pmid", "doi_search"], str]] = []
+        if parsed.pmid:
+            identifier_lookups.append(("pmid", "PubMed article details"))
         if parsed.doi:
-            attempted.append("doi_search")
+            identifier_lookups.append(("doi_search", "PubMed DOI search"))
+        for identifier_method, source_label in identifier_lookups:
+            attempted.append(identifier_method)
             try:
-                article = await self._resolve_by_doi(parsed)
+                if identifier_method == "pmid":
+                    article = await self._fetch_article_by_pmid(parsed.pmid, article_cache=article_cache)
+                else:
+                    article = await self._resolve_by_doi(parsed)
             except Exception:
-                unavailable_sources.append("PubMed DOI search")
+                unavailable_sources.append(source_label)
                 article = None
-            if article:
-                return outcome(article, "doi_search")
+            if not article or not accepts(article, identifier_method):
+                continue
+            check = self._uncorroborated_identifier(parsed, article, identifier_method)
+            if check is None:
+                return outcome(article, identifier_method)
+            identifier_check = identifier_check or check
 
         if parsed.journal and parsed.year:
             attempted.append("ecitmatch")
@@ -924,7 +985,7 @@ class ReferenceVerificationService:
             except Exception:
                 unavailable_sources.append("NCBI ECitMatch")
                 article = None
-            if article:
+            if article and accepts(article, "ecitmatch"):
                 return outcome(article, "ecitmatch")
         else:
             skipped.append("ecitmatch")
@@ -954,9 +1015,25 @@ class ReferenceVerificationService:
             selection = self._select_search_candidate(parsed, candidates)
             if selection.article is not None:
                 chosen_pmid = str(selection.article.get("pmid") or "").strip()
-                return outcome(selection.article, found_by.get(chosen_pmid, method), selection)
+                chosen_method = found_by.get(chosen_pmid, method)
+                if accepts(selection.article, chosen_method):
+                    return outcome(selection.article, chosen_method, selection)
 
+        if identifier_check is not None and not identifier_check.probably_wrong:
+            return outcome(identifier_check.article, identifier_check.method)
         return outcome(None, None, selection)
+
+    @staticmethod
+    def _uncorroborated_identifier(
+        parsed: ParsedReference,
+        article: dict[str, Any],
+        method: Literal["pmid", "doi_search"],
+    ) -> _IdentifierCheck | None:
+        """Flag an identifier record that conflicts with the citation and is not corroborated."""
+        evidence = identity_evidence(parsed, article, build_comparison(parsed, article), method=method)
+        if evidence.corroborated or not evidence.conflicting:
+            return None
+        return _IdentifierCheck(method, article, evidence)
 
     async def _resolve_by_doi(self, parsed: ParsedReference) -> dict[str, Any] | None:
         """Resolve by DOI using PubMed search results and exact DOI filtering."""
@@ -1233,6 +1310,8 @@ class ReferenceVerificationService:
         notes: list[str] = []
         if outcome.method:
             notes.append(f"Resolved via {outcome.method}")
+        if outcome.identifier_check is not None:
+            notes.append(self._identifier_note(parsed, outcome))
         if article is None:
             notes.extend(self._unresolved_notes(parsed, outcome))
             return notes
@@ -1271,7 +1350,8 @@ class ReferenceVerificationService:
         if not outcome.attempted:
             return ["Insufficient structured metadata for PubMed resolution"]
         notes: list[str] = []
-        if parsed.doi and "doi_search" in outcome.attempted:
+        identifier_field = outcome.identifier_check.field if outcome.identifier_check is not None else ""
+        if parsed.doi and "doi_search" in outcome.attempted and identifier_field != "doi":
             notes.append("No PubMed candidate resolved from the provided DOI")
         tried = "; ".join(_STRATEGY_LABELS[method] for method in outcome.attempted)
         notes.append(f"No PubMed record was found after: {tried}")
@@ -1283,7 +1363,12 @@ class ReferenceVerificationService:
         if not_run:
             notes.append(f"Not attempted because the parsed reference lacks fields: {'; '.join(not_run)}")
         selection = outcome.selection
-        if selection is not None and selection.rejected_article is not None:
+        if selection is not None and selection.article is not None:
+            notes.append(
+                f"PubMed search hit PMID {selection.article.get('pmid', '')} was not reported instead because "
+                "too few cited fields corroborate it either"
+            )
+        elif selection is not None and selection.rejected_article is not None:
             rejected = selection.rejected_article
             notes.append(
                 f"Closest PubMed search hit PMID {rejected.get('pmid', '')} was not accepted because "
@@ -1294,6 +1379,58 @@ class ReferenceVerificationService:
             "publisher site, or non-PubMed indexes before rejecting it"
         )
         return notes
+
+    @staticmethod
+    def _replacement_pmid(outcome: _ResolutionOutcome) -> str:
+        """PMID reported instead of an uncorroborated identifier record, or ``""``."""
+        check, article = outcome.identifier_check, outcome.article
+        if check is None or article is None:
+            return ""
+        pmid = str(article.get("pmid") or "")
+        return "" if pmid == str(check.article.get("pmid") or "") else pmid
+
+    def _identifier_assessment(self, parsed: ParsedReference, outcome: _ResolutionOutcome) -> dict[str, Any]:
+        """Structured evidence for a cited identifier that the other cited fields do not corroborate."""
+        check = outcome.identifier_check
+        if check is None:
+            return {}
+        return {
+            "field": check.field,
+            "cited": getattr(parsed, check.field),
+            "assessment": "probably_wrong" if check.probably_wrong else "weakly_corroborated",
+            "agreeing_fields": list(check.evidence.agreeing),
+            "conflicting_fields": list(check.evidence.conflicting),
+            "resolved_article": self._serialize_article(check.article),
+            "replaced_by_pmid": self._replacement_pmid(outcome) or None,
+        }
+
+    def _identifier_note(self, parsed: ParsedReference, outcome: _ResolutionOutcome) -> str:
+        """Explain why a cited identifier did not settle the row."""
+        check = outcome.identifier_check
+        if check is None:
+            return ""
+        label = check.field.upper()
+        record = check.article
+        journal = str(record.get("journal_abbrev") or record.get("journal") or "")
+        where = " ".join(part for part in (journal, str(record.get("year") or "")) if part)
+        resolved = f"PMID {record.get('pmid', '')}" + (f" ({where})" if where else "")
+        conflicting = ", ".join(check.evidence.conflicting)
+        if check.probably_wrong:
+            finding = (
+                f"The cited {label} {getattr(parsed, check.field)} resolves to {resolved}, which disagrees with "
+                f"every other comparable cited field ({conflicting}); the {label} is probably wrong"
+            )
+        else:
+            finding = (
+                f"The cited {label} {getattr(parsed, check.field)} resolves to {resolved}, which agrees only on "
+                f"{', '.join(check.evidence.agreeing)} and disagrees on {conflicting}; the {label} may be wrong"
+            )
+        if replacement := self._replacement_pmid(outcome):
+            return (
+                f"{finding}; PMID {replacement} found via {outcome.method} is corroborated by the other cited "
+                "fields and is reported instead"
+            )
+        return f"{finding}; no other resolution strategy found a better-corroborated record"
 
     @staticmethod
     def _serialize_article(article: dict[str, Any] | None) -> dict[str, Any] | None:

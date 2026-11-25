@@ -59,6 +59,11 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
               title-word search and a first-author + journal + volume/first-page
               search that do not pin the cited year, so a real but mis-cited
               record (wrong year/volume/page) is still found
+            - A cited PMID/DOI whose record fewer than two other cited fields
+              corroborate does not stop resolution; ``identifier_assessment``
+              reports it as ``probably_wrong`` (no other field agrees) or
+              ``weakly_corroborated``, with ``replaced_by_pmid`` when a
+              corroborated record was found instead
             - ``partial_match`` rows list ``corrections`` (``field``, ``cited``,
               ``pubmed``) only when at least two independent cited fields agree
               with the PubMed record besides the identifier, title, or locator
