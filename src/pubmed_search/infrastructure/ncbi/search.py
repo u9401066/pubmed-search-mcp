@@ -158,6 +158,10 @@ class ESearchIdList(tuple[list[str], int, str, str]):  # noqa: SLOT001 - instanc
         result.diagnostics = diagnostics
         return result
 
+    def __getnewargs_ex__(self) -> tuple[tuple[list[str], int, str, str], dict[str, Any]]:
+        """Let copy and pickle rebuild through ``__new__`` with the keyword-only diagnostics."""
+        return (self[0], self[1], self[2], self[3]), {"diagnostics": self.diagnostics}
+
 
 class SearchMixin:
     """
