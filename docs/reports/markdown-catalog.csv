@@ -132,6 +132,7 @@ docs/archive/research/DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md,historical-records,
 docs/archive/research/competitor-analysis.md,historical-records,historical,docs/archive/research/competitor-analysis.md
 docs/archive/research/roadmap-through-v090.md,historical-records,historical,docs/archive/research/roadmap-through-v090.md
 docs/arxiv-paper/README.md,legacy-navigation-pointers,compatibility-pointer,docs/publication/README.md
+docs/design/AGENT_HARNESS_EVAL.md,design-records,status-in-document,docs/design/AGENT_HARNESS_EVAL.md
 docs/design/AGENT_INPUT_CONTRACT.md,design-records,status-in-document,docs/design/AGENT_INPUT_CONTRACT.md
 docs/design/FULLTEXT_PREFETCH.md,design-records,status-in-document,docs/design/FULLTEXT_PREFETCH.md
 docs/design/FULLTEXT_REGISTRY_REFACTOR.md,design-records,status-in-document,docs/design/FULLTEXT_REGISTRY_REFACTOR.md
@@ -176,6 +177,7 @@ docs/reference-repositories/reports/10-local-citation-network.md,external-reposi
 docs/reports/README.md,measurements-and-audits,dated-evidence,docs/reports/README.md
 docs/reports/chronicle_evidence_review_2026-11-20.md,measurements-and-audits,dated-evidence,docs/reports/chronicle_evidence_review_2026-11-20.md
 docs/reports/chronicle_historical_method_2026-11-20.md,measurements-and-audits,dated-evidence,docs/reports/chronicle_historical_method_2026-11-20.md
+docs/reports/claude_code_harness_pilot_2026-11-25.md,measurements-and-audits,dated-evidence,docs/reports/claude_code_harness_pilot_2026-11-25.md
 docs/reports/core_review_2026-09-15.md,measurements-and-audits,dated-evidence,docs/reports/core_review_2026-09-15.md
 docs/reports/maintenance_audit_2026-09-15.md,measurements-and-audits,dated-evidence,docs/reports/maintenance_audit_2026-09-15.md
 docs/reports/mesh-preflight-2017/README.md,measurements-and-audits,dated-evidence,docs/reports/mesh-preflight-2017/README.md

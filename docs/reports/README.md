@@ -5,6 +5,7 @@ test suite is not a measured improvement on a public retrieval benchmark.
 
 | Evidence | Start here |
 | --- | --- |
+| Claude Code harness pilot (Haiku 5.5, native vs MCP) | [2026-11-25 pilot: equal quality, 58% fewer tool calls, error-semantics and under-delivery findings](claude_code_harness_pilot_2026-11-25.md), [evaluation plan](../design/AGENT_HARNESS_EVAL.md) |
 | Blinded MeSH decisions, four completed reviews | [Frozen protocol, observed rankings, screening cost and offline replay](mesh-preflight-2017/README.md) |
 | v0.10.0 capability and documentation inventory | [Registry families and limits](../README.md#capability-inventory), [Markdown ownership and sources](markdown-catalog.csv) |
 | v0.8.0 renovation review, round 1 | [Chronicle branch experiment, reusable search strategies, service sizing and publication decisions (繁中)](renovation_review_2026-11-20.md) |
