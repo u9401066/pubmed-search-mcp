@@ -806,3 +806,50 @@ async def test_export_summary_discloses_whether_the_run_is_a_complete_record_set
         False,
     )
     assert any("ranked preview" in warning for warning in bounded["warnings"])
+
+
+async def test_records_view_pages_merged_sets_beyond_10000(store: PipelineStore) -> None:
+    """Two merged exhaustive steps can persist up to 2 x 10,000 records; every page must be reachable."""
+    from datetime import datetime, timezone
+
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    from pubmed_search.application.pipeline.budgets import PIPELINE_RUN_RECORD_LIMIT
+    from pubmed_search.domain.entities.pipeline import PipelineRun
+    from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
+        PipelineToolRuntime,
+        register_pipeline_tools,
+    )
+
+    _save_exhaustive_pipeline(store)
+    pmids = [str(index) for index in range(1, 10_051)]
+    run = PipelineRun(
+        run_id="20260101_000000_000000_big",
+        pipeline_name="pacu_ma",
+        started=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        pmids=pmids,
+        article_count=len(pmids),
+        record_version=2,
+        record_basis="final_step_full",
+        retrieval={"mode": "exhaustive", "exhaustive": True},
+    )
+    run.artifacts["records"] = store.save_run_records("pacu_ma", run.run_id, [{"pmid": pmid} for pmid in pmids])
+    store.save_run("pacu_ma", run)
+    server = MCPServer("records-paging-test")
+    register_pipeline_tools(server, runtime=PipelineToolRuntime(base_store=store))
+
+    page = await server.call_tool(
+        "get_pipeline_history", {"name": "pacu_ma", "view": "records", "offset": 10_025, "limit": 100}
+    )
+
+    assert not page.is_error
+    payload = json.loads(page.content[0].text)
+    assert [row["pmid"] for row in payload["records"]] == pmids[10_025:]
+    assert payload["next_offset"] is None
+    assert PIPELINE_RUN_RECORD_LIMIT >= 2 * 10_000
+    with pytest.raises(ToolError, match="less than or equal"):
+        await server.call_tool(
+            "get_pipeline_history",
+            {"name": "pacu_ma", "view": "records", "offset": PIPELINE_RUN_RECORD_LIMIT + 1, "limit": 100},
+        )

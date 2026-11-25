@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field
 
+from pubmed_search.application.pipeline.budgets import PIPELINE_RUN_RECORD_LIMIT
 from pubmed_search.application.pipeline.config_parser import (
     MAX_PIPELINE_CONFIG_CHARS,
     parse_pipeline_config_text,
@@ -941,7 +942,7 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
         limit: Annotated[int, Field(ge=1, le=100)] = 5,
         run_id: RunId | None = None,
         view: HistoryView = "runs",
-        offset: Annotated[int, Field(ge=0, le=10_000)] = 0,
+        offset: Annotated[int, Field(ge=0, le=PIPELINE_RUN_RECORD_LIMIT)] = 0,
     ) -> str:
         """Get execution history, a run's search record, or its persisted record set.
 
@@ -962,7 +963,8 @@ def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> 
             limit: Runs to list, or records per page for view="records" (1-100).
             run_id: Run to read (default: latest run).
             view: "runs", "run", "prisma_s", or "records".
-            offset: Record offset for view="records".
+            offset: Record offset for view="records" (merged exhaustive sets can
+                exceed 10,000 records; every page up to the run record cap is reachable).
 
         Returns:
             Markdown history/PRISMA-S table, or JSON for view="run"/"records".
