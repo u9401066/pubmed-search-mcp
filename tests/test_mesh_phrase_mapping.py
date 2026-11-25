@@ -305,6 +305,50 @@ async def test_unicode_hyphenated_topic_maps_to_the_compound_heading_not_its_las
     assert "Eclampsia" not in {mesh["preferred"] for mesh in result["mesh_terms"]}
 
 
+def test_comma_inverted_headings_are_candidates_but_other_punctuation_still_separates():
+    texts = {candidate.text for candidate in parse_topic("insulin for diabetes mellitus, type 2 in adults").candidates}
+    assert "diabetes mellitus, type 2" in texts
+    assert "diabetes mellitus type 2" not in texts  # the comma is kept, so only inverted terms can match
+    assert not any(text.endswith(",") or ", in" in text for text in texts)
+    texts = {candidate.text for candidate in parse_topic("leukemia, myeloid, acute; obesity").candidates}
+    assert "leukemia, myeloid, acute" in texts and not any("obesity" in text and "," in text for text in texts)
+
+
+def test_a_comma_list_never_matches_an_uninverted_term():
+    anxiety_depression = MeshRecord(uid="1", preferred="Anxiety Depression")  # synthetic
+    assert match_term("anxiety, depression", anxiety_depression) is None
+    assert match_term("anxiety depression", anxiety_depression) is not None
+    type_2 = MeshRecord(uid="2", preferred="Diabetes Mellitus, Type 2", entry_terms=("Type 2 Diabetes Mellitus",))
+    match = match_term("Diabetes mellitus, type 2", type_2)
+    assert match is not None and match.matched_on == "preferred"
+    assert match_term("Mellitus, diabetes type 2", type_2) is None
+
+
+async def test_comma_inverted_heading_maps_whole_instead_of_its_first_half():
+    # Before: the comma split the topic, so "Diabetes Mellitus, Type 2" mapped to Diabetes
+    # Mellitus and left "Type 2" unmapped (master looked the whole topic up and found it).
+    fake = FakeNCBI(
+        [
+            _doc(
+                "68003924",
+                "Diabetes Mellitus, Type 2",
+                "Diabetes Mellitus, Adult-Onset",
+                "Type 2 Diabetes Mellitus",
+                trees=("C18.452.394.750.149", "C19.246.300"),
+            ),
+            _doc("68003920", "Diabetes Mellitus", trees=("C18.452.394.750", "C19.246")),
+        ]
+    )
+
+    result = await _generate(fake, "Diabetes Mellitus, Type 2")
+
+    assert [(mesh["input"], mesh["preferred"]) for mesh in result["mesh_terms"]] == [
+        ("Diabetes Mellitus, Type 2", "Diabetes Mellitus, Type 2")
+    ]
+    assert result["unmapped_phrases"] == []
+    assert '"Diabetes Mellitus, Type 2"[MeSH Terms]' in fake.mesh_clauses
+
+
 @pytest.mark.parametrize(
     ("phrase", "term"),
     [

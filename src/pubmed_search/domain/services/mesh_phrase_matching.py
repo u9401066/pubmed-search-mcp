@@ -3,11 +3,14 @@
 Design:
     Topic text is split into phrase candidates that never start or end with a
     function word or preposition and that keep hyphenated compounds intact.
-    Candidates are tried longest first, and a vocabulary record is accepted
-    only when the normalized phrase equals its preferred term or one of its
-    entry terms. Normalization covers case, punctuation/hyphen spacing and
-    simple plurals; it never widens a phrase into a related concept. Anything
-    weaker is a candidate for review, not a mapping.
+    A lone comma may sit inside a candidate so inverted headings such as
+    "Diabetes Mellitus, Type 2" stay whole; such a candidate only matches a
+    term with a comma at the same place, so a comma list never merges into
+    one concept. Candidates are tried longest first, and a vocabulary record
+    is accepted only when the normalized phrase equals its preferred term or
+    one of its entry terms. Normalization covers case, punctuation/hyphen
+    spacing and simple plurals; it never widens a phrase into a related
+    concept. Anything weaker is a candidate for review, not a mapping.
 
 Maintenance:
     Keep this module free of network access and provider payload shapes. NCBI
@@ -30,6 +33,10 @@ if TYPE_CHECKING:
 
 MAX_PHRASE_TOKENS = 6
 MAX_TOPIC_TOKENS = 48
+# Inverted headings: at most two commas ("Leukemia, Myeloid, Acute"), each followed by a
+# short modifier ("Type 2", "Low Birth Weight").
+MAX_INVERTED_COMMAS = 2
+MAX_INVERTED_PART_TOKENS = 3
 _MIN_SINGLE_TOKEN_CHARS = 2
 # Plural folding only touches alphabetic words longer than this ("gas", "bus" stay intact).
 _MIN_PLURAL_CHARS = 4
@@ -226,26 +233,28 @@ def _has_letter(token: str) -> bool:
     return any(character.isalpha() for character in token)
 
 
-def _segments(topic: str) -> list[list[str]]:
+def _segments(topic: str) -> list[tuple[list[str], bool]]:
     """Split on punctuation, quotes, field tags and PubMed operators; keep hyphenated words.
 
-    PubMed operators include lowercase ``or``/``not`` but not ``and``, which
-    may occur inside a heading ("Head and Neck Neoplasms"). Unicode hyphens
-    join a compound like ``-`` does; long dashes separate.
+    Each segment says whether a lone comma separates it from the previous
+    one (a possible inverted heading). PubMed operators include lowercase
+    ``or``/``not`` but not ``and``, which may occur inside a heading ("Head
+    and Neck Neoplasms"). Unicode hyphens join a compound like ``-`` does;
+    long dashes separate.
     """
     text = _FIELD_TAG.sub(" | ", normalize_hyphens(topic))
-    segments: list[list[str]] = [[]]
+    segments: list[tuple[list[str], bool]] = [([], False)]
     last_end = 0
     for match in _TOKEN.finditer(text):
         gap = text[last_end : match.start()]
         last_end = match.end()
         token = match.group()
         operator = boolean_operator(token) is not None
-        if (gap.strip() or operator) and segments[-1]:
-            segments.append([])
+        if (gap.strip() or operator) and segments[-1][0]:
+            segments.append(([], not operator and gap.strip() == ","))
         if not operator:
-            segments[-1].append(token)
-    return [segment for segment in segments if segment]
+            segments[-1][0].append(token)
+    return [(segment, comma) for segment, comma in segments if segment]
 
 
 def parse_topic(
@@ -254,15 +263,23 @@ def parse_topic(
     max_phrase_tokens: int = MAX_PHRASE_TOKENS,
     max_topic_tokens: int = MAX_TOPIC_TOKENS,
 ) -> TopicPhrases:
-    """Return stopword-bounded phrase candidates ordered longest first, then left to right."""
+    """Return stopword-bounded phrase candidates ordered longest first, then left to right.
+
+    A candidate may cross up to ``MAX_INVERTED_COMMAS`` lone commas, each
+    followed by at most ``MAX_INVERTED_PART_TOKENS`` words, and keeps the
+    commas in its text ("diabetes mellitus, type 2").
+    """
     tokens: list[str] = []
     segment_ids: list[int] = []
+    comma_starts: set[int] = set()
     truncated = False
-    for segment_id, segment in enumerate(_segments(topic)):
-        for token in segment:
+    for segment_id, (segment, comma) in enumerate(_segments(topic)):
+        for position, token in enumerate(segment):
             if len(tokens) >= max_topic_tokens:
                 truncated = True
                 break
+            if comma and position == 0 and tokens:
+                comma_starts.add(len(tokens))
             tokens.append(token)
             segment_ids.append(segment_id)
 
@@ -270,15 +287,27 @@ def parse_topic(
     for start, first in enumerate(tokens):
         if _is_edge_word(first):
             continue
+        commas = part = 0
         for end in range(start + 1, min(start + max_phrase_tokens, len(tokens)) + 1):
-            if segment_ids[end - 1] != segment_ids[start]:
+            last = end - 1
+            if last > start and segment_ids[last] != segment_ids[last - 1]:
+                inverted = last in comma_starts and commas < MAX_INVERTED_COMMAS
+                if not inverted or _is_edge_word(tokens[last - 1]) or _is_edge_word(tokens[last]):
+                    break
+                commas, part = commas + 1, 0
+            part += 1
+            if commas and part > MAX_INVERTED_PART_TOKENS:
                 break
             span = tokens[start:end]
             if _is_edge_word(span[-1]) or not any(_has_letter(token) for token in span):
                 continue
             if len(span) == 1 and len(first) < _MIN_SINGLE_TOKEN_CHARS:
                 continue
-            candidates.append(PhraseCandidate(" ".join(span), start, end))
+            text = "".join(
+                (", " if index in comma_starts else " ") + token if index > start else token
+                for index, token in enumerate(span, start=start)
+            )
+            candidates.append(PhraseCandidate(text, start, end))
     candidates.sort(key=lambda candidate: (-candidate.size, candidate.start))
     return TopicPhrases(tuple(tokens), tuple(segment_ids), tuple(candidates), truncated)
 
@@ -362,8 +391,17 @@ def exact_form(text: str) -> str:
     return " ".join(normalize_term(text).casefold().split())
 
 
+def _comma_parts(text: str) -> tuple[str, ...]:
+    return tuple(key for part in text.split(",") if (key := term_key(part)))
+
+
 def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
-    """Accept only a preferred-term or entry-term equality; literal equality wins over normalization."""
+    """Accept only a preferred-term or entry-term equality; literal equality wins over normalization.
+
+    A phrase containing a comma only matches a term with commas at the same
+    word boundaries ("diabetes mellitus, type 2" = "Diabetes Mellitus, Type
+    2"), so "anxiety, depression" never matches "Anxiety Depression".
+    """
     terms = record.terms
     literal = exact_form(phrase)
     for index, term in enumerate(terms):
@@ -372,8 +410,9 @@ def match_term(phrase: str, record: MeshRecord) -> TermMatch | None:
     key = term_key(phrase)
     if not key:
         return None
+    parts = _comma_parts(phrase) if "," in phrase else None
     for index, term in enumerate(terms):
-        if term_key(term) == key:
+        if term_key(term) == key and (parts is None or _comma_parts(term) == parts):
             return TermMatch(record, "preferred" if index == 0 else "entry_term", term)
     return None
 
