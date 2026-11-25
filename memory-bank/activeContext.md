@@ -1,5 +1,23 @@
 # Active Context
 
+## Release record — v0.12.0 fulltext acquisition and agent-facing fixes (2026-11-25)
+
+Three branches merged into `release/v0.12.0`: fulltext acquisition (`pmc_html`
+page source for explicit single-article reads, `fulltext_plan`,
+`register_fulltext` → 44 tools / 16 categories), agent harness levers
+(retryable transient failures with a repeat-call suggestion, summary records in
+structured `unified_search` output with `options="full_records"`, PubMed
+publication type / PMCID / OA mapping), and the harness evaluation docs. An
+independent review of the fulltext branch found 1 high (event-loop DoS via
+super-linear parsers in `register_fulltext`) and 6 medium issues; all were
+fixed with failing-first tests before release. Deferred: a withdraw path for
+registrations (needs a 45th tool or a request union; re-registering corrects,
+`use_registered_fulltext=false` bypasses), placeholder `DEFAULT_EMAIL` still
+sent by the `ncbi_pmc` E-utilities fallback when `NCBI_EMAIL` is unset, and
+compact-mode records carrying no per-record detail marker. Downstream: Zotero
+Keeper must pass `options="full_records"` in the same release that moves its
+pin to 0.12.0 (prepared on its `feat/pubmed-summary-records` branch).
+
 ## Agent harness evaluation — R0 pilot (2026-11-25, `feature/agent-harness-eval`)
 
 Goal: with this package, any agent host (Claude Code, Cline, OpenCode, Codex)

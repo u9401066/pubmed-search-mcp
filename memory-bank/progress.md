@@ -1,5 +1,18 @@
 # Progress (Updated: 2026-11-25)
 
+## 2026-11-25 — v0.12.0 fulltext acquisition and agent-facing fixes
+
+- Done: `pmc_html` source (explicit single-article reads only, NCBI identity,
+  1 req/s plus hourly budgets, CAPTCHA/403/429 back-off, canonical PMCID check),
+  `fulltext_plan`, `register_fulltext` (44 tools); ENGAGES (PMID 30721296) body
+  now returned in ~11 s instead of front matter only.
+- Done: transient source failures retried and reported retryable; summary
+  records by default in JSON/TOON (1.1 KB vs 4.0-6.5 KB per record); PubMed
+  type/PMCID/OA mapping (0/30 → 30/30 typed, 9/30 with PMC copy on the pilot query).
+- Done: independent review (1 high, 6 medium, 14 low) fixed; regression tests
+  for every finding.
+- Next: Zotero Keeper pin bump with `full_records`; R1 harness benchmark build.
+
 ## 2026-11-25 — Agent harness evaluation R0 pilot
 
 - Done: headless Claude Code runner (isolated settings, strict MCP config,
