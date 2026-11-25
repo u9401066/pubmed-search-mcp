@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.chronicle import (
@@ -25,8 +26,15 @@ from pubmed_search.domain.entities.chronicle import (
     utc_now_iso,
 )
 from pubmed_search.domain.entities.timeline import MilestoneType
+from pubmed_search.domain.services.study_design import (
+    BASIS_NOT_INDEXED,
+    BASIS_UNAVAILABLE,
+    StudyDesign,
+    classify_study_design,
+)
 
 from .graph import build_chronicle_graph
+from .highlights import highlight_display_text, highlight_locator, select_extractive_highlight
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.research_tree import ResearchBranch, ResearchTree
@@ -127,6 +135,66 @@ def _entry_type_for(event: TimelineEvent) -> ChronicleEntryType:
     return _MILESTONE_TO_ENTRY_TYPE.get(event.milestone_type, ChronicleEntryType.MILESTONE)
 
 
+#: Milestone detection strategies that rely on title/abstract wording.
+_TEXT_DETECTION_STRATEGIES = frozenset({"title_pattern", "abstract_pattern"})
+
+
+def _event_metadata(event: TimelineEvent) -> dict[str, Any]:
+    return event.metadata if isinstance(event.metadata, dict) else {}
+
+
+def _study_design_for(event: TimelineEvent) -> StudyDesign:
+    """Classify the event's source article from its PubMed indexing."""
+    metadata = _event_metadata(event)
+    abstract = metadata.get("abstract")
+    return classify_study_design(
+        metadata.get("publication_types"),
+        metadata.get("mesh_terms"),
+        title=event.title,
+        abstract=abstract if isinstance(abstract, str) else None,
+    )
+
+
+def _detection_strategy(event: TimelineEvent) -> str | None:
+    detection = _event_metadata(event).get("milestone_detection")
+    strategy = detection.get("strategy") if isinstance(detection, dict) else None
+    return strategy if isinstance(strategy, str) else None
+
+
+def _entry_label(event: TimelineEvent, design: StudyDesign) -> tuple[str, str]:
+    """Return the entry headline and the basis that produced it.
+
+    A study-design label backed by PubMed indexing (or a disclosed text
+    heuristic) is preferred. A text-pattern milestone label is shown only as a
+    marked heuristic: after an indexed design it may refine (a trial phase, or
+    an approval reported as news), or alone when no design was recognized.
+    """
+    strategy = _detection_strategy(event)
+    text_milestone = strategy in _TEXT_DETECTION_STRATEGIES and event.milestone_type is not MilestoneType.OTHER
+    if design.indexed and text_milestone:
+        return (
+            f"{design.display_label}; {event.milestone_label} [heuristic]",
+            f"study_design:{design.basis}+milestone_detection:{strategy}",
+        )
+    if design.indexed or design.heuristic:
+        return design.display_label, f"study_design:{design.basis}"
+    if text_milestone:
+        return f"{event.milestone_label} [heuristic]", f"milestone_detection:{strategy}"
+    if design.basis == BASIS_NOT_INDEXED:
+        return design.display_label, f"study_design:{design.basis}"
+    return event.milestone_label or event.title, f"milestone_detection:{strategy or 'unrecorded'}"
+
+
+def _extractive_highlight(event: TimelineEvent, article: EvidenceArticle) -> dict[str, Any] | None:
+    """Select one verbatim abstract sentence with offsets into ``article.abstract``."""
+    if not article.abstract:
+        return None
+    highlight = select_extractive_highlight(article.abstract, _event_metadata(event).get("abstract_sections"))
+    if highlight is None:
+        return None
+    return highlight.to_provenance(abstract=article.abstract, evidence_id=article.evidence_id, pmid=article.pmid)
+
+
 def _citation_label(article: EvidenceArticle) -> str:
     """Return a compact inline citation label for *article*."""
     if article.pmid:
@@ -136,9 +204,9 @@ def _citation_label(article: EvidenceArticle) -> str:
     return article.title[:60]
 
 
-def _build_evidence_article(event: TimelineEvent) -> EvidenceArticle:
+def _build_evidence_article(event: TimelineEvent, design: StudyDesign) -> EvidenceArticle:
     """Convert a timeline event's source article into evidence."""
-    metadata = event.metadata if isinstance(event.metadata, dict) else {}
+    metadata = _event_metadata(event)
     landmark = event.landmark_score
     rcr = None
     if landmark is not None and isinstance(landmark.diagnostics, dict):
@@ -154,23 +222,41 @@ def _build_evidence_article(event: TimelineEvent) -> EvidenceArticle:
         year=event.year or None,
         source=str(metadata.get("source") or "pubmed"),
         journal=event.journal,
-        article_type=metadata.get("publication_type") or event.milestone_label,
+        article_type=(
+            design.display_label
+            if design.basis != BASIS_UNAVAILABLE
+            else metadata.get("publication_type") or event.milestone_label
+        ),
         citation_count=metadata.get("observed_citation_count", event.citation_count),
         rcr=rcr,
         claim_excerpt=event.description,
+        abstract=metadata.get("abstract") if isinstance(metadata.get("abstract"), str) else None,
     )
 
 
-def _build_summary_claim(topic: str, event: TimelineEvent, article: EvidenceArticle) -> str:
-    """Render the one-sentence, citation-bearing claim for an entry."""
-    entry_type = _entry_type_for(event)
-    template = _CLAIM_TEMPLATES[entry_type]
-    return template.format(
-        year=event.year if event.year > 0 else "Undated",
-        label=event.milestone_label,
-        topic=topic,
-        citation=_citation_label(article),
-    )
+def _build_summary_claim(
+    topic: str,
+    event: TimelineEvent,
+    article: EvidenceArticle,
+    *,
+    label: str,
+    highlight: dict[str, Any] | None = None,
+) -> str:
+    """Render the one-line, citation-bearing claim for an entry.
+
+    With an abstract, the claim quotes the paper's own conclusion sentence and
+    says where it sits; it is extractive, not an interpretation. Without one,
+    a conservative template states only what was indexed.
+    """
+    year = event.year if event.year > 0 else "Undated"
+    citation = _citation_label(article)
+    if highlight is not None:
+        return (
+            f"{year} \u00b7 {label} ({citation}) \u2014 quoted from the abstract "
+            f'({highlight_locator(highlight)}): "{highlight_display_text(highlight)}"'
+        )
+    template = _CLAIM_TEMPLATES[_entry_type_for(event)]
+    return template.format(year=year, label=label, topic=topic, citation=citation)
 
 
 def _flatten_tree_branches(tree: ResearchTree | None) -> list[tuple[ResearchBranch, str | None]]:
@@ -255,7 +341,12 @@ def assemble_chronicle(
 
     for event in timeline.events:
         entry_type = _entry_type_for(event)
-        article = _build_evidence_article(event)
+        design = _study_design_for(event)
+        article = _build_evidence_article(event, design)
+        highlight = _extractive_highlight(event, article)
+        if highlight is not None:
+            article = replace(article, claim_excerpt=highlight["text"])
+        label, label_basis = _entry_label(event, design)
         entry_id = (entry_id_overrides or {}).get(article.evidence_id) or _derive_entry_id(resolved_id, event)
         confidence = event.confidence_score
         event_metadata = event.metadata if isinstance(event.metadata, dict) else {}
@@ -267,18 +358,25 @@ def assemble_chronicle(
             ChronicleEntry(
                 entry_id=entry_id,
                 entry_type=entry_type,
-                title=event.milestone_label or event.title,
+                title=label,
                 time_start=event.date_label,
-                summary_claim=_build_summary_claim(topic, event, article),
+                summary_claim=_build_summary_claim(topic, event, article, label=label, highlight=highlight),
                 confidence=float(confidence or 0.0),
                 status=_entry_status(entry_type),
                 evidence=EvidenceBundle(
                     supporting_articles=[article],
                     source_coverage={article.source: 1},
                 ),
-                tags=[event.milestone_type.value, event.evidence_level.value],
+                tags=[
+                    event.milestone_type.value,
+                    event.evidence_level.value,
+                    *([f"study_design:{design.key}"] if design.basis != BASIS_UNAVAILABLE else []),
+                ],
                 provenance={
                     "milestone_type": event.milestone_type.value,
+                    "study_design": design.to_dict(),
+                    "entry_label_basis": label_basis,
+                    "extractive_highlight": highlight,
                     # ``confidence`` retains its historical field name on the
                     # domain entity, but its semantics are explicitly milestone
                     # detection confidence. Landmark importance is independent.

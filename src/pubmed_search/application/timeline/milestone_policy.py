@@ -155,11 +155,17 @@ DEFAULT_TITLE_PATTERN_POLICIES: tuple[RegexMilestonePolicy, ...] = (
     ),
     RegexMilestonePolicy(
         name="safety_alert",
-        pattern=r"\b(safety\s+alert|warning|adverse\s+event|black\s+box)",
+        # Reporting adverse events is routine in trials and cohorts; only an
+        # explicit safety communication or boxed warning is a safety alert.
+        pattern=(
+            r"\b(safety\s+(?:alert|communication|warning|signal)"
+            r"|black[- ]box(?:ed)?\s+warning|boxed\s+warning"
+            r"|(?:FDA|EMA|MHRA|PMDA|regulatory)\s+(?:safety\s+)?warning)"
+        ),
         milestone_type=MilestoneType.SAFETY_ALERT,
         label="Safety Alert",
         confidence=0.85,
-        reason="命中安全警訊或 adverse event 詞彙",
+        reason="命中明確的安全警訊、安全通報或 boxed warning 詞彙",
     ),
     RegexMilestonePolicy(
         name="label_update",
@@ -318,6 +324,46 @@ DEFAULT_CITATION_THRESHOLD_POLICIES: tuple[CitationThresholdPolicy, ...] = (
         reason="引用數達 moderate threshold，但預設不單獨升級成 milestone 事件",
         emit_event=False,
     ),
+)
+
+
+_TRIAL_PHASES = frozenset({MilestoneType.PHASE_1, MilestoneType.PHASE_2, MilestoneType.PHASE_3, MilestoneType.PHASE_4})
+_SYNTHESIS = frozenset({MilestoneType.META_ANALYSIS, MilestoneType.SYSTEMATIC_REVIEW})
+_GUIDANCE = frozenset({MilestoneType.GUIDELINE, MilestoneType.CONSENSUS})
+_COMMUNICATIONS = frozenset(
+    {
+        MilestoneType.FDA_APPROVAL,
+        MilestoneType.EMA_APPROVAL,
+        MilestoneType.REGULATORY_APPROVAL,
+        MilestoneType.SAFETY_ALERT,
+        MilestoneType.WITHDRAWAL,
+        MilestoneType.LABEL_UPDATE,
+        MilestoneType.CONTROVERSY,
+    }
+)
+
+#: Text-pattern milestones that may refine a record whose study design PubMed
+#: already indexed, keyed by ``indexed_design_family``. PubMed indexing is the
+#: authority: a title or abstract pattern can add specificity the publication
+#: type vocabulary lacks (a trial phase), but cannot relabel an indexed trial,
+#: synthesis or cohort as a safety alert, approval, debate or breakthrough.
+#: Records without an indexed design accept every title pattern.
+TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneType]] = {
+    "trial": _TRIAL_PHASES,
+    "evidence_synthesis": _SYNTHESIS,
+    "guidance": _GUIDANCE,
+    "observational": frozenset({MilestoneType.PHASE_4}),
+    "review": _SYNTHESIS | _GUIDANCE | {MilestoneType.CONTROVERSY, MilestoneType.MECHANISM_DISCOVERY},
+    "case_report": frozenset(),
+    "commentary": _COMMUNICATIONS,
+    "other": _TRIAL_PHASES | _SYNTHESIS | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL},
+}
+
+#: Abstracts describe background literature and routine outcomes (adverse
+#: events, recommendations, prior approvals), so abstract matching is limited
+#: to self-describing design policies and to records without an indexed design.
+ABSTRACT_PATTERN_POLICY_NAMES = frozenset(
+    {"phase_1_trial", "phase_2_trial", "phase_3_trial", "phase_4_study", "meta_analysis", "systematic_review"}
 )
 
 

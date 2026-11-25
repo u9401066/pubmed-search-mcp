@@ -7,6 +7,14 @@ article MeSH descriptors and author keywords when they are sufficiently
 distinctive.  If those signals cannot support at least two branches, the
 detector falls back to the deterministic stage tree and records that limitation
 in diagnostics instead of presenting the result as semantic clustering.
+
+Descriptors that merely restate the Chronicle topic cannot split it into lines:
+terms whose words (or acronym) already appear in the topic query, and
+descriptors shared by at least half of a sizeable set without separating the
+other recurring descriptors, are excluded from branch formation and reported
+in ``lineage_diagnostics.excluded_topic_signals``. Branch signals are then
+chosen greedily by the papers they newly cover, so each line is supported by
+papers the earlier lines did not already claim.
 """
 
 from __future__ import annotations
@@ -32,6 +40,45 @@ _MAX_TERMS_PER_EVENT = 64
 _MAX_UNIQUE_TOPIC_SIGNALS = 4096
 _MAX_RAW_SIGNAL_CHARS = 512
 _SIGNAL_SOURCES = ("mesh_terms", "keywords")
+#: MeSH is controlled vocabulary, so it wins ties and ranks higher overall.
+_SOURCE_BONUS = {"mesh_terms": 1.25, "keywords": 1.0}
+#: A descriptor on at least this share of entries describes the set itself...
+_DOMINANT_SHARE = 0.5
+#: ...once the set is large enough for a share to be meaningful...
+_DOMINANCE_MIN_EVENTS = 8
+#: ...unless other recurring descriptors fall mostly outside it. At or above
+#: this lift (co-occurrence relative to its base rate) it cuts across lines.
+_CROSS_CUTTING_LIFT = 0.8
+_MAX_EXCLUDED_SIGNALS_REPORTED = 20
+_TOPIC_STOPWORDS = frozenset(
+    {
+        "a",
+        "after",
+        "among",
+        "an",
+        "and",
+        "as",
+        "at",
+        "before",
+        "between",
+        "by",
+        "during",
+        "for",
+        "from",
+        "in",
+        "into",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "under",
+        "versus",
+        "via",
+        "vs",
+        "with",
+    }
+)
 
 # MeSH qualifiers are a controlled vocabulary. A slash is stripped only when
 # its suffix is one of these qualifiers; biomedical names and author keywords
@@ -115,29 +162,57 @@ _MESH_QUALIFIERS = {
 # These descriptors describe study populations or publication mechanics more
 # often than research directions.  Keeping them would create misleading
 # branches such as "Humans" and "Adult" in almost every biomedical chronicle.
+#
+# Study-design descriptors and keywords are excluded too: design is recorded
+# separately as the entry's study-design label, so a "Meta-analysis" branch
+# would only regroup the evidence pyramid rather than a research direction.
 _GENERIC_BIOMEDICAL_TERMS = {
+    "adolescent",
     "adult",
     "aged",
+    "aged 80 and over",
     "animals",
     "case reports",
+    "case-control studies",
     "child",
+    "child preschool",
     "clinical trial",
     "clinical trials as topic",
+    "cohort studies",
+    "cohort study",
     "comparative study",
     "controlled clinical trial",
+    "cross-sectional studies",
+    "double-blind method",
+    "elderly",
     "female",
+    "feasibility studies",
     "follow-up studies",
     "humans",
+    "infant",
+    "infant newborn",
+    "longitudinal studies",
     "male",
+    "meta analysis",
+    "meta-analysis",
     "middle aged",
     "multicenter study",
+    "network meta-analysis",
+    "observational study",
+    "pilot projects",
+    "pregnancy",
     "prospective studies",
+    "randomised controlled trial",
     "randomized controlled trial",
+    "randomized controlled trials",
+    "rct",
     "retrospective studies",
     "review",
     "risk factors",
+    "single-blind method",
     "systematic review",
     "treatment outcome",
+    "trial sequential analysis",
     "young adult",
 }
 
@@ -151,6 +226,13 @@ class _TopicSignal:
     source: str
     event_indexes: frozenset[int]
     score: float
+
+    @property
+    def specificity(self) -> float:
+        """Per-paper inverse-frequency weight, without the MeSH preference."""
+        if not self.event_indexes:
+            return 0.0
+        return self.score / (len(self.event_indexes) * _SOURCE_BONUS.get(self.source, 1.0))
 
 
 def build_chronicle_lineage(timeline: ResearchTimeline) -> ResearchTree:
@@ -171,6 +253,7 @@ def build_chronicle_lineage(timeline: ResearchTimeline) -> ResearchTree:
                     "reason": "No timeline events were available for lineage detection.",
                     "semantic_coverage_ratio": 0.0,
                     "selected_signals": [],
+                    "excluded_topic_signals": [],
                     "signal_extraction": _empty_signal_extraction(),
                     **_empty_membership_diagnostics(assignment_semantics="none"),
                 },
@@ -178,8 +261,9 @@ def build_chronicle_lineage(timeline: ResearchTimeline) -> ResearchTree:
             },
         )
 
-    candidates, extraction = _topic_signal_candidates(timeline)
-    selected = _select_distinct_signals(candidates)
+    candidates, extraction, excluded = _topic_signal_candidates(timeline)
+    selected, not_selected = _select_distinct_signals(candidates)
+    extraction["signals_not_selected_low_marginal_coverage"] = not_selected
     selected, assignments, pruned = _supported_assignments(timeline.events, selected)
     extraction["signals_pruned_after_assignment"] = pruned
     assigned_branches = {signal.key for signal in assignments.values() if signal is not None}
@@ -192,22 +276,38 @@ def build_chronicle_lineage(timeline: ResearchTimeline) -> ResearchTree:
             if len(assigned_branches) < 2
             else f"Topic signals covered only {coverage:.0%} of timeline events."
         )
+        if excluded:
+            reason += f" {len(excluded)} recurring descriptor(s) were excluded as restating the topic."
         return _stage_fallback(
             timeline,
             reason=reason,
             semantic_coverage=coverage,
             signal_extraction=extraction,
+            excluded_signals=excluded,
         )
 
-    return _topic_tree(timeline, selected, assignments, coverage, signal_extraction=extraction)
+    return _topic_tree(
+        timeline,
+        selected,
+        assignments,
+        coverage,
+        signal_extraction=extraction,
+        excluded_signals=excluded,
+    )
 
 
-def _topic_signal_candidates(timeline: ResearchTimeline) -> tuple[list[_TopicSignal], dict[str, Any]]:
-    """Extract and rank distinctive MeSH/keyword signals across events."""
+def _topic_signal_candidates(
+    timeline: ResearchTimeline,
+) -> tuple[list[_TopicSignal], dict[str, Any], list[dict[str, Any]]]:
+    """Extract and rank distinctive MeSH/keyword signals across events.
+
+    Returns the ranked candidates, bounded extraction diagnostics, and the
+    recurring signals excluded because they restate the topic.
+    """
     event_indexes: dict[str, set[int]] = defaultdict(set)
     labels: dict[str, Counter[str]] = defaultdict(Counter)
     sources: dict[str, Counter[str]] = defaultdict(Counter)
-    topic_key = _normalize_signal(timeline.topic)
+    topic_terms = _TopicTerms.from_topic(timeline.topic)
     extraction = _empty_signal_extraction()
 
     for index, event in enumerate(timeline.events):
@@ -237,7 +337,7 @@ def _topic_signal_candidates(timeline: ResearchTimeline) -> tuple[list[_TopicSig
                     bounded_raw = bounded_raw[:_MAX_RAW_SIGNAL_CHARS]
                 label = _clean_label(bounded_raw, source=source)
                 key = _normalize_signal(label)
-                if not _usable_signal(key, topic_key=topic_key) or key in seen_for_event:
+                if not _usable_signal(key) or key in seen_for_event:
                     continue
                 if key not in event_indexes and len(event_indexes) >= _MAX_UNIQUE_TOPIC_SIGNALS:
                     extraction["unique_signals_omitted_limit"] += 1
@@ -249,45 +349,160 @@ def _topic_signal_candidates(timeline: ResearchTimeline) -> tuple[list[_TopicSig
 
     event_count = len(timeline.events)
     candidates: list[_TopicSignal] = []
+    excluded: list[dict[str, Any]] = []
     for key, indexes in event_indexes.items():
         frequency = len(indexes)
-        if frequency < _MIN_SIGNAL_PAPERS or frequency == event_count:
+        if frequency < _MIN_SIGNAL_PAPERS:
             continue
         source = "mesh_terms" if sources[key]["mesh_terms"] else "keywords"
-        source_bonus = 1.25 if source == "mesh_terms" else 1.0
+        source_bonus = _SOURCE_BONUS[source]
         # Reward signals shared by several papers while penalizing terms so
         # broad that they do not distinguish one lineage from another.
         inverse_frequency = math.log((event_count + 1) / (frequency + 0.5)) + 0.5
         score = frequency * inverse_frequency * source_bonus
         label = sorted(labels[key].items(), key=lambda item: (-item[1], item[0].casefold()))[0][0]
-        candidates.append(
-            _TopicSignal(
-                key=key,
-                label=label,
-                source=source,
-                event_indexes=frozenset(indexes),
-                score=score,
-            )
-        )
+        signal = _TopicSignal(key=key, label=label, source=source, event_indexes=frozenset(indexes), score=score)
+        reason = "present_in_every_entry" if frequency == event_count else topic_terms.restatement_reason(key)
+        if reason is not None:
+            excluded.append(_excluded_signal_payload(signal, event_count, reason=reason))
+            continue
+        candidates.append(signal)
+
+    candidates, cross_cutting = _exclude_cross_cutting_signals(candidates, event_count)
+    excluded.extend(cross_cutting)
+    excluded.sort(key=lambda row: (-row["matched_event_count"], row["label"].casefold(), row["key"]))
 
     extraction["unique_signals_retained"] = len(event_indexes)
     extraction["candidate_signals"] = len(candidates)
+    extraction["topic_restating_signals_excluded"] = len(excluded)
     return (
         sorted(candidates, key=lambda signal: (-signal.score, signal.label.casefold(), signal.key)),
         extraction,
+        excluded[:_MAX_EXCLUDED_SIGNALS_REPORTED],
     )
 
 
-def _select_distinct_signals(candidates: list[_TopicSignal]) -> list[_TopicSignal]:
-    """Choose signals with non-duplicate event coverage."""
-    selected: list[_TopicSignal] = []
-    for candidate in candidates:
-        if any(_jaccard(candidate.event_indexes, prior.event_indexes) >= 0.9 for prior in selected):
+@dataclass(frozen=True)
+class _TopicTerms:
+    """Normalized content words and acronyms of the Chronicle topic query."""
+
+    key: str
+    stems: frozenset[str]
+
+    @classmethod
+    def from_topic(cls, topic: str) -> _TopicTerms:
+        return cls(key=_normalize_signal(topic), stems=frozenset(_content_stems(topic)))
+
+    def restatement_reason(self, key: str) -> str | None:
+        """Explain why a signal restates the topic, or return ``None``."""
+        if key == self.key:
+            return "matches_topic_query"
+        stems = _content_stems(key)
+        if stems and set(stems) <= self.stems:
+            return "topic_query_terms"
+        words = [word for word in re.split(r"[\s-]+", key) if word]
+        initials = "".join(word[0] for word in words if word not in _TOPIC_STOPWORDS)
+        if len(words) >= 2 and len(initials) >= 2 and _stem(initials) in self.stems:
+            return "topic_acronym_expansion"
+        return None
+
+
+def _stem(token: str) -> str:
+    """Crude, deterministic normalization for topic-term comparison only."""
+    token = token.replace("ae", "e").replace("oe", "e")
+    for suffix in ("ing", "ies", "es", "ed", "s"):
+        if token.endswith(suffix) and len(token) - len(suffix) >= 3:
+            return token[: -len(suffix)] + ("y" if suffix == "ies" else "")
+    return token
+
+
+def _content_stems(value: str) -> list[str]:
+    tokens = re.split(r"[^\w]+", _normalize_signal(value).replace("_", " "))
+    return [_stem(token) for token in tokens if token and token not in _TOPIC_STOPWORDS]
+
+
+def _excluded_signal_payload(signal: _TopicSignal, event_count: int, *, reason: str) -> dict[str, Any]:
+    return {
+        "key": signal.key,
+        "label": signal.label,
+        "source": signal.source,
+        "matched_event_count": len(signal.event_indexes),
+        "share": round(len(signal.event_indexes) / event_count, 3) if event_count else 0.0,
+        "reason": reason,
+    }
+
+
+def _exclude_cross_cutting_signals(
+    candidates: list[_TopicSignal],
+    event_count: int,
+) -> tuple[list[_TopicSignal], list[dict[str, Any]]]:
+    """Drop dominant descriptors that cut across, rather than separate, lines.
+
+    A descriptor shared by at least half of a sizeable set usually restates the
+    topic (for example ``Electroencephalography`` in an EEG-monitoring set). It
+    is still kept when the other recurring descriptors fall mostly outside it,
+    because then it does separate two research lines.
+    """
+    if event_count < _DOMINANCE_MIN_EVENTS:
+        return candidates, []
+    kept: list[_TopicSignal] = []
+    excluded: list[dict[str, Any]] = []
+    for signal in candidates:
+        share = len(signal.event_indexes) / event_count
+        others = [other for other in candidates if other.key != signal.key]
+        support = sum(len(other.event_indexes) for other in others)
+        if share < _DOMINANT_SHARE or not support:
+            kept.append(signal)
             continue
-        selected.append(candidate)
-        if len(selected) >= MAX_TOPIC_BRANCHES:
+        shared = sum(len(other.event_indexes & signal.event_indexes) for other in others)
+        lift = (shared / support) / share
+        if lift >= _CROSS_CUTTING_LIFT:
+            payload = _excluded_signal_payload(signal, event_count, reason="dominant_cross_cutting_descriptor")
+            payload["co_occurrence_lift"] = round(lift, 3)
+            excluded.append(payload)
+        else:
+            kept.append(signal)
+    return kept, excluded
+
+
+def _select_distinct_signals(candidates: list[_TopicSignal]) -> tuple[list[_TopicSignal], int]:
+    """Greedily choose signals by the papers they newly cover.
+
+    Each round takes the signal whose newly covered papers carry the largest
+    inverse-frequency weight (MeSH wins ties), so a broad descriptor cannot
+    swallow the lines it overlaps, a specific author keyword can name a line
+    that broad MeSH context terms miss, and every selected line starts with at
+    least two papers of its own. Returns the selection and how many candidates were skipped because
+    they added fewer than two uncovered papers.
+    """
+    selected: list[_TopicSignal] = []
+    covered: set[int] = set()
+    remaining = list(candidates)
+    while remaining and len(selected) < MAX_TOPIC_BRANCHES:
+        best: _TopicSignal | None = None
+        best_rank: tuple[float, bool, float, str, str] | None = None
+        for candidate in remaining:
+            if any(_jaccard(candidate.event_indexes, prior.event_indexes) >= 0.9 for prior in selected):
+                continue
+            gained = len(candidate.event_indexes - covered)
+            if gained < _MIN_SIGNAL_PAPERS:
+                continue
+            rank = (
+                -gained * candidate.specificity,
+                candidate.source != "mesh_terms",
+                -candidate.score,
+                candidate.label.casefold(),
+                candidate.key,
+            )
+            if best_rank is None or rank < best_rank:
+                best, best_rank = candidate, rank
+        if best is None:
             break
-    return selected
+        selected.append(best)
+        covered |= best.event_indexes
+        remaining.remove(best)
+    not_selected = sum(len(candidate.event_indexes - covered) < _MIN_SIGNAL_PAPERS for candidate in remaining)
+    return selected, not_selected
 
 
 def _assign_events(
@@ -331,6 +546,7 @@ def _topic_tree(
     coverage: float,
     *,
     signal_extraction: dict[str, Any],
+    excluded_signals: list[dict[str, Any]],
 ) -> ResearchTree:
     """Materialize selected topic signals as chronologically ordered branches."""
     events_by_signal: dict[str, list[TimelineEvent]] = defaultdict(list)
@@ -425,6 +641,8 @@ def _topic_tree(
                     for signal in selected
                     if events_by_signal.get(signal.key)
                 ],
+                "excluded_topic_signals": excluded_signals,
+                "signal_selection": "greedy_marginal_coverage",
                 "signal_extraction": signal_extraction,
                 **membership_diagnostics,
             },
@@ -439,6 +657,7 @@ def _stage_fallback(
     reason: str,
     semantic_coverage: float,
     signal_extraction: dict[str, Any],
+    excluded_signals: list[dict[str, Any]],
 ) -> ResearchTree:
     """Return the deterministic stage tree with explicit caveat metadata."""
     tree = build_research_tree(timeline)
@@ -465,6 +684,8 @@ def _stage_fallback(
             "reason": reason,
             "semantic_coverage_ratio": round(semantic_coverage, 3),
             "selected_signals": [],
+            "excluded_topic_signals": excluded_signals,
+            "signal_selection": "greedy_marginal_coverage",
             "signal_extraction": signal_extraction,
             **_empty_membership_diagnostics(assignment_semantics="research_stage_fallback"),
         },
@@ -588,6 +809,8 @@ def _empty_signal_extraction() -> dict[str, Any]:
         "unique_signals_omitted_limit": 0,
         "unique_signals_retained": 0,
         "candidate_signals": 0,
+        "topic_restating_signals_excluded": 0,
+        "signals_not_selected_low_marginal_coverage": 0,
         "signals_pruned_after_assignment": 0,
     }
 
@@ -619,10 +842,12 @@ def _normalize_signal(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def _usable_signal(key: str, *, topic_key: str) -> bool:
+def _usable_signal(key: str) -> bool:
     if len(key) < 3 or key in _GENERIC_BIOMEDICAL_TERMS:
         return False
-    if key == topic_key:
+    # MeSH "X as Topic" descriptors say what a paper is about (e.g. a review
+    # *of* randomized trials), which is publication mechanics, not a line.
+    if key.endswith(" as topic"):
         return False
     tokens = key.split()
     return not (tokens and all(token in {"study", "research", "analysis", "disease", "drug"} for token in tokens))

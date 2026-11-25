@@ -257,7 +257,14 @@ def test_overlap_cannot_leave_a_high_confidence_single_paper_branch() -> None:
     diagnostics = tree.metadata["lineage_diagnostics"]
 
     assert diagnostics["basis"] == "research_stage_fallback"
-    assert diagnostics["signal_extraction"]["signals_pruned_after_assignment"] == 1
+    # Both descriptors cover 8 of 9 papers and co-occur almost everywhere, so
+    # they are excluded as cross-cutting before selection rather than being
+    # selected and pruned afterwards; no one-paper branch can be emitted.
+    assert {row["label"]: row["reason"] for row in diagnostics["excluded_topic_signals"]} == {
+        "Alpha Pathway": "dominant_cross_cutting_descriptor",
+        "Beta Pathway": "dominant_cross_cutting_descriptor",
+    }
+    assert diagnostics["signal_extraction"]["signals_pruned_after_assignment"] == 0
 
 
 def test_multi_signal_membership_is_preserved_and_significant_overlap_warns() -> None:

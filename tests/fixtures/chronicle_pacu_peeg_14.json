@@ -1,0 +1,304 @@
+{
+  "_comment": "Deterministic 14-PMID PACU processed-EEG fixture for Research Chronicle tests. Titles, dates, DOIs, PublicationType, MeSH and author keywords mirror PubMed indexing as retrieved in 2026-11; iCite rows mirror NIH iCite at the same time (PMID 42962495 had no iCite row). Abstracts are short synthetic paraphrases that keep each record's structured-section labels (including NLM-category quirks) and the wording that exercised past labelling bugs; they are not verbatim PubMed text.",
+  "topic": "PACU processed EEG emergence monitoring",
+  "articles": [
+    {
+      "pmid": "15277912",
+      "title": "Effects of Bispectral Index monitoring on ambulatory anesthesia: a meta-analysis of randomized controlled trials and a cost analysis.",
+      "year": "2004",
+      "month": "Aug",
+      "day": "",
+      "journal": "Anesthesiology",
+      "doi": "10.1097/00000542-200408000-00010",
+      "authors": ["Liu Spencer S"],
+      "publication_types": ["Journal Article", "Meta-Analysis"],
+      "mesh_terms": ["Ambulatory Surgical Procedures", "Anesthesia", "Anesthetics", "Asia", "Costs and Cost Analysis", "Electroencephalography", "Europe", "Humans", "Length of Stay", "Monitoring, Intraoperative", "North America", "Patient Discharge", "Postoperative Nausea and Vomiting", "Randomized Controlled Trials as Topic"],
+      "keywords": [],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "Bispectral Index (BIS) monitoring is increasingly used to titrate anesthetics in ambulatory surgery, where rapid recovery and discharge matter."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "We pooled randomized controlled trials comparing BIS-guided with standard anesthetic practice in ambulatory patients and estimated the costs involved."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "Across the included trials, BIS guidance modestly reduced anesthetic use, the risk of nausea and vomiting, and time spent in the recovery room, but not total time in the ambulatory unit."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "BIS monitoring produced small reductions in anesthetic consumption, postoperative nausea and vomiting, and recovery room time. The cost of the electrode outweighed any savings."}
+      ]
+    },
+    {
+      "pmid": "23965209",
+      "title": "Inadequate emergence after anesthesia: emergence delirium and hypoactive emergence in the Postanesthesia Care Unit.",
+      "year": "2013",
+      "month": "Sep",
+      "day": "",
+      "journal": "Journal of clinical anesthesia",
+      "doi": "10.1016/j.jclinane.2013.02.011",
+      "authors": ["Xará Daniela"],
+      "publication_types": ["Journal Article", "Observational Study", "Research Support, Non-U.S. Gov't"],
+      "mesh_terms": ["Adult", "Aged", "Anesthesia Recovery Period", "Anesthesia, General", "Consciousness Disorders", "Delirium", "Female", "Humans", "Intraoperative Period", "Length of Stay", "Lethargy", "Male", "Middle Aged", "Pain Measurement", "Postoperative Pain", "Postoperative Care", "Postoperative Complications", "Prospective Studies", "Risk Factors", "Single-Blind Method"],
+      "keywords": ["Agitation", "Anesthesia emergence", "Emergence delirium", "Hyperactivity", "Postanesthesia Care Unit", "Postoperative delirium"],
+      "abstract_parts": [
+        {"label": "STUDY OBJECTIVE", "nlm_category": "OBJECTIVE", "text": "To describe how often inadequate emergence occurs after elective surgery in the Postanesthesia Care Unit (PACU), with its determinants and consequences."},
+        {"label": "DESIGN", "nlm_category": "METHODS", "text": "Prospective observational study."},
+        {"label": "SETTING", "nlm_category": "METHODS", "text": "PACU of a university hospital."},
+        {"label": "PATIENTS", "nlm_category": "METHODS", "text": "Adults recovering from general anesthesia."},
+        {"label": "MEASUREMENTS", "nlm_category": "METHODS", "text": "Emergence delirium and hypoactive emergence were assessed with a sedation-agitation scale on PACU admission and at discharge."},
+        {"label": "MAIN RESULTS", "nlm_category": "RESULTS", "text": "Inadequate emergence was common. Emergence delirium was associated with higher pain scores and longer preoperative fasting, whereas hypoactive emergence was associated with longer stays."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "Higher postoperative pain and longer fasting were preventable determinants of emergence delirium. Hypoactive emergence was linked to longer PACU and hospital stays."}
+      ]
+    },
+    {
+      "pmid": "30721296",
+      "title": "Effect of Electroencephalography-Guided Anesthetic Administration on Postoperative Delirium Among Older Adults Undergoing Major Surgery: The ENGAGES Randomized Clinical Trial.",
+      "year": "2019",
+      "month": "Feb",
+      "day": "05",
+      "journal": "JAMA",
+      "doi": "10.1001/jama.2018.22005",
+      "authors": ["Wildes Troy S"],
+      "publication_types": ["Comparative Study", "Journal Article", "Pragmatic Clinical Trial", "Randomized Controlled Trial", "Research Support, N.I.H., Extramural"],
+      "mesh_terms": ["Aged", "Aged, 80 and over", "Algorithms", "Anesthesia, General", "Anesthetics, General", "Cardiotonic Agents", "Electroencephalography", "Emergence Delirium", "Female", "Humans", "Hypotension", "Incidence", "Intraoperative Complications", "Male", "Middle Aged", "Monitoring, Intraoperative", "Phenylephrine", "Postoperative Nausea and Vomiting", "Surgical Procedures, Operative"],
+      "keywords": [],
+      "abstract_parts": [
+        {"label": "IMPORTANCE", "nlm_category": null, "text": "Intraoperative EEG suppression, a possible marker of excessive anesthetic depth, has been associated with postoperative delirium."},
+        {"label": "OBJECTIVE", "nlm_category": null, "text": "To test whether EEG-guided anesthetic administration reduces postoperative delirium in older adults."},
+        {"label": "DESIGN, SETTING, AND PARTICIPANTS", "nlm_category": null, "text": "Pragmatic randomized clinical trial of older adults undergoing major elective surgery at one academic medical center."},
+        {"label": "INTERVENTIONS", "nlm_category": null, "text": "Patients were randomly assigned to EEG-guided anesthetic administration or usual care."},
+        {"label": "MAIN OUTCOMES AND MEASURES", "nlm_category": null, "text": "The primary outcome was delirium on postoperative days 1 to 5; adverse events included intraoperative movement and hypotension."},
+        {"label": "RESULTS", "nlm_category": null, "text": "EEG guidance reduced EEG suppression and anesthetic exposure, but delirium incidence did not differ between groups. Serious adverse events were similar in both groups."},
+        {"label": "CONCLUSIONS AND RELEVANCE", "nlm_category": null, "text": "Among older adults undergoing major surgery, EEG-guided anesthetic administration did not decrease the incidence of postoperative delirium compared with usual care. These findings do not support EEG guidance for this indication."},
+        {"label": "TRIAL REGISTRATION", "nlm_category": null, "text": "ClinicalTrials.gov Identifier: NCT02241655."}
+      ]
+    },
+    {
+      "pmid": "30915984",
+      "title": "Association of electroencephalogram trajectories during emergence from anaesthesia with delirium in the postanaesthesia care unit: an early sign of postoperative complications.",
+      "year": "2019",
+      "month": "May",
+      "day": "",
+      "journal": "British journal of anaesthesia",
+      "doi": "10.1016/j.bja.2018.09.016",
+      "authors": ["Hesse S"],
+      "publication_types": ["Journal Article", "Multicenter Study", "Observational Study"],
+      "mesh_terms": ["Adult", "Aged", "Anesthesia Recovery Period", "Anesthesia, General", "Early Diagnosis", "Electroencephalography", "Emergence Delirium", "Female", "Humans", "Length of Stay", "Male", "Middle Aged", "Monitoring, Intraoperative", "Patient Readmission", "Prognosis", "Risk Factors", "Signal Processing, Computer-Assisted"],
+      "keywords": ["EEG", "delirium", "general anaesthesia, complications", "intraoperative monitoring", "neurocognitive disorders", "postoperative outcome", "recovery room"],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "Delirium in the postanaesthesia care unit (PACU) may herald later postoperative complications."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "Frontal EEG was recorded during emergence from general anaesthesia in adults, and emergence trajectories were classified from their spectral patterns."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "Patients whose emergence lacked a slow-wave pattern more often developed PACU delirium, which was associated with a longer hospital stay."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "Specific EEG trajectories during emergence were associated with PACU delirium. Such patterns may help predict delirium and point to targets for prevention."}
+      ]
+    },
+    {
+      "pmid": "31557307",
+      "title": "Bispectral index for improving intraoperative awareness and early postoperative recovery in adults.",
+      "year": "2019",
+      "month": "Sep",
+      "day": "26",
+      "journal": "The Cochrane database of systematic reviews",
+      "doi": "10.1002/14651858.CD003843.pub4",
+      "authors": ["Lewis Sharon R"],
+      "publication_types": ["Journal Article", "Research Support, Non-U.S. Gov't", "Systematic Review"],
+      "mesh_terms": ["Anesthesia Recovery Period", "Anesthesia, General", "Anesthetics", "Electroencephalography", "Humans", "Intraoperative Awareness", "Monitoring, Intraoperative", "Postoperative Period", "Randomized Controlled Trials as Topic"],
+      "keywords": [],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": null, "text": "Clinical signs and end-tidal anaesthetic gas may not reliably reflect hypnotic depth during anaesthesia."},
+        {"label": "OBJECTIVES", "nlm_category": null, "text": "To assess BIS-guided anaesthesia for preventing intraoperative awareness and improving early recovery."},
+        {"label": "SEARCH METHODS", "nlm_category": null, "text": "We searched major databases and trial registers."},
+        {"label": "SELECTION CRITERIA", "nlm_category": null, "text": "Randomized controlled trials comparing BIS-guided anaesthesia with clinical signs or end-tidal gas monitoring."},
+        {"label": "DATA COLLECTION AND ANALYSIS", "nlm_category": null, "text": "Two authors independently extracted data and assessed risk of bias."},
+        {"label": "MAIN RESULTS", "nlm_category": null, "text": "BIS guidance may reduce awareness compared with clinical signs and modestly shorten times to eye opening and PACU discharge, with low-certainty evidence."},
+        {"label": "AUTHORS' CONCLUSIONS", "nlm_category": null, "text": "Awareness during anaesthesia is uncommon, and the evidence that BIS guidance prevents it remains imprecise. BIS may modestly improve early recovery times."}
+      ]
+    },
+    {
+      "pmid": "36038444",
+      "title": "Bispectral Index (BIS) Monitoring and Postoperative Delirium in Elderly Patients Undergoing Surgery: A Systematic Review and Meta-Analysis With Trial Sequential Analysis.",
+      "year": "2022",
+      "month": "Dec",
+      "day": "",
+      "journal": "Journal of cardiothoracic and vascular anesthesia",
+      "doi": "10.1053/j.jvca.2022.07.004",
+      "authors": ["Chew Wei Zhuen"],
+      "publication_types": ["Meta-Analysis", "Systematic Review", "Journal Article"],
+      "mesh_terms": ["Aged", "Humans", "Middle Aged", "Anesthesia", "Anesthesiology", "Delirium", "Postoperative Cognitive Complications", "Postoperative Complications", "Randomized Controlled Trials as Topic"],
+      "keywords": ["BIS", "elderly", "meta-analysis", "postoperative cognitive dysfunction", "postoperative delirium", "systematic review"],
+      "abstract_parts": [
+        {"label": "OBJECTIVE", "nlm_category": null, "text": "To examine whether BIS-guided anesthesia lowers postoperative delirium in elderly surgical patients."},
+        {"label": "DESIGN", "nlm_category": null, "text": "A systematic review and meta-analysis with trial sequential analysis."},
+        {"label": "SETTING", "nlm_category": null, "text": "Randomized trials identified in electronic databases."},
+        {"label": "PARTICIPANTS", "nlm_category": null, "text": "Elderly patients undergoing surgery."},
+        {"label": "INTERVENTIONS", "nlm_category": null, "text": "BIS-guided versus usual anesthetic care."},
+        {"label": "MEASUREMENTS AND MAIN RESULTS", "nlm_category": null, "text": "BIS guidance did not significantly reduce delirium but was associated with less postoperative cognitive dysfunction and faster recovery."},
+        {"label": "CONCLUSION", "nlm_category": null, "text": "In this meta-analysis, BIS-guided anesthesia was not associated with fewer cases of postoperative delirium, although it was associated with less postoperative cognitive dysfunction and better recovery parameters."}
+      ]
+    },
+    {
+      "pmid": "36706658",
+      "title": "Preoperative characterization of baseline EEG recordings for risk stratification of post-anesthesia care unit delirium.",
+      "year": "2023",
+      "month": "Jun",
+      "day": "",
+      "journal": "Journal of clinical anesthesia",
+      "doi": "10.1016/j.jclinane.2023.111058",
+      "authors": ["Schüßler Jule"],
+      "publication_types": ["Journal Article"],
+      "mesh_terms": ["Humans", "Aged", "Postoperative Complications", "Emergence Delirium", "Electroencephalography", "Risk Assessment", "Anesthesia", "Anesthesia, General"],
+      "keywords": ["Anesthesia", "Baseline EEG recording", "Cognitive assessment", "Neuromonitoring", "PACU-D", "Perioperative medicine"],
+      "abstract_parts": [
+        {"label": "STUDY OBJECTIVE", "nlm_category": null, "text": "Delirium in the post-anesthesia care unit (PACU-D) is a frequent complication in older surgical patients."},
+        {"label": "DESIGN AND SETTING", "nlm_category": null, "text": "Post-hoc analysis of preoperative EEG recordings in patients with and without PACU-D."},
+        {"label": "PATIENTS AND MEASUREMENTS", "nlm_category": null, "text": "Baseline EEG was recorded with eyes open and closed, and spectral and entropy measures were compared."},
+        {"label": "MAIN RESULTS", "nlm_category": null, "text": "Patients who developed PACU-D showed different baseline spectral power and entropy patterns."},
+        {"label": "CONCLUSIONS", "nlm_category": null, "text": "Baseline EEG recorded before surgery may help stratify the risk of PACU delirium after general anesthesia. Routine monitoring parameters captured these differences."},
+        {"label": "CLINICAL TRIAL NUMBER", "nlm_category": null, "text": "DRKS registration."}
+      ]
+    },
+    {
+      "pmid": "37364282",
+      "title": "Electroencephalographic Biomarkers, Cerebral Oximetry, and Postoperative Cognitive Function in Adult Noncardiac Surgical Patients: A Prospective Cohort Study.",
+      "year": "2023",
+      "month": "Nov",
+      "day": "01",
+      "journal": "Anesthesiology",
+      "doi": "10.1097/ALN.0000000000004664",
+      "authors": ["Vlisides Phillip E"],
+      "publication_types": ["Observational Study", "Journal Article", "Research Support, N.I.H., Extramural", "Research Support, Non-U.S. Gov't"],
+      "mesh_terms": ["Adult", "Humans", "Male", "Female", "Oximetry", "Prospective Studies", "Cerebrovascular Circulation", "Aftercare", "Delirium", "Patient Discharge", "Cognition", "Electroencephalography", "Biomarkers", "Postoperative Complications"],
+      "keywords": [],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": null, "text": "Neurophysiologic biomarkers that predict cognition after surgery are lacking."},
+        {"label": "METHODS", "nlm_category": null, "text": "Single-center prospective observational study recording multichannel EEG and cerebral oximetry before, during and after noncardiac surgery."},
+        {"label": "RESULTS", "nlm_category": null, "text": "Preoperative posterior alpha power and frontal-parietal connectivity did not correlate with postoperative cognitive scores."},
+        {"label": "CONCLUSIONS", "nlm_category": null, "text": "Preoperative alpha power, connectivity and cerebral oximetry were not associated with cognitive function after noncardiac surgery."}
+      ]
+    },
+    {
+      "pmid": "37616326",
+      "title": "Predictors of Low Risk for Delirium during Anesthesia Emergence.",
+      "year": "2023",
+      "month": "Dec",
+      "day": "01",
+      "journal": "Anesthesiology",
+      "doi": "10.1097/ALN.0000000000004754",
+      "authors": ["Dragovic Srdjan"],
+      "publication_types": ["Journal Article", "Research Support, Non-U.S. Gov't"],
+      "mesh_terms": ["Humans", "Middle Aged", "Anesthesia Recovery Period", "Anesthesia, General", "Delirium", "Propofol", "Sevoflurane", "Electroencephalography"],
+      "keywords": [],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": null, "text": "Processed EEG may predict delirium, but emergence trajectories of EEG band power are rarely used clinically."},
+        {"label": "METHODS", "nlm_category": null, "text": "Data from a previously published study were reanalyzed, and frontal EEG power slopes during emergence were modeled."},
+        {"label": "RESULTS", "nlm_category": null, "text": "Steeper changes in specific frequency bands during emergence identified patients at low risk for delirium."},
+        {"label": "CONCLUSIONS", "nlm_category": null, "text": "A simple analysis of one frontal EEG channel identified emergence patterns typical of patients at low risk for delirium."}
+      ]
+    },
+    {
+      "pmid": "39246973",
+      "title": "Bispectral Index Monitoring Effect on Delirium Occurrence and Nursing Quality Improvement in Post-anesthesia Care Unit Patients Recovering From General Anesthesia: A Randomized Controlled Trial.",
+      "year": "2024",
+      "month": "Aug",
+      "day": "",
+      "journal": "Cureus",
+      "doi": "10.7759/cureus.66348",
+      "authors": ["Huang Yi'an"],
+      "publication_types": ["Journal Article"],
+      "mesh_terms": [],
+      "keywords": ["bispectral index", "depth of anesthesia", "nursing quality", "post-anesthesia care unit", "postoperative delirium"],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "Whether monitoring anesthetic depth affects delirium and nursing quality in the post-anesthesia care unit (PACU) is unclear."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "This randomized controlled trial included 120 adults; one group received BIS-guided anesthesia and the other usual care."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "BIS guidance was associated with fewer adverse events and less delirium in the PACU, and with better nursing quality scores."},
+        {"label": "CONCLUSION", "nlm_category": "CONCLUSIONS", "text": "Intraoperative BIS monitoring may reduce adverse events and delirium in the PACU and lessen the nursing workload."}
+      ]
+    },
+    {
+      "pmid": "40391028",
+      "title": "The Impact of Anesthetic Management Under Bispectral Index Monitoring on the Early Recovery Quality of Elderly Patients Undergoing Laparoscopic Surgery: A Blinded Randomized Controlled Trial.",
+      "year": "2025",
+      "month": "",
+      "day": "",
+      "journal": "Clinical interventions in aging",
+      "doi": "10.2147/CIA.S507758",
+      "authors": ["Shi Min"],
+      "publication_types": ["Journal Article", "Randomized Controlled Trial"],
+      "mesh_terms": ["Aged", "Aged, 80 and over", "Female", "Humans", "Male", "Middle Aged", "Anesthesia Recovery Period", "Anesthesia, General", "Anesthetics, Intravenous", "Consciousness Monitors", "Emergence Delirium", "Laparoscopy", "Length of Stay", "Propofol"],
+      "keywords": ["BIS", "bispectral index", "cognitive function", "elderly patients", "quality of postoperative recovery", "sleep quality"],
+      "abstract_parts": [
+        {"label": "PURPOSE", "nlm_category": "UNASSIGNED", "text": "To evaluate BIS-guided anesthetic depth and early recovery quality in elderly laparoscopic patients."},
+        {"label": "METHODS", "nlm_category": "UNASSIGNED", "text": "Ninety patients aged 60 years or older were randomized into empirical, BIS 40-60 and BIS 50-60 groups."},
+        {"label": "RESULTS", "nlm_category": "UNASSIGNED", "text": "BIS-guided groups had better early recovery scores and fewer adverse events than the empirical group."},
+        {"label": "CONCLUSION", "nlm_category": "UNASSIGNED", "text": "BIS-guided anesthesia management may improve early recovery after laparoscopic surgery in elderly patients."}
+      ]
+    },
+    {
+      "pmid": "40987656",
+      "title": "EEG alpha power and delirium in the postanaesthesia care unit in older adults: the AlphaMax trial part 2 - effect of propofol infusion during emergence from desflurane anaesthesia<sup>☆</sup>.",
+      "year": "2026",
+      "month": "Apr",
+      "day": "",
+      "journal": "British journal of anaesthesia",
+      "doi": "10.1016/j.bja.2025.07.051",
+      "authors": ["Banerji Antara"],
+      "publication_types": ["Journal Article", "Randomized Controlled Trial"],
+      "mesh_terms": ["Humans", "Propofol", "Female", "Male", "Aged", "Desflurane", "Aged, 80 and over", "Emergence Delirium", "Anesthesia Recovery Period", "Anesthetics, Intravenous", "Electroencephalography", "Anesthetics, Inhalation", "Alpha Rhythm", "Delirium"],
+      "keywords": ["EEG", "PACU", "cognitive recovery", "delirium", "depth of anaesthesia", "emergence", "propofol"],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "This arm of the AlphaMax trial tested a short propofol infusion at the end of surgery during emergence in older adults."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "Patients were randomly assigned to propofol or placebo infusion during emergence from desflurane anaesthesia."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "Propofol reduced alpha power and increased burst suppression during emergence; PACU delirium did not differ."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "Propofol infusion lowered EEG alpha power during emergence, but the incidence of PACU delirium was unchanged."},
+        {"label": "CLINICAL TRIAL REGISTRATION", "nlm_category": "BACKGROUND", "text": "ACTRN registration."}
+      ]
+    },
+    {
+      "pmid": "40987659",
+      "title": "EEG alpha power and delirium in the postanaesthesia care unit in older adults: the AlphaMax trial part 1 - effect of desflurane and fentanyl titration during maintenance.",
+      "year": "2026",
+      "month": "Apr",
+      "day": "",
+      "journal": "British journal of anaesthesia",
+      "doi": "10.1016/j.bja.2025.07.045",
+      "authors": ["Gaskell Amy L"],
+      "publication_types": ["Journal Article", "Randomized Controlled Trial"],
+      "mesh_terms": ["Humans", "Desflurane", "Female", "Male", "Aged", "Fentanyl", "Electroencephalography", "Anesthetics, Inhalation", "Middle Aged", "Aged, 80 and over", "Emergence Delirium", "Alpha Rhythm", "Anesthetics, Intravenous", "Anesthesia Recovery Period"],
+      "keywords": ["EEG", "PACU", "alpha waves", "delirium depth of anaesthesia", "inhalation anaesthesia", "nociception"],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "Frontal EEG alpha oscillations may indicate adequate anaesthesia with antinociception, and low alpha power marks a vulnerable brain."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "Older adults were randomly assigned to EEG-guided titration of desflurane and fentanyl or to usual care."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "EEG guidance slightly increased alpha power without differences in delirium or other clinical outcomes."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "EEG-guided titration of fentanyl and desflurane had only a small effect on alpha power and no appreciable effect on clinical outcomes."},
+        {"label": "CLINICAL TRIAL REGISTRATION", "nlm_category": "BACKGROUND", "text": "ACTRN registration."}
+      ]
+    },
+    {
+      "pmid": "42962495",
+      "title": "Processed electroencephalogram-guided anesthesia and its impact on postoperative delirium and perioperative efficiency: A systematic review and meta-analysis.",
+      "year": "2026",
+      "month": "Oct",
+      "day": "30",
+      "journal": "Journal of clinical anesthesia",
+      "doi": "10.1016/j.jclinane.2026.112351",
+      "authors": ["Hormis Anil"],
+      "publication_types": ["Journal Article", "Review"],
+      "mesh_terms": [],
+      "keywords": ["Anesthesia", "Bispectral index", "Depth of Anesthesia", "Meta-analysis", "Processed electroencephalogram (EEG)", "Systematic review"],
+      "abstract_parts": [
+        {"label": "BACKGROUND", "nlm_category": "BACKGROUND", "text": "Processed EEG (pEEG) indices are recommended for monitoring anesthetic depth."},
+        {"label": "METHODS", "nlm_category": "METHODS", "text": "We performed a systematic review and meta-analysis of randomized controlled trials comparing pEEG-guided with non-guided anesthesia."},
+        {"label": "RESULTS", "nlm_category": "RESULTS", "text": "pEEG guidance reduced anesthetic use, shortened wake-up and PACU times, and lowered postoperative delirium."},
+        {"label": "CONCLUSIONS", "nlm_category": "CONCLUSIONS", "text": "Across many randomized trials, pEEG-guided anesthesia improved perioperative efficiency and reduced postoperative delirium. Evidence is strongest for BIS."}
+      ]
+    }
+  ],
+  "icite": {
+    "15277912": {"pmid": 15277912, "year": 2004, "citation_count": 117, "citations_per_year": 5.32, "relative_citation_ratio": 4.41, "nih_percentile": 90.6},
+    "23965209": {"pmid": 23965209, "year": 2013, "citation_count": 61, "citations_per_year": 4.69, "relative_citation_ratio": 2.79, "nih_percentile": 82.2},
+    "30721296": {"pmid": 30721296, "year": 2019, "citation_count": 385, "citations_per_year": 55.0, "relative_citation_ratio": 25.27, "nih_percentile": 99.5},
+    "30915984": {"pmid": 30915984, "year": 2019, "citation_count": 168, "citations_per_year": 24.0, "relative_citation_ratio": 11.91, "nih_percentile": 98.1},
+    "31557307": {"pmid": 31557307, "year": 2019, "citation_count": 137, "citations_per_year": 19.57, "relative_citation_ratio": 11.3, "nih_percentile": 97.9},
+    "36038444": {"pmid": 36038444, "year": 2022, "citation_count": 28, "citations_per_year": 7.0, "relative_citation_ratio": 3.66, "nih_percentile": 87.7},
+    "36706658": {"pmid": 36706658, "year": 2023, "citation_count": 21, "citations_per_year": 7.0, "relative_citation_ratio": 4.05, "nih_percentile": 89.4},
+    "37364282": {"pmid": 37364282, "year": 2023, "citation_count": 23, "citations_per_year": 7.67, "relative_citation_ratio": 3.88, "nih_percentile": 88.7},
+    "37616326": {"pmid": 37616326, "year": 2023, "citation_count": 18, "citations_per_year": 6.0, "relative_citation_ratio": 3.11, "nih_percentile": 84.6},
+    "39246973": {"pmid": 39246973, "year": 2024, "citation_count": 2, "citations_per_year": 1.0, "relative_citation_ratio": 0.39, "nih_percentile": 23.3},
+    "40391028": {"pmid": 40391028, "year": 2025, "citation_count": 5, "citations_per_year": 5.0, "relative_citation_ratio": 2.81, "nih_percentile": 82.4},
+    "40987656": {"pmid": 40987656, "year": 2026, "citation_count": 2, "citations_per_year": 2.0, "relative_citation_ratio": null, "nih_percentile": null},
+    "40987659": {"pmid": 40987659, "year": 2026, "citation_count": 4, "citations_per_year": 4.0, "relative_citation_ratio": null, "nih_percentile": null}
+  }
+}
