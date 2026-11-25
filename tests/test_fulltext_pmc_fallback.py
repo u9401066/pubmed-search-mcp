@@ -8,6 +8,7 @@ the production fulltext cache. Only network addresses are replaced.
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,7 +17,7 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from pubmed_search.application.fulltext import FulltextRequest, FulltextService
+from pubmed_search.application.fulltext import FulltextRequest, FulltextService, racing
 from pubmed_search.application.fulltext.cache import (
     FulltextCache,
     FulltextCacheError,
@@ -686,6 +687,54 @@ async def test_deadline_inside_structured_stage_is_reported_as_deadline_not_outa
     assert [skipped.source for skipped in result.sources_skipped] == ["ncbi_pmc", "pdf_retrieval_fallback"]
     assert all(error.code != "source_unavailable" for error in result.source_errors)
     assert result.coverage_status == "unavailable"
+
+
+@pytest.mark.parametrize("late_outcome", ["raises", "returns"])
+async def test_hedged_attempt_that_outlives_the_cancel_grace_is_reaped(
+    monkeypatch: pytest.MonkeyPatch, late_outcome: str
+) -> None:
+    """A source that ignores cancellation past the grace is still awaited, never left unretrieved."""
+    monkeypatch.setattr(racing, "_CANCEL_GRACE_SECONDS", 0.01)
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, Any]] = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    finished = asyncio.Event()
+
+    async def stubborn() -> str:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.05)  # ignores the cancellation longer than the grace
+            finished.set()
+            if late_outcome == "raises":
+                raise RuntimeError("late provider failure") from None
+        return "late body"
+
+    async def answer() -> str:
+        return "body"
+
+    try:
+        outcomes = await racing.run_hedged(
+            [racing.HedgedAttempt("europe_pmc", stubborn), racing.HedgedAttempt("ncbi_pmc", answer)],
+            usable=lambda value: value == "body",
+            hedge_after=0.0,
+            deadline=racing.FulltextDeadline(5.0),
+        )
+        assert [(outcome.source, outcome.stopped) for outcome in outcomes] == [
+            ("europe_pmc", "superseded"),
+            ("ncbi_pmc", None),
+        ]
+        assert racing.abandoned_attempt_count() == 1
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        for _ in range(3):
+            await asyncio.sleep(0)
+        gc.collect()
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert racing.abandoned_attempt_count() == 0
+    assert [context.get("message") for context in reported] == []
 
 
 # ----------------------------------------------------------------------------

@@ -12,22 +12,34 @@ Maintenance:
     Attempts must convert their own provider exceptions into return values or
     raise; this module records exceptions without interpreting them. Keep
     timing here and source semantics in ``service.py``.
+
+    A cancelled attempt gets a short grace period to finish. One that
+    outlives it (for example a client that swallows the first cancellation)
+    is not waited for, but it is not abandoned either: a strong reference is
+    kept until it ends and its result or exception is then retrieved, so it
+    can neither be garbage-collected mid-flight nor surface later as an
+    unretrieved task exception.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import math
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T")
 _CANCEL_GRACE_SECONDS = 1.0
+_ABANDONED_ATTEMPTS: set[asyncio.Future[Any]] = set()
+"""Cancelled attempts still running after the grace period, held until they end."""
 # Event-loop timers can fire a few milliseconds early (notably on Windows);
 # starting a source with less budget than this cannot produce an answer.
 MIN_USEFUL_BUDGET_SECONDS = 0.05
@@ -154,10 +166,40 @@ async def run_hedged(
         if pending:
             with contextlib.suppress(Exception):
                 await asyncio.wait(pending, timeout=_CANCEL_GRACE_SECONDS)
+            for task, index in pending.items():
+                if task.done():
+                    _retrieve_outcome(task)
+                else:
+                    _reap_when_done(task, outcomes[index].source)
         if winner is None:
             for outcome in outcomes[next_index:]:
                 outcome.skipped_by_deadline = deadline.expired
     return outcomes
 
 
-__all__ = ["MIN_USEFUL_BUDGET_SECONDS", "FulltextDeadline", "HedgedAttempt", "HedgedOutcome", "run_hedged"]
+def abandoned_attempt_count() -> int:
+    """Cancelled attempts that outlived the grace period and are still running."""
+    return len(_ABANDONED_ATTEMPTS)
+
+
+def _retrieve_outcome(task: asyncio.Future[Any]) -> None:
+    """Consume a stopped attempt's result so its exception is never reported as unretrieved."""
+    _ABANDONED_ATTEMPTS.discard(task)
+    if not task.cancelled():
+        task.exception()
+
+
+def _reap_when_done(task: asyncio.Future[Any], source: str) -> None:
+    logger.warning("Fulltext source %s ignored cancellation; it is reaped when it finishes", source)
+    _ABANDONED_ATTEMPTS.add(task)
+    task.add_done_callback(_retrieve_outcome)
+
+
+__all__ = [
+    "MIN_USEFUL_BUDGET_SECONDS",
+    "FulltextDeadline",
+    "HedgedAttempt",
+    "HedgedOutcome",
+    "abandoned_attempt_count",
+    "run_hedged",
+]
