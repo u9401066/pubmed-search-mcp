@@ -34,7 +34,12 @@ from pubmed_search.domain.services.study_design import (
 )
 
 from .graph import build_chronicle_graph
-from .highlights import highlight_display_text, highlight_locator, select_extractive_highlight
+from .highlights import (
+    abstract_truncation_basis,
+    highlight_display_text,
+    highlight_locator,
+    select_extractive_highlight,
+)
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.research_tree import ResearchBranch, ResearchTree
@@ -185,14 +190,46 @@ def _entry_label(event: TimelineEvent, design: StudyDesign) -> tuple[str, str]:
     return event.milestone_label or event.title, f"milestone_detection:{strategy or 'unrecorded'}"
 
 
+def _stored_prefix_truncated(event: TimelineEvent) -> bool:
+    return _event_metadata(event).get("abstract_truncated") is True
+
+
 def _extractive_highlight(event: TimelineEvent, article: EvidenceArticle) -> dict[str, Any] | None:
     """Select one verbatim abstract sentence with offsets into ``article.abstract``."""
     if not article.abstract:
         return None
-    highlight = select_extractive_highlight(article.abstract, _event_metadata(event).get("abstract_sections"))
+    highlight = select_extractive_highlight(
+        article.abstract,
+        _event_metadata(event).get("abstract_sections"),
+        truncated=_stored_prefix_truncated(event),
+    )
     if highlight is None:
         return None
     return highlight.to_provenance(abstract=article.abstract, evidence_id=article.evidence_id, pmid=article.pmid)
+
+
+def _abstract_truncation(event: TimelineEvent, article: EvidenceArticle) -> dict[str, Any] | None:
+    """Disclose when the stored abstract is known to be incomplete.
+
+    Either PubMed itself truncated the record (an ``ABSTRACT TRUNCATED``
+    notice) or only a bounded prefix of a longer abstract was stored.
+    """
+    if not article.abstract:
+        return None
+    basis = abstract_truncation_basis(article.abstract, stored_prefix_truncated=_stored_prefix_truncated(event))
+    if not basis:
+        return None
+    source_length = _event_metadata(event).get("abstract_source_char_length")
+    return {
+        "truncated": True,
+        "basis": list(basis),
+        "stored_char_length": len(article.abstract),
+        "source_char_length": (
+            source_length
+            if isinstance(source_length, int) and not isinstance(source_length, bool) and source_length >= 0
+            else None
+        ),
+    }
 
 
 def _citation_label(article: EvidenceArticle) -> str:
@@ -377,6 +414,7 @@ def assemble_chronicle(
                     "study_design": design.to_dict(),
                     "entry_label_basis": label_basis,
                     "extractive_highlight": highlight,
+                    "abstract_truncation": _abstract_truncation(event, article),
                     # ``confidence`` retains its historical field name on the
                     # domain entity, but its semantics are explicitly milestone
                     # detection confidence. Landmark importance is independent.

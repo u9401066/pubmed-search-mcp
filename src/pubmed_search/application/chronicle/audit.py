@@ -457,10 +457,14 @@ def _audit_lineage_semantics(snapshot: ChronicleSnapshot) -> ChronicleAuditFindi
     )
 
 
-#: Event categories that a research design indexed by PubMed cannot carry
-#: on the strength of text patterns alone.
-_COMMUNICATION_ENTRY_TYPES = frozenset({ChronicleEntryType.SAFETY, ChronicleEntryType.CONTROVERSY})
-_COMMUNICATION_DESIGN_FAMILIES = frozenset({"commentary", "review"})
+#: Event categories that a research design indexed by PubMed cannot carry on
+#: the strength of text patterns alone, mapped to the design families that
+#: may. An observational or generic (comparative, multicenter...) study may
+#: report a safety signal, for example from pharmacovigilance data.
+_COMMUNICATION_DESIGN_FAMILIES: dict[ChronicleEntryType, frozenset[str]] = {
+    ChronicleEntryType.SAFETY: frozenset({"commentary", "review", "observational", "other"}),
+    ChronicleEntryType.CONTROVERSY: frozenset({"commentary", "review"}),
+}
 _TEXT_LABEL_MARKERS = ("milestone_detection:title_pattern", "milestone_detection:abstract_pattern")
 _AUDIT_SAMPLE = 20
 
@@ -470,6 +474,7 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
     by_basis: Counter[str] = Counter()
     heuristic_designs: list[dict[str, Any]] = []
     heuristic_categories: list[dict[str, Any]] = []
+    abstract_categories: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
     for entry in snapshot.entries:
         evidence_ids = [article.evidence_id for article in entry.evidence.supporting_articles]
@@ -489,6 +494,17 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
                     "indexed_publication_types": design.get("indexed_publication_types") or [],
                 }
             )
+        detection = entry.provenance.get("milestone_detection")
+        if isinstance(detection, dict) and detection.get("strategy") == "abstract_pattern":
+            abstract_categories.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": evidence_ids,
+                    "milestone_type": entry.provenance.get("milestone_type"),
+                    "matched_value": detection.get("matched_value"),
+                    "basis": detection.get("basis"),
+                }
+            )
         label_basis = entry.provenance.get("entry_label_basis")
         if isinstance(label_basis, str) and any(marker in label_basis for marker in _TEXT_LABEL_MARKERS):
             heuristic_categories.append(
@@ -496,8 +512,8 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
             )
         if (
             design.get("indexed") is True
-            and entry.entry_type in _COMMUNICATION_ENTRY_TYPES
-            and design.get("family") not in _COMMUNICATION_DESIGN_FAMILIES
+            and entry.entry_type in _COMMUNICATION_DESIGN_FAMILIES
+            and design.get("family") not in _COMMUNICATION_DESIGN_FAMILIES[entry.entry_type]
         ):
             conflicts.append(
                 {
@@ -511,6 +527,7 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
         "label_basis_counts": dict(sorted(by_basis.items())),
         "heuristic_design_labels": heuristic_designs[:_AUDIT_SAMPLE],
         "heuristic_category_labels": heuristic_categories[:_AUDIT_SAMPLE],
+        "abstract_pattern_categories": abstract_categories[:_AUDIT_SAMPLE],
         "category_conflicts_with_indexed_design": conflicts[:_AUDIT_SAMPLE],
         "primary_source": "PubMed PublicationType, then MeSH study-design descriptors",
     }
@@ -525,14 +542,21 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
             ),
             details=details,
         )
-    if heuristic_designs or heuristic_categories:
+    abstract_note = (
+        f" {len(abstract_categories)} event categories come from the abstract's own wording (for example "
+        '"In this phase 3 trial"), not from indexing; confirm the paper itself is that design.'
+        if abstract_categories
+        else ""
+    )
+    if heuristic_designs or heuristic_categories or abstract_categories:
         return ChronicleAuditFinding(
             check="study_design_labels",
             status="warn",
             message=(
                 f"{len(heuristic_designs) + len(heuristic_categories)} entry labels come from title/abstract text "
-                "patterns because PubMed has not indexed a study design for them; they are marked [heuristic] and "
-                f"should be checked against the paper. {indexed} labels come from PubMed indexing."
+                "patterns, either because PubMed has not indexed a study design for them or as a refinement of an "
+                "indexed design; they are marked [heuristic] and should be checked against the paper. "
+                f"{indexed} labels come from PubMed indexing.{abstract_note}"
             ),
             details=details,
         )
@@ -553,9 +577,21 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
     without_abstract = 0
     abstract_without_highlight = 0
     problems: list[dict[str, Any]] = []
+    truncated: list[dict[str, Any]] = []
     for entry in snapshot.entries:
         highlight = entry.provenance.get("extractive_highlight")
         articles = {article.evidence_id: article for article in entry.evidence.all_articles}
+        truncation = entry.provenance.get("abstract_truncation")
+        if isinstance(truncation, dict) and truncation.get("truncated") is True:
+            truncated.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": [article.evidence_id for article in entry.evidence.supporting_articles],
+                    "basis": truncation.get("basis") or [],
+                    "stored_char_length": truncation.get("stored_char_length"),
+                    "source_char_length": truncation.get("source_char_length"),
+                }
+            )
         if highlight is None:
             if any(article.abstract for article in articles.values()):
                 abstract_without_highlight += 1
@@ -577,6 +613,8 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
         "entries_without_stored_abstract": without_abstract,
         "entries_with_abstract_but_no_highlight": abstract_without_highlight,
         "integrity_problems": problems[:_AUDIT_SAMPLE],
+        "truncated_abstract_count": len(truncated),
+        "truncated_abstracts": truncated[:_AUDIT_SAMPLE],
         "offset_unit": "unicode_code_points",
     }
     if problems:
@@ -586,6 +624,18 @@ def _audit_extractive_highlights(snapshot: ChronicleSnapshot) -> ChronicleAuditF
             message=(
                 f"{len(problems)} quoted abstract sentences do not round-trip to their stored abstract; "
                 "do not cite those quotes."
+            ),
+            details=details,
+        )
+    if truncated:
+        return ChronicleAuditFinding(
+            check="extractive_highlights",
+            status="warn",
+            message=(
+                f"{verified} of {len(snapshot.entries)} entries quote a verified abstract sentence, but "
+                f"{len(truncated)} stored abstracts are truncated (PubMed truncation notice or the stored "
+                "character limit); their quotes come from the retained text, the cut fragment is never quoted, "
+                "and later sections such as the conclusions may be missing. Read the full record before citing."
             ),
             details=details,
         )

@@ -38,6 +38,7 @@ from pubmed_search.application.chronicle import (
     landmark_importance_score,
     landmark_rank_key,
     narrate_chronicle,
+    observed_max_citations,
 )
 from pubmed_search.application.chronicle.service import ChronicleNoEvidenceError
 from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder
@@ -389,9 +390,14 @@ def _highlight_ranking_note(entry: ChronicleEntry, *, coverage_status: Any) -> s
     importance = landmark_importance_score(entry)
     citations = entry_max_citations(entry)
     if importance is not None:
-        if landmark_citation_policy(entry) in {None, "none"}:
+        policy = landmark_citation_policy(entry)
+        if policy in {None, "none"}:
             return f"landmark importance {importance:.2f}; no citation metric for this paper"
-        return f"landmark importance {importance:.2f}; {citations} iCite citations"
+        # A field-normalized metric (RCR, NIH percentile) can exist without a
+        # citation count; an unobserved count is unknown, never zero.
+        observed = observed_max_citations(entry)
+        count = f"{observed} iCite citations" if observed is not None else "citation count unknown"
+        return f"landmark importance {importance:.2f} (citation impact from {policy}); {count}"
     if citations:
         return f"citation-count fallback {citations}"
     if coverage_status in {"error", "empty"}:

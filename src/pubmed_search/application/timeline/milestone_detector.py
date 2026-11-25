@@ -28,15 +28,21 @@ from pubmed_search.domain.entities.timeline import (
     MilestoneType,
     TimelineEvent,
 )
-from pubmed_search.domain.services.study_design import indexed_design_family
+from pubmed_search.domain.services.study_design import (
+    classify_study_design,
+    indexed_design_family,
+    is_background_mention,
+)
 
 from .dates import parse_publication_month, parse_publication_year
 from .milestone_policy import (
-    ABSTRACT_PATTERN_POLICY_NAMES,
+    ABSTRACT_CONFIDENCE_PENALTY,
+    ABSTRACT_SELF_DESCRIPTION_PATTERNS,
     DEFAULT_CITATION_THRESHOLD_POLICIES,
     DEFAULT_PUBTYPE_POLICIES,
     DEFAULT_TITLE_PATTERN_POLICIES,
     LANDMARK_CITATION_THRESHOLDS,
+    NON_MILESTONE_DESIGN_FAMILIES,
     PUBTYPE_PATTERNS,
     TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN,
     TITLE_PATTERNS,
@@ -95,6 +101,16 @@ class MilestoneDetector:
         self._compiled_patterns = [
             (re.compile(policy.pattern, re.IGNORECASE), policy) for policy in self._title_pattern_policies
         ]
+        # Abstracts accept only self-describing design phrases; custom
+        # patterns are the caller's own rules and are applied as given.
+        self._compiled_abstract_patterns = [
+            (
+                re.compile(ABSTRACT_SELF_DESCRIPTION_PATTERNS.get(policy.name, policy.pattern), re.IGNORECASE),
+                policy,
+            )
+            for policy in self._title_pattern_policies
+            if policy.name in ABSTRACT_SELF_DESCRIPTION_PATTERNS or policy.name.startswith("custom_")
+        ]
 
     def detect_milestone(self, article: dict[str, Any], is_first: bool = False) -> TimelineEvent | None:
         """
@@ -115,10 +131,16 @@ class MilestoneDetector:
         if not pmid or parse_publication_year(year) is None:
             return None
 
-        # PubMed indexing is authoritative about what kind of publication this
-        # is. Text patterns may refine an indexed design (a trial phase) but
-        # cannot relabel an indexed trial or cohort as, say, a safety alert.
-        design_family = indexed_design_family(article.get("publication_types"), article.get("mesh_terms"))
+        # PubMed publication types are authoritative about what kind of
+        # publication this is. Text patterns may refine an indexed design (a
+        # trial phase) but cannot relabel an indexed trial as, say, a safety
+        # alert. MeSH design descriptors alone never veto a text milestone.
+        design_family = indexed_design_family(article.get("publication_types"))
+        if classify_study_design(article.get("publication_types"), title=title).family in NON_MILESTONE_DESIGN_FAMILIES:
+            # A protocol (indexed or stated by its title) or an erratum/retraction
+            # notice reports no results; it stays in the timeline as a
+            # background record, never a milestone.
+            return None
 
         # Earliest-in-scope is provenance, not a scientific milestone type.
         # Detect the article's actual milestone first so an early FDA approval,
@@ -134,15 +156,11 @@ class MilestoneDetector:
         if not result:
             result = self._detect_from_pubtype(article, include_unphased_rct=True)
 
-        # 4. Abstract pattern matching (lower confidence) only for records
-        # without an indexed design, and only for self-describing designs.
-        if not result and abstract and design_family is None:
-            result = self._detect_from_title(
-                article,
-                abstract,
-                confidence_penalty=0.2,
-                design_family=design_family,
-            )
+        # 4. Abstract pattern matching (lower confidence): self-describing
+        # design phrases only, within what an indexed design is compatible
+        # with, never a sentence about other work.
+        if not result and abstract:
+            result = self._detect_from_abstract(article, abstract, design_family=design_family)
 
         # 5. Citation-based landmark detection
         if not result:
@@ -233,60 +251,112 @@ class MilestoneDetector:
 
         return None
 
+    @staticmethod
+    def _compatible_text_milestones(design_family: str | None) -> frozenset[MilestoneType] | None:
+        """Return the text milestones an indexed design accepts (``None``: all)."""
+        if design_family is None:
+            return None
+        return TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN.get(design_family, frozenset())
+
     def _detect_from_title(
         self,
         article: dict[str, Any],
         text: str,
-        confidence_penalty: float = 0.0,
         *,
         design_family: str | None = None,
     ) -> TimelineEvent | None:
-        """Detect milestone from title or abstract text.
+        """Detect milestone from title text.
 
         Args:
             article: Source article mapping.
-            text: Title or abstract text to match.
-            confidence_penalty: Positive for abstract matching.
+            text: Title text to match.
             design_family: Indexed PubMed design family, if any. Text patterns
                 that would contradict it are skipped.
         """
-        strategy = "abstract_pattern" if confidence_penalty else "title_pattern"
-        compatible = (
-            TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN.get(design_family, frozenset())
-            if design_family is not None
-            else None
-        )
+        compatible = self._compatible_text_milestones(design_family)
         for pattern, policy in self._compiled_patterns:
             if compatible is not None and policy.milestone_type not in compatible:
                 continue
-            if (
-                confidence_penalty
-                and not policy.name.startswith("custom_")
-                and policy.name not in ABSTRACT_PATTERN_POLICY_NAMES
-            ):
-                continue
             match = pattern.search(text)
-            if match:
-                confidence = policy.confidence - confidence_penalty
-                if confidence >= self.min_confidence:
-                    return self._create_event(
-                        article,
-                        policy.milestone_type,
-                        policy.label,
-                        confidence,
-                        metadata={
-                            "milestone_detection": {
-                                "strategy": strategy,
-                                "policy": policy.name,
-                                "rule": policy.pattern,
-                                "matched_value": match.group(0),
-                                "reason": policy.reason,
-                                "confidence": confidence,
-                                "confidence_penalty": confidence_penalty,
-                                "indexed_design_family": design_family,
-                            }
-                        },
-                    )
+            if match and policy.confidence >= self.min_confidence:
+                return self._create_event(
+                    article,
+                    policy.milestone_type,
+                    policy.label,
+                    policy.confidence,
+                    metadata={
+                        "milestone_detection": {
+                            "strategy": "title_pattern",
+                            "policy": policy.name,
+                            "rule": policy.pattern,
+                            "matched_value": match.group(0),
+                            "reason": policy.reason,
+                            "confidence": policy.confidence,
+                            "confidence_penalty": 0.0,
+                            "indexed_design_family": design_family,
+                        }
+                    },
+                )
+
+        return None
+
+    def _detect_from_abstract(
+        self,
+        article: dict[str, Any],
+        abstract: str,
+        *,
+        design_family: str | None = None,
+    ) -> TimelineEvent | None:
+        """Detect a design milestone the abstract states about the paper itself.
+
+        Args:
+            article: Source article mapping.
+            abstract: Abstract text to match.
+            design_family: Indexed PubMed design family, if any. Milestones it
+                is not compatible with are skipped.
+        """
+        compatible = self._compatible_text_milestones(design_family)
+        text = abstract[:_MAX_ABSTRACT_METADATA_CHARS]
+        confidence_penalty = ABSTRACT_CONFIDENCE_PENALTY
+        for pattern, policy in self._compiled_abstract_patterns:
+            if compatible is not None and policy.milestone_type not in compatible:
+                continue
+            confidence = policy.confidence - confidence_penalty
+            if confidence < self.min_confidence:
+                continue
+            match = next(
+                (
+                    candidate
+                    for candidate in pattern.finditer(text)
+                    if not is_background_mention(text, candidate.start(), candidate.end())
+                ),
+                None,
+            )
+            if match is None:
+                continue
+            return self._create_event(
+                article,
+                policy.milestone_type,
+                policy.label,
+                confidence,
+                metadata={
+                    "milestone_detection": {
+                        "strategy": "abstract_pattern",
+                        "basis": (
+                            "custom_pattern"
+                            if policy.name not in ABSTRACT_SELF_DESCRIPTION_PATTERNS
+                            else "self_describing_abstract_phrase"
+                        ),
+                        "policy": policy.name,
+                        "rule": pattern.pattern,
+                        "matched_value": " ".join(match.group(0).split()),
+                        "reason": policy.reason,
+                        "confidence": confidence,
+                        "confidence_penalty": confidence_penalty,
+                        "indexed_design_family": design_family,
+                    }
+                },
+            )
 
         return None
 
@@ -412,7 +482,12 @@ class MilestoneDetector:
             # Chronicle quote an exact, locatable sentence as evidence.
             "abstract": abstract or None,
             "abstract_truncated": isinstance(raw_abstract, str) and len(raw_abstract) > len(abstract),
-            "abstract_sections": _abstract_sections(article.get("abstract_sections"), len(abstract)),
+            "abstract_source_char_length": len(raw_abstract) if isinstance(raw_abstract, str) else None,
+            "abstract_sections": _abstract_sections(
+                article.get("abstract_sections"),
+                len(abstract),
+                source_length=len(raw_abstract) if isinstance(raw_abstract, str) else 0,
+            ),
         }
 
     def _build_title_policies(
@@ -459,6 +534,10 @@ class MilestoneDetector:
         if isinstance(pub_types, str):
             pub_types = [pub_types]
 
+        # Protocols and notices carry no results of their own.
+        if indexed_design_family(pub_types) in NON_MILESTONE_DESIGN_FAMILIES:
+            return EvidenceLevel.UNKNOWN
+
         # Level 1: Systematic reviews, Meta-analyses
         level1_types = {"Meta-Analysis", "Systematic Review"}
         if any(pt in level1_types for pt in pub_types):
@@ -490,8 +569,14 @@ class MilestoneDetector:
         return EvidenceLevel.UNKNOWN
 
 
-def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]:
-    """Keep only well-formed, ordered section offsets inside the stored abstract."""
+def _abstract_sections(value: Any, abstract_length: int, *, source_length: int) -> list[dict[str, Any]]:
+    """Keep well-formed, ordered section offsets, clipped to the stored abstract.
+
+    Offsets are validated against the retrieved abstract (*source_length*).
+    When only a prefix is stored, sections starting past the cut are dropped
+    and the section straddling it is clipped rather than discarding the whole
+    structure.
+    """
     if not isinstance(value, list):
         return []
     sections: list[dict[str, Any]] = []
@@ -505,9 +590,11 @@ def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]
             or not isinstance(end, int)
             or isinstance(start, bool)
             or isinstance(end, bool)
-            or not previous_end <= start <= end <= abstract_length
+            or not previous_end <= start <= end <= source_length
         ):
             return []
+        if start >= abstract_length and abstract_length < source_length:
+            break
         label = row.get("label")
         category = row.get("nlm_category")
         sections.append(
@@ -515,7 +602,7 @@ def _abstract_sections(value: Any, abstract_length: int) -> list[dict[str, Any]]
                 "label": str(label)[:120] if isinstance(label, str) and label.strip() else None,
                 "nlm_category": str(category)[:60] if isinstance(category, str) and category.strip() else None,
                 "start": start,
-                "end": end,
+                "end": min(end, abstract_length),
             }
         )
         previous_end = end

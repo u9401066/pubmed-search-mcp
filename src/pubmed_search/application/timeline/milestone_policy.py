@@ -343,28 +343,73 @@ _COMMUNICATIONS = frozenset(
 )
 
 #: Text-pattern milestones that may refine a record whose study design PubMed
-#: already indexed, keyed by ``indexed_design_family``. PubMed indexing is the
-#: authority: a title or abstract pattern can add specificity the publication
-#: type vocabulary lacks (a trial phase), but cannot relabel an indexed trial,
-#: synthesis or cohort as a safety alert, approval, debate or breakthrough.
-#: Records without an indexed design accept every title pattern.
+#: publication types already state, keyed by ``indexed_design_family``. The
+#: publication type is the authority: a title or abstract pattern can add
+#: specificity the type vocabulary lacks (a trial phase), but cannot relabel an
+#: indexed trial or synthesis as a safety alert, approval, debate or
+#: breakthrough. An observational or generic ("other") study may carry a trial
+#: phase (extension or post-marketing follow-up) or an explicit safety signal
+#: (pharmacovigilance), as it did before indexed designs were consulted. Records whose publication
+#: types state no design, including MeSH-only designs, accept every title
+#: pattern.
 TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN: dict[str, frozenset[MilestoneType]] = {
     "trial": _TRIAL_PHASES,
     "evidence_synthesis": _SYNTHESIS,
     "guidance": _GUIDANCE,
-    "observational": frozenset({MilestoneType.PHASE_4}),
+    "observational": _TRIAL_PHASES | {MilestoneType.SAFETY_ALERT},
     "review": _SYNTHESIS | _GUIDANCE | {MilestoneType.CONTROVERSY, MilestoneType.MECHANISM_DISCOVERY},
     "case_report": frozenset(),
     "commentary": _COMMUNICATIONS,
-    "other": _TRIAL_PHASES | _SYNTHESIS | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL},
+    "protocol": frozenset(),
+    "publication_notice": frozenset(),
+    # Comparative, multicenter, validation and evaluation studies, pilots and
+    # preprints: generic types that, like observational studies, may report
+    # an explicit safety signal.
+    "other": _TRIAL_PHASES
+    | _SYNTHESIS
+    | {MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL, MilestoneType.SAFETY_ALERT},
 }
 
+#: Design families that report no results of their own: a trial protocol or a
+#: notice (erratum, retraction, expression of concern) is never a milestone,
+#: whatever trial publication types or title wording it carries.
+NON_MILESTONE_DESIGN_FAMILIES = frozenset({"protocol", "publication_notice"})
+
 #: Abstracts describe background literature and routine outcomes (adverse
-#: events, recommendations, prior approvals), so abstract matching is limited
-#: to self-describing design policies and to records without an indexed design.
-ABSTRACT_PATTERN_POLICY_NAMES = frozenset(
-    {"phase_1_trial", "phase_2_trial", "phase_3_trial", "phase_4_study", "meta_analysis", "systematic_review"}
+#: events, recommendations, prior approvals) as well as the paper itself, so
+#: only design policies are matched there, and only in a self-describing
+#: phrase: a self-reference ("this", "our", "we performed a", "in this")
+#: shortly before the design, or a passive report ("... was conducted")
+#: shortly after it. A trial phase must also name a study design ("phase 2
+#: study"), so "this phase III programme" is not a trial. Sentences that
+#: refer to other work ("previous", "a recent meta-analysis") are rejected by
+#: ``is_background_mention``.
+_SELF_REFERENCE = (
+    r"(?:\b(?:this|our|the\s+present|the\s+current)"
+    r"|\bwe\s+(?:performed|conducted|did|report|present|describe|undertook|carried\s+out|designed|ran)\s+(?:a|an|the)"
+    r"|\bin\s+(?:a|an|this))"
+    r"\s+(?:[\w,()/-]+\s+){0,6}?"
 )
+_PASSIVE_REPORT = r"(?:\s+[\w,()/-]+){0,8}?\s+(?:was|were)\s+(?:performed|conducted|undertaken|carried\s+out|done)\b"
+_DESIGN_NOUN = r"(?:[\s,-]+[\w-]+){0,4}?[\s,-]+(?:trials?|stud(?:y|ies)|extension|surveillance)\b"
+
+
+def _self_describing(phrase: str, *, needs_design_noun: bool = False) -> str:
+    design = f"(?:{phrase}){_DESIGN_NOUN}" if needs_design_noun else f"(?:{phrase})"
+    return f"{_SELF_REFERENCE}{design}|{design}{_PASSIVE_REPORT}"
+
+
+#: Abstract-only forms of the self-describing design policies, keyed by name.
+ABSTRACT_SELF_DESCRIPTION_PATTERNS: dict[str, str] = {
+    "phase_3_trial": _self_describing(r"\bphase\s*(?:III|3)\b|\bpivotal\b", needs_design_noun=True),
+    "phase_2_trial": _self_describing(r"\bphase\s*(?:II|2)\b|\bdose[- ]?finding\b", needs_design_noun=True),
+    "phase_1_trial": _self_describing(r"\bphase\s*(?:I|1)\b|\bfirst[- ]?in[- ]?human\b", needs_design_noun=True),
+    "phase_4_study": _self_describing(r"\bphase\s*(?:IV|4)\b|\bpost[- ]?marketing\b", needs_design_noun=True),
+    "meta_analysis": _self_describing(r"\bmeta[- ]?analysis\b|\bpooled\s+analysis\b"),
+    "systematic_review": _self_describing(r"\bsystematic\s+review\b"),
+}
+#: Abstract matches are weaker evidence than title or publication-type matches.
+ABSTRACT_CONFIDENCE_PENALTY = 0.2
 
 
 TITLE_PATTERNS = [

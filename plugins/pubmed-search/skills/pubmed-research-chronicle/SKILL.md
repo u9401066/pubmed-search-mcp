@@ -149,10 +149,11 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 
 | 欄位 | 說明 |
 | --- | --- |
-| `title` | 研究設計標籤。優先採 PubMed PublicationType（RCT、Meta-Analysis、Systematic Review、Observational Study、Guideline 等），其次 MeSH 研究設計 descriptor（如 `Prospective Studies`）；只有 PubMed 尚未標引設計時才用標題或摘要文字推斷，並標 `[heuristic]` |
-| `summary_claim` | 一行附引用的主張。有摘要時直接引用該論文摘要的結論句（逐字摘錄，附章節與字元位置）；沒有摘要時才用保守模板 |
+| `title` | 研究設計標籤。優先採 PubMed PublicationType（RCT、Meta-Analysis、Systematic Review、Observational Study、Guideline 等），其次 MeSH 研究設計 descriptor（如 `Prospective Studies`）；只有 PubMed 尚未標引設計時才用標題或摘要文字推斷，並標 `[heuristic]`。`non-randomized`／`quasi-randomised` 不算 RCT；試驗 protocol（含同時標 RCT 的 `Clinical Trial Protocol`）標成 protocol，勘誤、撤回通知與 expression of concern 標成 publication notice，兩者都不是 milestone |
+| `summary_claim` | 一行附引用的主張。有摘要時直接引用該論文摘要的結論句（逐字摘錄，附章節與字元位置；註冊、經費、利益衝突、授權與出版社聲明不會被引用）；沒有摘要時才用保守模板 |
 | `provenance.study_design` | 標籤依據 `basis`（`pubmed_publication_type`／`mesh_study_design_descriptor`／`text_pattern_heuristic`／未標引）、符合的類型與 retracted 等旗標 |
-| `provenance.extractive_highlight` | 摘錄句、`char_start`／`char_end`（指向 `EvidenceArticle.abstract` 的 Unicode code point 位置）、章節、選句規則與摘要 SHA-256 |
+| `provenance.extractive_highlight` | 摘錄句、`char_start`／`char_end`（指向 `EvidenceArticle.abstract` 的 Unicode code point 位置）、章節、選句規則、摘要 SHA-256 與 `abstract_truncated` |
+| `provenance.abstract_truncation` | 摘要不完整時（PubMed 的 `ABSTRACT TRUNCATED` 註記，或只保存了前 20,000 字元）記錄原因與長度；截斷處的殘句不會被引用，結論段可能缺失 |
 | `evidence` | supporting / contradicting / updating 三類證據 |
 | `branch_id` | 所屬研究分支（lineage） |
 | `confidence` | 信心分數 |
@@ -162,7 +163,7 @@ read_research_chronicle(request={"action":"compare","selection":{"kind":"topics"
 
 `confidence` 的精確語意是 milestone detection confidence，不是 scientific importance。landmark ranking 先看 `provenance.landmark_importance_score`，沒有才退回 citation count；不可用 detection confidence 排「最重要論文」。
 
-PubMed 標引的研究設計優先於文字樣式推斷。標題或摘要樣式只能補充 PublicationType 沒有的資訊（例如試驗 phase），不能把已標引的 RCT、統合分析或世代研究改標成 Safety Alert、核准、爭議或突破。摘要提到 adverse events 不構成安全警訊；`Safety Alert` 需要明確的安全通報或 boxed warning。
+PubMed PublicationType 標引的研究設計優先於文字樣式推斷。標題或摘要樣式只能補充 PublicationType 沒有的資訊（例如試驗 phase），不能把已標引的 RCT 或統合分析改標成 Safety Alert、核准、爭議或突破；觀察性研究（以及 Comparative／Multicenter Study 等泛用類型）仍可帶試驗 phase 或明確的 safety signal（藥物安全監視）。只有 MeSH 設計 descriptor 時不會擋掉文字 milestone。摘要提到 adverse events 不構成安全警訊；`Safety Alert` 需要明確的安全通報、safety signal 或 boxed warning。摘要樣式只採用自我描述的句子（如「In this phase 3 trial」「We performed a meta-analysis」），「A recent meta-analysis suggested…」這類背景引述不算。
 
 引用摘錄句時，要說明它是作者摘要中的原句，而不是你的詮釋；可用 `output="evidence"` 取得完整摘要，以 `abstract[char_start:char_end]` 核對。
 
@@ -173,8 +174,8 @@ PubMed 標引的研究設計優先於文字樣式推斷。標題或摘要樣式�
 每次 build 都會產生 audit，回報：
 
 - 證據覆蓋率（有沒有 entry 缺證據）
-- 研究設計標籤來源（`study_design_labels`）：列出 `[heuristic]` 標籤，並在已標引研究設計卻帶 safety／debate 類別時警告
-- 摘錄句完整性（`extractive_highlights`）：每句引文都必須能以字元位置對回保存的摘要，否則 fail
+- 研究設計標籤來源（`study_design_labels`）：列出 `[heuristic]` 標籤與來自摘要文字的類別（`abstract_pattern_categories`），並在已標引研究設計卻帶不相容的 safety／debate 類別時警告
+- 摘錄句完整性（`extractive_highlights`）：每句引文都必須能以字元位置對回保存的摘要，否則 fail；摘要被截斷時警告（`truncated_abstracts`）
 - 識別碼覆蓋率（有沒有文章缺 PMID/DOI/PMCID）
 - 分支覆蓋率（空分支、未分派 entry）
 - lineage 語意依據與覆蓋率（MeSH/keyword 或研究階段 fallback）
