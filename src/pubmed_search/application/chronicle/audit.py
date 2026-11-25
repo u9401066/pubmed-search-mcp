@@ -473,6 +473,7 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
     by_basis: Counter[str] = Counter()
     heuristic_designs: list[dict[str, Any]] = []
     heuristic_categories: list[dict[str, Any]] = []
+    abstract_categories: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
     for entry in snapshot.entries:
         evidence_ids = [article.evidence_id for article in entry.evidence.supporting_articles]
@@ -490,6 +491,17 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
                     "label": design.get("display_label"),
                     "matched": list(matched)[:3] if isinstance(matched, list) else [],
                     "indexed_publication_types": design.get("indexed_publication_types") or [],
+                }
+            )
+        detection = entry.provenance.get("milestone_detection")
+        if isinstance(detection, dict) and detection.get("strategy") == "abstract_pattern":
+            abstract_categories.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "evidence_ids": evidence_ids,
+                    "milestone_type": entry.provenance.get("milestone_type"),
+                    "matched_value": detection.get("matched_value"),
+                    "basis": detection.get("basis"),
                 }
             )
         label_basis = entry.provenance.get("entry_label_basis")
@@ -514,6 +526,7 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
         "label_basis_counts": dict(sorted(by_basis.items())),
         "heuristic_design_labels": heuristic_designs[:_AUDIT_SAMPLE],
         "heuristic_category_labels": heuristic_categories[:_AUDIT_SAMPLE],
+        "abstract_pattern_categories": abstract_categories[:_AUDIT_SAMPLE],
         "category_conflicts_with_indexed_design": conflicts[:_AUDIT_SAMPLE],
         "primary_source": "PubMed PublicationType, then MeSH study-design descriptors",
     }
@@ -528,14 +541,21 @@ def _audit_study_design_labels(snapshot: ChronicleSnapshot) -> ChronicleAuditFin
             ),
             details=details,
         )
-    if heuristic_designs or heuristic_categories:
+    abstract_note = (
+        f" {len(abstract_categories)} event categories come from the abstract's own wording (for example "
+        '"In this phase 3 trial"), not from indexing; confirm the paper itself is that design.'
+        if abstract_categories
+        else ""
+    )
+    if heuristic_designs or heuristic_categories or abstract_categories:
         return ChronicleAuditFinding(
             check="study_design_labels",
             status="warn",
             message=(
                 f"{len(heuristic_designs) + len(heuristic_categories)} entry labels come from title/abstract text "
-                "patterns because PubMed has not indexed a study design for them; they are marked [heuristic] and "
-                f"should be checked against the paper. {indexed} labels come from PubMed indexing."
+                "patterns, either because PubMed has not indexed a study design for them or as a refinement of an "
+                "indexed design; they are marked [heuristic] and should be checked against the paper. "
+                f"{indexed} labels come from PubMed indexing.{abstract_note}"
             ),
             details=details,
         )

@@ -531,3 +531,78 @@ def test_safety_category_on_an_observational_study_is_heuristic_not_a_conflict()
     conflicts = finding.details["category_conflicts_with_indexed_design"]
     assert [row["indexed_design"] for row in conflicts] == ["Randomized Controlled Trial"]
     assert finding.status == "warn"
+
+
+# ── Abstract-pattern milestones: self-description only, and disclosed ──────
+
+
+@pytest.mark.parametrize(
+    "abstract",
+    [
+        "A recent meta-analysis suggested benefit. We reviewed 200 charts.",
+        "Previous phase III trials established efficacy. We reviewed 200 charts.",
+        "Two pivotal trials led to approval. We report real-world outcomes in 300 adults.",
+        "A previous meta-analysis was performed in 2010; we describe a new cohort.",
+        "Earlier, a phase 2 study in this population found no benefit. We audited 90 charts.",
+    ],
+)
+def test_abstract_background_mentions_are_not_milestones(abstract: str) -> None:
+    article = {"pmid": "41", "year": 2022, "title": "Ketamine charts", "publication_types": ["Journal Article"]}
+    assert MilestoneDetector().detect_milestone({**article, "abstract": abstract}) is None
+
+
+@pytest.mark.parametrize(
+    ("publication_types", "abstract", "expected"),
+    [
+        (
+            ["Journal Article"],
+            "In this multicentre, double-blind, phase 2 study, 80 adults were enrolled.",
+            MilestoneType.PHASE_2,
+        ),
+        (
+            ["Journal Article"],
+            "We performed a systematic review and meta-analysis of 12 trials.",
+            MilestoneType.META_ANALYSIS,
+        ),
+        (["Journal Article"], "A meta-analysis of 12 randomized trials was performed.", MilestoneType.META_ANALYSIS),
+        # Indexed designs master refined from the abstract keep that refinement.
+        (["Observational Study"], "This phase III trial evaluated X in routine care.", MilestoneType.PHASE_3),
+        (["Clinical Trial"], "In this open-label phase 2 study, 40 adults received X.", MilestoneType.PHASE_2),
+        # ...but only within the categories the indexed design is compatible with.
+        (["Observational Study"], "This phase III programme informed the cohort.", None),
+        (["Case Reports"], "This phase 2 study enrolled one patient.", None),
+    ],
+)
+def test_self_describing_abstract_patterns_still_refine_compatible_designs(
+    publication_types: list[str], abstract: str, expected: MilestoneType | None
+) -> None:
+    event = MilestoneDetector().detect_milestone(
+        {"pmid": "42", "year": 2022, "title": "X", "publication_types": publication_types, "abstract": abstract}
+    )
+    assert (event.milestone_type if event else None) is expected
+    if event is not None:
+        detection = event.metadata["milestone_detection"]
+        assert detection["strategy"] == "abstract_pattern"
+        assert detection["basis"] == "self_describing_abstract_phrase"
+
+
+def test_abstract_pattern_categories_are_disclosed_by_the_audit() -> None:
+    event = MilestoneDetector().detect_milestone(
+        {
+            "pmid": "43",
+            "year": 2022,
+            "title": "X in routine care",
+            "publication_types": ["Observational Study"],
+            "abstract": "This phase III trial evaluated X in routine care. Outcomes were favourable overall.",
+        }
+    )
+    assert event is not None
+    snapshot = assemble_chronicle(topic="x", timeline=ResearchTimeline("x", [event]))
+    finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "study_design_labels")
+
+    rows = finding.details["abstract_pattern_categories"]
+    assert [(row["milestone_type"], row["matched_value"]) for row in rows] == [
+        ("phase_3", "This phase III trial"),
+    ]
+    assert finding.status == "warn"
+    assert "abstract" in finding.message

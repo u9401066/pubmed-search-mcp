@@ -28,11 +28,16 @@ from pubmed_search.domain.entities.timeline import (
     MilestoneType,
     TimelineEvent,
 )
-from pubmed_search.domain.services.study_design import classify_study_design, indexed_design_family
+from pubmed_search.domain.services.study_design import (
+    classify_study_design,
+    indexed_design_family,
+    is_background_mention,
+)
 
 from .dates import parse_publication_month, parse_publication_year
 from .milestone_policy import (
-    ABSTRACT_PATTERN_POLICY_NAMES,
+    ABSTRACT_CONFIDENCE_PENALTY,
+    ABSTRACT_SELF_DESCRIPTION_PATTERNS,
     DEFAULT_CITATION_THRESHOLD_POLICIES,
     DEFAULT_PUBTYPE_POLICIES,
     DEFAULT_TITLE_PATTERN_POLICIES,
@@ -96,6 +101,16 @@ class MilestoneDetector:
         self._compiled_patterns = [
             (re.compile(policy.pattern, re.IGNORECASE), policy) for policy in self._title_pattern_policies
         ]
+        # Abstracts accept only self-describing design phrases; custom
+        # patterns are the caller's own rules and are applied as given.
+        self._compiled_abstract_patterns = [
+            (
+                re.compile(ABSTRACT_SELF_DESCRIPTION_PATTERNS.get(policy.name, policy.pattern), re.IGNORECASE),
+                policy,
+            )
+            for policy in self._title_pattern_policies
+            if policy.name in ABSTRACT_SELF_DESCRIPTION_PATTERNS or policy.name.startswith("custom_")
+        ]
 
     def detect_milestone(self, article: dict[str, Any], is_first: bool = False) -> TimelineEvent | None:
         """
@@ -141,15 +156,11 @@ class MilestoneDetector:
         if not result:
             result = self._detect_from_pubtype(article, include_unphased_rct=True)
 
-        # 4. Abstract pattern matching (lower confidence) only for records
-        # without an indexed design, and only for self-describing designs.
-        if not result and abstract and design_family is None:
-            result = self._detect_from_title(
-                article,
-                abstract,
-                confidence_penalty=0.2,
-                design_family=design_family,
-            )
+        # 4. Abstract pattern matching (lower confidence): self-describing
+        # design phrases only, within what an indexed design is compatible
+        # with, never a sentence about other work.
+        if not result and abstract:
+            result = self._detect_from_abstract(article, abstract, design_family=design_family)
 
         # 5. Citation-based landmark detection
         if not result:
@@ -240,60 +251,112 @@ class MilestoneDetector:
 
         return None
 
+    @staticmethod
+    def _compatible_text_milestones(design_family: str | None) -> frozenset[MilestoneType] | None:
+        """Return the text milestones an indexed design accepts (``None``: all)."""
+        if design_family is None:
+            return None
+        return TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN.get(design_family, frozenset())
+
     def _detect_from_title(
         self,
         article: dict[str, Any],
         text: str,
-        confidence_penalty: float = 0.0,
         *,
         design_family: str | None = None,
     ) -> TimelineEvent | None:
-        """Detect milestone from title or abstract text.
+        """Detect milestone from title text.
 
         Args:
             article: Source article mapping.
-            text: Title or abstract text to match.
-            confidence_penalty: Positive for abstract matching.
+            text: Title text to match.
             design_family: Indexed PubMed design family, if any. Text patterns
                 that would contradict it are skipped.
         """
-        strategy = "abstract_pattern" if confidence_penalty else "title_pattern"
-        compatible = (
-            TEXT_MILESTONES_COMPATIBLE_WITH_INDEXED_DESIGN.get(design_family, frozenset())
-            if design_family is not None
-            else None
-        )
+        compatible = self._compatible_text_milestones(design_family)
         for pattern, policy in self._compiled_patterns:
             if compatible is not None and policy.milestone_type not in compatible:
                 continue
-            if (
-                confidence_penalty
-                and not policy.name.startswith("custom_")
-                and policy.name not in ABSTRACT_PATTERN_POLICY_NAMES
-            ):
-                continue
             match = pattern.search(text)
-            if match:
-                confidence = policy.confidence - confidence_penalty
-                if confidence >= self.min_confidence:
-                    return self._create_event(
-                        article,
-                        policy.milestone_type,
-                        policy.label,
-                        confidence,
-                        metadata={
-                            "milestone_detection": {
-                                "strategy": strategy,
-                                "policy": policy.name,
-                                "rule": policy.pattern,
-                                "matched_value": match.group(0),
-                                "reason": policy.reason,
-                                "confidence": confidence,
-                                "confidence_penalty": confidence_penalty,
-                                "indexed_design_family": design_family,
-                            }
-                        },
-                    )
+            if match and policy.confidence >= self.min_confidence:
+                return self._create_event(
+                    article,
+                    policy.milestone_type,
+                    policy.label,
+                    policy.confidence,
+                    metadata={
+                        "milestone_detection": {
+                            "strategy": "title_pattern",
+                            "policy": policy.name,
+                            "rule": policy.pattern,
+                            "matched_value": match.group(0),
+                            "reason": policy.reason,
+                            "confidence": policy.confidence,
+                            "confidence_penalty": 0.0,
+                            "indexed_design_family": design_family,
+                        }
+                    },
+                )
+
+        return None
+
+    def _detect_from_abstract(
+        self,
+        article: dict[str, Any],
+        abstract: str,
+        *,
+        design_family: str | None = None,
+    ) -> TimelineEvent | None:
+        """Detect a design milestone the abstract states about the paper itself.
+
+        Args:
+            article: Source article mapping.
+            abstract: Abstract text to match.
+            design_family: Indexed PubMed design family, if any. Milestones it
+                is not compatible with are skipped.
+        """
+        compatible = self._compatible_text_milestones(design_family)
+        text = abstract[:_MAX_ABSTRACT_METADATA_CHARS]
+        confidence_penalty = ABSTRACT_CONFIDENCE_PENALTY
+        for pattern, policy in self._compiled_abstract_patterns:
+            if compatible is not None and policy.milestone_type not in compatible:
+                continue
+            confidence = policy.confidence - confidence_penalty
+            if confidence < self.min_confidence:
+                continue
+            match = next(
+                (
+                    candidate
+                    for candidate in pattern.finditer(text)
+                    if not is_background_mention(text, candidate.start(), candidate.end())
+                ),
+                None,
+            )
+            if match is None:
+                continue
+            return self._create_event(
+                article,
+                policy.milestone_type,
+                policy.label,
+                confidence,
+                metadata={
+                    "milestone_detection": {
+                        "strategy": "abstract_pattern",
+                        "basis": (
+                            "custom_pattern"
+                            if policy.name not in ABSTRACT_SELF_DESCRIPTION_PATTERNS
+                            else "self_describing_abstract_phrase"
+                        ),
+                        "policy": policy.name,
+                        "rule": pattern.pattern,
+                        "matched_value": " ".join(match.group(0).split()),
+                        "reason": policy.reason,
+                        "confidence": confidence,
+                        "confidence_penalty": confidence_penalty,
+                        "indexed_design_family": design_family,
+                    }
+                },
+            )
 
         return None
 
