@@ -222,7 +222,7 @@ entitlement/contract gated、metadata-only、zero-persistence，且不註冊為 
 
 ![全文擷取流程](docs/images/fulltext-retrieval-flow.svg)
 
-`get_fulltext` 不是固定三段式 API 呼叫，而是 identifier-aware 的 retrieval policy：有 PMCID 時優先嘗試 Europe PMC XML；有 DOI 時查 Unpaywall OA locations；若仍沒有正文，會依設定嘗試 institutional direct/EZproxy fetch、CORE，以及 extended PDF retrieval fallback。Browser-session broker 只在本機 broker 已啟用、token 與 allowed hosts 合格，且該 fallback 被允許時才會參與。
+`get_fulltext` 不是固定三段式 API 呼叫，而是 identifier-aware 的 retrieval policy：只有 PMID 時先由 Europe PMC metadata 解析 PMCID/DOI，失敗或過慢時改由 NCBI ESummary 解析。有 PMCID 時優先嘗試 Europe PMC XML；Europe PMC 失敗、沒有正文或在 hedge 延遲內未回應時，改向 PMC 的正式主機 NCBI E-utilities `efetch db=pmc` 取 JATS（共用同一 JATS parser 與 `ncbi-entrez` 速率預算），先取得正文者勝出。出版者不允許 XML 下載的 PMC 紀錄只回報 `front_matter_only`，前置資料不會當成全文。有 DOI 時查 Unpaywall OA locations；若仍沒有正文，會依設定嘗試 institutional direct/EZproxy fetch、CORE，以及 extended PDF retrieval fallback。整個請求受 `PUBMED_FULLTEXT_DEADLINE_SECONDS` 約束；每個來源以 `source_errors[].code`（如 `rate_limited`、`upstream_retries_exhausted`、`timeout`、`deadline_exceeded`、`cache_error`）、`source_notices` 與 `sources_skipped` 分開回報，本機快取故障不再被說成上游不可用。Browser-session broker 只在本機 broker 已啟用、token 與 allowed hosts 合格，且該 fallback 被允許時才會參與。
 
 ## 設計原則
 
