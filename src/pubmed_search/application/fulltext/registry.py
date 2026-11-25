@@ -49,37 +49,44 @@ DEFAULT_SOURCES: tuple[FulltextSourceDefinition, ...] = (
         capabilities=("structured", "pdf"),
     ),
     FulltextSourceDefinition(
+        key="ncbi_pmc",
+        label="NCBI PMC (E-utilities)",
+        priority=2,
+        identifier_support=("pmcid",),
+        capabilities=("structured", "official_host"),
+    ),
+    FulltextSourceDefinition(
         key="unpaywall",
         label="Unpaywall",
-        priority=2,
+        priority=3,
         identifier_support=("doi",),
         capabilities=("pdf", "landing_page_resolution"),
     ),
     FulltextSourceDefinition(
         key="core",
         label="CORE",
-        priority=3,
+        priority=4,
         identifier_support=("doi",),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
     FulltextSourceDefinition(
         key="institutional",
         label="Institutional (direct/EZproxy)",
-        priority=4,
+        priority=5,
         identifier_support=("doi",),
         capabilities=("fulltext_text", "landing_page_resolution"),
     ),
     FulltextSourceDefinition(
         key="extended",
         label="Extended sources",
-        priority=5,
+        priority=6,
         identifier_support=("pmid", "pmcid", "doi"),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
     FulltextSourceDefinition(
         key="pdf_retrieval_fallback",
         label="PDF retrieval fallback",
-        priority=6,
+        priority=7,
         identifier_support=("pmid", "pmcid", "doi"),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
@@ -89,7 +96,17 @@ DEFAULT_POLICIES: tuple[FulltextPolicyDefinition, ...] = (
     FulltextPolicyDefinition(
         key="structured_first",
         label="Structured first",
-        sources=("europe_pmc", "unpaywall", "institutional", "core", "extended", "pdf_retrieval_fallback"),
+        # Europe PMC is preferred; NCBI PMC is hedged in when it fails, has no
+        # body, or is slow (see FulltextService._collect_structured).
+        sources=(
+            "europe_pmc",
+            "ncbi_pmc",
+            "unpaywall",
+            "institutional",
+            "core",
+            "extended",
+            "pdf_retrieval_fallback",
+        ),
     ),
     FulltextPolicyDefinition(
         key="standard_discovery",

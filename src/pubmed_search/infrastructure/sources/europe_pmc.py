@@ -18,11 +18,8 @@ Features:
 from __future__ import annotations
 
 import logging
-import re
 import urllib.parse
 from typing import TYPE_CHECKING, Any
-
-from defusedxml import ElementTree  # Security: prevent XML attacks
 
 from pubmed_search.domain.value_objects import normalize_pmcid
 from pubmed_search.infrastructure.sources.base_client import (
@@ -32,12 +29,10 @@ from pubmed_search.infrastructure.sources.base_client import (
     raise_provider_schema_error,
     raise_sanitized_retryable_error,
 )
+from pubmed_search.infrastructure.sources.jats import parse_jats_article
 from pubmed_search.shared.async_utils import RetryableOperationError
-from pubmed_search.shared.exceptions import ParseError
 
 if TYPE_CHECKING:
-    from xml.etree.ElementTree import Element
-
     import httpx
 
 logger = logging.getLogger(__name__)
@@ -526,171 +521,10 @@ class EuropePMCClient(BaseAPIClient):
             xml_content: Full text XML string
 
         Returns:
-            Dict with structured content (title, abstract, sections, references)
+            Dict with structured content (title, abstract, sections, references,
+            figures, license)
         """
-        try:
-            # Remove XML declaration and DOCTYPE
-            xml_content = re.sub(r"<\?xml[^>]*\?>", "", xml_content)
-            xml_content = re.sub(r"<!DOCTYPE[^>]*>", "", xml_content)
-
-            root = ElementTree.fromstring(xml_content)
-
-            # JATS may use a default namespace; preserve attribute namespaces
-            # (notably xlink) while using local element names for extraction.
-            for element in root.iter():
-                if isinstance(element.tag, str):
-                    element.tag = element.tag.rsplit("}", 1)[-1]
-
-            result: dict[str, Any] = {
-                "title": "",
-                "abstract": "",
-                "sections": [],
-                "references": [],
-                "figures": [],
-            }
-
-            # Extract title
-            title_elem = root.find(".//article-title")
-            if title_elem is not None:
-                result["title"] = self._get_text(title_elem)
-
-            # Extract abstract
-            abstract_elem = root.find(".//abstract")
-            if abstract_elem is not None:
-                result["abstract"] = self._get_text(abstract_elem)
-
-            # Extract body sections
-            body = root.find(".//body")
-            if body is not None:
-                body_paragraphs = [self._get_text(p) for p in body.findall("p")]
-                if any(body_paragraphs):
-                    result["sections"].append({"title": "Body", "content": "\n\n".join(body_paragraphs)})
-                for sec in body.findall(".//sec"):
-                    section = self._parse_section(sec)
-                    if section:
-                        result["sections"].append(section)
-
-            # Extract figures from <fig> elements
-            result["figures"] = self._parse_figures(root)
-
-            # Extract references
-            ref_list = root.find(".//ref-list")
-            if ref_list is not None:
-                for ref in ref_list.findall(".//ref"):
-                    ref_data = self._parse_reference(ref)
-                    if ref_data:
-                        result["references"].append(ref_data)
-
-            return result
-
-        except Exception as exc:
-            logger.warning("Europe PMC full-text XML parsing failed (%s)", type(exc).__name__)
-            raise ParseError(
-                "Europe PMC returned XML that could not be parsed",
-                source="Europe PMC",
-            ) from exc
-
-    def _get_text(self, elem: Element) -> str:
-        """Recursively get all text from an element."""
-        return "".join(elem.itertext()).strip()
-
-    def _parse_section(self, sec_elem: Element) -> dict[str, Any] | None:
-        """Parse a section element."""
-        title_elem = sec_elem.find("title")
-        title = self._get_text(title_elem) if title_elem is not None else ""
-
-        # Get paragraphs
-        paragraphs = []
-        for p in sec_elem.findall("p"):
-            text = self._get_text(p)
-            if text:
-                paragraphs.append(text)
-
-        if not title and not paragraphs:
-            return None
-
-        return {
-            "title": title,
-            "content": "\n\n".join(paragraphs),
-        }
-
-    def _parse_reference(self, ref_elem: Element) -> dict[str, Any] | None:
-        """Parse a reference element."""
-        label = ref_elem.find("label")
-        mixed_citation = ref_elem.find(".//mixed-citation")
-
-        if mixed_citation is None:
-            mixed_citation = ref_elem.find(".//element-citation")
-        if mixed_citation is None:
-            return None
-
-        return {
-            "label": self._get_text(label) if label is not None else "",
-            "text": self._get_text(mixed_citation),
-            "pmid": mixed_citation.findtext(".//pub-id[@pub-id-type='pmid']", ""),
-            "doi": mixed_citation.findtext(".//pub-id[@pub-id-type='doi']", ""),
-        }
-
-    def _parse_figures(self, root: Element) -> list[dict[str, Any]]:
-        """Extract <fig> elements from JATS XML.
-
-        Parses figure labels, captions, and graphic xlink:href references
-        to produce structured figure metadata.
-
-        Returns:
-            List of figure dicts with keys:
-            figure_id, label, caption_title, caption_text, graphic_href
-        """
-        xlink_ns = "http://www.w3.org/1999/xlink"
-        figures: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-
-        for fig_elem in root.iter("fig"):
-            fig_id = fig_elem.get("id", "")
-            if fig_id:
-                if fig_id in seen_ids:
-                    continue
-                seen_ids.add(fig_id)
-
-            label_elem = fig_elem.find("label")
-            label = self._get_text(label_elem) if label_elem is not None else ""
-
-            caption_elem = fig_elem.find("caption")
-            caption_title = ""
-            caption_text = ""
-            if caption_elem is not None:
-                title_elem = caption_elem.find("title")
-                if title_elem is not None:
-                    caption_title = self._get_text(title_elem)
-                p_parts = []
-                for p in caption_elem.findall("p"):
-                    text = self._get_text(p)
-                    if text:
-                        p_parts.append(text)
-                caption_text = " ".join(p_parts)
-
-            # Extract graphic href
-            graphic_href = ""
-            graphic = fig_elem.find("graphic")
-            if graphic is not None:
-                graphic_href = graphic.get(f"{{{xlink_ns}}}href", "")
-                if not graphic_href:
-                    graphic_href = graphic.get("href", "")
-
-            if not label and not graphic_href and not caption_text:
-                continue
-
-            figures.append(
-                {
-                    "figure_id": fig_id,
-                    "label": label,
-                    "caption_title": caption_title or None,
-                    "caption_text": caption_text,
-                    "graphic_href": graphic_href,
-                }
-            )
-
-        return figures
+        return parse_jats_article(xml_content, source=self._service_name)
 
     async def get_similar_articles(
         self,

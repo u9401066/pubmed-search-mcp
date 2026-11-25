@@ -19,8 +19,9 @@ import pytest
 from Bio import Entrez
 from mcp.client import Client
 
-from pubmed_search.infrastructure.sources import europe_pmc
+from pubmed_search.infrastructure.sources import europe_pmc, ncbi_pmc
 from pubmed_search.presentation.mcp_server import create_server
+from tests.fixtures.pmc_jats import PMC_EFETCH_FULL_BODY
 from tests.fixtures.release_support import smoke_env
 from tests.test_all_tools_mcp_acceptance import _json_document, _result_text
 
@@ -70,6 +71,7 @@ def provider_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     state: dict[str, Any] = {
         "requests": [],
         "status": 200,
+        "fulltext_status": 200,
         "search": {"hitCount": 1, "resultList": {"result": [ARTICLE]}},
     }
 
@@ -83,7 +85,10 @@ def provider_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
             if parsed.path == "/search":
                 body, status, content_type = json.dumps(state["search"]).encode(), state["status"], "application/json"
             elif parsed.path == "/PMC7096777/fullTextXML":
-                body, status, content_type = XML, 200, "application/xml"
+                status = state["fulltext_status"]
+                body, content_type = (XML, "application/xml") if status == 200 else (b"busy", "text/plain")
+            elif parsed.path == "/efetch.fcgi" and parse_qs(parsed.query).get("db") == ["pmc"]:
+                body, status, content_type = PMC_EFETCH_FULL_BODY.encode(), 200, "text/xml"
             elif parsed.path == "/efetch.fcgi":
                 body, status, content_type = PUBMED_XML, 200, "application/xml"
             else:
@@ -100,6 +105,7 @@ def provider_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     base_url = f"http://127.0.0.1:{server.server_port}"
     monkeypatch.setattr(europe_pmc, "EPMC_SEARCH_URL", f"{base_url}/search")
     monkeypatch.setattr(europe_pmc, "EPMC_API_BASE", base_url)
+    monkeypatch.setattr(ncbi_pmc, "EUTILS_BASE", base_url)
     build_request = Entrez._build_request
 
     def local_request(cgi, *args, **kwargs):
@@ -207,3 +213,44 @@ async def test_provider_failure_is_not_reported_as_successful_empty_search(provi
         assert payload["search_status"]["state"] == "failed"
         assert payload["search_status"]["failed_sources"] == ["europe_pmc"]
     assert len(provider_http["requests"]) == 1
+
+
+async def test_europe_pmc_outage_falls_back_to_ncbi_pmc_jats_over_real_provider_http(
+    provider_http, production_server, monkeypatch
+):
+    # One upstream 503 is enough; the retry count itself is not under test.
+    monkeypatch.setattr(europe_pmc.EuropePMCClient, "_MAX_RETRIES", 0)
+    provider_http["fulltext_status"] = 503
+    async with Client(production_server) as client:
+        result = await client.call_tool(
+            "get_fulltext",
+            {
+                "source": {"kind": "pmcid", "value": "PMC7096777"},
+                "include_pdf_links": False,
+                "output_format": "json",
+            },
+        )
+        assert not result.is_error, _result_text(result)
+        document = _json_document(_result_text(result))
+
+    assert document["fulltext_available"] is True
+    assert [section["title"] for section in document["content_sections"]][:2] == ["Introduction", "Trial Design"]
+    assert "Abstract-only result sentence" not in json.dumps(document["content_sections"])
+    assert document["source_errors"] == [
+        {
+            "source": "europe_pmc",
+            "code": "upstream_retries_exhausted",
+            "message": "The upstream source kept failing after retries (HTTP 503).",
+            "status_code": 503,
+        }
+    ]
+    assert document["sources_completed"] == ["ncbi_pmc"]
+    assert document["section_provenance"]["content"]["surfacing_source"] == "NCBI PMC (E-utilities)"
+    pmc_fetches = [
+        query for path, query in provider_http["requests"] if path == "/efetch.fcgi" and query.get("db") == ["pmc"]
+    ]
+    assert len(pmc_fetches) == 1
+    assert pmc_fetches[0]["id"] == ["7096777"]
+    assert pmc_fetches[0]["tool"] == ["pubmed-search-mcp"]
+    assert pmc_fetches[0]["email"][0]
+    assert Counter(path for path, _ in provider_http["requests"])["/PMC7096777/fullTextXML"] == 1
