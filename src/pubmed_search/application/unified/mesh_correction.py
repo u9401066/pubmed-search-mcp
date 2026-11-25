@@ -140,16 +140,23 @@ class PubMedMeshCorrector:
         )
 
     def rewrite(self, query: str) -> str:
-        """Apply the accepted clause rewrites to another PubMed query (fill tiers, relaxation)."""
+        """Apply the accepted clause rewrites to another PubMed query (fill tiers, relaxation).
+
+        Polarity is decided per occurrence, exactly as in the correction
+        itself: inside a NOT operand only an equivalent rewrite (an exact
+        heading fix that keeps every qualifier, major-topic and no-explode
+        restriction) is applied. Any other rewrite there would change what
+        the NOT excludes, so that occurrence stays as written; it is already
+        reported in ``mesh_correction.suggestions``.
+        """
         if not self._applied or self._result is None:
             return query
-        replacements_by_clause = {
-            correction.original: correction.replacement for correction in self._result.corrections
-        }
+        corrections_by_clause = {correction.original: correction for correction in self._result.corrections}
         replacements = [
-            (term.start, term.end, replacements_by_clause[term.clause])
+            (term.start, term.end, correction.replacement)
             for term in find_mesh_terms(query)
-            if term.clause in replacements_by_clause
+            if (correction := corrections_by_clause.get(term.clause)) is not None
+            and (not term.negated or correction.equivalent)
         ]
         return apply_replacements(query, replacements) if replacements else query
 

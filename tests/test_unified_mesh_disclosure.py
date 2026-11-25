@@ -30,9 +30,57 @@ def fake_entrez() -> Iterator[FakeEntrez]:
         yield entrez
 
 
-def _flagged(query: str) -> dict[str, object]:
-    diagnostics = PubMedQueryDiagnostics(query_translation=query, quoted_phrases_not_found=(PACU,))
+def _flagged(query: str, clause: str = PACU) -> dict[str, object]:
+    diagnostics = PubMedQueryDiagnostics(query_translation=query, quoted_phrases_not_found=(clause,))
     return {"provider_metadata": {"query_diagnostics": diagnostics.to_dict()}}
+
+
+EMERGENCE_PK = '"Emergence Deliriums/pharmacokinetics"[Mesh]'
+"""Exact heading fix that must drop an invalid qualifier: not equivalent inside a NOT."""
+EMERGENCE = '"Emergence Deliriums"[Mesh]'
+"""Exact heading fix that keeps every restriction: equivalent, safe inside a NOT."""
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        pytest.param(PACU, id="related-heading-correction"),
+        pytest.param(EMERGENCE_PK, id="exact-fix-dropping-a-qualifier"),
+    ],
+)
+async def test_fill_and_relaxation_rewrites_never_widen_an_exclusion_of_the_same_clause(
+    fake_entrez: FakeEntrez, clause: str
+) -> None:
+    # Before: rewrite() matched clauses by text alone, so the fill-tier and auto-relax
+    # queries also rewrote the excluded copy, widening what the NOT removes.
+    query = f"{clause} AND delirium[tiab] NOT ({clause} AND child[tiab])"
+    corrector = PubMedMeshCorrector(make_service())
+    corrected = await corrector.propose(query, _flagged(query, clause), 0)
+    assert corrected is not None and not corrected.startswith(clause)
+    assert corrected.endswith(f"NOT ({clause} AND child[tiab])")  # the exact tier only suggests here
+    corrector.record_rerun(status="ok", total=12, metadata=None)
+
+    # The relaxation path rewrites the caller's own query: it must equal the corrected exact tier.
+    assert corrector.rewrite(query) == corrected
+    fill = f"{clause} AND delirium[Title/Abstract] NOT ({clause} AND child[tiab])"
+    rewritten = corrector.rewrite(fill)
+    assert rewritten.endswith(f"NOT ({clause} AND child[tiab])")
+    assert not rewritten.startswith(clause)  # the included copy is still corrected
+
+
+async def test_equivalent_rewrites_still_apply_inside_an_exclusion(fake_entrez: FakeEntrez) -> None:
+    query = f"{EMERGENCE} AND recovery[tiab]"
+    corrector = PubMedMeshCorrector(make_service())
+    assert (
+        await corrector.propose(query, _flagged(query, EMERGENCE), 0) == '"Emergence Delirium"[Mesh] AND recovery[tiab]'
+    )
+    corrector.record_rerun(status="ok", total=12, metadata=None)
+
+    fill = f"{EMERGENCE} AND recovery[Title/Abstract] NOT ({EMERGENCE} AND child[tiab])"
+
+    assert corrector.rewrite(fill) == (
+        '"Emergence Delirium"[Mesh] AND recovery[Title/Abstract] NOT ("Emergence Delirium"[Mesh] AND child[tiab])'
+    )
 
 
 def test_completed_evidence_without_a_heading_keeps_the_no_heading_label() -> None:
