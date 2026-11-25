@@ -6,8 +6,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+WorkspaceDirSource = Literal["PUBMED_WORKSPACE_DIR", "CLAUDE_PROJECT_DIR"]
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
@@ -30,7 +32,10 @@ class AppSettings(BaseSettings):
     ncbi_api_key: str | None = Field(default=None, alias="NCBI_API_KEY")
 
     data_dir: str = Field(default=DEFAULT_DATA_DIR, alias="PUBMED_DATA_DIR")
+    # Effective workspace root: PUBMED_WORKSPACE_DIR, else the project directory
+    # Claude Code exports to the MCP servers it launches. Empty values count as unset.
     workspace_dir: str | None = Field(default=None, alias="PUBMED_WORKSPACE_DIR")
+    claude_project_dir: str | None = Field(default=None, alias="CLAUDE_PROJECT_DIR")
     notes_dir: str | None = Field(default=None, alias="PUBMED_NOTES_DIR")
     local_allow_container_bind: bool = Field(default=False, alias="PUBMED_LOCAL_ALLOW_CONTAINER_BIND")
     disabled_sources_raw: str = Field(default="", alias="PUBMED_SEARCH_DISABLED_SOURCES")
@@ -152,6 +157,7 @@ class AppSettings(BaseSettings):
     @field_validator(
         "ncbi_api_key",
         "workspace_dir",
+        "claude_project_dir",
         "notes_dir",
         "crossref_email",
         "unpaywall_email",
@@ -178,6 +184,23 @@ class AppSettings(BaseSettings):
         if isinstance(value, str):
             return value.strip().lower()
         return value
+
+    _workspace_dir_source: WorkspaceDirSource | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _resolve_workspace_dir(self) -> AppSettings:
+        """Apply the workspace precedence: PUBMED_WORKSPACE_DIR, then CLAUDE_PROJECT_DIR."""
+        if self.workspace_dir:
+            self._workspace_dir_source = "PUBMED_WORKSPACE_DIR"
+        elif self.claude_project_dir:
+            self.workspace_dir = self.claude_project_dir
+            self._workspace_dir_source = "CLAUDE_PROJECT_DIR"
+        return self
+
+    @property
+    def workspace_dir_source(self) -> WorkspaceDirSource | None:
+        """Environment variable that supplied ``workspace_dir``, or None when unset."""
+        return self._workspace_dir_source
 
     @property
     def disabled_sources(self) -> tuple[str, ...]:

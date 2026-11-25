@@ -323,7 +323,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_TENANT_ISOLATION` | Service forces `true` | Keep authenticated principals in separate state/storage scopes | `true` |
 | `PUBMED_TENANT_MAX_CONCURRENCY` | No | Maximum in-flight requests per authenticated principal | `8` |
 | `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
-| `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
+| `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback. Precedence: HTTP `--workspace-dir`, then this variable, then `CLAUDE_PROJECT_DIR`; blank values count as unset | `CLAUDE_PROJECT_DIR` when Claude Code launched the server, otherwise none |
 | `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
 | `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS` | No | Include server-local artifact paths for trusted local clients | `false` |
 | `PUBMED_FULLTEXT_INLINE_MAX_CHARS` | No | Maximum inline full-text characters before artifact paging | `20000` |
@@ -565,6 +565,12 @@ claude mcp add pubmed-search -- uvx pubmed-search-mcp
 ```
 
 **Verification**: Run `claude mcp list` → should show `pubmed-search` as connected.
+
+**Workspace root**: Claude Code exports `CLAUDE_PROJECT_DIR` to the MCP servers it
+launches. When `PUBMED_WORKSPACE_DIR` is unset or blank, the server uses that project
+directory as its workspace root, so `scope="auto"` pipelines are saved under
+`<project>/.pubmed-search/` and literature notes default to `<project>/references`
+unless `PUBMED_NOTES_DIR` is set. Set `PUBMED_WORKSPACE_DIR` to choose another root.
 
 ---
 

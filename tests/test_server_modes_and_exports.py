@@ -478,6 +478,57 @@ def test_stdio_main_has_no_auxiliary_http_bridge(monkeypatch, tmp_path):
     mcp.run.assert_called_once_with()
 
 
+def _http_main_with_settings(monkeypatch, settings: AppSettings, argv: list[str]) -> MagicMock:
+    server = MagicMock()
+    create = MagicMock(return_value=server)
+    monkeypatch.setattr(sys, "argv", ["pubmed-search-mcp-http", *argv])
+    monkeypatch.setattr(http_cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(http_cli_module, "create_server", create)
+    monkeypatch.setattr(http_cli_module, "build_asgi_app", MagicMock(return_value=Starlette()))
+    monkeypatch.setattr(http_cli_module, "get_container", lambda _server: SimpleNamespace(searcher=lambda: AsyncMock()))
+    monkeypatch.setattr(http_cli_module, "build_auth", lambda _settings: (None, None))
+    server.get_tool_session_runtime.return_value = SimpleNamespace(session_registry=None)
+    monkeypatch.setattr(
+        http_cli_module,
+        "get_transport_options",
+        lambda _server: SimpleNamespace(transport_security=_local_transport_security()),
+    )
+    monkeypatch.setattr(http_cli_module, "_mount_auxiliary_routes", MagicMock())
+    monkeypatch.setattr("uvicorn.run", MagicMock())
+    http_cli_module.main()
+    return create
+
+
+def test_workspace_root_precedence_for_stdio_and_http_launchers(monkeypatch, tmp_path):
+    from pubmed_search.presentation.mcp_server import server as server_module
+
+    claude_only = AppSettings.model_validate(
+        {"PUBMED_DATA_DIR": str(tmp_path / "data"), "CLAUDE_PROJECT_DIR": str(tmp_path / "project")}
+    )
+    create = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(sys, "argv", ["pubmed-search-mcp"])
+    monkeypatch.setattr(server_module, "load_settings", lambda: claude_only)
+    monkeypatch.setattr(server_module, "create_server", create)
+    server_module.main()
+    assert create.call_args.kwargs["workspace_dir"] == str(tmp_path / "project")
+
+    both = AppSettings.model_validate(
+        {
+            "PUBMED_DATA_DIR": str(tmp_path / "data"),
+            "PUBMED_WORKSPACE_DIR": str(tmp_path / "explicit"),
+            "CLAUDE_PROJECT_DIR": str(tmp_path / "project"),
+        }
+    )
+    assert _http_main_with_settings(monkeypatch, both, []).call_args.kwargs["workspace_dir"] == str(
+        tmp_path / "explicit"
+    )
+    assert _http_main_with_settings(monkeypatch, claude_only, []).call_args.kwargs["workspace_dir"] == str(
+        tmp_path / "project"
+    )
+    cli = _http_main_with_settings(monkeypatch, both, ["--workspace-dir", str(tmp_path / "cli")])
+    assert cli.call_args.kwargs["workspace_dir"] == str(tmp_path / "cli")
+
+
 def test_local_https_builder_replays_recorded_transport_options(monkeypatch):
     from scripts import run_https_local
 

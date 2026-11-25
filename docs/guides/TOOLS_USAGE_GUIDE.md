@@ -547,7 +547,7 @@ Local-mode directory resolution:
 
 1. `output_dir`, if provided
 2. `PUBMED_NOTES_DIR`
-3. `PUBMED_WORKSPACE_DIR/references`
+3. `PUBMED_WORKSPACE_DIR/references` (falls back to `CLAUDE_PROJECT_DIR/references` when Claude Code launched the server)
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
 
