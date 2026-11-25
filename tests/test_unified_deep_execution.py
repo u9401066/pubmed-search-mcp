@@ -230,6 +230,8 @@ async def test_deep_source_status_is_partial_for_empty_success_plus_failed_attem
         "policy": "precision_first",
         "per_source_limit": 10,
         "requested": 20,
+        # v0.10 consumers read the provider request total as ``allocated``.
+        "allocated": 20,
         "fetched": 0,
         "returned": 0,
     }

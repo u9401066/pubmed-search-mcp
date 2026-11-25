@@ -8,6 +8,7 @@ the production fulltext cache. Only network addresses are replaced.
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,7 +17,7 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from pubmed_search.application.fulltext import FulltextRequest, FulltextService
+from pubmed_search.application.fulltext import FulltextRequest, FulltextService, racing
 from pubmed_search.application.fulltext.cache import (
     FulltextCache,
     FulltextCacheError,
@@ -30,17 +31,28 @@ from pubmed_search.infrastructure.sources.base_client import (
     BaseAPIClient,
     ProviderSchemaError,
 )
-from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult, PDFLinkDiscoveryResult
+from pubmed_search.infrastructure.sources.fulltext_download import (
+    FulltextResult,
+    PDFLink,
+    PDFLinkDiscoveryResult,
+    PDFSource,
+)
+from pubmed_search.infrastructure.sources.jats import parse_jats_article
 from pubmed_search.infrastructure.sources.ncbi_pmc import NCBI_EUTILS_RATE_LIMIT, NCBIPMCClient
 from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import register_europe_pmc_tools
 from pubmed_search.shared.async_utils import OperationBudgetExceeded, RetryableOperationError
 from pubmed_search.shared.exceptions import ParseError, RateLimitError
 from tests.fixtures.pmc_jats import (
+    PMC_EFETCH_EMPTY_ARTICLESET,
+    PMC_EFETCH_EMPTY_BODY,
+    PMC_EFETCH_EUTILS_ERROR,
     PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT,
     PMC_EFETCH_FRONT_MATTER_ONLY_PARAGRAPH,
     PMC_EFETCH_FULL_BODY,
+    PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE,
     PMC_EFETCH_NO_ARTICLE,
+    PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE,
     PUBMED_ESUMMARY_WITH_PMC,
 )
 
@@ -294,43 +306,96 @@ async def test_publisher_restricted_pmc_record_is_reported_not_presented_as_full
     assert result.sources_tried == ["europe_pmc", "ncbi_pmc", "pdf_retrieval_fallback"]
 
 
-async def test_pmc_publisher_restriction_ends_the_structured_race_without_waiting_for_the_mirror() -> None:
-    """ENGAGES (PMC6439616) shape: NCBI restricts XML while Europe PMC keeps failing slowly."""
+async def _race_slow_mirror_against_ncbi_restriction(
+    mirror_answer: Callable[[], Any], *, deadline_seconds: float = 30.0
+) -> Any:
+    """Europe PMC (the mirror) answers only after NCBI has reported a publisher restriction."""
     cache = FulltextCache()
-    cancelled = asyncio.Event()
-
-    async def slow_mirror(_: str) -> str:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            cancelled.set()
-            raise
-        return "<article/>"
-
+    ncbi_answered = asyncio.Event()
     ncbi = await _ncbi_client(_NCBIFixture(efetch=PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT))
+    parse_ncbi = ncbi.parse_article_xml
+
+    def parse_and_signal(xml: str) -> dict[str, Any]:
+        parsed = parse_ncbi(xml)
+        ncbi_answered.set()
+        return parsed
+
+    ncbi.parse_article_xml = parse_and_signal  # type: ignore[method-assign]
+
+    async def slow_mirror(_: str) -> str | None:
+        await ncbi_answered.wait()
+        await asyncio.sleep(0.05)  # the restricted answer is already in hand
+        return await mirror_answer()
+
+    provider = MagicMock()
+    provider.parse_fulltext_xml.side_effect = lambda xml: parse_jats_article(xml, source="Europe PMC")
     try:
-        result = await asyncio.wait_for(
+        return await asyncio.wait_for(
             _service(
-                europe_pmc=MagicMock(),
+                europe_pmc=provider,
                 ncbi=ncbi,
                 structured_xml_fetcher=lambda pmcid: cache.get(pmcid, tenant="t", fetch=slow_mirror),
                 hedge_seconds=0.01,
+                deadline_seconds=deadline_seconds,
             ).retrieve(FulltextRequest(pmcid=PMCID)),
-            timeout=5,
+            timeout=10,
         )
-        await asyncio.wait_for(cancelled.wait(), timeout=1)
     finally:
         await ncbi.close()
         await cache.aclose()
 
+
+async def test_pmc_publisher_restriction_does_not_cancel_a_mirror_that_still_returns_the_body() -> None:
+    """NCBI's restriction says nothing about Europe PMC's own copy; its body still wins."""
+
+    async def body() -> str:
+        return PMC_EFETCH_FULL_BODY
+
+    result = await _race_slow_mirror_against_ncbi_restriction(body)
+
+    assert result.has_retrieved_text
+    assert result.fulltext_source_name == "Europe PMC"
+    assert "11/100 patients versus 9/101" in (result.raw_fulltext_content or "")
+    assert result.sources_completed == ["europe_pmc", "ncbi_pmc"]
     assert result.source_errors == []
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("ncbi_pmc", "front_matter_only")]
+    assert result.coverage_status == "complete"
+
+
+async def test_pmc_publisher_restriction_is_kept_when_the_mirror_has_no_body() -> None:
+    async def abstract_only() -> str:
+        return PMC_EFETCH_FRONT_MATTER_ONLY_COMMENT
+
+    result = await _race_slow_mirror_against_ncbi_restriction(abstract_only)
+
+    assert not result.has_retrieved_text
     assert [(notice.source, notice.code) for notice in result.source_notices] == [
-        ("europe_pmc", "superseded"),
+        ("europe_pmc", "no_body"),
         ("ncbi_pmc", "front_matter_only"),
     ]
-    assert result.source_notices[0].message == "Stopped waiting after another source gave a definitive answer first."
+    # The restricted record decides the link: free to read on PMC, not an open-access PDF.
+    assert [link["type"] for link in result.pdf_links if "PubMed Central" in link["source"]] == ["landing_page"]
+    assert result.coverage_status == "complete"
+
+
+@pytest.mark.parametrize("mirror_hangs", [False, True], ids=["mirror-fails-slowly", "mirror-hangs"])
+async def test_pmc_publisher_restriction_waits_for_the_mirror_and_reports_its_failure(mirror_hangs: bool) -> None:
+    """ENGAGES (PMC6439616) shape: NCBI restricts XML while Europe PMC keeps failing slowly."""
+
+    async def failing() -> str:
+        if mirror_hangs:
+            await asyncio.Event().wait()
+        raise RetryableOperationError("Europe PMC request failed", status_code=503)
+
+    result = await _race_slow_mirror_against_ncbi_restriction(failing, deadline_seconds=1.0)
+
+    expected_code = "deadline_exceeded" if mirror_hangs else "upstream_retries_exhausted"
+    assert [(error.source, error.code) for error in result.source_errors] == [("europe_pmc", expected_code)]
+    # A restriction on NCBI's copy is not a definitive answer for the mirror: never "superseded".
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("ncbi_pmc", "front_matter_only")]
     assert not result.has_retrieved_text
-    assert result.sources_tried == ["europe_pmc", "ncbi_pmc", "pdf_retrieval_fallback"]
+    assert result.coverage_status == "partial"
+    assert result.pdf_links[0]["type"] == "landing_page"
 
 
 def test_service_and_settings_share_the_default_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,6 +432,91 @@ async def test_ncbi_adapter_parses_restriction_and_missing_records_at_the_bounda
         assert "token=hidden" not in str(error.value)
     finally:
         await client.close()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(PMC_EFETCH_EUTILS_ERROR, id="eutils-error-envelope"),
+        pytest.param(PMC_EFETCH_EMPTY_BODY, id="empty-body"),
+        pytest.param(PMC_EFETCH_EMPTY_ARTICLESET, id="empty-articleset"),
+        pytest.param("<pmc-articleset><ERROR>Backend failed</ERROR></pmc-articleset>", id="error-in-articleset"),
+    ],
+)
+async def test_ncbi_efetch_200_without_an_answer_is_a_failure_not_complete_coverage(payload: str) -> None:
+    """HTTP 200 with an E-utilities error or nothing at all says nothing about the article."""
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    ncbi = await _ncbi_client(_NCBIFixture(efetch=payload))
+    try:
+        with pytest.raises(ProviderSchemaError):
+            await ncbi.get_article_xml(PMCID)
+        result = await _service(europe_pmc=provider, ncbi=ncbi, hedge_seconds=60).retrieve(
+            FulltextRequest(pmcid=PMCID, include_pdf_links=False)
+        )
+    finally:
+        await ncbi.close()
+
+    assert [(error.source, error.code) for error in result.source_errors] == [("ncbi_pmc", "invalid_response")]
+    assert "ncbi_pmc" not in result.sources_completed
+    # Only Europe PMC actually answered "no body"; NCBI's silence is not a second "no record".
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [("europe_pmc", "no_body")]
+    assert result.coverage_status != "complete"
+    assert not result.has_retrieved_text
+
+
+# ----------------------------------------------------------------------------
+# Nested <sub-article> records (decision letters, author replies)
+# ----------------------------------------------------------------------------
+
+
+async def test_restricted_main_article_is_not_replaced_by_a_sub_article_body() -> None:
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    ncbi = await _ncbi_client(_NCBIFixture(efetch=PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE))
+    try:
+        parsed = ncbi.parse_article_xml(PMC_EFETCH_RESTRICTED_WITH_SUB_ARTICLE)
+        result = await _service(europe_pmc=provider, ncbi=ncbi, hedge_seconds=60).retrieve(
+            FulltextRequest(pmcid=PMCID, include_pdf_links=False)
+        )
+    finally:
+        await ncbi.close()
+
+    assert parsed["access_restricted"] is True
+    assert parsed["sections"] == []
+    assert parsed["references"] == []
+    assert parsed["figures"] == []
+    assert not result.has_retrieved_text
+    assert "author response" not in (result.raw_fulltext_content or "").lower()
+    assert [(notice.source, notice.code) for notice in result.source_notices] == [
+        ("europe_pmc", "no_body"),
+        ("ncbi_pmc", "front_matter_only"),
+    ]
+    assert result.fulltext_source_name is None
+
+
+def test_jats_main_article_excludes_nested_sub_article_content() -> None:
+    client = NCBIPMCClient(email="fixture@example.org")
+
+    parsed = client.parse_article_xml(PMC_EFETCH_FULL_BODY_WITH_SUB_ARTICLE)
+
+    assert parsed["access_restricted"] is False
+    assert parsed["title"] == "Synthetic EEG-guided anesthesia trial – a fixture"
+    assert "Reply-only abstract" not in parsed["abstract"]
+    # Parser-level sections still include the title-only "Methods" heading.
+    assert [section["title"] for section in parsed["sections"]] == [
+        "Introduction",
+        "Methods",
+        "Trial Design",
+        "Outcomes",
+        "Results",
+        "Discussion",
+    ]
+    rendered = " ".join(str(section["content"]) for section in parsed["sections"])
+    assert "author response" not in rendered.lower()
+    assert [reference["pmid"] for reference in parsed["references"]] == ["11111111"]
+    assert all(figure["label"] != "Author response image 1" for figure in parsed["figures"])
+    assert parsed["license"] is not None and parsed["license"]["type"] == "open-access"
 
 
 # ----------------------------------------------------------------------------
@@ -542,6 +692,137 @@ async def test_deadline_inside_structured_stage_is_reported_as_deadline_not_outa
     assert [skipped.source for skipped in result.sources_skipped] == ["ncbi_pmc", "pdf_retrieval_fallback"]
     assert all(error.code != "source_unavailable" for error in result.source_errors)
     assert result.coverage_status == "unavailable"
+
+
+async def test_pdf_fallback_downloader_works_within_the_remaining_request_budget() -> None:
+    """The downloader stops on the request's budget and returns what it found, not a cancellation."""
+    received: dict[str, Any] = {}
+
+    class _BudgetedDownloader:
+        async def get_fulltext(self, **kwargs: Any) -> FulltextResult:
+            received.update(kwargs)
+            budget = kwargs.get("total_timeout")
+            # Keeps trying candidates until its own end-to-end budget is spent.
+            await asyncio.sleep(min(budget, 5.0) if budget is not None else 5.0)
+            discovery = PDFLinkDiscoveryResult(
+                links=(PDFLink(url="https://repository.example.test/a.pdf", source=PDFSource.CORE),),
+                attempted_sources=("core",),
+                completed_sources=("core",),
+            )
+            return FulltextResult(link_discovery=discovery, error="Fulltext retrieval exceeded total timeout")
+
+        async def close(self) -> None:
+            return None
+
+    provider = MagicMock()
+    provider.get_fulltext_xml = AsyncMock(return_value=None)
+    deadline_seconds = 0.6
+    result = await asyncio.wait_for(
+        _service(
+            europe_pmc=provider,
+            ncbi=None,
+            downloader=_BudgetedDownloader(),
+            deadline_seconds=deadline_seconds,
+        ).retrieve(FulltextRequest(pmcid=PMCID)),
+        timeout=5,
+    )
+
+    assert 0 < received["total_timeout"] < deadline_seconds
+    assert result.source_errors == []
+    assert "pdf_retrieval_fallback" in result.sources_completed
+    assert "https://repository.example.test/a.pdf" in [link["url"] for link in result.pdf_links]
+
+
+@pytest.mark.parametrize("late_outcome", ["raises", "returns"])
+async def test_hedged_attempt_that_outlives_the_cancel_grace_is_reaped(
+    monkeypatch: pytest.MonkeyPatch, late_outcome: str
+) -> None:
+    """A source that ignores cancellation past the grace is still awaited, never left unretrieved."""
+    monkeypatch.setattr(racing, "_CANCEL_GRACE_SECONDS", 0.01)
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, Any]] = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    finished = asyncio.Event()
+
+    async def stubborn() -> str:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.05)  # ignores the cancellation longer than the grace
+            finished.set()
+            if late_outcome == "raises":
+                raise RuntimeError("late provider failure") from None
+        return "late body"
+
+    async def answer() -> str:
+        return "body"
+
+    try:
+        outcomes = await racing.run_hedged(
+            [racing.HedgedAttempt("europe_pmc", stubborn), racing.HedgedAttempt("ncbi_pmc", answer)],
+            usable=lambda value: value == "body",
+            hedge_after=0.0,
+            deadline=racing.FulltextDeadline(5.0),
+        )
+        assert [(outcome.source, outcome.stopped) for outcome in outcomes] == [
+            ("europe_pmc", "superseded"),
+            ("ncbi_pmc", None),
+        ]
+        assert racing.abandoned_attempt_count() == 1
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        for _ in range(3):
+            await asyncio.sleep(0)
+        gc.collect()
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert racing.abandoned_attempt_count() == 0
+    assert [context.get("message") for context in reported] == []
+
+
+async def test_stopped_attempts_are_reaped_even_if_the_caller_is_cancelled_during_the_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(racing, "_CANCEL_GRACE_SECONDS", 0.5)
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, Any]] = []
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    stopping, finished = asyncio.Event(), asyncio.Event()
+
+    async def stubborn() -> str:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            stopping.set()
+            await asyncio.sleep(0.6)  # still running when the caller gives up
+            finished.set()
+            raise RuntimeError("late provider failure") from None
+        return "unreachable"
+
+    try:
+        race = asyncio.ensure_future(
+            racing.run_hedged(
+                [racing.HedgedAttempt("europe_pmc", stubborn)],
+                usable=lambda value: value == "body",
+                hedge_after=60.0,
+                deadline=racing.FulltextDeadline(0.1),
+            )
+        )
+        await asyncio.wait_for(stopping.wait(), timeout=2)
+        race.cancel()  # e.g. the MCP request itself is cancelled mid-grace
+        with pytest.raises(asyncio.CancelledError):
+            await race
+        await asyncio.wait_for(finished.wait(), timeout=2)
+        for _ in range(3):
+            await asyncio.sleep(0)
+        gc.collect()
+    finally:
+        loop.set_exception_handler(previous_handler)
+
+    assert racing.abandoned_attempt_count() == 0
+    assert [context.get("message") for context in reported] == []
 
 
 # ----------------------------------------------------------------------------

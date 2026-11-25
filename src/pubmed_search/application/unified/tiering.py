@@ -19,8 +19,14 @@ Design:
     caller's query matched nothing, the corrected query is re-run as the exact
     tier and every later decision uses its results. ``mechanisms`` therefore
     lists every automatic change to what was searched, and ``applied`` is
-    true when any of them ran; ``broadened_records`` alone counts records
-    from lower-precision tiers.
+    true when any of them completed (a provider answered);
+    ``broadened_records`` alone counts records from lower-precision tiers.
+
+    A deepening, broadening or relaxation request that failed or timed out
+    changed nothing about the result. It is counted in ``failed_attempts``
+    and named in the summary as failed, never described as a broader query
+    that found no new records: an empty answer and a missing answer are
+    different coverage facts.
 
 Maintenance:
     This module is pure policy: no I/O, no presentation strings beyond the
@@ -33,6 +39,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.search.result_aggregator import ArticleIdentityIndex
 from pubmed_search.application.search.semantic_enhancer import STRATEGY_TIER_RANKS
 from pubmed_search.application.unified.mesh_correction import correction_summary
 from pubmed_search.domain.entities.article import RetrievalProvenance
@@ -170,7 +177,13 @@ def order_by_retrieval_tier(articles: list[UnifiedArticle]) -> list[UnifiedArtic
 
 
 def _identity_tokens(article: UnifiedArticle) -> frozenset[tuple[str, str]]:
-    """Return the identity keys the aggregator would use to merge a record."""
+    """Every identity signal of a record: identifiers, else its normalized title.
+
+    This is a superset of the keys the aggregator merges on (it ignores the
+    conflict rule and the minimum title length). Fill admission discards any
+    candidate sharing one of these tokens with a held record, so a record it
+    keeps can never be merged away by the aggregator.
+    """
     tokens: set[tuple[str, str]] = set()
     doi = normalize_article_doi(article.doi)
     if doi:
@@ -196,7 +209,13 @@ def _identity_tokens(article: UnifiedArticle) -> frozenset[tuple[str, str]]:
 
 @dataclass
 class FillAdmission:
-    """Outcome of admitting one provider attempt into the fill pool."""
+    """Outcome of admitting one provider attempt into the fill pool.
+
+    ``accepted`` are the records handed to the aggregator; an exact-tier
+    attempt keeps ineligible records there because the final filters remove
+    them. ``contributed`` counts only new *eligible* records -- the ones this
+    attempt actually adds to what the caller receives.
+    """
 
     accepted: list[UnifiedArticle] = field(default_factory=list)
     new_unique: int = 0
@@ -204,14 +223,28 @@ class FillAdmission:
     ineligible: int = 0
     surplus_discarded: int = 0
 
+    @property
+    def contributed(self) -> int:
+        """New unique records that survive the eligibility policy."""
+        return self.new_unique - self.ineligible - self.surplus_discarded
+
 
 class DeepFillTracker:
     """Count eligible unique records against the requested limit.
 
-    ``admit_exact`` keeps every record of an exact-tier attempt (cross-source
-    duplicates still merge in the aggregator) while counting new eligible
-    identities. ``admit_fill`` keeps only new eligible records up to the
-    remaining slots and discards duplicates, ineligible records, and surplus.
+    ``admit_exact`` keeps every record of an exact-tier attempt (the final
+    filters remove ineligible ones) and counts unique records with the
+    aggregator's own :class:`ArticleIdentityIndex` -- same keys, conflict
+    rule and title threshold -- so a record bridging two earlier identities
+    merges them, and records with conflicting identifiers stay distinct,
+    exactly as they will in the aggregated result. A merged record counts as
+    eligible only when every member is eligible.
+
+    ``admit_fill`` keeps only new eligible records up to the remaining slots.
+    It discards any candidate sharing an identity token with a held record
+    (a superset of the aggregator's merge keys), so every kept fill record
+    is a new identity for the aggregator as well, and discarded records never
+    reach it.
     """
 
     def __init__(self, requested_limit: int, eligibility: Eligibility | None = None) -> None:
@@ -220,7 +253,9 @@ class DeepFillTracker:
             raise ValueError(msg)
         self.requested_limit = requested_limit
         self._eligibility = eligibility
-        self._seen: set[tuple[str, str]] = set()
+        self._index = ArticleIdentityIndex()
+        self._pool_eligible: list[bool] = []
+        self._tokens: set[tuple[str, str]] = set()
         self.unique_count = 0
         self.eligible_unique = 0
 
@@ -246,22 +281,29 @@ class DeepFillTracker:
     def _is_eligible(self, article: UnifiedArticle) -> bool:
         return True if self._eligibility is None else bool(self._eligibility(article))
 
+    def _hold(self, article: UnifiedArticle, tokens: frozenset[tuple[str, str]], *, eligible: bool) -> bool:
+        """Add one record to the pool; return whether it merged into a held record."""
+        self._tokens.update(tokens)
+        self._pool_eligible.append(eligible)
+        return bool(self._index.add(article))
+
+    def _recount(self) -> None:
+        groups = list(self._index.groups().values())
+        self.unique_count = len(groups)
+        self.eligible_unique = sum(1 for members in groups if all(self._pool_eligible[i] for i in members))
+
     def admit_exact(self, articles: Sequence[UnifiedArticle], provenance: RetrievalProvenance) -> FillAdmission:
         """Admit an exact-tier attempt; every record is kept and tagged."""
         admission = FillAdmission(accepted=list(articles))
         for article in articles:
-            tokens = _identity_tokens(article)
-            if tokens & self._seen:
+            eligible = self._is_eligible(article)
+            if self._hold(article, _identity_tokens(article), eligible=eligible):
                 admission.duplicates += 1
-                self._seen.update(tokens)
                 continue
-            self._seen.update(tokens)
-            self.unique_count += 1
             admission.new_unique += 1
-            if self._is_eligible(article):
-                self.eligible_unique += 1
-            else:
+            if not eligible:
                 admission.ineligible += 1
+        self._recount()
         tag_retrieval(admission.accepted, provenance)
         return admission
 
@@ -270,7 +312,7 @@ class DeepFillTracker:
         admission = FillAdmission()
         for article in articles:
             tokens = _identity_tokens(article)
-            if tokens & self._seen:
+            if tokens & self._tokens:
                 admission.duplicates += 1
                 continue
             admission.new_unique += 1
@@ -280,7 +322,8 @@ class DeepFillTracker:
             if self.remaining == 0:
                 admission.surplus_discarded += 1
                 continue
-            self._seen.update(tokens)
+            # It shares no identity token with anything held: a new identity.
+            self._hold(article, tokens, eligible=True)
             self.unique_count += 1
             self.eligible_unique += 1
             admission.accepted.append(article)
@@ -293,8 +336,38 @@ class DeepFillTracker:
 # ============================================================================
 
 
+FILL_PHASES = frozenset({"deepen", "broaden"})
+"""Automatic fill phases whose provider requests may fail without changing the result."""
+
+
 def _executed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
     return [row for row in rows if row.phase == phase and row.executed]
+
+
+def _completed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
+    """Executed attempts the provider answered (records or a confirmed empty result)."""
+    return [row for row in _executed(rows, phase) if row.status != "error"]
+
+
+def _failed(rows: Iterable[StrategyResult], phase: str) -> list[StrategyResult]:
+    return [row for row in _executed(rows, phase) if row.status == "error"]
+
+
+def _failure_verb(row: StrategyResult) -> str:
+    errors = row.metadata.get("errors") if isinstance(row.metadata, dict) else None
+    kinds = (
+        {str(error.get("kind")) for error in errors if isinstance(error, dict)} if isinstance(errors, list) else set()
+    )
+    return "timed out" if kinds == {"timeout"} else "failed"
+
+
+def _failed_phrase(action: str, rows: Sequence[StrategyResult]) -> str:
+    """Name failed fill attempts; a failure is never presented as an empty result."""
+    names = ", ".join(dict.fromkeys(row.strategy_name for row in rows))
+    verbs = {_failure_verb(row) for row in rows}
+    verb = "timed out" if verbs == {"timed out"} else "failed"
+    details = ", ".join(dict.fromkeys(f"{source_label(row.source)} request {_failure_verb(row)}" for row in rows))
+    return f" → {action} {names} {verb} ({details})"
 
 
 def _exact_phrase(rows: Sequence[StrategyResult], count: int, limit: int) -> str:
@@ -348,7 +421,11 @@ def _deep_summary(metrics: SearchDepthMetrics, outcome: DeepTierOutcome) -> str:
     summary = _exact_phrase(rows, outcome.exact_eligible_unique, outcome.requested_limit)
     if outcome.deepened_records:
         summary += f" → fetched {outcome.deepened_records} more record(s) from the exact query"
-    broadened = list(dict.fromkeys(row.strategy_name for row in _executed(rows, "broaden")))
+    failed_deepening = _failed(rows, "deepen")
+    if failed_deepening:
+        summary += _failed_phrase("fetching more records from", failed_deepening)
+    broadened = list(dict.fromkeys(row.strategy_name for row in _completed(rows, "broaden")))
+    failed_broadening = _failed(rows, "broaden")
     if broadened:
         if outcome.broadened_records:
             summary += (
@@ -357,6 +434,12 @@ def _deep_summary(metrics: SearchDepthMetrics, outcome: DeepTierOutcome) -> str:
             )
         else:
             summary += f" → broadened with {', '.join(broadened)}, but no new eligible records were found"
+    if failed_broadening:
+        summary += _failed_phrase("broadening with", failed_broadening)
+        summary += ", so lower-precision coverage is incomplete"
+    if broadened or failed_broadening:
+        if outcome.broadening_blocked_reason == SKIP_DEADLINE_EXHAUSTED:
+            summary += "; the remaining broadening was skipped because the deep-search deadline was exhausted"
     elif outcome.broadening_blocked_reason == SKIP_BROADENING_DISABLED:
         summary += '; broadening disabled by options="no_relax"'
     elif outcome.broadening_blocked_reason == SKIP_EXACT_TIER_FAILED:
@@ -416,7 +499,9 @@ def _relaxation_phrase(relaxation: RelaxationResult) -> str:
     return f" → auto-relaxation tried {len(relaxation.steps_tried)} broader PubMed queries; none returned records"
 
 
-def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: int) -> list[dict[str, Any]]:
+def _mesh_correction_rows(
+    mesh_correction: Mapping[str, Any], pubmed_returned: int, pubmed_eligible: int
+) -> list[dict[str, Any]]:
     """Attempt rows for a single-pass (non-deep) search whose PubMed query was corrected."""
     counts = mesh_correction.get("hit_counts") or {}
     before, after = counts.get("before"), counts.get("after")
@@ -426,7 +511,6 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
         "tier_rank": 0,
         "executed": True,
         "duplicates": 0,
-        "ineligible": 0,
         "surplus_discarded": 0,
         "skip_reason": None,
     }
@@ -435,6 +519,7 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
             **base,
             "strategy": "original",
             "phase": PHASE_SUPERSEDED,
+            "ineligible": 0,
             "status": "empty" if before == 0 else "ok",
             "logical_query": mesh_correction.get("original_query"),
             "physical_query": None,
@@ -455,7 +540,8 @@ def _mesh_correction_rows(mesh_correction: Mapping[str, Any], pubmed_returned: i
             "total_available": after,
             "returned": pubmed_returned,
             "new_unique": pubmed_returned,
-            "contributed": pubmed_returned,
+            "ineligible": pubmed_returned - pubmed_eligible,
+            "contributed": pubmed_eligible,
         },
     ]
 
@@ -469,8 +555,14 @@ def build_broadening_disclosure(
     exact_pubmed_total: int | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
     pubmed_returned: int = 0,
+    pubmed_eligible: int | None = None,
 ) -> dict[str, Any] | None:
     """Describe automatic query changes (MeSH correction, broadening), why, and their yield.
+
+    ``pubmed_returned`` / ``pubmed_eligible`` describe a single-pass PubMed
+    exact result before any relaxation: the records returned, and how many
+    of them survive the exclude_seen / detected-preprint policy (defaults to
+    all of them).
 
     Returns ``None`` when no MeSH correction was applied and neither tiered
     deep search nor auto-relaxation ran.
@@ -488,13 +580,17 @@ def build_broadening_disclosure(
     eligible = 0
     deepened = 0
     broadened = 0
+    failed_attempts = 0
     filled = False
     summary = ""
 
     if deep_metrics is not None and outcome is not None:
-        attempts.extend(row.disclosure() for row in deep_metrics.strategy_results)
-        if any(row.phase == "broaden" and row.executed for row in deep_metrics.strategy_results):
+        rows = deep_metrics.strategy_results
+        attempts.extend(row.disclosure() for row in rows)
+        # A broadening request that failed broadened nothing.
+        if _completed(rows, "broaden"):
             mechanisms.append("deep_strategy_tiers")
+        failed_attempts += sum(len(_failed(rows, phase)) for phase in sorted(FILL_PHASES))
         needed = outcome.broadening_needed
         blocked_reason = outcome.broadening_blocked_reason
         exact_eligible = outcome.exact_eligible_unique
@@ -505,16 +601,20 @@ def build_broadening_disclosure(
         summary = _deep_summary(deep_metrics, outcome)
 
     if corrected and outcome is None and mesh_correction is not None:
-        attempts.extend(_mesh_correction_rows(mesh_correction, pubmed_returned))
-        exact_eligible = eligible = pubmed_returned
-        filled = pubmed_returned >= requested_limit
+        corrected_eligible = pubmed_returned if pubmed_eligible is None else min(pubmed_eligible, pubmed_returned)
+        attempts.extend(_mesh_correction_rows(mesh_correction, pubmed_returned, corrected_eligible))
+        exact_eligible = eligible = corrected_eligible
+        filled = corrected_eligible >= requested_limit
         needed = not filled
         summary = f"corrected query returned {pubmed_returned} of requested {requested_limit}"
+        if corrected_eligible != pubmed_returned:
+            summary += f" ({corrected_eligible} eligible after exclusions)"
 
     if relaxation is not None:
         needed = True
-        if relaxation.steps_tried:
+        if any(step.status in {"ok", "empty"} for step in relaxation.steps_tried):
             mechanisms.append("auto_relax")
+        failed_attempts += sum(1 for step in relaxation.steps_tried if step.status == "error")
         if outcome is None and not corrected:
             total = f" (PubMed total {exact_pubmed_total})" if exact_pubmed_total is not None else ""
             summary = f"original returned 0 of requested {requested_limit}{total}"
@@ -568,6 +668,7 @@ def build_broadening_disclosure(
         "eligible_unique": eligible,
         "deepened_records": deepened,
         "broadened_records": broadened,
+        "failed_attempts": failed_attempts,
         "filled": filled,
         "summary": summary,
         "attempts": attempts,
@@ -586,6 +687,7 @@ def compact_broadening(disclosure: dict[str, Any] | None) -> dict[str, Any] | No
             "applied",
             "mechanisms",
             "broadened_records",
+            "failed_attempts",
             "filled",
             "summary",
         )

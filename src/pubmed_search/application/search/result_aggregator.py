@@ -354,6 +354,119 @@ class UnionFind:
             groups[root].append(i)
         return groups
 
+    def add(self) -> int:
+        """Append one singleton element and return its index."""
+        index = len(self.parent)
+        self.parent.append(index)
+        self.rank.append(0)
+        self.size.append(1)
+        return index
+
+
+_PROVIDER_IDENTIFIER_FIELDS: tuple[tuple[str, str], ...] = (
+    ("pmc", "pmc"),
+    ("openalex_id", "openalex"),
+    ("s2_id", "s2"),
+    ("core_id", "core"),
+    ("arxiv_id", "arxiv"),
+)
+
+
+def _article_identity(article: UnifiedArticle) -> dict[str, str]:
+    """Normalized strong identifiers of one record, keyed by identifier kind."""
+    return {
+        kind: value
+        for kind, value in (
+            ("doi", normalize_article_doi(article.doi)),
+            ("pmid", str(article.pmid or "").strip()),
+            *(
+                (kind, normalize_article_identifier(kind, getattr(article, attr, None)))
+                for attr, kind in _PROVIDER_IDENTIFIER_FIELDS
+            ),
+        )
+        if value
+    }
+
+
+class ArticleIdentityIndex:
+    """Incremental record-identity grouping shared by aggregation and deep-search fill.
+
+    Records are added in order. Each one is united with the earliest record
+    that registered one of its keys -- DOI, PMID, provider identifiers, and,
+    only for a record without any identifier, its normalized title of at
+    least ``title_min_length`` characters -- unless the two groups carry
+    different values for the same identifier kind. ``ResultAggregator``
+    deduplicates through this index, so a caller counting with it (the
+    precision-first ``DeepFillTracker``) sees exactly the unique records the
+    aggregator will keep.
+    """
+
+    def __init__(
+        self,
+        strategy: DeduplicationStrategy = DeduplicationStrategy.MODERATE,
+        *,
+        title_min_length: int = 20,
+    ) -> None:
+        self._uf = UnionFind(0)
+        self._identities: list[dict[str, str]] = []
+        self._first_index: dict[tuple[str, str], int] = {}
+        self._use_title = strategy in (DeduplicationStrategy.MODERATE, DeduplicationStrategy.AGGRESSIVE)
+        self._title_min_length = 15 if strategy == DeduplicationStrategy.AGGRESSIVE else title_min_length
+
+    def __len__(self) -> int:
+        return len(self._identities)
+
+    def _keys(self, article: UnifiedArticle, identity: dict[str, str]) -> list[tuple[str, tuple[str, str]]]:
+        """(merge reason, index key) pairs in the order the aggregator applies them."""
+        keys: list[tuple[str, tuple[str, str]]] = [
+            (kind, (kind, identity[kind])) for kind in ("doi", "pmid") if kind in identity
+        ]
+        keys.extend(
+            ("identifier", (kind, identity[kind])) for _attr, kind in _PROVIDER_IDENTIFIER_FIELDS if kind in identity
+        )
+        if self._use_title and article.title and not identity:
+            title = normalize_article_title(article.title)
+            if len(title) >= self._title_min_length:
+                keys.append(("title", ("title", title)))
+        return keys
+
+    @staticmethod
+    def _compatible(left: dict[str, str], right: dict[str, str]) -> bool:
+        return not any(key in left and left[key] != value for key, value in right.items())
+
+    def add(self, article: UnifiedArticle) -> list[str]:
+        """Index ``article``; return the reason (doi/pmid/identifier/title) of each merge it caused."""
+        index = self._uf.add()
+        identity = _article_identity(article)
+        self._identities.append(identity)
+        reasons: list[str] = []
+        for reason, key in self._keys(article, identity):
+            first = self._first_index.get(key)
+            if first is None:
+                self._first_index[key] = index
+            elif self._union(index, first):
+                reasons.append(reason)
+        return reasons
+
+    def _union(self, left: int, right: int) -> bool:
+        left_root, right_root = self._uf.find(left), self._uf.find(right)
+        if left_root == right_root:
+            return False
+        left_ids, right_ids = self._identities[left_root], self._identities[right_root]
+        if not self._compatible(left_ids, right_ids):
+            return False
+        self._uf.union(left_root, right_root)
+        self._identities[self._uf.find(left_root)] = {**left_ids, **right_ids}
+        return True
+
+    def identity_of(self, index: int) -> dict[str, str]:
+        """Merged identifiers of the group containing record ``index``."""
+        return self._identities[self._uf.find(index)]
+
+    def groups(self) -> dict[int, list[int]]:
+        """Groups of record indexes in first-member order, as ``{root: [members]}``."""
+        return self._uf.get_groups()
+
 
 # =============================================================================
 # ResultAggregator
@@ -619,154 +732,46 @@ class ResultAggregator:
         """
         Deduplicate articles using Union-Find for O(n) complexity.
 
-        Algorithm:
-        1. Build indexes (DOI, PMID, Title) - O(n)
-        2. For each index, union articles with same key - O(n × α(n))
-        3. Get groups and merge - O(n)
-
-        Total: O(n) instead of O(n²)
+        Grouping is delegated to :class:`ArticleIdentityIndex` (DOI, PMID,
+        provider identifiers, then identifier-free titles; conflicting
+        identifiers never merge) so deep-search fill accounting can count
+        unique records with exactly the same rules. Each group is then merged
+        into its most complete record.
         """
-        n = len(articles)
-        if n == 0:
+        if not articles:
             return []
 
-        uf = UnionFind(n)
-        identities = []
+        index = ArticleIdentityIndex(strategy, title_min_length=self._config.title_min_length)
         for article in articles:
-            identities.append(
-                {
-                    kind: value
-                    for kind, value in (
-                        ("doi", normalize_article_doi(article.doi)),
-                        ("pmid", str(article.pmid or "").strip()),
-                        *(
-                            (kind, normalize_article_identifier(kind, getattr(article, attr)))
-                            for attr, kind in (
-                                ("pmc", "pmc"),
-                                ("openalex_id", "openalex"),
-                                ("s2_id", "s2"),
-                                ("core_id", "core"),
-                                ("arxiv_id", "arxiv"),
-                            )
-                        ),
-                    )
-                    if value
-                }
-            )
-
-        def union_compatible(left: int, right: int) -> bool:
-            left_root, right_root = uf.find(left), uf.find(right)
-            if left_root == right_root:
-                return False
-            left_ids, right_ids = identities[left_root], identities[right_root]
-            if any(key in left_ids and left_ids[key] != value for key, value in right_ids.items()):
-                return False
-            uf.union(left_root, right_root)
-            identities[uf.find(left_root)] = {**left_ids, **right_ids}
-            return True
-
-        # Build indexes and union
-        doi_to_idx: dict[str, int] = {}
-        pmid_to_idx: dict[str, int] = {}
-        identifier_to_idx: dict[tuple[str, str], int] = {}
-        title_to_idx: dict[str, int] = {}
-
-        min_title_len = self._config.title_min_length
-        use_title = strategy in (
-            DeduplicationStrategy.MODERATE,
-            DeduplicationStrategy.AGGRESSIVE,
-        )
-
-        # Adjust title threshold for aggressive mode
-        if strategy == DeduplicationStrategy.AGGRESSIVE:
-            min_title_len = 15
-
-        for i, article in enumerate(articles):
-            # DOI matching
-            normalized_doi = self._normalize_doi(article.doi or "")
-            if normalized_doi:
-                if normalized_doi in doi_to_idx:
-                    if union_compatible(i, doi_to_idx[normalized_doi]):
-                        stats.dedup_by_doi += 1
+            for reason in index.add(article):
+                if reason == "doi":
+                    stats.dedup_by_doi += 1
+                elif reason == "pmid":
+                    stats.dedup_by_pmid += 1
+                elif reason == "identifier":
+                    stats.dedup_by_identifier += 1
                 else:
-                    doi_to_idx[normalized_doi] = i
+                    stats.dedup_by_title += 1
 
-            # PMID matching
-            normalized_pmid = str(article.pmid or "").strip()
-            if normalized_pmid:
-                if normalized_pmid in pmid_to_idx:
-                    if union_compatible(i, pmid_to_idx[normalized_pmid]):
-                        stats.dedup_by_pmid += 1
-                else:
-                    pmid_to_idx[normalized_pmid] = i
-
-            # Provider identifiers are strong identities too.  Indexing them
-            # prevents records carrying OpenAlex/S2/CORE/arXiv/PMC IDs from
-            # being excluded from both identifier and title deduplication.
-            for attr, kind in (
-                ("pmc", "pmc"),
-                ("openalex_id", "openalex"),
-                ("s2_id", "s2"),
-                ("core_id", "core"),
-                ("arxiv_id", "arxiv"),
-            ):
-                identifier = normalize_article_identifier(kind, getattr(article, attr, None))
-                if not identifier:
-                    continue
-                key = (kind, identifier)
-                if key in identifier_to_idx:
-                    if union_compatible(i, identifier_to_idx[key]):
-                        stats.dedup_by_identifier += 1
-                else:
-                    identifier_to_idx[key] = i
-
-            # Title matching (if enabled)
-            if use_title and article.title and not self._has_strong_identifier(article):
-                normalized_title = self._normalize_title(article.title)
-                if len(normalized_title) >= min_title_len:
-                    if normalized_title in title_to_idx:
-                        if union_compatible(i, title_to_idx[normalized_title]):
-                            stats.dedup_by_title += 1
-                    else:
-                        title_to_idx[normalized_title] = i
-
-        # Get groups and merge
-        groups = uf.get_groups()
         unique: list[UnifiedArticle] = []
-
-        for member_indices in groups.values():
+        for member_indices in index.groups().values():
             if len(member_indices) == 1:
                 unique.append(articles[member_indices[0]])
-            else:
-                # Multiple duplicates - select primary and merge
-                duplicates = [articles[i] for i in member_indices]
-                primary = self._select_primary(duplicates)
-
-                for dup in duplicates:
-                    if dup is not primary:
-                        # The component was checked for conflicting identifiers
-                        # before every union. Transitive identity evidence is
-                        # therefore sufficient even without a direct pair match.
-                        primary.merge_from(dup, merge_identifiers=bool(identities[uf.find(member_indices[0])]))
-                        stats.merged_records += 1
-
-                unique.append(primary)
+                continue
+            # Multiple duplicates - select primary and merge
+            duplicates = [articles[i] for i in member_indices]
+            primary = self._select_primary(duplicates)
+            # The component was checked for conflicting identifiers before
+            # every union. Transitive identity evidence is therefore
+            # sufficient even without a direct pair match.
+            merge_identifiers = bool(index.identity_of(member_indices[0]))
+            for dup in duplicates:
+                if dup is not primary:
+                    primary.merge_from(dup, merge_identifiers=merge_identifiers)
+                    stats.merged_records += 1
+            unique.append(primary)
 
         return unique
-
-    def _has_strong_identifier(self, article: UnifiedArticle) -> bool:
-        """Return True when the record already carries a high-confidence identity."""
-        return any(
-            [
-                str(article.pmid or "").strip(),
-                normalize_article_doi(article.doi),
-                normalize_article_identifier("pmc", article.pmc),
-                normalize_article_identifier("openalex", getattr(article, "openalex_id", None)),
-                normalize_article_identifier("s2", getattr(article, "s2_id", None)),
-                normalize_article_identifier("core", getattr(article, "core_id", None)),
-                normalize_article_identifier("arxiv", getattr(article, "arxiv_id", None)),
-            ]
-        )
 
     def _select_primary(self, articles: list[UnifiedArticle]) -> UnifiedArticle:
         """

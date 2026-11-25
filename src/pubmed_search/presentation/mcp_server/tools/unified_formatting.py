@@ -445,7 +445,8 @@ def _format_broadening_section(broadening: Mapping[str, Any] | None) -> list[str
         return []
     summary = _escape_markdown_text(str(broadening.get("summary") or ""))
     broadened_records = int(broadening.get("broadened_records") or 0)
-    if broadening.get("applied"):
+    failed_attempts = int(broadening.get("failed_attempts") or 0)
+    if broadening.get("applied") or failed_attempts:
         icon = "⚠️"
     elif broadening.get("needed"):
         icon = "ℹ️"
@@ -458,7 +459,7 @@ def _format_broadening_section(broadening: Mapping[str, Any] | None) -> list[str
 
     attempts = [row for row in broadening.get("attempts", []) if isinstance(row, dict)]
     executed = [row for row in attempts if row.get("executed")]
-    if broadening.get("applied") or int(broadening.get("deepened_records") or 0):
+    if broadening.get("applied") or failed_attempts or int(broadening.get("deepened_records") or 0):
         lines.append("")
         lines.append("| Tier | Source | Strategy | Phase | Status | Total | Returned | Added |")
         lines.append("| --- | --- | --- | --- | --- | ---: | ---: | ---: |")

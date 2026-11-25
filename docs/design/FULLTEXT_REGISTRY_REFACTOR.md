@@ -329,17 +329,30 @@ This lets the tool format once, regardless of how the content was found.
   `efetch db=pmc` with the configured `tool`/`email`/`api_key`, drawing from the
   same `ncbi-entrez` rate budget as Bio.Entrez; `esummary db=pubmed` resolves a
   PMID to PMCID/DOI when Europe PMC metadata fails (`ncbi_metadata`)
-- Europe PMC and NCBI share one JATS parser (`infrastructure/sources/jats.py`)
+- Europe PMC and NCBI share one JATS parser (`infrastructure/sources/jats.py`);
+  it extracts only the main `<article>` -- a nested `<sub-article>` or
+  `<response>` (decision letter, author reply) never supplies body sections,
+  figures or references
+- `efetch` answering HTTP 200 without an article is a missing record only when
+  the articleset carries NCBI's per-ID `<error>` statement; an `<ERROR>`
+  envelope, an empty body or an empty articleset is `invalid_response`
 - `structured_first` is `europe_pmc, ncbi_pmc, ...`; `application/fulltext/racing.py`
   starts NCBI when Europe PMC fails, has no body, or has not answered within the
   hedge delay (6 s), keeps the first usable body and cancels the other attempt
-  (`source_notices: superseded`)
+  (`source_notices: superseded`). Only a body ends the race; an attempt that
+  ignores cancellation past the 1 s grace is held and reaped when it finishes
 - NCBI's "publisher does not allow downloading of the full text in XML form"
   record is `front_matter_only`: no sections, a PMC landing-page link, and the
-  ordinary PDF fallback still runs
+  ordinary PDF fallback still runs. The restriction applies to NCBI's XML copy
+  only, so a Europe PMC attempt already running is not cancelled by it; it
+  answers, fails or stops at the deadline (the XML cache bounds a foreground
+  Europe PMC fetch at 45 s) and is reported accordingly. The restriction is
+  detected in the main article's text and comments only
 - one request deadline (`PUBMED_FULLTEXT_DEADLINE_SECONDS`, default 90 s) bounds
   every stage; a source cancelled by it is `deadline_exceeded`, a source never
-  started is listed in `sources_skipped`
+  started is listed in `sources_skipped`. The PDF/extended downloader receives
+  the remaining budget (minus at most 1 s) as its own end-to-end timeout, so it
+  returns the links it already found instead of being cancelled with none
 - `PUBMED_FULLTEXT_NCBI_PMC_FALLBACK=false` disables the NCBI route
 
 ### Source status contract

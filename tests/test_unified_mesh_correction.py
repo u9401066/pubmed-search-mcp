@@ -11,7 +11,9 @@ aggregation, formatting and artifact envelope all run for real.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,13 +21,24 @@ import pytest
 
 from pubmed_search.application.search.mesh_correction import MeshCorrectionService
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryComplexity, QueryIntent
-from pubmed_search.application.search.semantic_enhancer import SemanticEnhancer
+from pubmed_search.application.search.result_aggregator import RankingConfig
+from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan, SemanticEnhancer
 from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.application.unified.execution import execute_unified_search
+from pubmed_search.application.unified.mesh_correction import PubMedMeshCorrector
+from pubmed_search.application.unified.planning import UnifiedSearchPlan
+from pubmed_search.application.unified.request import normalize_unified_search_request
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.domain.value_objects.query_diagnostics import PubMedQueryDiagnostics
+from pubmed_search.infrastructure.sources.registry import get_source_registry
+from pubmed_search.infrastructure.sources.unified_broker import (
+    DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR,
+    UnifiedSourceBroker,
+    _execute_deep_search,
+)
 from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
 from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
-from pubmed_search.shared.source_contracts import SourceAdapterResult
+from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 from tests.fixtures.mesh_entrez import PACU, PACU_QUERY, FakeEntrez, make_service
 
 if TYPE_CHECKING:
@@ -74,9 +87,18 @@ def _article(pmid: str) -> UnifiedArticle:
 class _FakePubMed:
     """PubMed runner double reporting PubMed's diagnostics like the real adapter."""
 
-    def __init__(self, *, corrected_hits: int = 12, corrected_total: int = CORRECTED_TOTAL) -> None:
+    def __init__(
+        self,
+        *,
+        corrected_hits: int = 12,
+        corrected_total: int = CORRECTED_TOTAL,
+        preprint_hits: int = 0,
+        corrected_fails: bool = False,
+    ) -> None:
         self.corrected_hits = corrected_hits
         self.corrected_total = corrected_total
+        self.preprint_hits = preprint_hits
+        self.corrected_fails = corrected_fails
         self.calls: list[str] = []
 
     async def __call__(
@@ -84,6 +106,15 @@ class _FakePubMed:
     ) -> SourceAdapterResult[UnifiedArticle]:
         self.calls.append(query)
         diagnostics = PubMedQueryDiagnostics(query_translation=query)
+        if self.corrected_fails and CORRECTED_MARKER in query:
+            return SourceAdapterResult.failure(
+                source="pubmed",
+                operation="search",
+                error=SourceAdapterError(
+                    source="pubmed", operation="search", message="Request timed out", kind="timeout", retryable=True
+                ),
+                metadata={"logical_query": query, "physical_query": query, "query_executed": True},
+            )
         if PACU in query:
             items: list[UnifiedArticle] = []
             total = 0
@@ -93,6 +124,8 @@ class _FakePubMed:
             total = 9_999
         else:
             items = [_article(str(1000 + index)) for index in range(self.corrected_hits)][:limit]
+            for article in items[: self.preprint_hits]:
+                article.doi = f"10.1101/2024.01.{article.pmid}"  # a detected (excluded) preprint
             total = self.corrected_total
         return SourceAdapterResult(
             source="pubmed",
@@ -131,6 +164,7 @@ async def _search(
     output_format: str = "json",
     options: str = "no_oa",
     limit: int = 10,
+    searcher: Any | None = None,
 ) -> str:
     runners: dict[str, Any] = {"pubmed": pubmed}
     with (
@@ -142,7 +176,7 @@ async def _search(
         ),
     ):
         return await run_unified_search(
-            searcher=_empty_searcher(),
+            searcher=searcher or _empty_searcher(),
             query=query,
             limit=limit,
             sources=",".join(runners),
@@ -209,6 +243,167 @@ async def test_precision_first_fill_decides_on_the_corrected_results(fake_entrez
     tiers = [article["retrieval"]["tier"] for article in payload["articles"]]
     assert tiers[:3] == ["exact"] * 3 and set(tiers[3:]) == {"broad"}
     assert all(PACU not in call for call in pubmed.calls[1:])
+
+
+async def test_relaxed_records_after_an_empty_corrected_query_are_not_counted_as_exact(
+    fake_entrez: FakeEntrez,
+) -> None:
+    """Single pass: the corrected query returns 0, auto-relaxation returns 4 -- 4 relaxed, 0 exact."""
+    relaxed_page = SourceSearchPage(
+        source="pubmed",
+        items=[{"pmid": str(7000 + index), "title": f"Relaxed {index}", "authors": ["A B"]} for index in range(4)],
+        total=4,
+        query="relaxed",
+    )
+    searcher = MagicMock()
+    searcher.search_page = AsyncMock(return_value=relaxed_page)
+
+    payload = json.loads(
+        await _search(
+            _FakePubMed(corrected_hits=0, corrected_total=0),
+            service=make_service(),
+            options="shallow,no_oa",
+            searcher=searcher,
+        )
+    )
+
+    broadening = payload["broadening"]
+    assert broadening["mechanisms"] == ["mesh_correction", "auto_relax"]
+    assert (broadening["exact_eligible_unique"], broadening["eligible_unique"]) == (0, 4)
+    assert broadening["broadened_records"] == 4
+    corrected_row = next(row for row in broadening["attempts"] if row["strategy"] == "original:mesh_corrected")
+    assert (corrected_row["status"], corrected_row["returned"], corrected_row["contributed"]) == ("empty", 0, 0)
+    assert "corrected query returned 0 of requested 10 → auto-relaxed" in broadening["summary"]
+    assert {article["retrieval"]["tier"] for article in payload["articles"]} == {"relaxed"}
+
+
+async def test_corrected_exact_row_contributes_only_records_that_survive_eligibility(
+    fake_entrez: FakeEntrez,
+) -> None:
+    """Single pass: 3 of the 10 corrected hits are detected preprints and are excluded."""
+    payload = json.loads(
+        await _search(_FakePubMed(corrected_hits=10, preprint_hits=3), service=make_service(), options="shallow,no_oa")
+    )
+
+    assert payload["result_filter_counts"]["excluded_detected_preprints"] == 3
+    broadening = payload["broadening"]
+    corrected_row = next(row for row in broadening["attempts"] if row["strategy"] == "original:mesh_corrected")
+    assert (corrected_row["returned"], corrected_row["ineligible"], corrected_row["contributed"]) == (10, 3, 7)
+    assert broadening["exact_eligible_unique"] == broadening["eligible_unique"] == 7
+    assert (broadening["filled"], broadening["needed"]) == (False, True)
+    assert "corrected query returned 10 of requested 10 (7 eligible after exclusions)" in broadening["summary"]
+
+
+class _NoopEnrichment:
+    async def enrich(self, *_args: Any, **_kwargs: Any) -> Any:
+        return MagicMock(to_diagnostic=lambda: {"status": "not_requested"})
+
+
+def _deep_plan(query: str) -> UnifiedSearchPlan:
+    request = normalize_unified_search_request(query=query, sources="pubmed", options="no_oa,no_analysis,no_scores")
+    strategies = [
+        SearchPlan(name="original", query=query, source="pubmed"),
+        SearchPlan(name="broad_tiab", query=f'"recovery delirium"{BROAD_MARKER}', source="pubmed", tier="broad"),
+    ]
+    return UnifiedSearchPlan(
+        request=request,
+        query=query,
+        provider_neutral_query=query,
+        analysis=_ModerateAnalyzer().analyze(query),
+        icd_matches=[],
+        enhanced_query=EnhancedQuery(original_query=query, strategies=strategies),
+        deep_strategies=strategies,
+        matched_entity_names=[],
+        user_sources=["pubmed"],
+        dispatch_sources=["pubmed"],
+        ranking_config=RankingConfig.default(),
+        effective_min_year=None,
+        effective_max_year=None,
+    )
+
+
+async def test_failed_deep_mesh_rerun_does_not_make_a_successful_pubmed_search_partial(
+    fake_entrez: FakeEntrez,
+) -> None:
+    """The original exact attempt answered; only the automatic corrected re-run failed."""
+    with patch(
+        "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        execution = await execute_unified_search(
+            _deep_plan(PACU_QUERY),
+            progress=AsyncMock(),
+            source_broker=UnifiedSourceBroker(
+                AsyncMock(), search_functions_override={"pubmed": _FakePubMed(corrected_fails=True)}
+            ),
+            enrichment=_NoopEnrichment(),
+            source_registry=get_source_registry(),
+            mesh_correction=make_service(),
+        )
+
+    correction = execution.mesh_correction
+    assert correction is not None
+    assert (correction["applied"], correction["rerun_status"]) == (False, "error")
+    assert any("original exact-tier results were kept" in warning for warning in correction["warnings"])
+    # PubMed answered every admitted attempt (empty exact tier, broadening records).
+    assert execution.source_statuses == {"pubmed": "ok"}
+    attempts = execution.source_metadata["pubmed"]["attempts"]
+    failed_rerun = [attempt for attempt in attempts if attempt["phase"] == "mesh_correction_failed"]
+    assert [(attempt["strategy"], attempt["status"]) for attempt in failed_rerun] == [
+        ("original:mesh_corrected", "error")
+    ]
+    assert execution.source_metadata["pubmed"]["mesh_correction"] == {"applied": False, "rerun_status": "error"}
+
+
+async def test_deep_search_with_a_hanging_mesh_correction_stays_within_its_overall_deadline() -> None:
+    """Worst case: correction evidence never arrives. The deep search still ends on its own budget."""
+
+    async def never(*_args: Any, **_kwargs: Any) -> Any:
+        await asyncio.Event().wait()
+
+    service = MagicMock()
+    service.correct_query = never
+    service.unavailable_result = MeshCorrectionService(MagicMock()).unavailable_result
+    corrector = PubMedMeshCorrector(service)  # its own 45 s timeout would dominate otherwise
+    plan = _deep_plan(PACU_QUERY)
+    strategy_timeout = 0.2
+    pubmed = _FakePubMed()
+
+    async def runner(query: str, *args: Any) -> SourceAdapterResult[UnifiedArticle]:
+        if BROAD_MARKER in query:
+            await never()  # a fill attempt can only end through the deadline
+        return await pubmed(query, *args)
+
+    started = time.monotonic()
+    _results, metrics, _total, _counts, _errors = await asyncio.wait_for(
+        _execute_deep_search(
+            AsyncMock(),
+            plan.enhanced_query,  # type: ignore[arg-type]
+            limit=10,
+            min_year=None,
+            max_year=None,
+            advanced_filters={},
+            strategies=plan.deep_strategies,
+            search_functions={"pubmed": runner},
+            strategy_timeout=strategy_timeout,
+            exact_query_corrector=corrector,
+        ),
+        timeout=5,
+    )
+    elapsed = time.monotonic() - started
+
+    # The correction may only use what is left of the overall budget (3 strategy
+    # timeouts), not its own 45 s; nothing runs past that budget.
+    assert elapsed < DEEP_SEARCH_OVERALL_TIMEOUT_FACTOR * strategy_timeout + 0.3
+    disclosure = corrector.disclosure()
+    assert disclosure is not None and disclosure["applied"] is False
+    assert "MeSH correction did not finish within the search deadline; query unchanged." in disclosure["warnings"]
+    outcome = metrics.tier_outcome
+    assert outcome is not None
+    assert outcome.broadened_records == 0
+    broad = next(row for row in metrics.strategy_results if row.strategy_name == "broad_tiab")
+    assert broad.skip_reason == "deadline_exhausted" or broad.status == "error"
 
 
 async def test_shallow_markdown_discloses_the_correction(fake_entrez: FakeEntrez) -> None:

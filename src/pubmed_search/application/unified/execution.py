@@ -42,6 +42,7 @@ from .helpers import DispatchStrategy, RelaxationResult, SearchDepthMetrics
 from .mesh_correction import MESH_CORRECTED_SUFFIX, PubMedMeshCorrector
 from .policies import enrich_with_rank_percentiles, exclude_seen_articles, is_preprint, is_seen_article
 from .tiering import (
+    UNADMITTED_PHASES,
     build_broadening_disclosure,
     order_by_retrieval_tier,
     relaxation_provenance,
@@ -256,6 +257,8 @@ async def execute_unified_search(
     request = plan.request
     analysis = plan.analysis
     corrector = _mesh_corrector(plan, mesh_correction)
+    eligibility = _retrieval_eligibility(request)
+    exact_pubmed_eligible: int | None = None
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
@@ -308,7 +311,7 @@ async def execute_unified_search(
                 plan.effective_max_year,
                 request.advanced_filters,
                 strategies=plan.deep_strategies,
-                eligibility=_retrieval_eligibility(request),
+                eligibility=eligibility,
                 # The no_relax option opts out of every automatic broadening path;
                 # MeSH correction is separate (options="no_mesh_correction").
                 allow_broadening=request.auto_relax,
@@ -320,7 +323,13 @@ async def execute_unified_search(
             for source, (returned, _total) in source_api_counts.items():
                 attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
                 executed_attempts = [attempt for attempt in attempts if attempt.executed]
-                attempt_statuses = {attempt.status for attempt in executed_attempts}
+                # Source status describes the attempts whose records were admitted.
+                # A superseded original or a failed MeSH-corrected re-run never fed
+                # the result; the re-run failure is disclosed by mesh_correction and
+                # its own attempt row instead of degrading a successful source.
+                attempt_statuses = {
+                    attempt.status for attempt in executed_attempts if attempt.phase not in UNADMITTED_PHASES
+                }
                 has_failure = "error" in attempt_statuses
                 has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
                 if has_failure and has_response:
@@ -340,6 +349,7 @@ async def execute_unified_search(
                     )
                 )
                 logical_queries = list(dict.fromkeys(attempt.query for attempt in executed_attempts if attempt.query))
+                requested = sum(attempt.allocated_limit for attempt in executed_attempts)
                 warning_values: list[str] = []
                 for attempt in attempts:
                     attempt_warnings = attempt.metadata.get("warnings")
@@ -358,7 +368,10 @@ async def execute_unified_search(
                     "budget": {
                         "policy": "precision_first",
                         "per_source_limit": request.limit,
-                        "requested": sum(attempt.allocated_limit for attempt in executed_attempts),
+                        "requested": requested,
+                        # Deprecated alias kept for v0.10 consumers: the sum of
+                        # provider request limits (skipped attempts request 0).
+                        "allocated": requested,
                         "fetched": sum(attempt.articles_count for attempt in executed_attempts),
                         "returned": returned,
                     },
@@ -496,6 +509,10 @@ async def execute_unified_search(
                 source_api_counts[result.source] = (len(articles), total_count)
                 source_statuses[result.source] = result.status
                 source_metadata[result.source] = attempt_metadata
+                if result.source == "pubmed":
+                    exact_pubmed_eligible = sum(
+                        1 for article in articles if eligibility is None or eligibility(article)
+                    )
                 if result.source == "pubmed" and total_count is not None:
                     pubmed_total_count = total_count
                 logger.info(
@@ -515,12 +532,20 @@ async def execute_unified_search(
                 "original_query": plan.query,
                 "corrected_query": effective_pubmed_query,
             }
+        elif corrector is not None and corrector.rerun_status is not None:
+            # The corrected re-run did not complete; the original results stand.
+            source_metadata.setdefault("pubmed", {})["mesh_correction"] = {
+                "applied": False,
+                "rerun_status": corrector.rerun_status,
+            }
 
         await progress(5, 10, "Aggregating results...")
         aggregator = ResultAggregator(plan.ranking_config)
         articles, stats = aggregator.aggregate(all_results)
         logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
-        exact_pubmed_total = source_api_counts.get("pubmed", (0, None))[1]
+        # Captured before auto-relaxation overwrites the PubMed counts: relaxed
+        # records must never also be counted as exact-tier records.
+        exact_pubmed_returned, exact_pubmed_total = source_api_counts.get("pubmed", (0, None))
 
         if (
             request.auto_relax
@@ -665,7 +690,8 @@ async def execute_unified_search(
             broadening_enabled=request.auto_relax,
             exact_pubmed_total=exact_pubmed_total,
             mesh_correction=mesh_correction_disclosure,
-            pubmed_returned=source_api_counts.get("pubmed", (0, None))[0],
+            pubmed_returned=exact_pubmed_returned,
+            pubmed_eligible=exact_pubmed_eligible,
         )
 
         result_filter_counts = {
