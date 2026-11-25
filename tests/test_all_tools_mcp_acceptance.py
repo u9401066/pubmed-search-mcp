@@ -366,7 +366,9 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
         },
         _expect_json(
             {
-                "articles.0.identifiers.pmid": SEARCH_PMID,
+                # Default structured records are agent-sized summaries.
+                "record_detail.level": "summary",
+                "articles.0.pmid": SEARCH_PMID,
                 "source_counts.0.source": "pubmed",
                 "source_counts.0.returned": 1,
                 "enrichment.fulltext_prefetch.articles.0.status": "scheduled",
