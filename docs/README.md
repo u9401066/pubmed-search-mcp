@@ -18,7 +18,7 @@ describe their own snapshots; they do not override the running tool registry.
 
 ## Capability inventory
 
-本表以 2026-11-25 的 v0.11.0 為準。從 MCP `tools/list` 取得的 43 個名稱與 16 類 registry 完全相符。v0.10.0 的 registry 有 42 項，新增 `research_workspace`，也在既有 `analyze_search_query` 上加入 PubMed 組合預查。v0.11.0 新增 `pipeline_screening`，並讓保存的 pipeline 支援完整取回、PRISMA-S 紀錄與概念區塊分析。逐一查名稱、參數與輸出請用[繁中逐工具稽核](research/TOOL_QUALITY_AUDIT.zh-TW.md)、[English tool contracts](research/TOOL_QUALITY_AUDIT.md)或[產生的完整索引](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
+本表以目前 checkout（v0.11.0 之後的開發版）為準。從 MCP `tools/list` 取得的 44 個名稱與 16 類 registry 完全相符。v0.10.0 的 registry 有 42 項，新增 `research_workspace`，也在既有 `analyze_search_query` 上加入 PubMed 組合預查。v0.11.0 新增 `pipeline_screening`，並讓保存的 pipeline 支援完整取回、PRISMA-S 紀錄與概念區塊分析。目前 checkout 另新增 `register_fulltext`，讓 host agent 或使用者以必填出處登錄取得的全文，供 `get_fulltext`、筆記與 Chronicle 重用。逐一查名稱、參數與輸出請用[繁中逐工具稽核](research/TOOL_QUALITY_AUDIT.zh-TW.md)、[English tool contracts](research/TOOL_QUALITY_AUDIT.md)或[產生的完整索引](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)。
 
 [All-tools acceptance](../tests/test_all_tools_mcp_acceptance.py) exercises every tool over stdio and HTTP with controlled provider responses, including an installed wheel. The table identifies further evidence and what still depends on the research topic, access or operating environment.
 

@@ -29,6 +29,10 @@ _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
     ),
     "register_export_tools": ("pubmed_search.presentation.mcp_server.tools.export", "register_export_tools"),
     "register_figure_tools": ("pubmed_search.presentation.mcp_server.tools.figure_tools", "register_figure_tools"),
+    "register_fulltext_intake_tools": (
+        "pubmed_search.presentation.mcp_server.tools.fulltext_intake",
+        "register_fulltext_intake_tools",
+    ),
     "register_icd_tools": ("pubmed_search.presentation.mcp_server.tools.icd", "register_icd_tools"),
     "register_image_search_tools": (
         "pubmed_search.presentation.mcp_server.tools.image_search",
@@ -102,6 +106,7 @@ def register_all_tools(
     _load_registrar("register_research_workspace_tools")(mcp)
     _load_registrar("register_export_tools")(mcp, searcher, pipeline_runtime=pipeline_runtime)
     _load_registrar("register_europe_pmc_tools")(mcp)
+    _load_registrar("register_fulltext_intake_tools")(mcp)
     _load_registrar("register_figure_tools")(mcp)
     _load_registrar("register_ncbi_extended_tools")(mcp)
     _load_registrar("register_citation_tree_tools")(mcp, searcher)
@@ -122,6 +127,7 @@ __all__ = [
     "register_europe_pmc_tools",
     "register_export_tools",
     "register_figure_tools",
+    "register_fulltext_intake_tools",
     "register_icd_tools",
     "register_image_search_tools",
     "register_ncbi_extended_tools",

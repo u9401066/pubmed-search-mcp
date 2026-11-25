@@ -18,7 +18,7 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.11.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.11.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
+| Published v0.11.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.11.0` as its argument. Set `NCBI_EMAIL` to your research contact. This checkout exposes **44 MCP Tools**, including a persistent research workspace; the v0.11.0 package does not yet include `register_fulltext`. |
 | Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
@@ -41,7 +41,7 @@ Details: [CHANGELOG](https://github.com/u9401066/pubmed-search-mcp/blob/master/C
 
 ## Start with a research question
 
-For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 43 tool names.
+For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 44 tool names.
 
 | Research task | What the agent can do |
 | --- | --- |
@@ -66,7 +66,7 @@ The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true
 | --- | --- |
 | stdio or loopback HTTP | Trusted single-user deployment with a durable `default` tenant. The HTTP entry point is `pubmed-search-mcp-http --mode local --host 127.0.0.1`. |
 | Authenticated service | `--mode service` fails closed without a bearer principal. Authenticated callers cannot load `file:` pipelines or choose a server-host note path. The service Compose scheduler is disabled. [Deployment](#/deployment) |
-| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 43-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
+| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 44-tool strict registry. [Copilot integration](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) |
 
 Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call `pubmed_search.api` directly. The optional `pubmed-browser-fetch-broker` runs on a machine with an authorized browser session. [Integration guide](#/troubleshooting) · [Python facade](#/python-sdk-http-cli-design)
 

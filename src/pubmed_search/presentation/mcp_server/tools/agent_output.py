@@ -29,7 +29,7 @@ class SourceCountRow(TypedDict):
     has_more: bool | None
 
 
-ProvenanceKind = Literal["direct", "indirect", "derived", "mixed"]
+ProvenanceKind = Literal["direct", "indirect", "derived", "mixed", "supplied"]
 OutputFormat = Literal["markdown", "json", "toon"]
 StructuredOutputFormat = Literal["json", "toon"]
 

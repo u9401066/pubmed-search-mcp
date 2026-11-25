@@ -42,6 +42,16 @@ class ToolSessionRuntime:
     host_callbacks: HostCallbackRuntime = field(default_factory=HostCallbackRuntime)
     citation_tasks: CitationTaskSupervisor = field(default_factory=CitationTaskSupervisor)
     fulltext_cache: FulltextCache = field(default_factory=FulltextCache)
+    # Parsed PMC article pages (explicit single-article reads only); small and short-lived.
+    article_page_cache: FulltextCache = field(
+        default_factory=lambda: FulltextCache(
+            max_entries=16,
+            max_bytes=8 * 1024 * 1024,
+            ttl_seconds=3600,
+            negative_ttl_seconds=120,
+            foreground_timeout_seconds=30,
+        )
+    )
 
     def manager_for_current_tenant(self) -> SessionManager | None:
         """Resolve the active tenant without mutating the server runtime."""

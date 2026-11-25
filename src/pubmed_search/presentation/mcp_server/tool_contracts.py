@@ -50,6 +50,7 @@ _WRITE_TOOLS = {
     "get_fulltext",
     "pipeline_screening",
     "prepare_export",
+    "register_fulltext",
     "research_workspace",
     "save_literature_notes",
     "save_pipeline",
@@ -60,6 +61,8 @@ _WRITE_TOOLS = {
 _DESTRUCTIVE_TOOLS = {
     "configure_institutional_access",
     "delete_pipeline",
+    # Replaces the text served for an article and evicts the oldest records.
+    "register_fulltext",
     "save_literature_notes",
     "save_pipeline",
     "schedule_pipeline",
@@ -70,6 +73,7 @@ _NON_IDEMPOTENT_TOOLS = {
     "build_research_chronicle",
     "get_fulltext",
     "prepare_export",
+    "register_fulltext",
     "save_literature_notes",
     "save_pipeline",
     "schedule_pipeline",
@@ -87,6 +91,7 @@ _LOCAL_ONLY_TOOLS = {
     "validate_pico_plan",
     "read_research_chronicle",
     "read_session",
+    "register_fulltext",
     "research_workspace",
     "save_pipeline",
     "unschedule_pipeline",

@@ -3,12 +3,12 @@
 This is the canonical English audit of the public MCP tool surface. The runtime
 registry in `tool_registry.py` is the source of truth; the companion test reads
 that registry and fails if this inventory drifts. At this revision the server
-publishes **43 tools in 16 categories**. Removed aliases are intentionally not
+publishes **44 tools in 16 categories**. Removed aliases are intentionally not
 part of the contract.
 
 | Audit fact | Canonical value |
 | --- | --- |
-| Public tools | 43 |
+| Public tools | 44 |
 | Registry categories | 16 |
 | MCP contract metadata | `contractVersion: 4` |
 | Maximum textual response | 500,000 Unicode characters across all text blocks |
@@ -109,7 +109,7 @@ fail-closed baseline:
 - The server does not advertise a misleading structured output schema while
   tools return Markdown, JSON/TOON encoded text, or multimodal content.
 
-The final runtime-derived schema audit found 43 unique tool owners with no
+The final runtime-derived schema audit found 44 unique tool owners with no
 registry missing/extra entries. All 74 object schemas are recursively closed;
 all 215 string, array, integer, and number nodes have explicit bounds; all 10
 tagged unions have an exact discriminator mapping, required tag, and constant
@@ -211,7 +211,7 @@ capacity, rather than maintaining another detached-task lifecycle.
 
 The registry has no environment-dependent hidden tools. The former profiling
 monkeypatch and `get_performance_metrics` tool were removed, so an old profiling
-environment variable cannot change the 43-tool contract. The unused standalone
+environment variable cannot change the 44-tool contract. The unused standalone
 FastAPI presentation tree and stdio background-HTTP launcher were also deleted;
 supported HTTP transport is built from the canonical MCP server, with explicit
 tenant-guarded companion cache/session routes.
@@ -308,7 +308,8 @@ above.
 
 | Tool | Role | Main dependencies and relationships | Side effects and contract |
 | --- | --- | --- | --- |
-| `get_fulltext` | Resolve and retrieve full text under an explicit source and access policy. | Fulltext service and registry, PMC, Europe PMC, Unpaywall, CORE, institutional adapters, and immutable typed link discovery; partial source coverage flows into artifact persistence. | write; discriminated `source`; non-idempotent, open-world; may persist a large full-text artifact; returns exact coverage status, completed/attempted source keys, and sanitized source errors. |
+| `get_fulltext` | Resolve and retrieve full text under an explicit source and access policy. | Fulltext service and registry, registered (supplied) text, PMC, Europe PMC, the single-article PMC article page, Unpaywall, CORE, institutional adapters, and immutable typed link discovery; partial source coverage flows into artifact persistence. | write; discriminated `source`; non-idempotent, open-world; may persist a large full-text artifact; returns exact coverage status, completed/attempted source keys, sanitized source errors, retrieval provenance and an ordered `fulltext_plan` when no usable body exists. |
+| `register_fulltext` | Store article text obtained by the host agent or user, with mandatory provenance, for later reuse. | Application intake service and tenant supplied-fulltext store; JATS/HTML/PDF adapters shared with provider routes; read back by `get_fulltext`, note export and Chronicle evidence lookups. | destructive (replaces the text served for the article); discriminated `source`, closed provenance object, bounded content or allow-listed local file; non-idempotent, local-only; persists an artifact; never marks text as provider-verified. |
 | `get_text_mined_terms` | Retrieve provider text-mined annotations for one explicit article source. | Europe PMC annotations client and shared article-source normalization. | none; discriminated `source`; read-only, idempotent, open-world. |
 
 ### 6. `figure` — article figure extraction

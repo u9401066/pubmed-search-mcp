@@ -480,6 +480,9 @@ def register_export_tools(
                 resolved_template_file = Path(template_file).expanduser() if template_file else None
 
             articles = await _get_articles_for_note_export(pmid_list, searcher)
+            from .fulltext_runtime import attach_registered_fulltext
+
+            await asyncio.to_thread(attach_registered_fulltext, articles)
             if not articles:
                 return ResponseFormatter.no_results(
                     query=f"PMIDs: {', '.join(pmid_list[:5])}",

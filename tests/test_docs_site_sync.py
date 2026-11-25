@@ -219,7 +219,7 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "整合與維運",
         "Multi-source broker stages",
         "authenticated multi-user contracts",
-        "43 MCP tools across 16 registry categories",
+        "44 MCP tools across 16 registry categories",
         "Semantic Scholar Data Plane",
         "OpenAlex Search And Data Plane",
         "ClinicalKey AI Boundary",
@@ -239,10 +239,10 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
     ]:
         assert term in integrations
 
-    assert "same canonical 43-tool strict registry" in embedded_pages["overview"]
+    assert "same canonical 44-tool strict registry" in embedded_pages["overview"]
     assert "same 42 strict" in embedded_pages["user-guide"]
     assert "canonical `read_session(request={...})`" in embedded_pages["user-guide"]
-    assert "canonical 43-tool Copilot Studio smoke" in embedded_pages["troubleshooting"]
+    assert "canonical 44-tool Copilot Studio smoke" in embedded_pages["troubleshooting"]
     assert "唯一 generic literature search 為 `unified_search`" in embedded_pages["deployment"]
 
     source_contracts = embedded_pages["source-contracts"]
@@ -533,7 +533,7 @@ def test_all_tool_explorer_examples_use_runtime_parameter_names() -> None:
         for tool_name, single_quoted, double_quoted in TOOL_EXAMPLE_ENTRY_PATTERN.findall(site_js)
     }
 
-    assert len(documented_examples) == stats["total_tools"] == 43
+    assert len(documented_examples) == stats["total_tools"] == 44
     assert set(documented_examples) == set(runtime_schemas)
     for documented_name, example in documented_examples.items():
         called_name, documented_parameters = _example_call(example)
