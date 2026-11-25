@@ -505,6 +505,7 @@ async def run_unified_search(
                 prefetched_trials=execution.prefetched_trials,
                 broadening=execution.broadening,
                 mesh_correction=execution.mesh_correction,
+                record_detail=request.record_detail,
                 retry_arguments={
                     "query": query,
                     "limit": limit,
