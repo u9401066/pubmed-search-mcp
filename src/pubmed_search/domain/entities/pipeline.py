@@ -37,8 +37,13 @@ VALID_ACTIONS: frozenset[str] = frozenset(
         "metrics",
         "merge",
         "filter",
+        "block_analysis",
     }
 )
+
+# Actions that analyze a strategy instead of producing a record set; they never
+# become a pipeline's final (persisted) step.
+ANALYSIS_ACTIONS: frozenset[str] = frozenset({"block_analysis"})
 
 # Valid built-in templates
 VALID_TEMPLATES: frozenset[str] = frozenset(
@@ -101,6 +106,10 @@ class StepResult:
     pmids: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    # Provider-native bibliographic rows (keyed by PMID) collected by an
+    # exhaustive retrieval step. They are persisted as the run's record
+    # artifact for export and screening, and never serialized into responses.
+    records: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     @property
     def ok(self) -> bool:
@@ -164,9 +173,20 @@ class PipelineMeta:
         )
 
 
+PIPELINE_RUN_RECORD_VERSION = 2
+
+
 @dataclass
 class PipelineRun:
-    """Record of a single pipeline execution."""
+    """Record of a single pipeline execution.
+
+    Version 2 records add the evidence a systematic search report needs:
+    which record set was persisted (``record_basis``), how complete retrieval
+    was (``retrieval``), where the full record artifact lives (``artifacts``),
+    the per-database search provenance (``searches``, PRISMA-S), the exact
+    strategy that produced the run (``config_snapshot`` + hashes), and any
+    strategy block analyses. Version 1 records decode with empty defaults.
+    """
 
     run_id: str
     pipeline_name: str
@@ -179,6 +199,18 @@ class PipelineRun:
     removed_pmids: list[str] = field(default_factory=list)
     error_message: str | None = None
     top_articles: list[dict[str, Any]] = field(default_factory=list)
+    record_version: int = 1
+    # "ranked_output": pmids are the ranked/limited response articles (legacy).
+    # "final_step_full": pmids are the complete final-step record set.
+    record_basis: Literal["ranked_output", "final_step_full"] = "ranked_output"
+    retrieval: dict[str, Any] = field(default_factory=dict)
+    artifacts: dict[str, Any] = field(default_factory=dict)
+    server_version: str | None = None
+    config_hash: str | None = None
+    config_sha256: str | None = None
+    config_snapshot: dict[str, Any] | None = None
+    searches: list[dict[str, Any]] = field(default_factory=list)
+    block_analyses: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON storage."""
@@ -194,11 +226,24 @@ class PipelineRun:
             "removed_pmids": self.removed_pmids,
             "error_message": self.error_message,
             "top_articles": self.top_articles,
+            "record_version": self.record_version,
+            "record_basis": self.record_basis,
+            "retrieval": self.retrieval,
+            "artifacts": self.artifacts,
+            "server_version": self.server_version,
+            "config_hash": self.config_hash,
+            "config_sha256": self.config_sha256,
+            "config_snapshot": self.config_snapshot,
+            "searches": self.searches,
+            "block_analyses": self.block_analyses,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PipelineRun:
         """Deserialize from JSON storage."""
+        record_basis = data.get("record_basis", "ranked_output")
+        if record_basis not in {"ranked_output", "final_step_full"}:
+            raise ValueError("Unknown pipeline run record basis")
         return cls(
             run_id=data.get("run_id", ""),
             pipeline_name=data.get("pipeline_name", ""),
@@ -211,6 +256,16 @@ class PipelineRun:
             removed_pmids=data.get("removed_pmids", []),
             error_message=data.get("error_message"),
             top_articles=data.get("top_articles", []),
+            record_version=int(data.get("record_version", 1)),
+            record_basis=record_basis,
+            retrieval=dict(data.get("retrieval") or {}),
+            artifacts=dict(data.get("artifacts") or {}),
+            server_version=data.get("server_version"),
+            config_hash=data.get("config_hash"),
+            config_sha256=data.get("config_sha256"),
+            config_snapshot=data.get("config_snapshot"),
+            searches=list(data.get("searches") or []),
+            block_analyses=list(data.get("block_analyses") or []),
         )
 
 

@@ -8,8 +8,8 @@ Copilot Studio 使用同一套 strict registry；差異只在部署邊界：
 
 | 模式 | 啟動方式 | 工具面 | 適用情境 |
 | --- | --- | --- | --- |
-| Authenticated service | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 42-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
-| Local Copilot smoke | `uv run python run_copilot.py` | 同一套 42-tool strict registry | 僅供 loopback schema/protocol 診斷；不可發布 |
+| Authenticated service | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 43-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
+| Local Copilot smoke | `uv run python run_copilot.py` | 同一套 43-tool strict registry | 僅供 loopback schema/protocol 診斷；不可發布 |
 
 如果要接 Copilot Studio，使用第一種。第二種只用來在本機重現 transport/schema 問題；它不再維護另一套縮減工具面。
 
@@ -125,7 +125,7 @@ Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也�
 2. 工具列表能被發現
 3. 執行一次 `unified_search` 能成功回傳
 4. 用 `read_session(request={"action":"search_run","run_id":"..."})` 回讀該搜尋；需要 replay 時先取得 arguments，再明確呼叫 `unified_search`
-5. 確認 42 個 tool schemas 都能完整 discovery，沒有截斷
+5. 確認 43 個 tool schemas 都能完整 discovery，沒有截斷
 
 ## 常見選擇建議
 

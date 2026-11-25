@@ -962,3 +962,21 @@ def _clean_text(value: Any) -> str:
 
 def _default_index_title(created_at: datetime) -> str:
     return f"PubMed Search {created_at.strftime('%Y-%m-%d %H%M%S UTC')}"
+
+
+def export_csl_json(articles: list[dict[str, Any]], include_abstract: bool = True) -> str:
+    """Export bibliographic rows as a CSL-JSON array for citation managers.
+
+    Item IDs are ``pmid:<PMID>`` (or the DOI/position when no PMID exists) so
+    an import preserves the source identifier alongside ``PMID``/``DOI`` fields.
+    """
+    items: list[dict[str, Any]] = []
+    for index, article in enumerate(articles, start=1):
+        pmid = str(article.get("pmid") or "").strip()
+        doi = str(article.get("doi") or "").strip()
+        citation_key = f"pmid:{pmid}" if pmid else (f"doi:{doi}" if doi else f"item:{index}")
+        item = _to_csl_json(article, citation_key=citation_key)
+        if not include_abstract:
+            item.pop("abstract", None)
+        items.append(item)
+    return json.dumps(items, ensure_ascii=False, indent=2) + "\n"

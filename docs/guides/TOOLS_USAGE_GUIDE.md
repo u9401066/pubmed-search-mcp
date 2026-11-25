@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 42-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 43-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -13,7 +13,7 @@ Capability-first guide for using the 42-tool PubMed Search MCP surface without t
 
 ## Input formats and validation
 
-All 42 tools use a shared input contract (metadata `contractVersion: 4`).
+All 43 tools use a shared input contract (metadata `contractVersion: 4`).
 The server first corrects unambiguous representations, then validates the entire
 request before executing the tool. Prefer native JSON; `tools/list.inputSchema`
 also advertises the supported alternatives.
@@ -116,7 +116,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `research_workspace`, `read_session` and the seven pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
+| Persistence and sessions | `research_workspace`, `read_session` and the eight pipeline tools | Resume a research decision, reopen a result, or repeat, audit, schedule or save a search. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -133,6 +133,7 @@ Implementation phases and verification: [agent input contract](../design/AGENT_I
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
 | Resume a literature investigation | `research_workspace` with `read` loads prior decisions, source handoffs and outstanding actions. [Worked example](ADVANCED_RESEARCH_WORKFLOWS.md#resume-a-research-workspace) |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
+| Systematic review / meta-analysis | `save_pipeline` with `retrieval: exhaustive` -> `unified_search(pipeline="saved:<name>")` -> `get_pipeline_history(view="prisma_s")` -> `prepare_export(pipeline_run="<name>")` -> `pipeline_screening` |
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
 
@@ -220,10 +221,31 @@ Source identifiers must be exact canonical keys such as `semantic_scholar`,
 `europe_pmc`, and `web_of_science`; aliases, case variants, surrounding token
 whitespace, empty tokens, and duplicates are rejected. Canonical filter keys
 are `year`, `age_group`, `sex`, `species`, `language`, and `clinical_query`.
-In normal deep mode, the same public `limit` is the **total budget for one source across
-all of its generated strategies**. The broker allocates that budget across the
-strategies, clips over-returning adapters, and applies bounded global and
-per-source concurrency plus strategy deadlines.
+Normal deep mode is **precision-first**. Your query (the `exact` tier) runs on
+every planned source with that source's full `limit`; a field-tagged or Boolean
+expert query is never diluted when it already fills the limit. Only when the
+exact tier returns fewer eligible unique records than `limit` (after
+deduplication and the `exclude_seen` / detected-preprint filters) does the
+broker fetch deeper into the same exact query and then run lower-precision
+strategies (`semantic`, then `broad`) one at a time, each filling only the
+remaining slots. A source whose exact query failed is never broadened, and
+`options="no_relax"` disables both this fill and zero-result auto-relaxation.
+Bounded global and per-source concurrency, adapter clipping, and strategy
+deadlines still apply.
+
+Read the `broadening` object (JSON/TOON, artifact `query_strategy.json`, and the
+Markdown **Broadening** line) before interpreting a deep or relaxed result:
+
+| Field | Meaning |
+| --- | --- |
+| `needed` / `applied` | Whether the exact tier under-filled `limit`, and whether a lower-precision query actually ran |
+| `summary` | One-line reason, e.g. `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` or `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | Per strategy: `tier`, `phase`, executed query, `total_available`, `returned`, `contributed` after deduplication, and `skip_reason` |
+| `articles[].retrieval` | Record provenance; `broadened=true` (Markdown 🔻) means only a lower-precision query found the record |
+
+Broadened records are always ranked after records that match the original query.
+Zero-result auto-relaxation reports through the same object with
+`mechanisms=["auto_relax"]` and `tier="relaxed"`.
 
 JSON/TOON output and persistent artifacts preserve `retrieval_mode` and
 per-source `source_metadata`, including requested/provider mode, canonical or
@@ -374,7 +396,7 @@ A rebuild's default summary compares the preceding revision and lists up to five
 
 Chronology is the primary axis and research branches are a secondary projection of the same stored entries. Branches describe patterns observed in the selected query/PMID/source/year scope, not causal descent. `earliest_observed_in_scope` identifies the earliest dated retrieved candidate only; it does not establish the field's true first report. Date-precision intervals must be disjoint before the graph can assert `precedes` or `supersedes`.
 
-Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, graph integrity, chronology gaps, and per-source retrieval counts.
+Each chronicle entry carries a study-design label, a one-line claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. The label comes from PubMed publication types (then MeSH study-design descriptors); a title or abstract pattern is used only when PubMed has not indexed a design and is marked `[heuristic]`. Indexed designs outrank text-pattern milestones, so an RCT whose abstract mentions adverse events is not a safety alert. When an abstract exists, the claim quotes the paper's own conclusion sentence verbatim with its section and character offsets into the stored abstract (`provenance.extractive_highlight`); it is extractive, not an interpretation. Explicit-PMID builds apply validated iCite metrics for landmark scoring without re-ranking the set, and descriptors that merely restate the topic are excluded from branch formation (`lineage_diagnostics.excluded_topic_signals`). A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, heuristic study-design labels, quote integrity, citation-metric coverage, graph integrity, chronology gaps, and per-source retrieval counts.
 
 Topic mode applies `min_year` / `max_year` in the PubMed request before the relevance-capped fetch. Final event selection pins the first and last observed papers, prioritizes explicit landmark importance/citations, then fills the remaining capacity across the largest temporal gaps. Audit source coverage distinguishes PubMed `returned` from `available` and warns for capped samples, downstream selection, or unknown availability. An upstream failure or empty retrieval returns an error. Read a previously saved revision to continue while PubMed is unavailable and record which revision supplied the evidence.
 
@@ -398,7 +420,9 @@ Artifact preflight audits the names produced by the actual artifact payload buil
 
 ![Session and pipeline workflow](../images/session-pipeline-workflow.svg)
 
-Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, and `unschedule_pipeline`.
+Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline`, and `pipeline_screening`.
+
+For systematic reviews, a PubMed search step with `retrieval: exhaustive` collects the complete PMID set through the E-utilities History Server (cap `max_records` ≤ 10000; larger counts are refused, not truncated) and the saved run persists it with PRISMA-S provenance: database/platform, saved and executed query, PubMed query translation, total/retrieved counts, filters, UTC time, server version and an immutable config snapshot. `unified_search` returns only a bounded preview. `get_pipeline_history` offers `view="run"`, `view="prisma_s"` (Markdown + CSV) and `view="records"` (paged full set); `prepare_export(pipeline_run=...)` exports the full set as RIS/CSV/CSL-JSON; a `block_analysis` step audits MeSH blocks and term contributions with bounded count-only queries; `pipeline_screening` records per-PMID decisions and reports PRISMA 2020 flow counts. Records first identified by an update run enter the screening queue automatically.
 
 Local and service capabilities are intentionally different. A trusted local
 caller may use workspace scope, `file:` pipeline sources, and the in-process

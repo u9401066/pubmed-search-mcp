@@ -99,6 +99,18 @@ def _recorded_score_components(entry: ChronicleEntry) -> list[dict[str, Any]] | 
     return components or None
 
 
+def landmark_citation_policy(entry: ChronicleEntry) -> str | None:
+    """Return the citation-impact policy recorded in the entry's landmark score.
+
+    ``None`` means no landmark score was recorded; ``"none"`` means the score
+    was computed without any citation metric for this paper.
+    """
+    for component in _recorded_score_components(entry) or []:
+        if component["component"] == "citation_impact":
+            return str(component["policy"])
+    return None
+
+
 def _observed_citations(entry: ChronicleEntry, components: list[dict[str, Any]] | None) -> Iterator[tuple[str, int]]:
     # Timeline events historically substituted zero for unavailable counts.
     # The event's provenance describes its source article, not every attached paper.
@@ -350,6 +362,7 @@ __all__ = [
     "analyze_milestones",
     "compare_chronicles",
     "entry_max_citations",
+    "landmark_citation_policy",
     "landmark_importance_score",
     "landmark_rank_key",
 ]

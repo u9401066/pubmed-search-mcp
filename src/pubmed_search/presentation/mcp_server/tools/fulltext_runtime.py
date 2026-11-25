@@ -47,7 +47,22 @@ def prefetch_search_fulltext(articles: Sequence[UnifiedArticle]) -> dict[str, An
 
 async def get_cached_fulltext_xml(pmcid: str, fetch: XMLFetcher) -> str | None:
     """Share ready/in-flight XML across get_fulltext calls for one stable tenant."""
+    return await bind_cached_fulltext_fetcher(fetch)(pmcid)
+
+
+def bind_cached_fulltext_fetcher(fetch: XMLFetcher) -> XMLFetcher:
+    """Capture this request's tenant and runtime cache for later, concurrent use.
+
+    Fulltext sources may run in child tasks, which see a *copy* of the request
+    context; resolving the cache here keeps every task on one shared cache.
+    """
     tenant = current_tenant()
     if not tenant.owns_durable_storage:
-        return await fetch(pmcid)
-    return await get_tool_session_runtime().fulltext_cache.get(pmcid, tenant=tenant.tenant_id, fetch=fetch)
+        return fetch
+    cache = get_tool_session_runtime().fulltext_cache
+    tenant_id = tenant.tenant_id
+
+    async def cached(pmcid: str) -> str | None:
+        return await cache.get(pmcid, tenant=tenant_id, fetch=fetch)
+
+    return cached

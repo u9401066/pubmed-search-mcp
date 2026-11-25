@@ -14,6 +14,7 @@ WorkspaceDirSource = Literal["PUBMED_WORKSPACE_DIR", "CLAUDE_PROJECT_DIR"]
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
 DEFAULT_FULLTEXT_INLINE_MAX_CHARS = 20_000
+DEFAULT_FULLTEXT_DEADLINE_SECONDS = 90.0
 DEFAULT_TENANT_MAX_CONCURRENCY = 8
 DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS = 120.0
 DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS = 40
@@ -52,6 +53,15 @@ class AppSettings(BaseSettings):
         ge=0,
         le=3,
     )
+    # Overall get_fulltext budget; sources not started in time are reported as skipped.
+    fulltext_deadline_seconds: float = Field(
+        default=DEFAULT_FULLTEXT_DEADLINE_SECONDS,
+        alias="PUBMED_FULLTEXT_DEADLINE_SECONDS",
+        ge=10,
+        le=600,
+    )
+    # NCBI E-utilities (efetch db=pmc / esummary) fallback when Europe PMC cannot supply a body.
+    fulltext_ncbi_pmc_fallback: bool = Field(default=True, alias="PUBMED_FULLTEXT_NCBI_PMC_FALLBACK")
     pipeline_run_timeout_seconds: float = Field(
         default=DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS,
         alias="PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS",

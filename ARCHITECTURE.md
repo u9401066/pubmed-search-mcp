@@ -4,7 +4,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 42 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 43 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -195,9 +195,11 @@ compiled query、continuation 與 cost/rate diagnostics。
 `options="native_semantic"` 與 `options="systematic"` 互斥並關閉多策略 deep
 expansion；public per-source `limit` 仍最多 100。因此 systematic 是 bounded
 retrieval policy，不代表已下載全 corpus 或保證 systematic-review exhaustiveness。
-一般 deep mode 則把同一個 per-source `limit` 分配到該來源的所有 strategies，
-並以全域／每來源 semaphore、strategy timeout 與 clipping 保證 budget 不因 query
-expansion 倍增。單一來源失敗只形成 source-scoped error，其他成功來源仍可形成
+一般 deep mode 則採精準優先（precision-first）：使用者原始查詢（exact tier）先以
+每個來源完整的 `limit` 執行；只有 exact tier 的 eligible unique 結果不足 `limit` 時，
+才先在同一查詢往下取，再依精準度遞減逐一執行 semantic／broad 策略，且只補剩餘名額。
+是否放寬、原因與每個策略的貢獻都揭露在 `broadening`，放寬取得的紀錄一律排在 exact
+紀錄之後；全域／每來源 semaphore、strategy timeout 與 clipping 仍然有效。單一來源失敗只形成 source-scoped error，其他成功來源仍可形成
 partial response。
 
 Structured `search_status` 明確回報 `completed`／`empty`／`partial`／`failed`、
@@ -353,7 +355,7 @@ flowchart TB
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、runtime lifecycle 與 stdio 啟動
 ├── http_cli.py        canonical Streamable HTTP/SSE launcher 與 tenant-guarded companion routes
-├── tool_registry.py   42 tools / 16 categories 的權威 registry
+├── tool_registry.py   43 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -676,8 +678,8 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 42-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
-| `run_copilot.py` | 以相同 42-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
+| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 43-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
+| `run_copilot.py` | 以相同 43-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 

@@ -14,7 +14,7 @@ The PubMed search code can be traced to November 25, 2025 in `med-paper-assistan
 
 | Choose a version | Start here |
 | --- | --- |
-| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **42 MCP Tools**, including a persistent research workspace. |
+| Published v0.10.0 | Configure the client's stdio command as `uvx`, with `pubmed-search-mcp@0.10.0` as its argument. Set `NCBI_EMAIL` to your research contact. The release exposes **43 MCP Tools**, including a persistent research workspace. |
 | Development checkout | Build the plugin from this checkout with the command below to test local changes. |
 
 ```sh
@@ -27,7 +27,7 @@ Four blinded review cases tested whether MeSH previews improve search decisions.
 
 ## Start with a research question
 
-For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 42 tool names.
+For example, ask the agent to trace the early development of cochlear implants and leave the next paper to read for a colleague. Choose a workflow before memorizing 43 tool names.
 
 | Research task | What the agent can do |
 | --- | --- |
@@ -42,7 +42,7 @@ For each of the 16 registry categories, see the implementation evidence and rema
 
 ## Search limits and recovery
 
-Generic literature discovery uses exactly one MCP entry point, `unified_search`. A source's result budget is divided across that source's query strategies. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
+Generic literature discovery uses exactly one MCP entry point, `unified_search`. Deep search is precision-first: your query gets each source's full result budget, and lower-precision strategies only fill missing slots, disclosed in `broadening`. Inspect `search_status` and the run artifact before interpreting a small or empty result. OA identifiers, authorized institutional access and local copies determine which full-text passages can be read.
 
 The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true` pipeline execution. Use `read_session(request={"action":"replay_search","run_id":"..."})` to recover the original credential-free arguments. There is no public cursor-resume parameter yet. Submitting the recovered request starts a new search. A reply with `search_run.status="history_unavailable"` has no guaranteed durable replay. [Recovery and artifact formats](docs/guides/TOOLS_USAGE_GUIDE.md)
 
@@ -52,7 +52,7 @@ The `search-run/v1` journal also covers inline, `saved:<name>`, or `dry_run=true
 | --- | --- |
 | stdio or loopback HTTP | Trusted single-user deployment with a durable `default` tenant. The HTTP entry point is `pubmed-search-mcp-http --mode local --host 127.0.0.1`. |
 | Authenticated service | `--mode service` fails closed without a bearer principal. Authenticated callers cannot load `file:` pipelines or choose a server-host note path. The service Compose scheduler is disabled. [Deployment](DEPLOYMENT.md) |
-| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 42-tool strict registry. [Copilot integration](copilot-studio/README.md) |
+| Copilot Studio | Set `PUBMED_AUTH_TOKENS` and an assigned `NGROK_DOMAIN` before using `scripts/start-copilot-studio.sh --with-ngrok`. The local smoke launcher exercises the same canonical 43-tool strict registry. [Copilot integration](copilot-studio/README.md) |
 
 Modern 2026-07-28 clients use MCP SDK v2 requests. Python applications can call `pubmed_search.api` directly. The optional `pubmed-browser-fetch-broker` runs on a machine with an authorized browser session. [Integration guide](docs/guides/INTEGRATIONS.md) · [Python facade](docs/design/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md)
 

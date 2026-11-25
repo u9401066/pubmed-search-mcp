@@ -93,6 +93,8 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 
 多種子探索可用 pipeline 模板 snowball：query 必填、seed_limit 1–10（預設 5）、limit 預設 20；search → citing + references → union merge。
 
+系統性回顧／統合分析：save_pipeline 一個 PubMed search step 設 retrieval: exhaustive（不可同時給 limit；max_records ≤ 10000，超過會拒絕而非截斷），以 unified_search(pipeline="saved:<name>") 執行。回應只是有界預覽；完整紀錄集用 get_pipeline_history(view="records")，PRISMA-S 檢索紀錄用 view="prisma_s"，匯出用 prepare_export(pipeline_run="<name>[@<run_id>]")，篩選與 PRISMA 2020 流程用 pipeline_screening。加一個 block_analysis step（inputs: [search step]）可計算各概念區塊、累積 AND 與每個詞彙的獨特貢獻。
+
 ## 情境 5️⃣: 預印本搜尋 (用戶想找最新尚未同行審查的研究)
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "最新研究", "preprint", "預印本", "arXiv", "medRxiv", "bioRxiv",
@@ -284,7 +286,8 @@ build_citation_tree(pmid="12345678", depth=2, direction="both")
 ### 全文取得
 - 預計深入閱讀時，可用 unified_search(fulltext="prefetch") 在背景準備排名前三篇中已有 PMCID 的 XML；一般探索維持預設 off。
 - 選定後以回應列出的 PMCID 呼叫 get_fulltext，共用已完成／進行中的 XML，不必輪詢；只需文字時可用 include_pdf_links=False。
-- get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
+- get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；Europe PMC XML → NCBI PMC efetch fallback, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
+- 判讀 get_fulltext 前先看 source_errors[].code（rate_limited / upstream_retries_exhausted / timeout / deadline_exceeded / cache_error）、source_notices（front_matter_only 不是全文）與 sources_skipped；未查完的來源不能當作「沒有全文」。
 
 ### 文本挖掘
 - get_text_mined_terms(source={kind,value}): 🔬 以明確 PMID/PMCID 來源物件取得標註 (基因、疾病、藥物，來自 Europe PMC)
@@ -359,6 +362,12 @@ search_clinvar("BRCA1", limit=10)
 - For `unified_search`, read `audit.json` first to check source-count and
   completeness warnings, then `query_strategy.json`, then `results.json` or
   `results.toon` for the full record list.
+- Deep search is precision-first: the original query runs first with the full
+  `limit`, and lower-precision strategies only fill missing slots. Read
+  `broadening.summary` (Markdown **Broadening** line) before interpreting
+  results; records with `retrieval.broadened=true` (Markdown 🔻) came only from
+  broadened or relaxed queries and are ranked after exact-query matches.
+  `options="no_relax"` disables all automatic broadening.
 - `read_session` redacts `local_path` and `manifest_path` by default. Set
   `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
   should receive server-local paths.
@@ -444,10 +453,11 @@ search_clinvar("BRCA1", limit=10)
 - save_pipeline: Save a pipeline configuration for later reuse.
 - list_pipelines: List all saved pipeline configurations.
 - load_pipeline: Load a pipeline configuration for review or editing.
-- delete_pipeline: Permanently delete a saved pipeline configuration and execution history.
-- get_pipeline_history: Get execution history for a saved pipeline.
+- delete_pipeline: Permanently delete a saved pipeline and its execution history.
+- get_pipeline_history: Get execution history, a run's search record, or its persisted record set.
 - schedule_pipeline: Schedule a saved pipeline for periodic execution.
 - unschedule_pipeline: Remove the active schedule for a saved pipeline.
+- pipeline_screening: Screen a saved pipeline's records and report PRISMA 2020 flow counts.
 
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 

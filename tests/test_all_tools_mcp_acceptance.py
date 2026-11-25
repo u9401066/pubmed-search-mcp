@@ -97,6 +97,7 @@ EXPECTED_TOOLS = frozenset(
         "get_pipeline_history",
         "schedule_pipeline",
         "unschedule_pipeline",
+        "pipeline_screening",
     }
 )
 
@@ -118,7 +119,7 @@ PNG_DATA_URI = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
-EXPECTED_PROTOCOL_CALLS_PER_RUN = 62
+EXPECTED_PROTOCOL_CALLS_PER_RUN = 67
 RETIRED_TOOLS = frozenset(
     {
         "analyze_figure_for_search",
@@ -1155,6 +1156,45 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
         _contains('Execution History for "acceptance-pipeline"', "| 1 |", "✅ OK"),
     )
     await driver.call(
+        "get_pipeline_history",
+        {"name": "acceptance-pipeline", "view": "prisma_s"},
+        _contains("PRISMA-S search record", "```csv", "offline pipeline", "bounded"),
+    )
+    await driver.call(
+        "prepare_export",
+        {"pipeline_run": "acceptance-pipeline", "format": "ris"},
+        _contains('"pipeline_run"', f"AN  - {SEARCH_PMID}", '"metadata_missing_count": 0'),
+    )
+    await driver.call(
+        "pipeline_screening",
+        {"request": {"action": "register_run", "pipeline": "acceptance-pipeline"}},
+        _expect_json({"pipeline": "acceptance-pipeline", "identified_count": 1, "new_count": 1, "exhaustive": False}),
+    )
+    await driver.call(
+        "pipeline_screening",
+        {
+            "request": {
+                "action": "record",
+                "pipeline": "acceptance-pipeline",
+                "decisions": [
+                    {"pmid": SEARCH_PMID, "stage": "title_abstract", "decision": "include", "reviewer": "acceptance"}
+                ],
+            }
+        },
+        _expect_json({"recorded": 1, "replayed": 0, "decisions.0.pmid": SEARCH_PMID}),
+    )
+    await driver.call(
+        "pipeline_screening",
+        {"request": {"action": "flow", "pipeline": "acceptance-pipeline", "format": "json"}},
+        _expect_json(
+            {
+                "identification.records_identified": 1,
+                "screening.records_screened": 1,
+                "screening.reports_sought_for_retrieval": 1,
+            }
+        ),
+    )
+    await driver.call(
         "schedule_pipeline",
         {
             "name": "acceptance-pipeline",
@@ -1171,8 +1211,13 @@ async def _exercise_all_tools(client: Client[Any], scratch: Path, *, stringify_c
     )
     await driver.call(
         "delete_pipeline",
-        {"name": "acceptance-pipeline"},
-        _contains('Pipeline "acceptance-pipeline" deleted', "global scope", "execution history record"),
+        {"name": "acceptance-pipeline", "delete_screening_log": True},
+        _contains(
+            'Pipeline "acceptance-pipeline" deleted',
+            "global scope",
+            "execution history record",
+            "Screening log permanently removed: 1 decision on 1 PMID",
+        ),
     )
 
     def validate_deleted_pipeline_listing(result: Any) -> None:

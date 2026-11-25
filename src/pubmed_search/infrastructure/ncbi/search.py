@@ -585,6 +585,7 @@ class SearchMixin:
 
         # Extract abstract
         abstract_text = self._extract_abstract(article_data)
+        abstract_sections = self._extract_abstract_sections(article_data)
 
         # Extract Journal info (includes ISSN)
         journal_info = self._extract_journal_info(article_data)
@@ -611,6 +612,7 @@ class SearchMixin:
             "authors": authors,
             "authors_full": authors_full,
             "abstract": abstract_text,
+            "abstract_sections": abstract_sections,
             "keywords": keywords,
             "mesh_terms": mesh_terms,
             "doi": doi,
@@ -662,6 +664,31 @@ class SearchMixin:
                 return " ".join([str(part) for part in abstract_parts])
             return str(abstract_parts)
         return ""
+
+    def _extract_abstract_sections(self, article_data: dict) -> list[dict[str, Any]]:
+        """Locate structured-abstract sections inside the joined abstract text.
+
+        Offsets index the exact string returned by :meth:`_extract_abstract`
+        (parts joined by one space), so consumers can quote a labelled section
+        such as CONCLUSIONS without re-reading provider XML. Unlabelled
+        abstracts yield no sections.
+        """
+        abstract = article_data.get("Abstract")
+        parts = abstract.get("AbstractText") if isinstance(abstract, dict) else None
+        if not isinstance(parts, list):
+            return []
+        sections: list[dict[str, Any]] = []
+        offset = 0
+        for part in parts:
+            text = str(part)
+            raw_attributes = getattr(part, "attributes", None)
+            attributes = raw_attributes if isinstance(raw_attributes, dict) else {}
+            label = str(attributes.get("Label") or "").strip() or None
+            category = str(attributes.get("NlmCategory") or "").strip() or None
+            if label or category:
+                sections.append({"label": label, "nlm_category": category, "start": offset, "end": offset + len(text)})
+            offset += len(text) + 1
+        return sections
 
     def _extract_journal_info(self, article_data: dict) -> dict[str, str]:
         """Extract journal information from article data."""

@@ -212,7 +212,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "pipeline": {
         "name": "Pipeline 管理",
-        "description": "Pipeline 持久化、載入、排程",
+        "description": "Pipeline 持久化、載入、排程、PRISMA 篩選紀錄",
         "tools": [
             "save_pipeline",
             "list_pipelines",
@@ -221,6 +221,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             "get_pipeline_history",
             "schedule_pipeline",
             "unschedule_pipeline",
+            "pipeline_screening",
         ],
     },
 }
@@ -251,6 +252,7 @@ def build_pipeline_runtime(
     from pubmed_search.infrastructure.sources.runtime import bind_source_runtime
     from pubmed_search.shared.async_utils import bind_shared_async_client_runtime
 
+    from .tools.pipeline_screening import screening_run_observer
     from .tools.pipeline_tools import PipelineToolRuntime
 
     base_dir = session_manager.data_dir  # tenant-ok: PipelineToolRuntime resolves each caller's store from this base.
@@ -283,6 +285,7 @@ def build_pipeline_runtime(
 
     pipeline_runner = StoredPipelineRunner(
         store=pipeline_store,
+        run_observer=screening_run_observer(pipeline_store),
         searcher=searcher,
         alternate_search_adapter=_runtime_bound_source_search,
         semantic_enhancer_factory=get_semantic_enhancer,

@@ -89,7 +89,7 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (canonical 42-tool Copilot Studio smoke)
+# Via run_copilot.py (canonical 43-tool Copilot Studio smoke)
 uv run python run_copilot.py --port 8765
 ```
 
@@ -815,7 +815,7 @@ Before PyPI upload, the tag workflow checks plugin drift and runs
 `mcp-publisher validate server.json` with a pinned, SHA-256-verified publisher.
 Release smoke verifies that registry/plugin metadata names the exact wheel,
 its METADATA contains the ownership marker, and its installed console script
-serves all 42 tools with only registry-declared application environment variables.
+serves all 43 tools with only registry-declared application environment variables.
 These are release checks, not proof that a release has already been published.
 
 ---
@@ -835,7 +835,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 42-tool primary MCP surface with an assigned ngrok dev/custom domain
+# Option A: Full 43-tool primary MCP surface with an assigned ngrok dev/custom domain
 export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -845,7 +845,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: canonical 42-tool local schema smoke (never tunnel this mode)
+# Option C: canonical 43-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -921,7 +921,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; a v0.10.0 server should enumerate 42 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; a v0.10.0 server should enumerate 43 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.

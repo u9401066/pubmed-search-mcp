@@ -34,6 +34,7 @@ from pubmed_search.application.chronicle import (
     ChronicleStore,
     chronology_key,
     entry_max_citations,
+    landmark_citation_policy,
     landmark_importance_score,
     landmark_rank_key,
     narrate_chronicle,
@@ -54,7 +55,7 @@ from .tool_runtime import safe_log, safe_report_progress
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
-    from pubmed_search.domain.entities.chronicle import ChronicleSnapshot
+    from pubmed_search.domain.entities.chronicle import ChronicleEntry, ChronicleSnapshot
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -338,6 +339,66 @@ def _format_changes(changes: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _citation_metrics(snapshot: ChronicleSnapshot) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the stored retrieval provenance and its iCite coverage envelope."""
+    timeline_metadata = snapshot.metadata.get("timeline_metadata")
+    retrieval = timeline_metadata.get("retrieval") if isinstance(timeline_metadata, dict) else None
+    retrieval = retrieval if isinstance(retrieval, dict) else {}
+    coverage = retrieval.get("citation_metrics")
+    return retrieval, coverage if isinstance(coverage, dict) else {}
+
+
+def _citation_metrics_line(snapshot: ChronicleSnapshot) -> str | None:
+    """Summarize iCite coverage and what the metrics were used for."""
+    retrieval, coverage = _citation_metrics(snapshot)
+    if not coverage:
+        return None
+    use = (
+        "landmark scoring; the explicit PMID set is not re-ranked"
+        if retrieval.get("mode") == "explicit_pmids"
+        else f"effective ranking: {retrieval.get('ranking')}"
+    )
+    return (
+        f"Citation metrics (NIH iCite): {coverage.get('status')}, {coverage.get('applied')} of "
+        f"{coverage.get('requested')} records with validated metrics ({use})"
+    )
+
+
+def _study_design_line(snapshot: ChronicleSnapshot) -> str | None:
+    """Summarize study-design labels and how many are text heuristics."""
+    counts: dict[str, int] = {}
+    heuristic = 0
+    for entry in snapshot.entries:
+        design = entry.provenance.get("study_design")
+        if not isinstance(design, dict) or design.get("basis") == "no_indexing_metadata":
+            continue
+        label = str(design.get("label") or "Unclassified")
+        counts[label] = counts.get(label, 0) + 1
+        heuristic += design.get("heuristic") is True
+    if not counts:
+        return None
+    parts = ", ".join(
+        f"{label} {count}" for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    )
+    basis = "PubMed publication types and MeSH" + (f"; {heuristic} text heuristic" if heuristic else "")
+    return f"Study designs ({basis}): {parts}"
+
+
+def _highlight_ranking_note(entry: ChronicleEntry, *, coverage_status: Any) -> str:
+    """Explain why an entry ranks among the highlights, disclosing missing metrics."""
+    importance = landmark_importance_score(entry)
+    citations = entry_max_citations(entry)
+    if importance is not None:
+        if landmark_citation_policy(entry) in {None, "none"}:
+            return f"landmark importance {importance:.2f}; no citation metric for this paper"
+        return f"landmark importance {importance:.2f}; {citations} iCite citations"
+    if citations:
+        return f"citation-count fallback {citations}"
+    if coverage_status in {"error", "empty"}:
+        return "chronological tie-break (iCite metrics unavailable)"
+    return "chronological tie-break (citation count zero or unknown)"
+
+
 def _format_summary(
     snapshot: ChronicleSnapshot,
     *,
@@ -367,9 +428,11 @@ def _format_summary(
         f"- Year span: {span}",
         f"- Graph: {len(snapshot.graph.nodes)} nodes, {len(snapshot.graph.edges)} edges",
         f"- Lineage basis: {escape_markdown_text(lineage_label)}",
-        f"- Audit: **{escape_markdown_text(snapshot.audit.status)}**",
-        "",
     ]
+    for optional_line in (_study_design_line(snapshot), _citation_metrics_line(snapshot)):
+        if optional_line:
+            lines.append(f"- {escape_markdown_text(optional_line)}")
+    lines.extend([f"- Audit: **{escape_markdown_text(snapshot.audit.status)}**", ""])
 
     if include_changes and snapshot.revision > 1:
         lines.extend(
@@ -402,21 +465,18 @@ def _format_summary(
 
     highlights = sorted(snapshot.entries, key=landmark_rank_key)[:5]
     if highlights:
+        coverage_status = _citation_metrics(snapshot)[1].get("status")
         lines.append("## Evidence-informed Highlights")
+        lines.append("")
+        lines.append(
+            "_Quoted sentences are verbatim from each paper's PubMed abstract (extractive, not interpretation); "
+            'character offsets index the stored abstract in `output="evidence"`._'
+        )
         lines.append("")
         for entry in highlights:
             citations = ", ".join(escape_markdown_code(a.evidence_id) for a in entry.evidence.all_articles)
             citations = citations or "no evidence"
-            importance = landmark_importance_score(entry)
-            if importance is not None:
-                ranking_note = f"landmark importance {importance:.2f}"
-            else:
-                fallback_count = entry_max_citations(entry)
-                ranking_note = (
-                    f"citation-count fallback {fallback_count}"
-                    if fallback_count
-                    else "chronological tie-break (citation count zero or unknown)"
-                )
+            ranking_note = _highlight_ranking_note(entry, coverage_status=coverage_status)
             lines.append(
                 f"- {escape_markdown_text(entry.summary_claim)} "
                 f"`[{escape_markdown_code(entry.entry_id)}; {citations}; {escape_markdown_code(ranking_note)}]`"
@@ -561,15 +621,23 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         comparative or consensus documents, and annual counts within this revision.
 
         Every entry carries:
-        - a one-sentence claim with inline citations
+        - a study-design label from PubMed publication types or MeSH design
+          descriptors; text-pattern labels are a marked [heuristic] fallback
+        - a one-line claim quoting the paper's own abstract conclusion sentence
+          (verbatim, with section and character offsets into the stored
+          abstract), or a conservative template when no abstract exists
         - supporting / contradicting / updating evidence articles
         - a research branch (lineage) assignment
         - provenance and a confidence score
 
-        The typed provenance graph links Topic → Branch → Entry → EvidenceArticle
-        and is validated against edge invariants. The audit reports evidence
-        coverage, identifier coverage, branch coverage, graph integrity, and
-        chronology gaps, so you always know how complete the picture is.
+        Topic and explicit-PMID builds both apply validated NIH iCite metrics
+        and report their coverage; an explicit PMID set is never re-ranked.
+        Descriptors that restate the topic cannot form branches. The typed
+        provenance graph links Topic → Branch → Entry → EvidenceArticle and is
+        validated against edge invariants. The audit reports evidence,
+        identifier, branch and citation-metric coverage, heuristic labels,
+        quote integrity, graph integrity, and chronology gaps, so you always
+        know how complete the picture is.
 
         Args:
             topic: Research topic (drug, gene, disease, intervention).

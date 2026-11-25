@@ -282,7 +282,7 @@ output:
 
 | Action | Common params | Meaning |
 | ------ | ----------- | ---- |
-| `search` | `query`, `sources`, `limit`, `min_year`, `max_year` | General literature search |
+| `search` | `query`, `sources`, `limit`, `min_year`, `max_year`; or `retrieval: exhaustive`, `max_records`, `fetch_metadata` | General literature search; exhaustive mode collects the complete PubMed set |
 | `pico` | `P`, `I`, `C`, `O` | Build PICO elements and a combined query |
 | `expand` | `topic` | Perform semantic expansion and MeSH strategy generation |
 | `details` | `pmids` | Fetch detailed article metadata |
@@ -292,6 +292,7 @@ output:
 | `metrics` | none | Add iCite metrics |
 | `merge` | `method=union / intersection / rrf` | Merge multiple result streams |
 | `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | Post-processing filters with diagnostics |
+| `block_analysis` | `query` or one input search step, `max_count_queries` | Count-only MeSH/concept block and term-contribution audit (never the record-producing step) |
 
 `related`, `citing`, and `references` also accept `inputs` with `seed_limit`
 (1–10), mutually exclusive with `pmid`. The first unique input PMIDs are seeds;
@@ -505,7 +506,11 @@ History shows:
 - total article count
 - how many articles were added compared with the previous run
 - how many were removed
+- retrieval mode, PubMed total and strategy hash (config hash / executed-query hash)
 - success or failure status
+
+Use `view="run"`, `view="prisma_s"` and `view="records"` for one run's provenance, a PRISMA-S
+table and the persisted record set (see the systematic review section below).
 
 ### Current limitations
 
@@ -513,6 +518,134 @@ History shows:
 - If you want stable history and diffs, prefer saved pipelines over one-off inline pipelines
 - Service mode stays single-process/single-replica, and its Compose profile does
   not run scheduled pipelines
+
+## Systematic Review and Meta-analysis Mode
+
+A bounded relevance window (`limit` ≤ 100) cannot support screening or a PRISMA
+flow diagram. For a systematic search, save the strategy as a pipeline whose
+PubMed search step uses `retrieval: exhaustive`, then let the run record, export
+and screening tools work on the complete record set.
+
+```yaml
+steps:
+  - id: pubmed
+    action: search
+    params:
+      query: >-
+        ("Anesthesia Recovery Period"[Mesh] OR PACU[tiab] OR emergence[tiab])
+        AND ("Consciousness Monitors"[Mesh] OR "bispectral index"[tiab])
+        AND ("Delirium"[Mesh] OR delirium[tiab])
+        NOT (("Child"[Mesh] OR "Infant"[Mesh]) NOT "Adult"[Mesh])
+      sources: [pubmed]
+      retrieval: exhaustive     # complete PMID set via the E-utilities History Server
+      max_records: 10000        # disclosed safety cap (default and maximum 10000)
+      fetch_metadata: true      # default: EFetch metadata in batches for export
+  - id: blocks
+    action: block_analysis      # optional strategy audit (count-only queries)
+    inputs: [pubmed]
+    params:
+      max_count_queries: 60     # default 60, maximum 200
+output:
+  format: json
+  limit: 20                     # size of the ranked preview, not of the record set
+```
+
+```python
+save_pipeline(name="pacu_peeg_ma", config="<yaml above>", scope="workspace")
+unified_search(pipeline="saved:pacu_peeg_ma")
+```
+
+### What exhaustive retrieval guarantees
+
+- One ESearch creates a History Server snapshot; every page of PMIDs is read
+  from that snapshot with EFetch `rettype=uilist`. Each provider operation
+  (snapshot, PMID page, metadata batch) reserves one unit of the run budget.
+- PubMed's ESearch cannot page beyond 10,000 records. A count above
+  `max_records` is **refused, not truncated**; narrow the strategy (for example
+  with `min_year`/`max_year`) or split it into several saved pipelines.
+- If paging stops early (deadline or quota), the step fails as incomplete; no
+  partial set is reported as exhaustive. If only metadata batches run out, the
+  PMID set stays complete and export fetches the missing metadata on demand.
+- `limit` and other sources are rejected with `retrieval: exhaustive`; the
+  strategy must be saved first (`dry_run=True` still validates inline configs).
+- The response is a bounded summary: total and retrieved counts, the
+  exhaustive flag, a preview of the first 20 ranked records, the run ID and the
+  next calls to make. The full set is persisted with the run.
+
+### Run record (PRISMA-S provenance)
+
+Each saved run stores, per search step and database: database and platform,
+the strategy as saved, the executed query with limits, PubMed's
+`QueryTranslation` (exhaustive steps), phrases PubMed could not find, total and
+retrieved counts, the exhaustive flag, filters, UTC search time, the server
+version, the saved config hash, a SHA-256 over an immutable config snapshot and
+any block analysis. Editing the YAML later never rewrites an earlier run.
+
+```python
+get_pipeline_history(name="pacu_peeg_ma")                      # Strategy column: config/query hash
+get_pipeline_history(name="pacu_peeg_ma", view="run")          # one run's provenance (JSON)
+get_pipeline_history(name="pacu_peeg_ma", view="prisma_s")     # PRISMA-S table: Markdown + CSV
+get_pipeline_history(name="pacu_peeg_ma", view="records", offset=0, limit=100)  # page the full set
+prepare_export(pipeline_run="pacu_peeg_ma", format="ris")      # latest run; also csv, csl, bibtex, medline, json
+prepare_export(pipeline_run="pacu_peeg_ma@<run_id>", format="csv")
+```
+
+Run exports go through the same export layer as `prepare_export(pmids=...)` and
+preserve PMIDs (RIS `AN`, CSV `PMID`, CSL-JSON `PMID` and `id: pmid:<PMID>`) for
+Rayyan, Covidence or Zotero import.
+
+### Strategy block analysis
+
+`block_analysis` splits a strategy into top-level AND blocks of OR terms (plus
+NOT blocks) and runs count-only searches for: the full strategy, each block
+alone, cumulative AND combinations, records removed by each NOT block, and each
+term's unique contribution (records lost if that term is removed from its
+block, within the full strategy). A zero contribution is a prompt to review a
+term, not proof that it is useless. Quoted phrases, field tags, wildcards,
+subheadings and nested parentheses are kept verbatim. PubMed evaluates operators
+left to right, so a top level that mixes `OR` with `AND`/`NOT` is reported as
+not decomposable instead of being guessed. Count queries have their own quota
+(200 per run) and still respect the run deadline; truncation is disclosed.
+
+### Screening and PRISMA 2020 flow
+
+Runs that identified a complete set are registered for screening
+automatically, so records first found by a later update run enter the
+title/abstract queue on their own.
+
+```python
+pipeline_screening(request={"action": "queue", "pipeline": "pacu_peeg_ma", "include_abstract": True})
+pipeline_screening(request={
+    "action": "record",
+    "pipeline": "pacu_peeg_ma",
+    "decisions": [
+        {"pmid": "12345678", "stage": "title_abstract", "decision": "include", "reviewer": "ak"},
+        {"pmid": "23456789", "stage": "title_abstract", "decision": "exclude", "reason": "paediatric", "reviewer": "ak"},
+    ],
+})
+pipeline_screening(request={"action": "record", "pipeline": "pacu_peeg_ma", "decisions": [
+    {"pmid": "12345678", "stage": "full_text", "decision": "exclude", "reason": "no pEEG arm"},
+]})
+pipeline_screening(request={"action": "flow", "pipeline": "pacu_peeg_ma"})   # Markdown; format="json" for data
+```
+
+- Decisions are append-only; the latest decision per PMID and stage counts and
+  earlier ones remain in `{"action": "log"}`. Different reviewer labels that
+  disagree are reported as conflicts.
+- Retrying a request is idempotent (pass `decision_id`, or it is derived from
+  the decision content). A batch is all-or-nothing.
+- Full-text exclusions need a reason; use `not retrieved` for reports that
+  could not be obtained. Full-text screening needs a prior title/abstract
+  `include` or `maybe`.
+- `flow` reports records identified per run and database, duplicates removed
+  across runs, screened, excluded, reports sought, not retrieved, assessed,
+  excluded with reasons, and included, plus new unscreened records per run.
+- Use `{"action": "register_run"}` to add an older or bounded run explicitly;
+  the flow then warns that identification is incomplete.
+- `delete_pipeline` removes the run history and record sets. If the screening log holds
+  decisions it refuses and removes nothing, reporting how many decisions and PMIDs would be
+  lost; export them with `{"action": "log"}` first, then pass `delete_screening_log=true`.
+  A log without decisions is removed with the pipeline.
 
 ## Validation and exact bounds
 

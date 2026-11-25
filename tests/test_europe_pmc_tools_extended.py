@@ -85,6 +85,8 @@ def hermetic_fulltext_fallbacks(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", _blocked_getaddrinfo)
     monkeypatch.setattr(socket.socket, "connect", _blocked_connect)
+    # The NCBI PMC fallback has dedicated boundary tests (test_fulltext_pmc_fallback.py).
+    monkeypatch.setenv("PUBMED_FULLTEXT_NCBI_PMC_FALLBACK", "false")
 
     default_downloader = AsyncMock()
     default_downloader.get_fulltext.return_value = FulltextResult(

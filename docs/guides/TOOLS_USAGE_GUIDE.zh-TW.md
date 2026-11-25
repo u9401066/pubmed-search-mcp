@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 42 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 43 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 
@@ -13,7 +13,7 @@
 
 ## 輸入格式與防呆
 
-全部 42 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
+全部 43 個工具共用輸入契約（metadata `contractVersion: 4`）。系統會先自動校正
 可確定原意的格式，再完整驗證參數，通過後才執行工具。建議優先傳原生 JSON；
 `tools/list.inputSchema` 也會列出可接受的替代表示法。
 
@@ -103,7 +103,7 @@ Agent 應一起修正已列出的欄位，
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `research_workspace`、`read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `research_workspace`、`read_session` 與八個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -198,9 +198,27 @@ Input validation 會在 provider I/O 前嚴格執行。`limit` 必須是 `1..100
 filter token 必須使用支援的 `key:value`；year bounds 必須在 1000–2100 內且順序
 正確；未知 option、ranking mode 或 output format 會直接被拒絕，不會無聲忽略。
 Source identifier 必須是 `semantic_scholar`、`europe_pmc`、`web_of_science` 等完全相等的 canonical key；alias、大小寫變體、token 前後空白、空 token 與重複 token 均會被拒絕。Canonical filter keys 是 `year`、`age_group`、`sex`、`species`、`language` 與 `clinical_query`。
-一般 deep mode 中，公開 `limit` 是單一 source 所有 generated strategies 共用的
-**總額度**。Broker 會把額度分配到 strategies、裁切超額 adapter response，並套用
-有界的全域／每來源 concurrency 與 strategy deadline。
+一般 deep mode 採**精準優先（precision-first）**。使用者的查詢（`exact` tier）
+在每個規劃的 source 上使用該 source 完整的 `limit`；含欄位標籤或布林運算的專家查詢
+已足額時絕不會被稀釋。只有 exact tier 的 eligible unique 筆數（去重並套用
+`exclude_seen`／detected-preprint 過濾後）少於 `limit` 時，broker 才會先在同一個
+exact query 往下取，再依精準度遞減逐一執行 `semantic`、`broad` 策略，且每個策略只補
+剩餘名額。exact query 失敗的 source 不會被放寬；`options="no_relax"` 會同時關閉這個
+補足與零結果 auto-relaxation。有界的全域／每來源 concurrency、adapter clipping 與
+strategy deadline 仍然有效。
+
+解讀 deep 或 relaxed 結果前，先讀 `broadening` 物件（JSON/TOON、artifact
+`query_strategy.json` 與 Markdown 的 **Broadening** 行）：
+
+| 欄位 | 意義 |
+| --- | --- |
+| `needed` / `applied` | exact tier 是否不足 `limit`，以及是否真的執行了較低精準度查詢 |
+| `summary` | 一行原因，例如 `original returned 6 of requested 15 (PubMed total 6) → broadened with broad_tiab, adding 9 lower-precision record(s)` 或 `no broadening needed (original total 45 ≥ limit 15)` |
+| `attempts[]` | 每個策略的 `tier`、`phase`、實際查詢、`total_available`、`returned`、去重後 `contributed` 與 `skip_reason` |
+| `articles[].retrieval` | 紀錄層級 provenance；`broadened=true`（Markdown 🔻）代表只有較低精準度查詢找到該筆 |
+
+放寬取得的紀錄一律排在符合原始查詢的紀錄之後。零結果 auto-relaxation 也使用同一個
+物件，並標示 `mechanisms=["auto_relax"]` 與 `tier="relaxed"`。
 
 JSON/TOON 與 persistent artifact 會保存 `retrieval_mode` 及每來源
 `source_metadata`，包括 requested/provider mode、canonical 或 compiled query、
@@ -331,7 +349,7 @@ XML 快取。只需要文字時可設定 `include_pdf_links=False`，XML 成功�
 
 分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
-每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+每個 chronicle entry 都帶有研究設計標籤、一行附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。標籤優先來自 PubMed PublicationType，其次是 MeSH 研究設計 descriptor；只有 PubMed 尚未標引設計時才以標題或摘要文字推斷，並標示 `[heuristic]`。已標引的研究設計優先於文字樣式 milestone，因此摘要提到 adverse events 的 RCT 不會被標成 safety alert。有摘要時，claim 會逐字引用該論文的結論句，並附章節與指向保存摘要的字元位置（`provenance.extractive_highlight`）；這是摘錄，不是詮釋。PMID 模式也會套用經驗證的 iCite metrics 計算 landmark score，但不重新排序指定集合；只是重述主題的 descriptor 不會形成分支（見 `lineage_diagnostics.excluded_topic_signals`）。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、heuristic 研究設計標籤、引文完整性、引用指標覆蓋率、graph 完整性、時序缺口與各來源回傳量。
 
 Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。上游失敗或零篇回傳時會回報錯誤。PubMed 無法存取期間，可讀取既有 revision 繼續查證，並記下採用的版次。
 
@@ -355,7 +373,9 @@ Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（�
 
 ![Session 與 Pipeline 流程](../images/session-pipeline-workflow.svg)
 
-這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`。
+這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline`、`unschedule_pipeline` 與 `pipeline_screening`。
+
+系統性回顧時，PubMed search step 設 `retrieval: exhaustive` 會透過 E-utilities History Server 取得完整 PMID 集合（上限 `max_records` ≤ 10000；超過直接拒絕、不截斷），saved run 會連同 PRISMA-S 來源資訊一併保存：資料庫／平台、保存與實際查詢、PubMed query translation、總數／取回數、篩選條件、UTC 時間、server 版本與不可變 config snapshot。`unified_search` 只回傳有界預覽；`get_pipeline_history` 提供 `view="run"`、`view="prisma_s"`（Markdown + CSV）與 `view="records"`（完整集合分頁）；`prepare_export(pipeline_run=...)` 以 RIS/CSV/CSL-JSON 匯出完整集合；`block_analysis` step 以有界的僅計數查詢稽核 MeSH 區塊與詞彙貢獻；`pipeline_screening` 記錄逐篇篩選決策並產出 PRISMA 2020 流程數字。更新檢索第一次出現的文獻會自動進入待篩佇列。
 
 本機與 service 能力刻意不同。可信任的本機 caller 可使用 workspace scope、`file:`
 pipeline source 與 in-process scheduler。認證 service caller 只能讀取 tenant-derived store 中

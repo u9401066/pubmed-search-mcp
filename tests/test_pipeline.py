@@ -335,6 +335,7 @@ class TestConstants:
             "metrics",
             "merge",
             "filter",
+            "block_analysis",
         }
         assert VALID_ACTIONS == expected
 

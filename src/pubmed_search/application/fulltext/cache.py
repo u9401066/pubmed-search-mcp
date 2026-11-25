@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.value_objects.article_identifiers import IdentifierValidationError, normalize_pmcid
 from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
+from pubmed_search.shared.exceptions import ParseError
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
@@ -27,7 +28,23 @@ MAX_XML_CACHE_ITEM_BYTES = 2 * 1024 * 1024
 
 
 class FulltextCacheError(RuntimeError):
-    """A bounded XML operation could not complete; callers may try other sources."""
+    """The local cache runtime itself could not serve XML (closed or at capacity).
+
+    Upstream failures are never wrapped in this type: they propagate as the
+    already-sanitized exception raised by the source adapter, so callers can
+    tell a local cache problem from an outage, a rate limit or a timeout.
+    """
+
+
+class FulltextFetchDeadlineError(TimeoutError):
+    """The structured source did not answer before the cache's fetch deadline."""
+
+
+class FulltextInvalidResponseError(ParseError):
+    """The structured source returned a value that is not XML text."""
+
+    def __init__(self) -> None:
+        super().__init__("Invalid structured fulltext response")
 
 
 @dataclass
@@ -184,8 +201,11 @@ class FulltextCache:
         except asyncio.CancelledError:
             raise
         except Exception:
+            # Record the failure for cooldown, then re-raise the original
+            # (adapter-sanitized) exception. Replacing it with a cache error
+            # made an upstream outage indistinguishable from a local fault.
             self._store(key, None, failed=True)
-            raise FulltextCacheError("Structured fulltext was unavailable") from None
+            raise
 
     async def _fetch(self, pmcid: str, fetch: XMLFetcher, *, job: _Job, deadline: float) -> str | None:
         work: asyncio.Future[Any] | None = None
@@ -194,8 +214,10 @@ class FulltextCache:
             if job.background:
                 await asyncio.wait_for(self._background_slot.acquire(), timeout=max(0, deadline - self._clock()))
                 owns_slot = True
-            if self._closed or self._clock() >= deadline:
-                raise FulltextCacheError("Fulltext XML deadline exceeded")
+            if self._closed:
+                raise FulltextCacheError("Fulltext runtime is closed")
+            if self._clock() >= deadline:
+                raise FulltextFetchDeadlineError("Fulltext XML deadline exceeded")
             job.started = True
             work = self._io.schedule(fetch(pmcid))
             if work is None:
@@ -206,10 +228,10 @@ class FulltextCache:
                 owns_slot = False
             done, _ = await asyncio.wait({work}, timeout=max(0, deadline - self._clock()))
             if not done or self._clock() >= deadline:
-                raise FulltextCacheError("Fulltext XML deadline exceeded")
+                raise FulltextFetchDeadlineError("Fulltext XML deadline exceeded")
             xml = work.result()
             if xml is not None and not isinstance(xml, str):
-                raise FulltextCacheError("Invalid structured fulltext response")
+                raise FulltextInvalidResponseError
             return xml
         finally:
             if work is not None and not work.done():
@@ -243,7 +265,9 @@ class FulltextCache:
             job.waiters += 1
             try:
                 return await asyncio.shield(job.task)
-            except FulltextCacheError:
+            except Exception:
+                # A failed speculative prefetch never blocks one demand retry;
+                # a failed demand fetch surfaces its own classified error.
                 if not job.background:
                     raise
             finally:
@@ -262,4 +286,11 @@ class FulltextCache:
         self._bytes = 0
 
 
-__all__ = ["FulltextCache", "FulltextCacheError", "MAX_PREFETCH_ARTICLES", "MAX_XML_CACHE_ITEM_BYTES"]
+__all__ = [
+    "MAX_PREFETCH_ARTICLES",
+    "MAX_XML_CACHE_ITEM_BYTES",
+    "FulltextCache",
+    "FulltextCacheError",
+    "FulltextFetchDeadlineError",
+    "FulltextInvalidResponseError",
+]

@@ -67,7 +67,7 @@ rendering remain available through `run_extended_checks`.
   provider JSON and HTTP 401 must remain failures, not successful empty results.
 - `test_all_tools_mcp_acceptance.py` covers all public tools through stdio, HTTP
   and an installed wheel, including encoded containers and one-retry repair.
-  The current checkout expects 42 tools in 16 categories and 62 successful
+  The current checkout expects 43 tools in 16 categories and 67 successful
   semantic calls per transport.
   Its injected provider doubles intentionally isolate **wire/tool contracts**;
   they do not claim to test provider parsing or live availability.
