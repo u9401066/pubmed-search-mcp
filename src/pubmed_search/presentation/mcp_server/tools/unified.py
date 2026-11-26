@@ -245,15 +245,19 @@ def register_unified_search_tools(
                                         search; exclusive with full_records
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
-                       hybrid         → channel fusion: your query runs on PubMed as
-                                        written (MeSH/field tags allowed) while a
-                                        tag-free version runs on Europe PMC full
-                                        text and OpenAlex semantic search. Results
-                                        are ordered by each provider's own rank;
-                                        every record lists `found_by`, and about a
-                                        quarter of slots are kept for records PubMed
-                                        did not return. Not with native_semantic,
-                                        systematic or pipeline.
+                       hybrid         → EXPERIMENTAL channel fusion: your query runs
+                                        on PubMed as written (MeSH/field tags
+                                        allowed) while a tag-free version runs on
+                                        Europe PMC full text and OpenAlex. Results
+                                        are ordered by each provider's own rank and
+                                        every record lists `found_by`. A pilot
+                                        benchmark found no recall gain over the
+                                        default; use it to see which records other
+                                        indexes add, not for better ranking. Not
+                                        with native_semantic, systematic or pipeline.
+                       breadth_quota  → with hybrid: keep about a quarter of slots
+                                        for records PubMed did not return (lowers
+                                        recall of PubMed-indexed trials)
                        no_relax       → disable automatic broadening (deep fill tiers
                                         and auto-relaxation on 0 results); MeSH
                                         correction still runs

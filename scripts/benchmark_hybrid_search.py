@@ -13,7 +13,7 @@ Arms, for a MeSH-style query and for a plain-language question:
 * ``pubmed``  PubMed Best Match alone (what a PubMed-only tool returns)
 * ``default`` ``unified_search`` as shipped
 * ``hybrid``  ``unified_search(options="hybrid")``
-* ``hybrid_nq``  hybrid without the breadth quota
+* ``hybrid_quota``  hybrid with the opt-in breadth quota
 
 This measures retrieval only. It makes live NCBI, Europe PMC and OpenAlex
 requests and no LLM call. Six topics is a pilot: report per-topic numbers and
@@ -38,8 +38,8 @@ DEFAULT_TOPICS = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "h
 CUTOFFS = (10, 20, 50)
 DEPTH = max(CUTOFFS)
 MIN_GOLD = 5
-ARMS = ("pubmed", "default", "hybrid", "hybrid_nq")
-ARM_OPTIONS = {"default": "no_oa", "hybrid": "hybrid,no_oa", "hybrid_nq": "hybrid,no_breadth_quota,no_oa"}
+ARMS = ("pubmed", "default", "hybrid", "hybrid_quota")
+ARM_OPTIONS = {"default": "no_oa", "hybrid": "hybrid,no_oa", "hybrid_quota": "hybrid,breadth_quota,no_oa"}
 QUERY_STYLES = {"mesh": "pubmed_query", "question": "question"}
 #: Publication types that are not primary studies and so cannot be a review's included study.
 SECONDARY_TYPES = frozenset(

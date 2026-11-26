@@ -158,8 +158,9 @@ class UnifiedSearchRequest:
     record_detail: RecordDetail = "summary"
     # options="hybrid": fuse PubMed, full-text and semantic channels by provider rank.
     hybrid: bool = False
-    # Hybrid only: keep a share of slots for records PubMed did not return.
-    breadth_quota: bool = True
+    # Hybrid only, opt-in: keep a share of slots for records PubMed did not
+    # return. Off by default: the live pilot benchmark lost recall with it on.
+    breadth_quota: bool = False
 
     @property
     def retrieval_mode(self) -> Literal["auto", "semantic", "systematic"]:
@@ -289,7 +290,7 @@ def normalize_unified_search_request(
         auto_relax=False if systematic_search else parsed_options.get("auto_relax", True),
         deep_search=False if explicit_provider_mode else parsed_options.get("deep_search", True),
         hybrid=hybrid,
-        breadth_quota=parsed_options.get("breadth_quota", True),
+        breadth_quota=parsed_options.get("breadth_quota", False),
         fulltext=fulltext,
         exclude_seen=parsed_options.get("exclude_seen", False),
         mesh_correction=parsed_options.get("mesh_correction", True),

@@ -131,8 +131,8 @@ def test_hybrid_rejects_other_retrieval_policies(options: str) -> None:
 
 def test_hybrid_keeps_default_pubmed_deepening_and_quota_can_be_disabled() -> None:
     request = normalize_unified_search_request(query="x", options="hybrid")
-    assert (request.hybrid, request.deep_search, request.breadth_quota) == (True, True, True)
-    assert normalize_unified_search_request(query="x", options="hybrid,no_breadth_quota").breadth_quota is False
+    assert (request.hybrid, request.deep_search, request.breadth_quota) == (True, True, False)
+    assert normalize_unified_search_request(query="x", options="hybrid,breadth_quota").breadth_quota is True
 
 
 # ── End to end ──────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ async def _hybrid(
     output_format: str = "json",
     limit: int = 4,
     query: str = MESH_QUERY,
-    options: str = "hybrid,no_oa,no_mesh_correction",
+    options: str = "hybrid,breadth_quota,no_oa,no_mesh_correction",
 ) -> str:
     searcher = MagicMock()
     searcher.search_page = AsyncMock(return_value=SourceSearchPage(source="pubmed", items=[], total=0, query="x"))
@@ -265,8 +265,8 @@ async def test_markdown_shows_channels_and_marks_breadth_only_records() -> None:
     assert "Applied on PubMed only" in text
 
 
-async def test_breadth_quota_can_be_switched_off() -> None:
-    payload = json.loads(await _hybrid(_runners(), options="hybrid,no_oa,no_mesh_correction,no_breadth_quota"))
+async def test_breadth_quota_is_off_unless_requested() -> None:
+    payload = json.loads(await _hybrid(_runners(), options="hybrid,no_oa,no_mesh_correction"))
 
     assert [article["pmid"] for article in payload["articles"]] == ["3", "1", "2", "4"]
     assert payload["hybrid"]["breadth_slots"] == 0
