@@ -42,6 +42,8 @@ from datetime import date
 from enum import Enum
 from typing import Any, Literal
 
+from pubmed_search.domain.services.publication_integrity import PublicationIntegrity, assess_integrity
+
 MONTHS_PER_YEAR = 12
 
 # ── Impact classification thresholds ────────────────────────────────────────
@@ -629,6 +631,18 @@ class UnifiedArticle:
         return values
 
     @property
+    def integrity(self) -> PublicationIntegrity:
+        """Return retraction, concern, erratum and update notices from every source.
+
+        Built from provider metadata already on the record (PubMed
+        CommentsCorrections and publication types, OpenAlex ``is_retracted``,
+        Crossref ``updated-by``); no extra request is made.
+        """
+        return assess_integrity(
+            (source.source, source.raw_data) for source in self.sources if isinstance(source.raw_data, dict)
+        )
+
+    @property
     def author_string(self) -> str:
         """Return formatted author string for display."""
         if not self.authors:
@@ -1015,6 +1029,8 @@ class UnifiedArticle:
         retrieval = self.retrieval_payload()
         if retrieval is not None:
             result["retrieval"] = retrieval
+
+        result["integrity"] = self.integrity.to_dict()
 
         # Add citation metrics if available
         if self.citation_metrics:

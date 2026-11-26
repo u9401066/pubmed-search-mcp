@@ -15,6 +15,7 @@ from Bio import Entrez
 from typing_extensions import Self
 
 from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.domain.services.publication_integrity import PUBMED_INTEGRITY_REFTYPES
 from pubmed_search.infrastructure.provider_payload import has_provider_error_envelope
 
 from .base import (
@@ -610,6 +611,9 @@ class SearchMixin:
         # Extract publication types
         publication_types = self._extract_publication_types(article_data)
 
+        # Retraction, erratum, expression-of-concern and update links
+        comments_corrections = self._extract_comments_corrections(medline_citation)
+
         return {
             "pmid": pmid,
             "title": title,
@@ -623,6 +627,7 @@ class SearchMixin:
             "pmc_id": pmc_id,
             "language": language,
             "publication_types": publication_types,
+            "comments_corrections": comments_corrections,
             **journal_info,
         }
 
@@ -759,6 +764,29 @@ class SearchMixin:
             if hasattr(pt, "__str__"):
                 pub_types.append(str(pt))
         return pub_types
+
+    def _extract_comments_corrections(self, medline_citation: dict) -> list[dict[str, str]]:
+        """Extract integrity-relevant CommentsCorrections links.
+
+        Only retraction, partial retraction, expression of concern, erratum,
+        update and republication links are kept; comments and replies are not
+        integrity notices and would only cost tokens.
+        """
+        links: list[dict[str, str]] = []
+        for item in medline_citation.get("CommentsCorrectionsList", []) or []:
+            raw_attributes = getattr(item, "attributes", None)
+            attributes = raw_attributes if isinstance(raw_attributes, dict) else {}
+            ref_type = str(attributes.get("RefType") or "").strip()
+            if ref_type.casefold() not in PUBMED_INTEGRITY_REFTYPES:
+                continue
+            link = {"ref_type": ref_type}
+            if isinstance(item, dict):
+                if pmid := str(item.get("PMID") or "").strip():
+                    link["pmid"] = pmid
+                if ref_source := str(item.get("RefSource") or "").strip():
+                    link["ref_source"] = ref_source
+            links.append(link)
+        return links
 
     def _extract_identifiers(self, pubmed_data: dict) -> tuple:
         """Extract DOI and PMC ID from article identifiers."""

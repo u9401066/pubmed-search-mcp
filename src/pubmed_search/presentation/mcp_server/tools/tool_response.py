@@ -17,6 +17,7 @@ import re
 from typing import Any, Union
 from urllib.parse import urlsplit, urlunsplit
 
+from pubmed_search.domain.services.publication_integrity import assess_integrity
 from pubmed_search.shared import PubMedSearchError, get_retry_delay, is_retryable_error
 from pubmed_search.shared import markdown as safe_markdown
 from pubmed_search.shared.credential_sanitizer import redact_credential_assignments
@@ -239,6 +240,11 @@ def format_search_results(results: list, include_doi: bool = True) -> str:
             formatted_output += f" | PMC: {safe_markdown.escape_markdown_text(paper['pmc_id'])} 📄"
 
         formatted_output += "\n"
+
+        integrity = assess_integrity([("pubmed", paper)]) if isinstance(paper, dict) else None
+        if integrity is not None and integrity.badge:
+            marker = "⛔" if integrity.caution else "ℹ️"
+            formatted_output += f"   Integrity: {marker} {safe_markdown.escape_markdown_text(integrity.badge)}\n"
 
         abstract = paper.get("abstract", "")
         if abstract:

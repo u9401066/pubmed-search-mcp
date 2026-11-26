@@ -855,6 +855,12 @@ async def _format_unified_results(
         if ids:
             output_parts.append(" | ".join(ids))
 
+        # Retraction / concern / erratum notices (only when one exists)
+        integrity_badge = article.integrity.badge
+        if integrity_badge:
+            marker = "⛔" if article.integrity.caution else "ℹ️"
+            output_parts.append(f"**Integrity**: {marker} {_escape_markdown_text(integrity_badge)}")
+
         # Study type badge (from PubMed publication_types, not hard-coded inference)
         from pubmed_search.domain.entities.article import ArticleType
 
@@ -1048,7 +1054,15 @@ def _compact_article_payload(article: UnifiedArticle, *, include_rank_scores: bo
     retrieval = article.retrieval_payload()
     if retrieval is not None:
         payload["retrieval"] = retrieval
+    _add_integrity_flag(payload, article)
     return payload
+
+
+def _add_integrity_flag(payload: dict[str, Any], article: UnifiedArticle) -> None:
+    """Attach integrity notices only when one exists, to keep clean rows small."""
+    integrity = article.integrity
+    if integrity.flagged:
+        payload["integrity"] = integrity.to_dict()
 
 
 def _abstract_snippet(abstract: str | None, *, limit: int = ABSTRACT_SNIPPET_CHARS) -> tuple[str | None, bool]:
@@ -1118,6 +1132,7 @@ def _summary_article_payload(article: UnifiedArticle, *, rank: int, include_rank
             "broadened": best_retrieval.broadened,
             "strategy": best_retrieval.strategy,
         }
+    _add_integrity_flag(payload, article)
     return payload
 
 

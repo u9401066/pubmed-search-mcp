@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.domain.services.publication_integrity import STATUS_CORRECTED, assess_integrity
 from pubmed_search.shared.article_identity import normalize_article_doi
 from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
 
@@ -365,6 +366,17 @@ class ReferenceVerificationService:
         elif is_partial:
             report_status = "partial"
         review_workflow = self._build_review_workflow(results)
+        integrity_alerts = [
+            {
+                "index": row["index"],
+                "pmid": (row.get("matched_article") or {}).get("pmid", ""),
+                "status": row["integrity"]["status"],
+                "notices": row["integrity"]["notices"],
+            }
+            for row in results
+            if isinstance(row.get("integrity"), dict)
+            and (row["integrity"].get("caution") or row["integrity"].get("status") == STATUS_CORRECTED)
+        ]
         return {
             "success": assessed_count > 0,
             "status": report_status,
@@ -377,9 +389,11 @@ class ReferenceVerificationService:
             "timed_out": timed_out,
             "degraded_sources": degraded_sources,
             "summary": summary,
+            "integrity_alerts": integrity_alerts,
             "results": results,
             "review_workflow": review_workflow,
             "next_steps": [
+                "Report integrity_alerts (retractions, expressions of concern, errata) to the user first",
                 "Review partial_match rows for field-level mismatches",
                 "Apply a row's corrections only after confirming matched_article is the intended work",
                 "Retry source_unavailable and not_checked rows before treating them as unresolved",
@@ -505,6 +519,16 @@ class ReferenceVerificationService:
         }
         if withheld_reason:
             result["corrections_withheld_reason"] = withheld_reason
+        integrity = assess_integrity([("pubmed", article or {})])
+        result["integrity"] = integrity.to_dict()
+        if integrity.caution:
+            notes.insert(
+                0,
+                f"Cited work is flagged {integrity.status.replace('_', ' ')} in PubMed; "
+                "do not cite it as valid evidence without disclosing the notice",
+            )
+        elif integrity.is_notice:
+            notes.insert(0, "Matched record is a published notice (erratum or retraction), not the original article")
         if outcome.identifier_check is not None:
             result["identifier_assessment"] = self._identifier_assessment(parsed, outcome)
         if outcome.unavailable_sources:

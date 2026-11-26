@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import Field
 
+from pubmed_search.domain.services.publication_integrity import assess_integrity
 from pubmed_search.domain.value_objects import (
     IdentifierValidationError,
 )
@@ -182,6 +183,7 @@ def _format_fetch_article_details_json(
         {key for article in articles for key, value in article.items() if value not in (None, "", [], {}, ())}
     )
 
+    articles = [{**article, "integrity": assess_integrity([("pubmed", article)]).to_dict()} for article in articles]
     payload = {
         "tool": "fetch_article_details",
         "pmids_requested": requested_pmids,

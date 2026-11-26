@@ -61,6 +61,7 @@ OPENALEX_WORK_SELECT = (
     "best_oa_location",
     "primary_location",
     "cited_by_count",
+    "is_retracted",
 )
 OPENALEX_MAX_PER_PAGE = 100
 OPENALEX_SEMANTIC_MAX_QUERY_CHARS = 2_000
@@ -799,6 +800,8 @@ class OpenAlexClient(BaseAPIClient):
             "oa_status": oa.get("oa_status", ""),  # gold, green, bronze, etc.
             "pdf_url": best_oa.get("pdf_url"),
             "is_doaj": source.get("is_in_doaj", False),
+            # Integrity
+            "is_retracted": work.get("is_retracted") is True,
             # Source marker
             "_source": "openalex",
             "_openalex_id": work.get("id", ""),

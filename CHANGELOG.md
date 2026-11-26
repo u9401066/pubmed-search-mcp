@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Publication integrity notices.** PubMed records now keep their
+  `CommentsCorrections` retraction, partial-retraction, expression-of-concern,
+  erratum and update links, OpenAlex works request `is_retracted`, and Crossref
+  `updated-by` notices are read when present. Every article carries an
+  `integrity` block (`status`, `caution`, the notice PMID or DOI, and which
+  sources were checked). No extra request is made.
+- `unified_search` Markdown and `fetch_article_details` show an **Integrity**
+  line only for flagged records; summary and compact JSON rows include
+  `integrity` only when a notice exists, so clean rows do not grow.
+- `verify_reference_list` adds per-row `integrity` and a top-level
+  `integrity_alerts` list, and puts a caution note first when a cited work was
+  retracted or received an expression of concern. A `none_found` status means
+  no provider recorded a notice; it is not a validity judgement.
+
 ## [0.12.0] - 2026-11-25
 
 Fulltext acquisition beyond PMC XML for host agents, plus agent-facing fixes
