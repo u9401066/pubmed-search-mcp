@@ -16,6 +16,7 @@ import pytest
 
 from pubmed_search.application.search.channel_fusion import fuse_channels, hybrid_channel_limit
 from pubmed_search.application.search.query_dialect import neutralize_pubmed_query
+from pubmed_search.application.search.semantic_enhancer import SemanticEnhancer
 from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.unified.request import normalize_unified_search_request
 from pubmed_search.domain.entities.article import UnifiedArticle
@@ -128,26 +129,37 @@ def test_hybrid_rejects_other_retrieval_policies(options: str) -> None:
         normalize_unified_search_request(query="x", options=options)
 
 
-def test_hybrid_disables_tiered_deepening() -> None:
+def test_hybrid_keeps_default_pubmed_deepening_and_quota_can_be_disabled() -> None:
     request = normalize_unified_search_request(query="x", options="hybrid")
-    assert (request.hybrid, request.deep_search) == (True, False)
+    assert (request.hybrid, request.deep_search, request.breadth_quota) == (True, True, True)
+    assert normalize_unified_search_request(query="x", options="hybrid,no_breadth_quota").breadth_quota is False
 
 
 # ── End to end ──────────────────────────────────────────────────────────────
 
 
+class _NullResolver:
+    async def resolve_entity(self, _text: str) -> None:
+        return None
+
+
+def _enhancer() -> SemanticEnhancer:
+    return SemanticEnhancer(entity_resolver=_NullResolver())
+
+
 class _Runner:
-    def __init__(self, source: str, pmids: list[str], *, fail: bool = False) -> None:
+    def __init__(self, source: str, pmids: list[str], *, fail: bool = False, fail_modes: tuple[str, ...] = ()) -> None:
         self.source = source
         self.pmids = pmids
         self.fail = fail
+        self.fail_modes = fail_modes
         self.calls: list[tuple[str, int, dict[str, Any]]] = []
 
     async def __call__(
         self, query: str, limit: int, _min_year: int | None, _max_year: int | None, options: dict[str, Any]
     ) -> SourceAdapterResult[UnifiedArticle]:
         self.calls.append((query, limit, dict(options)))
-        if self.fail:
+        if self.fail or options.get("_retrieval_mode") in self.fail_modes:
             return SourceAdapterResult.failure(
                 source=self.source,
                 operation="search",
@@ -166,7 +178,14 @@ class _Runner:
         )
 
 
-async def _hybrid(runners: dict[str, _Runner], *, output_format: str = "json", limit: int = 4) -> str:
+async def _hybrid(
+    runners: dict[str, _Runner],
+    *,
+    output_format: str = "json",
+    limit: int = 4,
+    query: str = MESH_QUERY,
+    options: str = "hybrid,no_oa,no_mesh_correction",
+) -> str:
     searcher = MagicMock()
     searcher.search_page = AsyncMock(return_value=SourceSearchPage(source="pubmed", items=[], total=0, query="x"))
     with (
@@ -179,10 +198,11 @@ async def _hybrid(runners: dict[str, _Runner], *, output_format: str = "json", l
     ):
         return await run_unified_search(
             searcher=searcher,
-            query=MESH_QUERY,
+            query=query,
             limit=limit,
             output_format=output_format,  # type: ignore[arg-type]
-            options="hybrid,no_oa,no_mesh_correction",
+            options=options,
+            enhancer_factory=_enhancer,
             search_functions=runners,
         )
 
@@ -200,7 +220,8 @@ async def test_each_channel_gets_its_own_dialect_and_results_follow_provider_ran
 
     payload = json.loads(await _hybrid(runners))
 
-    ((pubmed_query, pubmed_limit, _),) = runners["pubmed"].calls
+    # The exact query goes first; default fill tiers may follow because it left the channel short.
+    pubmed_query, pubmed_limit, _ = runners["pubmed"].calls[0]
     ((full_text_query, _, _),) = runners["europe_pmc"].calls
     ((semantic_query, _, semantic_options),) = runners["openalex"].calls
     assert pubmed_query == MESH_QUERY and pubmed_limit == 50
@@ -242,3 +263,51 @@ async def test_markdown_shows_channels_and_marks_breadth_only_records() -> None:
     assert "**Found by**: PubMed #3, full text #1, semantic #1" in text
     assert "**Found by**: 🧭 full text #2" in text
     assert "Applied on PubMed only" in text
+
+
+async def test_breadth_quota_can_be_switched_off() -> None:
+    payload = json.loads(await _hybrid(_runners(), options="hybrid,no_oa,no_mesh_correction,no_breadth_quota"))
+
+    assert [article["pmid"] for article in payload["articles"]] == ["3", "1", "2", "4"]
+    assert payload["hybrid"]["breadth_slots"] == 0
+
+
+async def test_semantic_channel_falls_back_to_keyword_search_when_unavailable() -> None:
+    runners = _runners()
+    runners["openalex"] = _Runner("openalex", ["3", "1"], fail_modes=("semantic",))
+
+    payload = json.loads(await _hybrid(runners))
+
+    modes = [options["_retrieval_mode"] for _query, _limit, options in runners["openalex"].calls]
+    assert modes == ["semantic", "auto"]
+    assert {query for query, _limit, _options in runners["openalex"].calls} == {
+        "Delirium dexmedetomidine Cardiac Surgical Procedures"
+    }
+    assert payload["hybrid"]["channels"]["openalex"] == 2
+    assert payload["hybrid"]["failed_channels"] == []
+    assert payload["source_metadata"]["openalex"]["provider_mode"] == "keyword_fallback"
+
+
+async def test_plain_question_keeps_pubmed_fill_tiers_as_the_primary_channel() -> None:
+    """A long question ANDs to few PubMed hits; the default fill tiers must still run in hybrid."""
+    question = "does dexmedetomidine reduce postoperative delirium after cardiac surgery in elderly patients"
+
+    class _SparseExactPubMed(_Runner):
+        async def __call__(
+            self, query: str, limit: int, min_year: int | None, max_year: int | None, options: dict[str, Any]
+        ) -> SourceAdapterResult[UnifiedArticle]:
+            self.pmids = ["1"] if query == question else ["1", "2", "3", "4", "5", "6"]
+            return await super().__call__(query, limit, min_year, max_year, options)
+
+    runners = _runners()
+    runners["pubmed"] = _SparseExactPubMed("pubmed", [])
+
+    payload = json.loads(await _hybrid(runners, query=question, limit=5, options="hybrid,no_oa"))
+
+    pubmed_queries = [query for query, _limit, _options in runners["pubmed"].calls]
+    assert pubmed_queries[0] == question
+    assert len(set(pubmed_queries)) > 1, "fill tiers did not run"
+    assert payload["hybrid"]["channels"]["pubmed"] > 1
+    # Neutral channels ran once each beside the PubMed tiers.
+    assert len(runners["europe_pmc"].calls) == 1 and len(runners["openalex"].calls) == 1
+    assert payload["articles"][0]["pmid"] in {"1", "3"}

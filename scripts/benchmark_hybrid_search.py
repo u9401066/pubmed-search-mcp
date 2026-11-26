@@ -13,6 +13,7 @@ Arms, for a MeSH-style query and for a plain-language question:
 * ``pubmed``  PubMed Best Match alone (what a PubMed-only tool returns)
 * ``default`` ``unified_search`` as shipped
 * ``hybrid``  ``unified_search(options="hybrid")``
+* ``hybrid_nq``  hybrid without the breadth quota
 
 This measures retrieval only. It makes live NCBI, Europe PMC and OpenAlex
 requests and no LLM call. Six topics is a pilot: report per-topic numbers and
@@ -37,7 +38,8 @@ DEFAULT_TOPICS = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "h
 CUTOFFS = (10, 20, 50)
 DEPTH = max(CUTOFFS)
 MIN_GOLD = 5
-ARMS = ("pubmed", "default", "hybrid")
+ARMS = ("pubmed", "default", "hybrid", "hybrid_nq")
+ARM_OPTIONS = {"default": "no_oa", "hybrid": "hybrid,no_oa", "hybrid_nq": "hybrid,no_breadth_quota,no_oa"}
 QUERY_STYLES = {"mesh": "pubmed_query", "question": "question"}
 #: Publication types that are not primary studies and so cannot be a review's included study.
 SECONDARY_TYPES = frozenset(
@@ -112,11 +114,19 @@ async def _run_arm(client: PubMedSearchClient, arm: str, query: str, topic: dict
                 query,
                 limit=DEPTH,
                 filters=f"year:-{max_year}",
-                options="hybrid,no_oa" if arm == "hybrid" else "no_oa",
+                options=ARM_OPTIONS[arm],
             )
             ranked = ranking_ids(list(result.articles), exclude=review)
             extra["sources"] = {row.source: row.returned for row in result.source_counts}
             extra["source_errors"] = [str(error.get("source")) for error in result.source_errors]
+            extra["source_error_details"] = [
+                {
+                    "source": str(error.get("source")),
+                    "code": str(error.get("code") or error.get("kind") or "unknown"),
+                    "status_code": error.get("status_code"),
+                }
+                for error in result.source_errors
+            ]
             if result.hybrid:
                 extra["hybrid"] = result.hybrid
                 extra["breadth_only_ids"] = [
@@ -148,7 +158,7 @@ async def run_topic(client: PubMedSearchClient, topic: dict[str, Any]) -> dict[s
             if outcome["status"] == "ok":
                 outcome["metrics"] = score(outcome["ranked"], gold)
                 breadth = set(outcome.pop("breadth_only_ids", []))
-                if arm == "hybrid":
+                if arm.startswith("hybrid"):
                     outcome["metrics"]["gold_found_breadth_only"] = float(len(breadth & set(gold)))
             row["arms"][f"{style}:{arm}"] = outcome
             await asyncio.sleep(1.0)
@@ -192,6 +202,20 @@ def to_markdown(report: dict[str, Any]) -> str:
             f"{metrics['recall@50']:.3f} | {metrics['ndcg@20']:.3f} | {metrics['gold_found']:.1f} | "
             f"{metrics['seconds']:.1f} |"
         )
+    failures: dict[str, int] = {}
+    fallbacks = 0
+    for topic in report["topics"]:
+        for arm in topic.get("arms", {}).values():
+            for detail in arm.get("source_error_details", []):
+                key = f"{detail['source']}: {detail['code']}" + (
+                    f" (HTTP {detail['status_code']})" if detail.get("status_code") else ""
+                )
+                failures[key] = failures.get(key, 0) + 1
+            queries = (arm.get("hybrid") or {}).get("modes") or {}
+            fallbacks += sum(1 for mode in queries.values() if mode == "keyword_fallback")
+    lines += ["", "### Channel failures (all arms)", ""]
+    lines += [f"- {key}: {count}" for key, count in sorted(failures.items())] or ["- none"]
+    lines.append(f"- semantic channel fell back to keyword search: {fallbacks}")
     lines += ["", "### Per topic (recall@20 / gold found in top 50)", ""]
     arm_names = list(report["summary"]) or [f"{style}:{arm}" for style in QUERY_STYLES for arm in ARMS]
     lines.append("| Topic | gold | " + " | ".join(arm_names) + " |")

@@ -387,6 +387,7 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     # Channel fusion: the caller's query on PubMed plus a provider-neutral
     # sibling on full-text and semantic channels, fused by provider rank.
     "hybrid": ("hybrid", True),
+    "no_breadth_quota": ("breadth_quota", False),
     # Turn OFF features (default ON)
     "no_oa": ("include_oa_links", False),
     "no_analysis": ("show_analysis", False),

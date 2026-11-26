@@ -19,7 +19,12 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from pubmed_search.application.search.channel_fusion import HYBRID_CHANNELS, fuse_channels, hybrid_channel_limit
+from pubmed_search.application.search.channel_fusion import (
+    DEFAULT_BREADTH_QUOTA,
+    HYBRID_CHANNELS,
+    fuse_channels,
+    hybrid_channel_limit,
+)
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.domain.entities.article import RetrievalProvenance, UnifiedArticle
@@ -186,11 +191,33 @@ async def _search_single_source(
         msg = f"No search adapter is registered for source '{source}'"
         raise ValueError(msg)
 
-    outcome = validate_source_adapter_result(
-        await runner(query, limit, min_year, max_year, runner_options),
-        expected_source=source,
-        expected_operation="search",
-    )
+    semantic_channel = plan.request.hybrid and runner_options.get("_retrieval_mode") == "semantic"
+    outcome: SourceAdapterResult[UnifiedArticle] | None
+    try:
+        outcome = validate_source_adapter_result(
+            await runner(query, limit, min_year, max_year, runner_options),
+            expected_source=source,
+            expected_operation="search",
+        )
+    except Exception:
+        if not semantic_channel:
+            raise
+        outcome = None
+    if semantic_channel and (outcome is None or outcome.status == "error"):
+        # Provider-native semantic search is not available to every caller.
+        # The same content terms through keyword relevance keep the channel alive.
+        semantic_failure = outcome.errors[0].kind if outcome is not None and outcome.errors else "exception"
+        runner_options["_retrieval_mode"] = "auto"
+        outcome = validate_source_adapter_result(
+            await runner(query, limit, min_year, max_year, runner_options),
+            expected_source=source,
+            expected_operation="search",
+        )
+        outcome.metadata["provider_mode"] = "keyword_fallback"
+        outcome.metadata["semantic_fallback_reason"] = semantic_failure
+    if outcome is None:  # pragma: no cover - non-semantic failures re-raise above
+        msg = f"Source adapter '{source}' returned no result"
+        raise RuntimeError(msg)
 
     if plan.request.hybrid:
         outcome.metadata.setdefault("logical_query", query)
@@ -313,8 +340,17 @@ async def execute_unified_search(
                 source_errors.append(error_payload)
             logger.debug("Clinical trials adjunct startup failed (%s)", type(exc).__name__)
 
+    # Hybrid search keeps the default precision-first PubMed retrieval (exact
+    # query first, disclosed fill tiers) as its primary channel and runs the
+    # provider-neutral channels beside it, one ranked request each.
+    deep_strategies = (
+        [strategy for strategy in plan.deep_strategies if strategy.source == "pubmed"]
+        if request.hybrid
+        else plan.deep_strategies
+    )
+    use_deep = bool(request.deep_search and plan.enhanced_query and deep_strategies)
     try:
-        if request.deep_search and plan.enhanced_query and plan.deep_strategies:
+        if use_deep:
             enhanced_query = plan.enhanced_query
             await progress(4, 10, f"Deep search: {len(plan.deep_strategies)} strategies...")
             logger.info("Executing DEEP SEARCH with %s strategies", len(plan.deep_strategies))
@@ -326,11 +362,11 @@ async def execute_unified_search(
                 deep_source_errors,
             ) = await source_broker.execute_deep_search(
                 enhanced_query,
-                request.limit,
+                hybrid_channel_limit(request.limit) if request.hybrid else request.limit,
                 plan.effective_min_year,
                 plan.effective_max_year,
                 request.advanced_filters,
-                strategies=plan.deep_strategies,
+                strategies=deep_strategies,
                 eligibility=eligibility,
                 # The no_relax option opts out of every automatic broadening path;
                 # MeSH correction is separate (options="no_mesh_correction").
@@ -425,9 +461,16 @@ async def execute_unified_search(
                 deep_search_metrics.strategies_with_results,
                 deep_search_metrics.depth_score,
             )
-        else:
-            logger.info("Using traditional source-based search (no deep search)")
-            search_sources = [source for source in plan.dispatch_sources if source != "crossref"]
+            if request.hybrid and source_statuses.get("pubmed") != "error":
+                # Exact-tier records first, then disclosed fill tiers, each in provider order.
+                channel_results["pubmed"] = [article for batch in all_results for article in batch]
+        if not use_deep or request.hybrid:
+            logger.info("Running single-pass source search")
+            search_sources = [
+                source
+                for source in plan.dispatch_sources
+                if source != "crossref" and not (use_deep and source == "pubmed")
+            ]
 
             def _build_search_call(source: str) -> SourceAdapterCall[UnifiedArticle]:
                 async def _execute() -> SourceAdapterResult[UnifiedArticle]:
@@ -444,7 +487,7 @@ async def execute_unified_search(
                 [_build_search_call(source) for source in search_sources],
                 per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
             )
-            if corrector is not None:
+            if corrector is not None and not use_deep:
                 search_results = await _correct_single_pass_pubmed(plan, search_results, search_functions, corrector)
 
             # A default simple/lookup search often has one fast primary leg. If
@@ -454,6 +497,7 @@ async def execute_unified_search(
             # and provider-native/systematic contracts remain fail-closed.
             if (
                 request.sources is None
+                and not request.hybrid
                 and request.retrieval_mode == "auto"
                 and (analysis.complexity.value == "simple" or analysis.intent.value == "lookup")
                 and not pubmed_field_tags(plan.provider_neutral_query)
@@ -702,13 +746,23 @@ async def execute_unified_search(
                 if request.exclude_seen and request.seen_search_count is not None
                 else ranked
             )
-            fused, fusion_report = fuse_channels(fusion_pool, channel_results, limit=request.limit or len(fusion_pool))
+            fused, fusion_report = fuse_channels(
+                fusion_pool,
+                channel_results,
+                limit=request.limit or len(fusion_pool),
+                breadth_quota=DEFAULT_BREADTH_QUOTA if request.breadth_quota else 0.0,
+            )
             fused_ids = {id(article) for article in fused}
             ranked = [*fused, *(article for article in ranked if id(article) not in fused_ids)]
             hybrid_disclosure = {
                 **fusion_report.to_dict(),
                 "queries": {
                     source: metadata.get("physical_query")
+                    for source, metadata in source_metadata.items()
+                    if source in channel_results
+                },
+                "modes": {
+                    source: metadata.get("provider_mode")
                     for source, metadata in source_metadata.items()
                     if source in channel_results
                 },

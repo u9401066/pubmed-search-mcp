@@ -268,10 +268,7 @@ async def build_unified_search_plan(
     # not add an undeclared PubTator request or let process-wide entity-cache
     # state influence their ranking/query plan.
     skip_enhancement = (
-        request.hybrid
-        or request.retrieval_mode != "auto"
-        or analysis.complexity.value == "simple"
-        or analysis.intent.value == "lookup"
+        request.retrieval_mode != "auto" or analysis.complexity.value == "simple" or analysis.intent.value == "lookup"
     )
 
     if skip_enhancement:

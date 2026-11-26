@@ -104,7 +104,9 @@ async def test_topic_run_scores_every_arm_and_credits_breadth_only_gold(monkeypa
     assert summary["mesh:hybrid"]["recall@10"] == 0.5
     assert summary["mesh:pubmed"]["recall@10"] == round(2 / 6, 4)
     report = {"topics_total": 1, "topics_scored": 1, "summary": summary, "topics": [row]}
-    assert "| mesh | hybrid | 0.500 |" in to_markdown(report)
+    markdown = to_markdown(report)
+    assert "| mesh | hybrid | 0.500 |" in markdown
+    assert "semantic channel fell back to keyword search: 0" in markdown
 
 
 def test_incomplete_topics_are_left_out_of_the_mean() -> None:
