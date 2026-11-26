@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `integrity_alerts` list, and puts a caution note first when a cited work was
   retracted or received an expression of concern. A `none_found` status means
   no provider recorded a notice; it is not a validity judgement.
+- **Opt-in `core` tool profile** (`PUBMED_TOOL_PROFILE=core`): publishes 10
+  research tools with 1.4 K-character English instructions instead of 44 tools
+  and 21 K characters (about 66 KB instead of 250 KB of tool definitions).
+  Next-tool suggestions never name a tool outside the published profile. The
+  default stays `full` until the harness evaluation compares both profiles.
 
 ## [0.12.0] - 2026-11-25
 

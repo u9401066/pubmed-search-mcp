@@ -232,6 +232,53 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
 # ============================================================================
 
 
+#: Tool profiles. ``full`` publishes every registered tool. ``core`` keeps the
+#: tools an agent needs for search, appraisal, citation graph, full text and
+#: reference checking, so each session starts with a smaller tool list and
+#: shorter server instructions. Hidden tools are not registered in ``core``.
+TOOL_PROFILES: dict[str, tuple[str, ...] | None] = {
+    "full": None,
+    "core": (
+        "unified_search",
+        "generate_search_queries",
+        "analyze_search_query",
+        "fetch_article_details",
+        "find_related_articles",
+        "find_citing_articles",
+        "get_article_references",
+        "get_citation_metrics",
+        "get_fulltext",
+        "verify_reference_list",
+    ),
+}
+
+
+def apply_tool_profile(mcp: MCPServer, profile: str) -> tuple[str, ...]:
+    """Remove tools outside ``profile`` and return the published tool names.
+
+    Next-tool suggestions are restricted to the same set so no response points
+    an agent at a tool it cannot call.
+    """
+    from .tools.agent_output import set_published_tools
+
+    if profile not in TOOL_PROFILES:
+        msg = f"Unknown tool profile: {profile!r}; expected one of {sorted(TOOL_PROFILES)}"
+        raise ValueError(msg)
+    keep = TOOL_PROFILES[profile]
+    registered = _extract_registered_tool_names(mcp)
+    if keep is None:
+        set_published_tools(None)
+        return tuple(sorted(registered))
+    missing = set(keep) - registered
+    if missing:
+        msg = f"Tool profile {profile!r} names unregistered tools: {sorted(missing)}"
+        raise RuntimeError(msg)
+    for name in sorted(registered - set(keep)):
+        mcp._tool_manager.remove_tool(name)  # noqa: SLF001 - SDK has no public removal API
+    set_published_tools(frozenset(keep))
+    return keep
+
+
 def build_pipeline_runtime(
     *,
     searcher: LiteratureSearcher,
@@ -596,6 +643,8 @@ def check_tool_registration(mcp: MCPServer, raise_on_error: bool = False) -> boo
 
 __all__ = [
     "TOOL_CATEGORIES",
+    "TOOL_PROFILES",
+    "apply_tool_profile",
     "check_tool_registration",
     "generate_tools_index_markdown",
     "get_tool_info",

@@ -116,6 +116,15 @@ def make_next_tool(tool: str, reason: str, command: str) -> dict[str, str]:
     }
 
 
+_PUBLISHED_TOOLS: frozenset[str] | None = None
+
+
+def set_published_tools(names: frozenset[str] | None) -> None:
+    """Restrict next-tool suggestions to the published tool profile (``None`` = all)."""
+    global _PUBLISHED_TOOLS  # one profile per server process
+    _PUBLISHED_TOOLS = names
+
+
 def finalize_next_tools(
     suggestions: Sequence[Mapping[str, str]],
     *,
@@ -134,6 +143,8 @@ def finalize_next_tools(
         command = str(suggestion.get("command") or suggestion.get("example") or "").strip()
         reason = str(suggestion.get("reason", "")).strip()
         if not tool or not command or tool in seen_tools:
+            continue
+        if _PUBLISHED_TOOLS is not None and tool not in _PUBLISHED_TOOLS:
             continue
         next_tools.append(make_next_tool(tool, reason, command))
         seen_tools.add(tool)

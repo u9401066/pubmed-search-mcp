@@ -34,10 +34,10 @@ from pubmed_search.container import ApplicationContainer
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, load_settings
 
 from .auth import build_auth
-from .instructions import SERVER_INSTRUCTIONS
+from .instructions import CORE_SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS
 from .tenancy import build_tenancy_middleware
 from .tool_contracts import PubMedMCPServer
-from .tool_registry import build_pipeline_runtime, register_all_mcp_tools
+from .tool_registry import apply_tool_profile, build_pipeline_runtime, register_all_mcp_tools
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -343,7 +343,7 @@ def create_server(
     # ── Create MCP server with lifespan ─────────────────────────────────
     mcp = PubMedMCPServer(
         name,
-        instructions=SERVER_INSTRUCTIONS,
+        instructions=CORE_SERVER_INSTRUCTIONS if settings.tool_profile == "core" else SERVER_INSTRUCTIONS,
         version=__version__,
         lifespan=_make_lifespan(container, pipeline_runtime, source_runtime),
         token_verifier=token_verifier,
@@ -377,6 +377,8 @@ def create_server(
         source_runtime=source_runtime,
     )
     logger.info("Tool registration complete: %s", stats)
+    published = apply_tool_profile(mcp, settings.tool_profile)
+    logger.info("Tool profile %s publishes %d tools", settings.tool_profile, len(published))
 
     # ── Per-tenant session isolation ────────────────────────────────────
     # Tool dependencies are installed on ``mcp`` before registration and

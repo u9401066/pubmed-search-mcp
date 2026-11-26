@@ -89,6 +89,9 @@ class AppSettings(BaseSettings):
         le=1_000,
     )
 
+    # Public tool surface: "full" (every tool) or "core" (agent research core).
+    tool_profile: Literal["full", "core"] = Field(default="full", alias="PUBMED_TOOL_PROFILE")
+
     # Multi-agent deployment: auth, tenant isolation, and per-tenant fairness.
     auth_tokens_raw: str = Field(default="", alias="PUBMED_AUTH_TOKENS")
     auth_required: bool = Field(default=False, alias="PUBMED_AUTH_REQUIRED")
@@ -202,7 +205,7 @@ class AppSettings(BaseSettings):
             return stripped or None
         return value
 
-    @field_validator("server_mode", mode="before")
+    @field_validator("server_mode", "tool_profile", mode="before")
     @classmethod
     def _normalize_server_mode(cls, value: object) -> object:
         if isinstance(value, str):

@@ -498,4 +498,32 @@ NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: p
    結構驗證、自動修正與安全降階，可直接在 VS Code 或 GitHub Markdown 中預覽。
 """
 
-__all__ = ["SERVER_INSTRUCTIONS"]
+CORE_SERVER_INSTRUCTIONS = """\
+PubMed Search MCP (core profile): biomedical literature tools that return
+verifiable identifiers (PMID, DOI, PMCID) and provider-reported counts.
+
+When to prefer these tools over web search:
+- Finding studies: unified_search searches PubMed, Europe PMC, OpenAlex and
+  others, deduplicates them and reports per-source totals. Use PubMed syntax
+  ([MeSH], [tiab], Boolean) for precision; check search_status and
+  source_errors before concluding nothing exists. Retryable errors mean
+  repeat the same call, not change the query.
+- Building a strategy: generate_search_queries expands MeSH and synonyms;
+  analyze_search_query shows how PubMed translated a query and flags phrases
+  it could not find.
+- Reading a paper: fetch_article_details for metadata and abstract;
+  get_fulltext for open-access body text (use sections= to read only what you
+  need).
+- Citation graph: find_related_articles, find_citing_articles,
+  get_article_references; get_citation_metrics for iCite counts and RCR.
+- Checking citations: verify_reference_list confirms each reference exists,
+  proposes field corrections and raises integrity_alerts.
+
+Integrity: records carry an integrity block when PubMed, OpenAlex or Crossref
+recorded a retraction, expression of concern, erratum or update. Tell the user
+before citing a flagged work. "none_found" is not a validity judgement.
+
+Cite PMIDs or DOIs you actually retrieved; never invent identifiers.
+"""
+
+__all__ = ["CORE_SERVER_INSTRUCTIONS", "SERVER_INSTRUCTIONS"]
