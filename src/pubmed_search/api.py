@@ -55,6 +55,8 @@ class UnifiedSearchResult:
     """Precision-first ``search-broadening/v1`` disclosure; ``None`` when no tiering/relaxation ran."""
     mesh_correction: dict[str, Any] | None = None
     """Automatic PubMed MeSH correction disclosure; ``None`` when PubMed flagged no MeSH clause."""
+    hybrid: dict[str, Any] | None = None
+    """Channel-fusion disclosure for ``options="hybrid"``; ``None`` otherwise."""
 
     @classmethod
     def from_outcome(cls, outcome: Any) -> UnifiedSearchResult:
@@ -78,6 +80,7 @@ class UnifiedSearchResult:
             result_filter_counts=dict(execution.result_filter_counts),
             broadening=getattr(execution, "broadening", None),
             mesh_correction=getattr(execution, "mesh_correction", None),
+            hybrid=getattr(execution, "hybrid", None),
         )
 
 

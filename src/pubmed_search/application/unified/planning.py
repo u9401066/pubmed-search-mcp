@@ -19,7 +19,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.search.channel_fusion import HYBRID_CHANNELS
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryAnalyzer
+from pubmed_search.application.search.query_dialect import neutralize_pubmed_query
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import RankingConfig
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
@@ -53,6 +55,10 @@ class UnifiedSearchPlan:
     ranking_config: RankingConfig
     effective_min_year: int | None
     effective_max_year: int | None
+    # Hybrid search only: content terms for the semantic channel and the
+    # restriction clauses that had no provider-neutral equivalent.
+    hybrid_semantic_query: str = ""
+    hybrid_dropped_clauses: tuple[str, ...] = ()
 
 
 def _build_provider_neutral_icd_query(
@@ -262,7 +268,10 @@ async def build_unified_search_plan(
     # not add an undeclared PubTator request or let process-wide entity-cache
     # state influence their ranking/query plan.
     skip_enhancement = (
-        request.retrieval_mode != "auto" or analysis.complexity.value == "simple" or analysis.intent.value == "lookup"
+        request.hybrid
+        or request.retrieval_mode != "auto"
+        or analysis.complexity.value == "simple"
+        or analysis.intent.value == "lookup"
     )
 
     if skip_enhancement:
@@ -301,6 +310,21 @@ async def build_unified_search_plan(
         )
 
     dispatch_sources = user_sources or auto_sources
+    hybrid_semantic_query = ""
+    hybrid_dropped_clauses: tuple[str, ...] = ()
+    if request.hybrid:
+        neutral = neutralize_pubmed_query(provider_neutral_query)
+        provider_neutral_query = neutral.boolean
+        hybrid_semantic_query = neutral.semantic
+        hybrid_dropped_clauses = neutral.dropped
+        if user_sources is None:
+            enrichment_only = [source for source in auto_sources if source not in HYBRID_CHANNELS]
+            dispatch_sources = [
+                source for source in HYBRID_CHANNELS if registry.is_enabled(source) and source not in excluded_sources
+            ] + enrichment_only
+        if not provider_neutral_query:
+            # Only restriction clauses were given: nothing to send to a neutral channel.
+            dispatch_sources = [source for source in dispatch_sources if source in {"pubmed", "crossref"}]
     if not dispatch_sources:
         msg = "No enabled sources are available for unified_search"
         raise ValueError(msg)
@@ -320,11 +344,13 @@ async def build_unified_search_plan(
         dispatch_sources=dispatch_sources,
         registry=registry,
     )
-    _validate_query_dialect(
-        request=request,
-        dispatch_sources=dispatch_sources,
-        registry=registry,
-    )
+    if not request.hybrid:
+        # Hybrid search translates the query per channel instead of rejecting it.
+        _validate_query_dialect(
+            request=request,
+            dispatch_sources=dispatch_sources,
+            registry=registry,
+        )
     if not any(
         (definition := registry.get(source)) is not None and definition.supports_primary_search
         for source in dispatch_sources
@@ -371,6 +397,8 @@ async def build_unified_search_plan(
         ranking_config=ranking_config,
         effective_min_year=request.min_year or analysis.year_from,
         effective_max_year=request.max_year or analysis.year_to,
+        hybrid_semantic_query=hybrid_semantic_query,
+        hybrid_dropped_clauses=hybrid_dropped_clauses,
     )
 
 

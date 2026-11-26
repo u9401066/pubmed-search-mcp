@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.application.search.channel_fusion import HYBRID_CHANNELS, fuse_channels, hybrid_channel_limit
 from pubmed_search.application.search.query_validator import pubmed_field_tags
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.domain.entities.article import RetrievalProvenance, UnifiedArticle
@@ -124,6 +125,8 @@ class UnifiedSearchExecutionResult:
     exclude_seen_message: str | None = None
     broadening: dict[str, Any] | None = None
     mesh_correction: dict[str, Any] | None = None
+    hybrid: dict[str, Any] | None = None
+    """Channel-fusion disclosure for ``options="hybrid"``; ``None`` otherwise."""
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -169,6 +172,10 @@ async def _search_single_source(
     runner_options: dict[str, Any] = dict(plan.request.advanced_filters)
     if source in {"openalex", "semantic_scholar"}:
         runner_options["_retrieval_mode"] = plan.request.retrieval_mode
+    if plan.request.hybrid and source == "openalex" and plan.hybrid_semantic_query and query_override is None:
+        # The semantic channel ranks by meaning, so it gets content terms, not Boolean syntax.
+        runner_options["_retrieval_mode"] = "semantic"
+        query = plan.hybrid_semantic_query
 
     if source == "crossref":
         msg = "Crossref is an enrichment source and cannot be used as the only primary search adapter"
@@ -185,6 +192,10 @@ async def _search_single_source(
         expected_operation="search",
     )
 
+    if plan.request.hybrid:
+        outcome.metadata.setdefault("logical_query", query)
+        outcome.metadata.setdefault("physical_query", query)
+        outcome.metadata.setdefault("provider_mode", runner_options.get("_retrieval_mode", "auto"))
     outcome.metadata.setdefault("requested_mode", plan.request.retrieval_mode)
     if source != "pubmed" and plan.request.advanced_filters:
         warnings = outcome.metadata.setdefault("warnings", [])
@@ -267,6 +278,8 @@ async def execute_unified_search(
     eligibility = _retrieval_eligibility(request)
     exact_pubmed_eligible: int | None = None
     all_results: list[list[UnifiedArticle]] = []
+    channel_results: dict[str, list[UnifiedArticle]] = {}
+    hybrid_disclosure: dict[str, Any] | None = None
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
     deep_search_metrics: SearchDepthMetrics | None = None
@@ -418,7 +431,12 @@ async def execute_unified_search(
 
             def _build_search_call(source: str) -> SourceAdapterCall[UnifiedArticle]:
                 async def _execute() -> SourceAdapterResult[UnifiedArticle]:
-                    return await _search_single_source(source, plan, search_functions)
+                    return await _search_single_source(
+                        source,
+                        plan,
+                        search_functions,
+                        limit_override=hybrid_channel_limit(request.limit) if request.hybrid else None,
+                    )
 
                 return SourceAdapterCall(source=source, operation="search", execute=_execute)
 
@@ -513,6 +531,8 @@ async def execute_unified_search(
                 total_count = raw_total_count if isinstance(raw_total_count, int) else None
                 if articles:
                     all_results.append(articles)
+                if request.hybrid and result.status != "error":
+                    channel_results[result.source] = list(articles)
                 source_api_counts[result.source] = (len(articles), total_count)
                 source_statuses[result.source] = result.status
                 source_metadata[result.source] = attempt_metadata
@@ -667,12 +687,38 @@ async def execute_unified_search(
                 )
 
         await progress(8, 10, "Ranking results...")
+        hybrid_fusion = request.hybrid and bool(channel_results) and relaxation_result is None
         ranked = _rank_articles_deterministically(
             articles,
             aggregator,
             plan.ranking_config,
             plan.query,
         )
+        if hybrid_fusion:
+            # Order by provider ranks; the local score above only breaks ties
+            # between records no channel ranked.
+            fusion_pool = (
+                exclude_seen_articles(ranked, request.seen_pmids, request.seen_dois)
+                if request.exclude_seen and request.seen_search_count is not None
+                else ranked
+            )
+            fused, fusion_report = fuse_channels(fusion_pool, channel_results, limit=request.limit or len(fusion_pool))
+            fused_ids = {id(article) for article in fused}
+            ranked = [*fused, *(article for article in ranked if id(article) not in fused_ids)]
+            hybrid_disclosure = {
+                **fusion_report.to_dict(),
+                "queries": {
+                    source: metadata.get("physical_query")
+                    for source, metadata in source_metadata.items()
+                    if source in channel_results
+                },
+                "dropped_clauses": list(plan.hybrid_dropped_clauses),
+                "failed_channels": sorted(
+                    source
+                    for source, status in source_statuses.items()
+                    if status == "error" and source in HYBRID_CHANNELS
+                ),
+            }
         excluded_seen_count = 0
         exclude_seen_message = None
         if request.exclude_seen:
@@ -795,6 +841,7 @@ async def execute_unified_search(
             enrichment_metadata=enrichment_metadata,
             broadening=broadening,
             mesh_correction=mesh_correction_disclosure,
+            hybrid=hybrid_disclosure,
         )
     finally:
         if clinical_trials_task is not None and not clinical_trials_task.done():

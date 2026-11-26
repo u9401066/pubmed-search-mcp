@@ -245,6 +245,15 @@ def register_unified_search_tools(
                                         search; exclusive with full_records
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
+                       hybrid         → channel fusion: your query runs on PubMed as
+                                        written (MeSH/field tags allowed) while a
+                                        tag-free version runs on Europe PMC full
+                                        text and OpenAlex semantic search. Results
+                                        are ordered by each provider's own rank;
+                                        every record lists `found_by`, and about a
+                                        quarter of slots are kept for records PubMed
+                                        did not return. Not with native_semantic,
+                                        systematic or pipeline.
                        no_relax       → disable automatic broadening (deep fill tiers
                                         and auto-relaxation on 0 results); MeSH
                                         correction still runs

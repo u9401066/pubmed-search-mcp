@@ -510,6 +510,50 @@ def _relaxation_step_payload(step: Any) -> dict[str, Any]:
     return payload
 
 
+_CHANNEL_LABELS = {"pubmed": "PubMed", "europe_pmc": "full text", "openalex": "semantic"}
+
+
+def _channel_label(channel: str) -> str:
+    return _CHANNEL_LABELS.get(channel, channel)
+
+
+def _format_hybrid_section(hybrid: Mapping[str, Any] | None) -> list[str]:
+    """Render which hybrid-search channels ran and what each was asked."""
+    if not hybrid:
+        return []
+    raw_channels = hybrid.get("channels")
+    channels: Mapping[str, Any] = raw_channels if isinstance(raw_channels, Mapping) else {}
+    counts = ", ".join(f"{_channel_label(str(name))} {count}" for name, count in channels.items())
+    lines = [
+        "### 🔀 Hybrid search (ranked by provider order across channels)\n",
+        f"- Channels: {_escape_markdown_text(counts)}",
+        f"- Returned: {int(hybrid.get('multi_channel_records') or 0)} found by 2+ channels, "
+        f"{int(hybrid.get('breadth_only_records') or 0)} not returned by PubMed "
+        "(marked 🧭; check relevance before citing)",
+    ]
+    raw_queries = hybrid.get("queries")
+    queries: Mapping[str, Any] = raw_queries if isinstance(raw_queries, Mapping) else {}
+    for name, query in queries.items():
+        if name != "pubmed" and query:
+            lines.append(f"- {_channel_label(str(name))} query: `{_escape_markdown_text(str(query))}`")
+    dropped = [str(item) for item in hybrid.get("dropped_clauses") or ()]
+    if dropped:
+        lines.append(f"- Applied on PubMed only: {_escape_markdown_text(', '.join(dropped))}")
+    failed = [str(item) for item in hybrid.get("failed_channels") or ()]
+    if failed:
+        lines.append(f"- ⚠️ Channel failed (repeat the call to retry): {_escape_markdown_text(', '.join(failed))}")
+    return lines
+
+
+def _found_by_text(article: UnifiedArticle) -> str | None:
+    """Return a compact per-record channel line for hybrid results."""
+    if not article.channels:
+        return None
+    hits = ", ".join(f"{_channel_label(hit.channel)} #{hit.rank}" for hit in article.channels)
+    marker = "" if article.found_by("pubmed") else "🧭 "
+    return f"**Found by**: {marker}{hits}"
+
+
 def _format_broadening_section(broadening: Mapping[str, Any] | None) -> list[str]:
     """Render the precision-first broadening disclosure for markdown readers."""
     if not broadening:
@@ -624,6 +668,7 @@ async def _format_unified_results(
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
+    hybrid: Mapping[str, Any] | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -750,6 +795,11 @@ async def _format_unified_results(
         output_parts.extend(mesh_correction_lines)
         output_parts.append("")
 
+    hybrid_lines = _format_hybrid_section(hybrid)
+    if hybrid_lines:
+        output_parts.extend(hybrid_lines)
+        output_parts.append("")
+
     broadening_lines = _format_broadening_section(broadening)
     if broadening_lines:
         output_parts.extend(broadening_lines)
@@ -854,6 +904,10 @@ async def _format_unified_results(
             ids.append(f"PMC: {_escape_markdown_text(article.pmc)}")
         if ids:
             output_parts.append(" | ".join(ids))
+
+        found_by = _found_by_text(article)
+        if found_by:
+            output_parts.append(found_by)
 
         # Retraction / concern / erratum notices (only when one exists)
         integrity_badge = article.integrity.badge
@@ -1059,7 +1113,9 @@ def _compact_article_payload(article: UnifiedArticle, *, include_rank_scores: bo
 
 
 def _add_integrity_flag(payload: dict[str, Any], article: UnifiedArticle) -> None:
-    """Attach integrity notices only when one exists, to keep clean rows small."""
+    """Attach integrity notices and hybrid channels only when present, to keep rows small."""
+    if article.channels:
+        payload["found_by"] = [hit.to_dict() for hit in article.channels]
     integrity = article.integrity
     if integrity.flagged:
         payload["integrity"] = integrity.to_dict()
@@ -1217,6 +1273,8 @@ def _serialize_truncated_response_payload(
         truncated_payload["broadening"] = compact_broadening(payload["broadening"])
     if payload.get("mesh_correction"):
         truncated_payload["mesh_correction"] = compact_mesh_correction(payload["mesh_correction"])
+    if payload.get("hybrid"):
+        truncated_payload["hybrid"] = payload["hybrid"]
     if payload.get("search_run"):
         truncated_payload["search_run"] = payload["search_run"]
 
@@ -1451,6 +1509,7 @@ def _format_as_json(
     exclude_seen_message: str | None = None,
     broadening: Mapping[str, Any] | None = None,
     mesh_correction: Mapping[str, Any] | None = None,
+    hybrid: Mapping[str, Any] | None = None,
     record_detail: RecordDetail = "full",
     retry_arguments: Mapping[str, Any] | None = None,
 ) -> str:
@@ -1504,6 +1563,8 @@ def _format_as_json(
             cap_context["broadening"] = dict(broadening)
         if mesh_correction:
             cap_context["mesh_correction"] = dict(mesh_correction)
+        if hybrid:
+            cap_context["hybrid"] = dict(hybrid)
         if enrichment_metadata:
             cap_context["enrichment"] = enrichment_metadata
         if artifact_manifest:
@@ -1574,6 +1635,10 @@ def _format_as_json(
     if mesh_correction:
         # Always present when PubMed flagged a MeSH clause: what was rewritten and why.
         result["mesh_correction"] = dict(mesh_correction)
+    if hybrid:
+        # Which channels ran, with what query, and how many records only a
+        # non-PubMed channel found.
+        result["hybrid"] = dict(hybrid)
     if source_metadata:
         result["source_metadata"] = source_metadata
     if enrichment_metadata:

@@ -156,6 +156,8 @@ class UnifiedSearchRequest:
     # agent-sized default, "full" (options="full_records") the complete record
     # and "compact" (options="compact") the minimal preview.
     record_detail: RecordDetail = "summary"
+    # options="hybrid": fuse PubMed, full-text and semantic channels by provider rank.
+    hybrid: bool = False
 
     @property
     def retrieval_mode(self) -> Literal["auto", "semantic", "systematic"]:
@@ -227,6 +229,13 @@ def normalize_unified_search_request(
     if native_semantic and systematic_search:
         msg = "options 'native_semantic' and 'systematic' are mutually exclusive"
         raise ValueError(msg)
+    hybrid = parsed_options.get("hybrid", False)
+    if hybrid and (native_semantic or systematic_search):
+        msg = "option 'hybrid' cannot be combined with 'native_semantic' or 'systematic'"
+        raise ValueError(msg)
+    if hybrid and pipeline:
+        msg = "option 'hybrid' is not supported with pipeline"
+        raise ValueError(msg)
     compact_output = parsed_options.get("compact_output", False)
     full_records = parsed_options.get("full_records", False)
     if compact_output and full_records:
@@ -276,7 +285,10 @@ def normalize_unified_search_request(
         # Boolean federation with a broader PubMed-only query would silently
         # change both recall semantics and source provenance.
         auto_relax=False if systematic_search else parsed_options.get("auto_relax", True),
-        deep_search=False if explicit_provider_mode else parsed_options.get("deep_search", True),
+        # Hybrid search runs one ranked request per channel; tiered deepening
+        # would replace provider rank order with fill order.
+        deep_search=False if explicit_provider_mode or hybrid else parsed_options.get("deep_search", True),
+        hybrid=hybrid,
         fulltext=fulltext,
         exclude_seen=parsed_options.get("exclude_seen", False),
         mesh_correction=parsed_options.get("mesh_correction", True),

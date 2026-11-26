@@ -451,6 +451,17 @@ class RetrievalProvenance:
         }
 
 
+@dataclass(frozen=True)
+class ChannelHit:
+    """One hybrid-search channel that returned a record, with its provider rank."""
+
+    channel: str
+    rank: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"channel": self.channel, "rank": self.rank}
+
+
 @dataclass
 class UnifiedArticle:
     """
@@ -529,6 +540,9 @@ class UnifiedArticle:
     # Strategy/tier provenance; populated only by tiered deep search and
     # zero-result relaxation. Empty means "not tiered" (shallow/plain search).
     retrieval: list[RetrievalProvenance] = field(default_factory=list)
+    # Hybrid-search channels that returned this record, with each provider's
+    # own rank. Empty outside hybrid search.
+    channels: list[ChannelHit] = field(default_factory=list)
 
     # === Internal (ranking scores, set by ResultAggregator) ===
     relevance_score: float | None = field(default=None, repr=False)
@@ -629,6 +643,10 @@ class UnifiedArticle:
                 if text and text not in values:
                     values.append(text)
         return values
+
+    def found_by(self, channel: str) -> bool:
+        """Whether the named hybrid-search channel returned this record."""
+        return any(hit.channel == channel for hit in self.channels)
 
     @property
     def integrity(self) -> PublicationIntegrity:
@@ -1031,6 +1049,8 @@ class UnifiedArticle:
             result["retrieval"] = retrieval
 
         result["integrity"] = self.integrity.to_dict()
+        if self.channels:
+            result["found_by"] = [hit.to_dict() for hit in self.channels]
 
         # Add citation metrics if available
         if self.citation_metrics:

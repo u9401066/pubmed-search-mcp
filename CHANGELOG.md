@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `integrity_alerts` list, and puts a caution note first when a cited work was
   retracted or received an expression of concern. A `none_found` status means
   no provider recorded a notice; it is not a validity judgement.
+- **Hybrid search (`unified_search(options="hybrid")`).** The caller's query
+  runs on PubMed as written, MeSH and field tags included, while a tag-free
+  translation runs on Europe PMC full text and OpenAlex semantic search.
+  Records are ordered by reciprocal-rank fusion of each provider's own rank
+  (PubMed Best Match counts double), not by local abstract scoring. Every
+  record lists `found_by` with channel ranks; about a quarter of the returned
+  slots are kept for records PubMed did not return, and those are marked. The
+  `hybrid` block discloses each channel's query, restriction clauses applied on
+  PubMed only, and failed channels. Opt-in; default search is unchanged.
 - **Opt-in `core` tool profile** (`PUBMED_TOOL_PROFILE=core`): publishes 10
   research tools with 1.4 K-character English instructions instead of 44 tools
   and 21 K characters (about 66 KB instead of 250 KB of tool definitions).
