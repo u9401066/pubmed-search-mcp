@@ -298,3 +298,28 @@ class TestRealImageSearch:
         assert len(result.advisor_warnings) > 0
         assert any("mc" in w for w in result.advisor_warnings)
         assert result.recommended_image_type == "mc"
+
+
+class TestRealPublicationIntegrity:
+    """Live retraction detection on a well-known retracted article (Wakefield 1998, PMID 9500320)."""
+
+    async def test_pubmed_record_names_its_retraction_notice(self, real_email):
+        from pubmed_search.domain.services.publication_integrity import STATUS_RETRACTED, assess_integrity
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+        await asyncio.sleep(1)
+        rows = await LiteratureSearcher(email=real_email).fetch_details(["9500320"])
+
+        assert rows, "PubMed returned no record for PMID 9500320"
+        integrity = assess_integrity([("pubmed", rows[0])])
+        assert integrity.status == STATUS_RETRACTED
+        assert "20137807" in {notice.pmid for notice in integrity.notices}
+
+    async def test_openalex_reports_is_retracted(self, real_email):
+        from pubmed_search.domain.services.publication_integrity import STATUS_RETRACTED, assess_integrity
+        from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
+
+        work = await OpenAlexClient(email=real_email).get_work("pmid:9500320")
+
+        assert work is not None
+        assert assess_integrity([("openalex", work)]).status == STATUS_RETRACTED
