@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "description": "Pilot topics for the hybrid-search retrieval benchmark. Each topic is a published systematic review or meta-analysis in PubMed Central. Gold records are the primary studies in its PubMed reference list, fetched live; they are a proxy for the review's included studies because a reference list also holds background citations. Queries were written from the review question alone, before any gold record was seen.",
+  "topics": [
+    {
+      "id": "remimazolam_elderly_ga",
+      "review_pmid": "39069837",
+      "max_year": 2024,
+      "question": "remimazolam versus propofol for general anaesthesia in elderly patients hypotension recovery",
+      "pubmed_query": "remimazolam[tiab] AND \"Propofol\"[Mesh] AND (\"Aged\"[Mesh] OR elderly[tiab] OR older[tiab]) AND \"Anesthesia, General\"[Mesh]"
+    },
+    {
+      "id": "sugammadex_pulmonary_complications",
+      "review_pmid": "37027443",
+      "max_year": 2023,
+      "question": "sugammadex versus neostigmine postoperative pulmonary complications pneumonia respiratory failure",
+      "pubmed_query": "(\"Sugammadex\"[Mesh] OR sugammadex[tiab]) AND (\"Neostigmine\"[Mesh] OR neostigmine[tiab]) AND (\"Postoperative Complications\"[Mesh] OR pulmonary complications[tiab] OR pneumonia[tiab])"
+    },
+    {
+      "id": "tranexamic_acid_knee_route",
+      "review_pmid": "33267906",
+      "max_year": 2020,
+      "question": "intra-articular versus intravenous tranexamic acid in primary total knee arthroplasty blood loss",
+      "pubmed_query": "\"Tranexamic Acid\"[Mesh] AND \"Arthroplasty, Replacement, Knee\"[Mesh] AND (intra-articular[tiab] OR topical[tiab]) AND intravenous[tiab]"
+    },
+    {
+      "id": "esketamine_neurocognitive",
+      "review_pmid": "39639216",
+      "max_year": 2024,
+      "question": "esketamine postoperative delirium and cognitive dysfunction in adult surgical patients under general anaesthesia",
+      "pubmed_query": "(esketamine[tiab] OR \"S-ketamine\"[tiab]) AND (\"Postoperative Cognitive Complications\"[Mesh] OR \"Emergence Delirium\"[Mesh] OR \"Delirium\"[Mesh] OR postoperative delirium[tiab] OR cognitive dysfunction[tiab])"
+    },
+    {
+      "id": "erector_spinae_breast",
+      "review_pmid": "33610172",
+      "max_year": 2021,
+      "question": "erector spinae plane block analgesia after breast cancer surgery opioid consumption",
+      "pubmed_query": "erector spinae plane block[tiab] AND (\"Breast Neoplasms\"[Mesh] OR \"Mastectomy\"[Mesh] OR breast surgery[tiab])"
+    },
+    {
+      "id": "resuscitation_fluids",
+      "review_pmid": "33317590",
+      "max_year": 2020,
+      "question": "balanced crystalloids saline albumin hydroxyethyl starch fluid resuscitation mortality in sepsis surgery and trauma",
+      "pubmed_query": "(\"Crystalloid Solutions\"[Mesh] OR balanced crystalloid[tiab] OR \"Saline Solution\"[Mesh] OR albumin[tiab] OR \"Hydroxyethyl Starch Derivatives\"[Mesh]) AND \"Fluid Therapy\"[Mesh] AND (\"Sepsis\"[Mesh] OR \"Critical Illness\"[Mesh] OR \"Wounds and Injuries\"[Mesh]) AND (mortality[tiab] OR \"Mortality\"[Mesh])"
+    }
+  ]
+}

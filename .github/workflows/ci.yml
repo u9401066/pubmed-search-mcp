@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_hybrid_benchmark:
+        description: Run the live hybrid-search retrieval benchmark (no LLM calls)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -233,3 +238,38 @@ jobs:
 
       - name: Run live integration probes
         run: uv run pytest -q -m integration -rs
+
+  hybrid-benchmark:
+    name: Hybrid search retrieval benchmark
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_hybrid_benchmark }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NCBI_EMAIL: ${{ vars.NCBI_EMAIL || 'pubmed-search@example.com' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev --python 3.13
+
+      - name: Run benchmark against live providers
+        run: uv run --frozen python scripts/benchmark_hybrid_search.py --output build/hybrid-benchmark.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hybrid-benchmark
+          path: build/hybrid-benchmark.*
+          if-no-files-found: warn
